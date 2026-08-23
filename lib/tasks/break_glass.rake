@@ -11,6 +11,7 @@ namespace :navishai do
 
       User.transaction do
         user = User.find_by(break_glass: true) || User.new(break_glass: true)
+        user.lock! if user.persisted?
         if (email_owner = User.find_by(email_address: ENV.fetch("EMAIL"))) && email_owner != user
           abort "EMAIL belongs to a regular user"
         end
@@ -21,6 +22,7 @@ namespace :navishai do
           password_confirmation: ENV.fetch("PASSWORD"),
           verified_at: Time.current
         )
+        user.sessions.active.update_all(revoked_at: Time.current)
         user.memberships.where.not(workspace: workspace).delete_all
         membership = workspace.memberships.find_or_initialize_by(user: user)
         membership.role = :admin

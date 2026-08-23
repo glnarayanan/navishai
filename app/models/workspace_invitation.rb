@@ -74,6 +74,7 @@ class WorkspaceInvitation < ApplicationRecord
         return user
       end
 
+      lock_account_creation
       raise AuthenticationRequired, "existing user must sign in" if User.exists?(email_address: email_address)
 
       User.create!(
@@ -82,6 +83,11 @@ class WorkspaceInvitation < ApplicationRecord
         password_confirmation: password_confirmation,
         verified_at: Time.current
       )
+    end
+
+    def lock_account_creation
+      lock_name = self.class.connection.quote("navishai-user-email-#{email_address}")
+      self.class.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{lock_name}))")
     end
 
     def email_is_not_already_a_member

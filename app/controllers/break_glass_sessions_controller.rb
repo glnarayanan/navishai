@@ -9,10 +9,14 @@ class BreakGlassSessionsController < ApplicationController
   def create
     return head :not_found unless valid_deployment_token?(params[:deployment_token])
 
-    user = User.authenticate_by(params.permit(:email_address, :password))
-    if user&.break_glass? && user.verified?
-      redirect_to start_new_session_for(user), status: :see_other
+    user = User.find_by(email_address: params[:email_address])
+    destination = user&.with_lock do
+      start_new_session_for(user) if user.authenticate(params[:password]) && user.break_glass? && user.verified?
+    end
+    if destination
+      redirect_to destination, status: :see_other
     else
+      User.authenticate_by(params.permit(:email_address, :password)) unless user
       redirect_to new_break_glass_session_path, alert: "Try another email address or password."
     end
   end

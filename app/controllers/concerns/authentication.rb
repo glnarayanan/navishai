@@ -35,24 +35,26 @@ module Authentication
     end
 
     def start_new_session_for(user)
-      return_to = session.delete(:return_to_after_authenticating)
-      reset_session
-      duration = user.break_glass? ? 15.minutes : 12.hours
-      new_session = user.sessions.create!(
-        user_agent: request.user_agent,
-        ip_address: request.remote_ip,
-        authentication_method: user.break_glass? ? :break_glass : :local,
-        expires_at: duration.from_now
-      )
-      Current.session = new_session
-      cookies.signed[:session_id] = {
-        value: new_session.id,
-        expires: new_session.expires_at,
-        httponly: true,
-        secure: Rails.env.production?,
-        same_site: :lax
-      }
-      return_to || root_path
+      user.with_lock do
+        return_to = session.delete(:return_to_after_authenticating)
+        reset_session
+        duration = user.break_glass? ? 15.minutes : 12.hours
+        new_session = user.sessions.create!(
+          user_agent: request.user_agent,
+          ip_address: request.remote_ip,
+          authentication_method: user.break_glass? ? :break_glass : :local,
+          expires_at: duration.from_now
+        )
+        Current.session = new_session
+        cookies.signed[:session_id] = {
+          value: new_session.id,
+          expires: new_session.expires_at,
+          httponly: true,
+          secure: Rails.env.production?,
+          same_site: :lax
+        }
+        return_to || root_path
+      end
     end
 
     def terminate_session

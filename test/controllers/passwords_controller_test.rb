@@ -52,6 +52,23 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
     assert_notice "Password has been reset"
   end
 
+  test "cannot reuse a reset token after the password changes" do
+    token = @user.password_reset_token
+    put password_path(token), params: {
+      password: "new-password-123",
+      password_confirmation: "new-password-123"
+    }
+    changed_digest = @user.reload.password_digest
+
+    put password_path(token), params: {
+      password: "another-password-123",
+      password_confirmation: "another-password-123"
+    }
+
+    assert_redirected_to new_password_path
+    assert_equal changed_digest, @user.reload.password_digest
+  end
+
   test "update with non matching passwords" do
     token = @user.password_reset_token
     assert_no_changes -> { @user.reload.password_digest } do

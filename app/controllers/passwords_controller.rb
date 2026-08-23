@@ -18,14 +18,18 @@ class PasswordsController < ApplicationController
   end
 
   def update
-    password_attributes = params.permit(:password, :password_confirmation)
-      .merge(verified_at: @user.verified_at || Time.current)
-    if @user.update(password_attributes)
+    @user.with_lock do
+      User.find_by_password_reset_token!(params[:token])
+      password_attributes = params.permit(:password, :password_confirmation)
+        .merge(verified_at: @user.verified_at || Time.current)
+      @user.update!(password_attributes)
       @user.sessions.active.update_all(revoked_at: Time.current)
-      redirect_to new_session_path, notice: "Password has been reset."
-    else
-      redirect_to edit_password_path(params[:token]), alert: "Passwords did not match."
     end
+    redirect_to new_session_path, notice: "Password has been reset."
+  rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
+    redirect_to new_password_path, alert: "Password reset link is invalid or has expired."
+  rescue ActiveRecord::RecordInvalid
+    redirect_to edit_password_path(params[:token]), alert: "Passwords did not match."
   end
 
   private
