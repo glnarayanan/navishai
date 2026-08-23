@@ -1,0 +1,27 @@
+<main class="page-shell">
+  <div class="page-heading">
+    <h1>Choose a workspace</h1>
+    <p>Your work and access stay within the workspace you choose.</p>
+  </div>
+
+  <% if @workspaces.any? %>
+    <ul class="workspace-list" role="list">
+      <% @workspaces.each do |workspace| %>
+        <li>
+          <%= link_to workspace_path(workspace), class: "workspace-link" do %>
+            <span>
+              <strong><%= workspace.name %></strong>
+              <small><%= workspace.organization.name %></small>
+            </span>
+            <span>Open</span>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  <% else %>
+    <section class="empty-state">
+      <h2>No workspace access</h2>
+      <p>Ask an Owner or Admin to invite you to a workspace.</p>
+    </section>
+  <% end %>
+</main>

@@ -2,7 +2,11 @@ require "test_helper"
 
 class UserTest < ActiveSupport::TestCase
   test "normalizes email addresses" do
-    user = User.new(email_address: "  NEW@Example.COM  ")
+    user = User.new(
+      email_address: "  NEW@Example.COM  ",
+      password: "password12345",
+      password_confirmation: "password12345"
+    )
 
     assert_predicate user, :valid?
     assert_equal "new@example.com", user.email_address

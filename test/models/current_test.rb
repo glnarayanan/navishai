@@ -41,7 +41,7 @@ class CurrentTest < ActiveSupport::TestCase
   end
 
   test "clears the workspace when changing to another member" do
-    Membership.create!(user: users(:teammate), workspace: workspaces(:acme_support))
+    Membership.create!(user: users(:teammate), workspace: workspaces(:acme_support), role: :member)
     Current.user = users(:owner)
     Current.workspace = workspaces(:acme_support)
 
@@ -51,11 +51,21 @@ class CurrentTest < ActiveSupport::TestCase
   end
 
   test "revokes an active workspace when membership is removed" do
+    Membership.create!(user: users(:teammate), workspace: workspaces(:acme_support), role: :owner)
     Current.user = users(:owner)
     Current.workspace = workspaces(:acme_support)
     memberships(:owner_support).destroy!
 
     assert_raises(Current::WorkspaceAccessDenied) { Current.require_workspace! }
     assert_nil Current.workspace
+  end
+
+  test "checks the current role on every authorization" do
+    Current.user = users(:teammate)
+    Current.workspace = workspaces(:acme_success)
+
+    assert Current.require_role!(:manager)
+    memberships(:teammate_success).update!(role: :viewer)
+    assert_raises(Current::RoleAccessDenied) { Current.require_role!(:manager) }
   end
 end

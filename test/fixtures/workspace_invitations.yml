@@ -1,0 +1,8 @@
+pending_member:
+  workspace: acme_support
+  email_address: invited@example.com
+  role: member
+  status: pending
+  token_nonce: pending-member-token
+  invited_by: owner
+  expires_at: <%= 7.days.from_now %>
