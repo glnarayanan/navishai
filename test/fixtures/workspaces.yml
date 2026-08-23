@@ -1,0 +1,16 @@
+# Read about fixtures at https://api.rubyonrails.org/classes/ActiveRecord/FixtureSet.html
+
+acme_support:
+  organization: acme
+  name: Acme Support
+  slug: support
+
+acme_success:
+  organization: acme
+  name: Acme Success
+  slug: success
+
+beta_support:
+  organization: beta
+  name: Beta Support
+  slug: support
