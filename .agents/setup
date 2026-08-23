@@ -6,6 +6,7 @@ set -euo pipefail
 RUBY_VERSION="${RUBY_VERSION:-3.4.10}"
 GO_VERSION="${GO_VERSION:-1.27.0}"
 PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
+PGVECTOR_VERSION="0.8.6"
 PG_MAJOR="${PG_MAJOR:-15}"
 APP_ROLE="${APP_ROLE:-user}"
 DEV_DB="${DEV_DB:-navishai_development}"
@@ -129,8 +130,7 @@ install_app_dependencies() {
 
   if [[ -f Gemfile ]]; then
     if [[ -f Gemfile.lock ]]; then
-      bundle config set --local frozen true
-      bundle install
+      BUNDLE_FROZEN=true bundle install
     else
       bundle install
     fi
@@ -184,8 +184,8 @@ SQL
 
 ensure_pgvector() {
   local control="/usr/share/postgresql/${PG_MAJOR}/extension/vector.control"
-  if [[ -f "$control" ]]; then
-    log "pgvector already installed"
+  if [[ -f "$control" ]] && grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
+    log "pgvector ${PGVECTOR_VERSION} already installed"
     return 0
   fi
 
@@ -197,6 +197,11 @@ ensure_pgvector() {
   make -C "${tmp}/pgvector" OPTFLAGS=""
   sudo make -C "${tmp}/pgvector" install
   rm -rf "$tmp"
+
+  if ! grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
+    log "pgvector ${PGVECTOR_VERSION} was not installed"
+    return 1
+  fi
 }
 
 ensure_databases() {
@@ -217,7 +222,10 @@ SQL
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1; then
       sudo -u postgres createdb -O "$APP_ROLE" "$db"
     fi
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$db" <<SQL
+CREATE EXTENSION IF NOT EXISTS vector;
+ALTER EXTENSION vector UPDATE TO '${PGVECTOR_VERSION}';
+SQL
   done
 }
 
