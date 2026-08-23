@@ -35,6 +35,8 @@
         <nav aria-label="Account">
           <% if Current.workspace %>
             <span class="current-workspace"><%= Current.workspace.name %></span>
+            <%= link_to "Cases", workspace_support_cases_path(Current.workspace),
+              aria: { current: controller_name.in?(%w[support_cases support_case_commands]) ? "page" : nil } %>
           <% end %>
           <%= link_to "Workspaces", workspaces_path,
             aria: { current: controller_name.in?(%w[workspaces workspace_invitations]) ? "page" : nil } %>

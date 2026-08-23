@@ -8,8 +8,7 @@ class WorkspacesController < ApplicationController
   end
 
   def show
-    @workspace = Current.require_workspace!
-    @membership = Current.require_membership!
+    redirect_to workspace_support_cases_path(Current.require_workspace!)
   end
 
   private

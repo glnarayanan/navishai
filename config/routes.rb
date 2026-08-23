@@ -2,6 +2,17 @@ Rails.application.routes.draw do
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
     resources :workspace_invitations, only: %i[ index create destroy ]
+    resources :support_cases, path: "cases", only: %i[ index show ] do
+      member do
+        patch :transition, controller: "support_case_commands"
+        patch :assignment, controller: "support_case_commands"
+        patch :priority, controller: "support_case_commands"
+        post :tag, controller: "support_case_commands"
+        delete "tags/:tag_id", action: :untag, as: :tagging, controller: "support_case_commands"
+        post :notes, action: :add_note, controller: "support_case_commands"
+        post "tag-definitions", action: :create_tag, as: :create_tag, controller: "support_case_commands"
+      end
+    end
   end
   get "invitations", to: "workspace_invitation_acceptances#show", as: :workspace_invitation_acceptance
   post "invitations", to: "workspace_invitation_acceptances#create"

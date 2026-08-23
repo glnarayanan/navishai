@@ -1,0 +1,54 @@
+<section class="case-queue" aria-labelledby="case-queue-title">
+  <div class="queue-heading">
+    <div>
+      <h2 id="case-queue-title">Case queue</h2>
+      <p><%= pluralize(support_cases.size, "case") %></p>
+    </div>
+  </div>
+
+  <% if support_cases.any? %>
+    <ol class="case-list" role="list">
+      <% support_cases.each do |support_case| %>
+        <% contact = support_case.conversation.contact.canonical %>
+        <% account = contact.account&.canonical %>
+        <% latest_message = support_case.conversation.conversation_messages.last %>
+        <% latest_activity_at = support_case.conversation.last_message_at || support_case.conversation.started_at %>
+        <li>
+          <%= link_to workspace_support_case_path(@workspace, support_case),
+            class: "case-row",
+            aria: { current: local_assigns[:selected_case] == support_case ? "page" : nil } do %>
+            <span class="case-row-main">
+              <strong><%= support_case.conversation.subject.presence || "Case ##{support_case.id}" %></strong>
+              <span><%= contact.name.presence || "Unnamed contact" %><% if account %> · <%= account.name %><% end %></span>
+              <span class="case-row-excerpt"><%= truncate(latest_message&.body || "No messages yet", length: 100) %></span>
+            </span>
+            <span class="case-row-meta">
+              <span class="status-dot status-<%= support_case.status.dasherize %>" aria-hidden="true"></span>
+              <span><%= case_status_label(support_case.status) %></span>
+              <span class="priority-label priority-<%= support_case.priority %>"><%= support_case.priority.titleize %></span>
+            </span>
+            <span class="case-row-owner">
+              <%= support_case.assigned_membership&.user&.email_address || "Unassigned" %>
+              <% if support_case.tags.any? %>
+                <small class="case-row-tags"><%= support_case.tags.map(&:name).sort.to_sentence %></small>
+              <% end %>
+            </span>
+            <time datetime="<%= latest_activity_at.iso8601 %>" title="<%= latest_activity_at.to_fs(:long) %>"><%= time_ago_in_words(latest_activity_at) %> ago</time>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  <% else %>
+    <% if @queue_filters_active %>
+      <%= render "shared/empty_state",
+        title: "No cases match these filters",
+        description: "Clear the filters to return to the full queue.",
+        action_label: "Clear filters",
+        action_path: workspace_support_cases_path(@workspace) %>
+    <% else %>
+      <%= render "shared/empty_state",
+        title: "No cases in the queue",
+        description: "New customer conversations will appear here when intake is connected." %>
+    <% end %>
+  <% end %>
+</section>
