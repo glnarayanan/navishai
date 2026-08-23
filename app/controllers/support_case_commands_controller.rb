@@ -14,7 +14,7 @@ class SupportCaseCommandsController < SupportCasesController
   end
 
   def assignment
-    assignee = params[:assigned_membership_id].present? && Current.workspace.memberships.find(params[:assigned_membership_id])
+    assignee = Current.workspace.memberships.find(params[:assigned_membership_id]) if params[:assigned_membership_id].present?
     CaseWorkflow.assign!(
       workspace: Current.workspace,
       support_case: @support_case,

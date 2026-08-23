@@ -85,4 +85,48 @@ class SupportCasesControllerTest < ActionDispatch::IntegrationTest
   ensure
     SupportCasesController.define_method(:load_queue, original_load_queue) if original_load_queue
   end
+
+  test "show lookup failures render a neutral service unavailable state" do
+    original_set_support_case = SupportCasesController.instance_method(:set_support_case)
+    SupportCasesController.define_method(:set_support_case) { raise ActiveRecord::StatementInvalid, "private database detail" }
+
+    get workspace_support_case_path(@workspace, @support_case)
+
+    assert_response :service_unavailable
+    assert_select "h1", text: "Cases couldn’t be loaded"
+    assert_no_match(/private database detail/, response.body)
+  ensure
+    SupportCasesController.define_method(:set_support_case, original_set_support_case) if original_set_support_case
+  end
+
+  test "render-time database failures render a neutral service unavailable state" do
+    original_body = ConversationMessage.instance_method(:body)
+    ConversationMessage.define_method(:body) { raise ActiveRecord::StatementInvalid, "private database detail" }
+
+    get workspace_support_case_path(@workspace, @support_case)
+
+    assert_response :service_unavailable
+    assert_select "h1", text: "Cases couldn’t be loaded"
+    assert_no_match(/private database detail/, response.body)
+  ensure
+    ConversationMessage.define_method(:body, original_body) if original_body
+  end
+
+  test "queue instantiates only the latest message in each conversation" do
+    3.times do |index|
+      add_inbound_message(@support_case, body: "Message #{index + 2}", occurred_at: index.minutes.from_now)
+    end
+    instantiated_messages = 0
+    subscriber = lambda do |_name, _started, _finished, _id, payload|
+      instantiated_messages += payload[:record_count] if payload[:class_name] == "ConversationMessage"
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "instantiation.active_record") do
+      get workspace_support_cases_path(@workspace)
+    end
+
+    assert_response :success
+    assert_equal 1, instantiated_messages
+    assert_select ".case-row-excerpt", text: "Message 4"
+  end
 end

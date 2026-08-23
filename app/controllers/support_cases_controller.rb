@@ -3,19 +3,16 @@ class SupportCasesController < ApplicationController
 
   before_action :require_workspace
   before_action :set_support_case, except: :index
+  rescue_from ActiveRecord::ActiveRecordError, with: :case_load_failure
 
   def index
     @workspace = Current.require_workspace!
     @membership = Current.require_membership!
     load_queue
-  rescue ActiveRecord::ActiveRecordError => error
-    case_load_failure(error)
   end
 
   def show
     load_workspace
-  rescue ActiveRecord::ActiveRecordError => error
-    case_load_failure(error)
   end
 
   private
@@ -44,7 +41,7 @@ class SupportCasesController < ApplicationController
     def queue_scope
       scope = Current.workspace.support_cases
         .left_joins(:conversation)
-        .includes(:tags, assigned_membership: :user, conversation: [ :conversation_messages, { contact: :account } ])
+        .includes(:tags, assigned_membership: :user, conversation: { contact: :account })
       scope = case params[:status].presence || "open"
       when "open" then scope.where.not(status: :closed)
       when "all" then scope
@@ -63,7 +60,19 @@ class SupportCasesController < ApplicationController
       records = queue_scope.offset((@page - 1) * limit).limit(limit + 1).to_a
       @has_next_page = records.length > limit
       @support_cases = records.first(limit)
+      @latest_messages_by_conversation_id = latest_messages_by_conversation_id
       @queue_filters_active = %i[status priority assignment tag_id].any? { |key| params[key].present? && params[key] != "open" }
+    end
+
+    def latest_messages_by_conversation_id
+      conversation_ids = @support_cases.map(&:conversation_id)
+      return {} if conversation_ids.empty?
+
+      @workspace.conversation_messages
+        .where(conversation_id: conversation_ids)
+        .select("DISTINCT ON (conversation_id) conversation_messages.*")
+        .order(conversation_id: :desc, occurred_at: :desc, id: :desc)
+        .index_by(&:conversation_id)
     end
 
     def case_activity

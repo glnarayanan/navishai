@@ -32,6 +32,20 @@ class SupportCaseCommandsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Check the identity provider logs.", @support_case.case_notes.last.body
   end
 
+  test "owner can unassign a case" do
+    CaseWorkflow.assign!(
+      workspace: @workspace, support_case: @support_case,
+      membership: @membership, assignee: @membership
+    )
+
+    assert_difference -> { AuditEvent.where(action: "case.unassigned").count }, 1 do
+      patch assignment_workspace_support_case_path(@workspace, @support_case), params: { assigned_membership_id: "" }
+    end
+
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case)
+    assert_nil @support_case.reload.assigned_membership
+  end
+
   test "invalid and blank changes render inline errors and roll back" do
     assert_no_difference [ "SupportCaseStatusChange.count", "AuditEvent.count" ] do
       patch transition_workspace_support_case_path(@workspace, @support_case), params: { status: "closed", reason: "Skip the workflow" }
@@ -69,6 +83,23 @@ class SupportCaseCommandsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :forbidden
     assert_select "h1", text: "You can’t change this case"
+  end
+
+  test "viewer cannot forge an unassignment" do
+    CaseWorkflow.assign!(
+      workspace: @workspace, support_case: @support_case,
+      membership: @membership, assignee: @membership
+    )
+    viewer = User.create!(email_address: "unassign-viewer@example.com", password: "password12345", verified_at: Time.current)
+    Membership.create!(workspace: @workspace, user: viewer, role: :viewer)
+    sign_in_as viewer
+
+    assert_no_difference [ "AuditEvent.count", "SupportCaseStatusChange.count" ] do
+      patch assignment_workspace_support_case_path(@workspace, @support_case), params: { assigned_membership_id: "" }
+    end
+
+    assert_response :forbidden
+    assert_equal @membership, @support_case.reload.assigned_membership
   end
 
   test "foreign case, tag, and assignee fail closed" do

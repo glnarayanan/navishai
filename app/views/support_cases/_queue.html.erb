@@ -11,7 +11,7 @@
       <% support_cases.each do |support_case| %>
         <% contact = support_case.conversation.contact.canonical %>
         <% account = contact.account&.canonical %>
-        <% latest_message = support_case.conversation.conversation_messages.last %>
+        <% latest_message = @latest_messages_by_conversation_id[support_case.conversation_id] %>
         <% latest_activity_at = support_case.conversation.last_message_at || support_case.conversation.started_at %>
         <li>
           <%= link_to workspace_support_case_path(@workspace, support_case),
