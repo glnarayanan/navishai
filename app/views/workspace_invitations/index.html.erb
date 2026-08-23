@@ -1,3 +1,5 @@
+<% content_for :title, "Invitations · #{Current.workspace.name} — NavishAI" %>
+
 <main class="page-shell">
   <%= link_to "Back to workspace", workspace_path(Current.workspace), class: "back-link" %>
   <div class="page-heading">
@@ -7,9 +9,7 @@
 
   <section class="section-block" aria-labelledby="invite-title">
     <h2 id="invite-title">Send an invitation</h2>
-    <% if @invitation.errors.any? %>
-      <p class="inline-error" role="alert"><%= @invitation.errors.full_messages.to_sentence %>.</p>
-    <% end %>
+    <%= render "shared/form_errors", record: @invitation %>
     <%= form_with model: [ Current.workspace, @invitation ], class: "invite-form" do |form| %>
       <div class="field">
         <%= form.label :email_address, "Email address" %>

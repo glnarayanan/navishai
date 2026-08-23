@@ -1,0 +1,6 @@
+<% if flash[:notice] || flash[:alert] %>
+  <div class="flash-region" aria-live="polite">
+    <%= tag.p(flash[:notice], class: "flash flash-notice") if flash[:notice] %>
+    <%= tag.p(flash[:alert], class: "flash flash-alert", role: "alert") if flash[:alert] %>
+  </div>
+<% end %>
