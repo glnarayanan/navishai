@@ -30,10 +30,16 @@ class BreakGlassTaskTest < ActiveSupport::TestCase
       "PASSWORD" => "new-password-123"
     )
 
-    @task.invoke
+    assert_difference "AuditEvent.count", 1 do
+      @task.invoke
+    end
 
     assert_predicate session.reload, :revoked_at?
     assert_equal [ workspaces(:acme_support) ], user.reload.workspaces
     assert user.memberships.sole.admin?
+    event = AuditEvent.order(:id).last
+    assert_equal "break_glass.configured", event.action
+    assert_equal user, event.actor
+    assert_equal workspaces(:acme_support), event.workspace
   end
 end

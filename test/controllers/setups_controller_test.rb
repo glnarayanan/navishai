@@ -25,38 +25,47 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "valid deployment token creates and signs in the first Owner" do
-    post setup_path, params: {
-      bootstrap_token: "b" * 32,
-      setup: {
-        organization_name: "New Org",
-        organization_slug: "new-org",
-        workspace_name: "Support",
-        workspace_slug: "support",
-        email_address: "owner@new.example",
-        password: "password12345",
-        password_confirmation: "password12345"
+    assert_difference "AuditEvent.count", 1 do
+      post setup_path, params: {
+        bootstrap_token: "b" * 32,
+        setup: {
+          organization_name: "New Org",
+          organization_slug: "new-org",
+          workspace_name: "Support",
+          workspace_slug: "support",
+          email_address: "owner@new.example",
+          password: "password12345",
+          password_confirmation: "password12345"
+        }
       }
-    }
+    end
 
     assert_redirected_to root_path
     assert cookies[:session_id]
-    assert_equal "owner", User.find_by!(email_address: "owner@new.example").memberships.sole.role
+    owner = User.find_by!(email_address: "owner@new.example")
+    assert_equal "owner", owner.memberships.sole.role
     assert InstallationState.exists?
+    event = AuditEvent.order(:id).last
+    assert_equal "installation.bootstrapped", event.action
+    assert_equal owner, event.actor
+    assert_equal owner.workspaces.sole, event.workspace
   end
 
   test "invalid deployment token creates nothing" do
-    post setup_path, params: {
-      bootstrap_token: "wrong",
-      setup: {
-        organization_name: "New Org",
-        organization_slug: "new-org",
-        workspace_name: "Support",
-        workspace_slug: "support",
-        email_address: "owner@new.example",
-        password: "password12345",
-        password_confirmation: "password12345"
+    assert_no_difference "AuditEvent.count" do
+      post setup_path, params: {
+        bootstrap_token: "wrong",
+        setup: {
+          organization_name: "New Org",
+          organization_slug: "new-org",
+          workspace_name: "Support",
+          workspace_slug: "support",
+          email_address: "owner@new.example",
+          password: "password12345",
+          password_confirmation: "password12345"
+        }
       }
-    }
+    end
 
     assert_redirected_to new_setup_path
     assert_not User.exists?

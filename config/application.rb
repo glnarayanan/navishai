@@ -16,6 +16,20 @@ module Navishai
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
+    # Preserve PostgreSQL constraints and triggers that enforce security invariants.
+    config.active_record.schema_format = :sql
+
+    config.action_dispatch.default_headers = {
+      "X-Frame-Options" => "DENY",
+      "X-XSS-Protection" => "0",
+      "X-Content-Type-Options" => "nosniff",
+      "X-Permitted-Cross-Domain-Policies" => "none",
+      "Referrer-Policy" => "no-referrer",
+      "Cross-Origin-Opener-Policy" => "same-origin",
+      "Cross-Origin-Resource-Policy" => "same-origin",
+      "Permissions-Policy" => "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+    }
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files

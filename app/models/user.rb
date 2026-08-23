@@ -3,6 +3,7 @@ class User < ApplicationRecord
   has_many :workspaces, through: :memberships
   has_many :sessions, dependent: :destroy
   has_many :workspace_invitations, foreign_key: :invited_by_id, dependent: :restrict_with_exception, inverse_of: :invited_by
+  has_many :audit_events, foreign_key: :actor_id, dependent: :restrict_with_exception, inverse_of: :actor
 
   has_secure_password
 

@@ -1,7 +1,7 @@
 class PasswordsController < ApplicationController
   allow_unauthenticated_access
   before_action :set_user_by_token, only: %i[ edit update ]
-  rate_limit to: 10, within: 3.minutes, only: :create, with: -> { redirect_to new_password_path, alert: "Try again later." }
+  rate_limit(**SecurityRateLimits::AUTHENTICATION, only: :create, with: -> { redirect_to new_password_path, alert: "Try again later." })
 
   def new
   end
@@ -9,6 +9,7 @@ class PasswordsController < ApplicationController
   def create
     if (user = User.find_by(email_address: params[:email_address])) && !user.break_glass?
       PasswordsMailer.reset(user).deliver_later
+      audit_event("password_reset.requested", workspace: nil, actor: nil, subject: user)
     end
 
     redirect_to new_session_path, notice: "Password reset instructions sent (if user with that email address exists)."
@@ -24,12 +25,13 @@ class PasswordsController < ApplicationController
         .merge(verified_at: @user.verified_at || Time.current)
       @user.update!(password_attributes)
       @user.sessions.active.update_all(revoked_at: Time.current)
+      audit_event("password_reset.completed", workspace: nil, actor: @user, subject: @user)
     end
     redirect_to new_session_path, notice: "Password has been reset."
   rescue ActiveSupport::MessageVerifier::InvalidSignature, ActiveRecord::RecordNotFound
     redirect_to new_password_path, alert: "Password reset link is invalid or has expired."
   rescue ActiveRecord::RecordInvalid
-    redirect_to edit_password_path(params[:token]), alert: "Passwords did not match."
+    redirect_to edit_password_path(token: params[:token]), alert: "Passwords did not match."
   end
 
   private

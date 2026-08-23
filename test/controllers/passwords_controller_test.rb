@@ -27,12 +27,12 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "edit" do
-    get edit_password_path(@user.password_reset_token)
+    get edit_password_path(token: @user.password_reset_token)
     assert_response :success
   end
 
   test "edit with invalid password reset token" do
-    get edit_password_path("invalid token")
+    get edit_password_path(token: "invalid token")
     assert_redirected_to new_password_path
 
     follow_redirect!
@@ -41,7 +41,7 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
 
   test "update" do
     assert_changes -> { @user.reload.password_digest } do
-      put password_path(@user.password_reset_token), params: {
+      put password_path(token: @user.password_reset_token), params: {
         password: "new-password-123",
         password_confirmation: "new-password-123"
       }
@@ -54,13 +54,13 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
 
   test "cannot reuse a reset token after the password changes" do
     token = @user.password_reset_token
-    put password_path(token), params: {
+    put password_path(token: token), params: {
       password: "new-password-123",
       password_confirmation: "new-password-123"
     }
     changed_digest = @user.reload.password_digest
 
-    put password_path(token), params: {
+    put password_path(token: token), params: {
       password: "another-password-123",
       password_confirmation: "another-password-123"
     }
@@ -72,11 +72,11 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
   test "update with non matching passwords" do
     token = @user.password_reset_token
     assert_no_changes -> { @user.reload.password_digest } do
-      put password_path(token), params: {
+      put password_path(token: token), params: {
         password: "new-password-123",
         password_confirmation: "different-password"
       }
-      assert_redirected_to edit_password_path(token)
+      assert_redirected_to edit_password_path(token: token)
     end
 
     follow_redirect!
@@ -90,7 +90,7 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
     post passwords_path, params: { email_address: @user.email_address }
     assert_enqueued_email_with PasswordsMailer, :reset, args: [ @user ]
 
-    put password_path(token), params: {
+    put password_path(token: token), params: {
       password: "new-password-123",
       password_confirmation: "new-password-123"
     }

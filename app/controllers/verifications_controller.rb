@@ -8,7 +8,10 @@ class VerificationsController < ApplicationController
   end
 
   def update
-    @user.update!(verified_at: Time.current)
+    @user.with_lock do
+      @user.update!(verified_at: Time.current)
+      audit_event("email_verification.completed", workspace: nil, actor: @user, subject: @user)
+    end
     redirect_to new_session_path, notice: "Email address verified. You can now sign in."
   end
 
