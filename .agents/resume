@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Fast wake-up repair for an existing NavishAI orb.
+# Do not install packages or toolchains here.
+set -euo pipefail
+
+log() {
+  printf '[resume] %s\n' "$*"
+}
+
+ensure_postgres() {
+  if ! command -v pg_lsclusters >/dev/null 2>&1; then
+    log "postgres not installed; nothing to repair"
+    return 0
+  fi
+
+  local ver name port status
+  while read -r ver name port status _; do
+    [[ -n "${ver:-}" ]] || continue
+    if [[ "$status" != "online" ]]; then
+      log "starting PostgreSQL ${ver}/${name}"
+      sudo pg_ctlcluster "$ver" "$name" start
+    fi
+  done < <(pg_lsclusters --no-header)
+
+  if ! command -v pg_isready >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local i
+  for i in $(seq 1 16); do
+    if pg_isready -q; then
+      log "postgres ready"
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  log "postgres did not become ready"
+  return 1
+}
+
+ensure_postgres

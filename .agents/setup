@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# Prepare a fresh Linux environment for NavishAI development.
+# Idempotent: safe to re-run on a warm snapshot.
+set -euo pipefail
+
+RUBY_VERSION="${RUBY_VERSION:-3.4.10}"
+GO_VERSION="${GO_VERSION:-1.27.0}"
+PGVECTOR_REF="${PGVECTOR_REF:-v0.8.6}"
+PG_MAJOR="${PG_MAJOR:-15}"
+APP_ROLE="${APP_ROLE:-user}"
+DEV_DB="${DEV_DB:-navishai_development}"
+TEST_DB="${TEST_DB:-navishai_test}"
+
+log() {
+  printf '[setup] %s\n' "$*"
+}
+
+run_timed() {
+  local name="$1"
+  shift
+  local started
+  started="$(date +%s)"
+  log "start: ${name}"
+  "$@"
+  log "done: ${name} ($(($(date +%s) - started))s)"
+}
+
+have_pkg() {
+  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
+}
+
+ensure_apt_packages() {
+  local packages=(
+    build-essential
+    ca-certificates
+    curl
+    git
+    libffi-dev
+    libgmp-dev
+    libpq-dev
+    libreadline-dev
+    libssl-dev
+    libxml2-dev
+    libxslt1-dev
+    libyaml-dev
+    pkg-config
+    postgresql
+    postgresql-contrib
+    "postgresql-server-dev-${PG_MAJOR}"
+    shared-mime-info
+    zlib1g-dev
+  )
+  local missing=()
+  local pkg
+  for pkg in "${packages[@]}"; do
+    if ! have_pkg "$pkg"; then
+      missing+=("$pkg")
+    fi
+  done
+  if ((${#missing[@]} == 0)); then
+    log "apt packages already installed"
+    return 0
+  fi
+  log "installing apt packages: ${missing[*]}"
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+}
+
+ensure_mise() {
+  export PATH="${HOME}/.local/bin:${PATH}"
+  if [[ -x "${HOME}/.local/bin/mise" ]]; then
+    log "mise already installed"
+  else
+    curl -fsSL https://mise.run | MISE_QUIET=1 sh
+  fi
+  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
+}
+
+ensure_mise_profile() {
+  local profile="${HOME}/.bash_profile"
+  local marker="# navishai mise toolchain"
+  touch "$profile"
+  if grep -Fqx "$marker" "$profile"; then
+    log "mise login-shell hook already present"
+    return 0
+  fi
+  cat >>"$profile" <<'EOF'
+
+# navishai mise toolchain
+if [[ -z "${NAVISHA_MISE_ACTIVATED:-}" && -x "${HOME}/.local/bin/mise" ]]; then
+  export NAVISHA_MISE_ACTIVATED=1
+  export PATH="${HOME}/.local/bin:${PATH}"
+  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
+fi
+EOF
+  log "added mise login-shell hook"
+}
+
+install_toolchains() {
+  export MISE_RUBY_COMPILE=false
+  export PATH="${HOME}/.local/bin:${PATH}"
+  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
+
+  if [[ -f .ruby-version ]]; then
+    RUBY_VERSION="$(tr -d '[:space:]' < .ruby-version)"
+  fi
+  if [[ -f .go-version ]]; then
+    GO_VERSION="$(tr -d '[:space:]' < .go-version)"
+  fi
+
+  if [[ -f mise.toml || -f .mise.toml ]]; then
+    "${HOME}/.local/bin/mise" trust --yes >/dev/null
+    "${HOME}/.local/bin/mise" install
+  else
+    "${HOME}/.local/bin/mise" use --global "ruby@${RUBY_VERSION}" "go@${GO_VERSION}"
+  fi
+
+  hash -r
+  ruby -v
+  go version
+  if ! bundler -v >/dev/null 2>&1; then
+    gem install bundler --no-document
+  fi
+}
+
+install_app_dependencies() {
+  export PATH="${HOME}/.local/bin:${PATH}"
+  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
+
+  if [[ -f Gemfile ]]; then
+    if [[ -f Gemfile.lock ]]; then
+      bundle install --frozen
+    else
+      bundle install
+    fi
+  else
+    log "no Gemfile yet; skipping bundle install"
+  fi
+
+  if [[ -f go.mod ]]; then
+    go mod download
+  else
+    log "no go.mod yet; skipping go mod download"
+  fi
+}
+
+ensure_postgres() {
+  if ! command -v pg_lsclusters >/dev/null 2>&1; then
+    log "postgresql client tools missing after install"
+    return 1
+  fi
+
+  local ver name port status
+  while read -r ver name port status _; do
+    [[ -n "${ver:-}" ]] || continue
+    if [[ "$status" != "online" ]]; then
+      sudo pg_ctlcluster "$ver" "$name" start
+    fi
+  done < <(pg_lsclusters --no-header)
+
+  sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+ALTER SYSTEM SET fsync = off;
+ALTER SYSTEM SET synchronous_commit = off;
+ALTER SYSTEM SET full_page_writes = off;
+ALTER SYSTEM SET autovacuum = off;
+SQL
+  sudo pg_ctlcluster "${PG_MAJOR}" main reload || sudo pg_ctlcluster "${PG_MAJOR}" main restart
+
+  local ready=0
+  local i
+  for i in $(seq 1 20); do
+    if pg_isready -q; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if ((ready != 1)); then
+    log "postgres did not become ready"
+    return 1
+  fi
+}
+
+ensure_pgvector() {
+  local control="/usr/share/postgresql/${PG_MAJOR}/extension/vector.control"
+  if [[ -f "$control" ]]; then
+    log "pgvector already installed"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp -d)"
+  git clone --branch "$PGVECTOR_REF" --depth 1 https://github.com/pgvector/pgvector.git "${tmp}/pgvector"
+  make -C "${tmp}/pgvector" OPTFLAGS=""
+  sudo make -C "${tmp}/pgvector" install
+  rm -rf "$tmp"
+}
+
+ensure_databases() {
+  sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
+    CREATE ROLE "${APP_ROLE}" SUPERUSER LOGIN;
+  ELSE
+    ALTER ROLE "${APP_ROLE}" WITH SUPERUSER LOGIN;
+  END IF;
+END
+\$\$;
+SQL
+
+  local db
+  for db in "$DEV_DB" "$TEST_DB"; do
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1; then
+      sudo -u postgres createdb -O "$APP_ROLE" "$db"
+    fi
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$db" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+  done
+}
+
+write_orb_guidance() {
+  local amp_config_dir="${HOME}/.config/amp"
+  local dest="${amp_config_dir}/AGENTS.md"
+  local marker="# NavishAI orb toolchain"
+  mkdir -p "$amp_config_dir"
+  touch "$dest"
+  if grep -Fqx "$marker" "$dest"; then
+    log "orb toolchain notes already present"
+    return 0
+  fi
+  cat >>"$dest" <<EOF
+
+${marker}
+
+- Ruby ${RUBY_VERSION} and Go ${GO_VERSION} are installed with mise. Login shells load shims from ~/.bash_profile.
+- PostgreSQL ${PG_MAJOR} listens locally. Peer auth works as the unix user \`${APP_ROLE}\`.
+- Databases: ${DEV_DB}, ${TEST_DB}. The vector extension is enabled.
+- The Rails app and Go runner are not bootstrapped yet. When they exist, use repository bin/setup, bundle, and go test rather than inventing extra tooling.
+- Do not start long-lived servers from setup. Declare them in .amp/services.yaml or start them with amp orb service.
+EOF
+}
+
+main() {
+  local started
+  started="$(date +%s)"
+  log "NavishAI orb setup"
+  run_timed "apt packages" ensure_apt_packages
+  run_timed "mise" ensure_mise
+  run_timed "mise profile" ensure_mise_profile
+  run_timed "ruby and go" install_toolchains
+  run_timed "app dependencies" install_app_dependencies
+  run_timed "postgres" ensure_postgres
+  run_timed "pgvector" ensure_pgvector
+  run_timed "databases" ensure_databases
+  run_timed "orb guidance" write_orb_guidance
+  log "complete ($(($(date +%s) - started))s)"
+}
+
+main "$@"
