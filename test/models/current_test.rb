@@ -26,16 +26,36 @@ class CurrentTest < ActiveSupport::TestCase
     end
   end
 
+  test "clears the prior workspace after a denied selection" do
+    Current.user = users(:owner)
+    Current.workspace = workspaces(:acme_support)
+
+    assert_raises(Current::WorkspaceAccessDenied) do
+      Current.workspace = workspaces(:beta_support)
+    end
+    assert_nil Current.workspace
+  end
+
   test "requires an explicit active workspace" do
     assert_raises(Current::WorkspaceAccessDenied) { Current.require_workspace! }
   end
 
-  test "clears the workspace when the user changes" do
+  test "clears the workspace when changing to another member" do
+    Membership.create!(user: users(:teammate), workspace: workspaces(:acme_support))
     Current.user = users(:owner)
     Current.workspace = workspaces(:acme_support)
 
-    Current.user = users(:outsider)
+    Current.user = users(:teammate)
 
+    assert_nil Current.workspace
+  end
+
+  test "revokes an active workspace when membership is removed" do
+    Current.user = users(:owner)
+    Current.workspace = workspaces(:acme_support)
+    memberships(:owner_support).destroy!
+
+    assert_raises(Current::WorkspaceAccessDenied) { Current.require_workspace! }
     assert_nil Current.workspace
   end
 end
