@@ -35,6 +35,24 @@ class SourceIdentityResolverTest < ActiveSupport::TestCase
     end
   end
 
+  test "source record replay rejects a different entity kind" do
+    first = resolve_contact("stable-tuple", "alice@example.com")
+
+    error = assert_raises(ArgumentError) do
+      SourceIdentityResolver.resolve!(
+        workspace: workspaces(:acme_support),
+        entity_kind: :account,
+        source_namespace: "intercom:primary",
+        source_record_type: :contact,
+        source_record_id: "stable-tuple",
+        keys: { domain: "example.com" }
+      )
+    end
+
+    assert_equal "source identity entity kind does not match", error.message
+    assert_equal first.source_identity, SourceIdentity.find(first.source_identity.id)
+  end
+
   test "retired identity keys do not match" do
     source_identities(:alice_email).replace_keys!(email: "alice.new@example.com")
 

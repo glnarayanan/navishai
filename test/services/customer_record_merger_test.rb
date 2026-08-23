@@ -72,6 +72,29 @@ class CustomerRecordMergerTest < ActiveSupport::TestCase
     )
   end
 
+  test "account unmerge rejects an active contact merge that it would split" do
+    workspace = workspaces(:acme_support)
+    actor = memberships(:owner_support)
+    source_account = accounts(:acme_duplicate)
+    target_account = accounts(:acme)
+    source_contact = contacts(:alice_duplicate)
+    target_contact = contacts(:alice)
+    CustomerRecordMerger.merge!(workspace: workspace, source: source_account, target: target_account, membership: actor)
+    CustomerRecordMerger.merge!(workspace: workspace, source: source_contact, target: target_contact, membership: actor)
+
+    assert_no_difference "AuditEvent.count" do
+      error = assert_raises(ArgumentError) do
+        CustomerRecordMerger.unmerge!(workspace: workspace, source: source_account, membership: actor)
+      end
+      assert_equal "unmerge contact records before splitting their accounts", error.message
+    end
+    assert AccountMerge.active.exists?(source: source_account)
+
+    CustomerRecordMerger.unmerge!(workspace: workspace, source: source_contact, membership: actor)
+    CustomerRecordMerger.unmerge!(workspace: workspace, source: source_account, membership: actor)
+    assert_not AccountMerge.active.exists?(source: source_account)
+  end
+
   test "merge fails closed for another workspace and insufficient role" do
     assert_no_difference [ "AccountMerge.count", "AuditEvent.count" ] do
       assert_raises(ActiveRecord::RecordNotFound) do

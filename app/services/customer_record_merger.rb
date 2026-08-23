@@ -9,7 +9,7 @@ class CustomerRecordMerger
     raise ArgumentError, "records must have the same type" unless source.class == target.class
 
     configuration.fetch(:merge_class).transaction do
-      lock_graph(workspace, source.class)
+      CustomerIdentityGraph.lock!(workspace)
       reviewer = authorized_membership!(workspace, membership)
       relation = workspace.public_send(configuration.fetch(:association))
       source_record = relation.lock.find(source.id)
@@ -35,11 +35,12 @@ class CustomerRecordMerger
     configuration = CONFIGURATION.fetch(source.class)
 
     configuration.fetch(:merge_class).transaction do
-      lock_graph(workspace, source.class)
+      CustomerIdentityGraph.lock!(workspace)
       reviewer = authorized_membership!(workspace, membership)
       source_record = workspace.public_send(configuration.fetch(:association)).find(source.id)
       merge = configuration.fetch(:merge_class).active.lock.find_by!(workspace: workspace, source: source_record)
       merge.update!(unmerged_by: reviewer.user, unmerged_at: Time.current)
+      ensure_active_contact_merges_share_accounts!(workspace) if source_record.is_a?(Account)
       audit!("#{configuration.fetch(:action)}.unmerged", merge, reviewer.user)
       source_record
     end
@@ -60,11 +61,13 @@ class CustomerRecordMerger
   end
   private_class_method :ensure_contact_accounts_match!
 
-  def self.lock_graph(workspace, record_class)
-    value = SourceIdentity.connection.quote("customer-merge:#{workspace.id}:#{record_class.name}")
-    SourceIdentity.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{value}))")
+  def self.ensure_active_contact_merges_share_accounts!(workspace)
+    invalid_merge = workspace.contact_merges.active.includes(source: :account, target: :account).find do |merge|
+      merge.source.account&.canonical != merge.target.account&.canonical
+    end
+    raise ArgumentError, "unmerge contact records before splitting their accounts" if invalid_merge
   end
-  private_class_method :lock_graph
+  private_class_method :ensure_active_contact_merges_share_accounts!
 
   def self.audit!(action, merge, actor)
     AuditEvent.record!(action: action, source: :web, workspace: merge.workspace, actor: actor, subject: merge)

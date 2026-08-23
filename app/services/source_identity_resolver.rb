@@ -22,8 +22,10 @@ class SourceIdentityResolver
 
   def resolve!
     SourceIdentity.transaction do
-      lock_source_record
+      CustomerIdentityGraph.lock!(@workspace)
       if identity = existing_identity
+        raise ArgumentError, "source identity entity kind does not match" unless identity.entity_kind == @entity_kind
+
         return result_for(identity)
       end
 
@@ -135,11 +137,5 @@ class SourceIdentityResolver
       keys.to_h.flat_map do |kind, values|
         Array(values).map { |value| [ kind.to_s, IdentityKeyNormalizer.normalize(kind, value) ] }
       end.uniq
-    end
-
-    def lock_source_record
-      value = [ @workspace.id, @source_namespace, @source_record_type, @source_record_id ].join(":")
-      quoted = SourceIdentity.connection.quote("source-identity:#{value}")
-      SourceIdentity.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{quoted}))")
     end
 end

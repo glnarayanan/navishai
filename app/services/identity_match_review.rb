@@ -1,6 +1,7 @@
 class IdentityMatchReview
   def self.resolve!(workspace:, source_identity:, target:, membership:)
     SourceIdentity.transaction do
+      CustomerIdentityGraph.lock!(workspace)
       reviewer = workspace.memberships.lock.find(membership.id)
       raise Current::RoleAccessDenied unless reviewer.can_manage_work?
 

@@ -40,6 +40,7 @@ class SourceIdentity < ApplicationRecord
     end.to_set
 
     transaction do
+      CustomerIdentityGraph.lock!(workspace)
       lock!
       current_keys = source_identity_keys.current.index_by { |key| [ key.kind, key.normalized_value ] }
       current_keys.except(*desired_keys.to_a).each_value { |key| key.update!(retired_at: Time.current) }
