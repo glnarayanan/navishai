@@ -5,7 +5,7 @@ set -euo pipefail
 
 RUBY_VERSION="${RUBY_VERSION:-3.4.10}"
 GO_VERSION="${GO_VERSION:-1.27.0}"
-PGVECTOR_REF="${PGVECTOR_REF:-v0.8.6}"
+PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
 PG_MAJOR="${PG_MAJOR:-15}"
 APP_ROLE="${APP_ROLE:-user}"
 DEV_DB="${DEV_DB:-navishai_development}"
@@ -129,7 +129,8 @@ install_app_dependencies() {
 
   if [[ -f Gemfile ]]; then
     if [[ -f Gemfile.lock ]]; then
-      bundle install --frozen
+      bundle config set --local frozen true
+      bundle install
     else
       bundle install
     fi
@@ -190,7 +191,9 @@ ensure_pgvector() {
 
   local tmp
   tmp="$(mktemp -d)"
-  git clone --branch "$PGVECTOR_REF" --depth 1 https://github.com/pgvector/pgvector.git "${tmp}/pgvector"
+  git init -q "${tmp}/pgvector"
+  git -C "${tmp}/pgvector" fetch -q --depth 1 https://github.com/pgvector/pgvector.git "$PGVECTOR_REF"
+  git -C "${tmp}/pgvector" checkout -q --detach FETCH_HEAD
   make -C "${tmp}/pgvector" OPTFLAGS=""
   sudo make -C "${tmp}/pgvector" install
   rm -rf "$tmp"
@@ -218,6 +221,14 @@ SQL
   done
 }
 
+prepare_application() {
+  if [[ -x bin/setup ]]; then
+    bin/setup --skip-server
+  else
+    log "no application setup script yet; skipping application preparation"
+  fi
+}
+
 write_orb_guidance() {
   local amp_config_dir="${HOME}/.config/amp"
   local dest="${amp_config_dir}/AGENTS.md"
@@ -235,7 +246,7 @@ ${marker}
 - Ruby ${RUBY_VERSION} and Go ${GO_VERSION} are installed with mise. Login shells load shims from ~/.bash_profile.
 - PostgreSQL ${PG_MAJOR} listens locally. Peer auth works as the unix user \`${APP_ROLE}\`.
 - Databases: ${DEV_DB}, ${TEST_DB}. The vector extension is enabled.
-- The Rails app and Go runner are not bootstrapped yet. When they exist, use repository bin/setup, bundle, and go test rather than inventing extra tooling.
+- Use \`bin/setup --skip-server\`, \`bin/ci\`, and \`go test ./...\` for repository-native setup and checks.
 - Do not start long-lived servers from setup. Declare them in .amp/services.yaml or start them with amp orb service.
 EOF
 }
@@ -252,6 +263,7 @@ main() {
   run_timed "postgres" ensure_postgres
   run_timed "pgvector" ensure_pgvector
   run_timed "databases" ensure_databases
+  run_timed "application" prepare_application
   run_timed "orb guidance" write_orb_guidance
   log "complete ($(($(date +%s) - started))s)"
 }
