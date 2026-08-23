@@ -36,6 +36,19 @@ END;
 $$;
 
 
+--
+-- Name: prevent_helpdesk_record_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_helpdesk_record_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'helpdesk records are append-only';
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -1707,6 +1720,48 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: case_notes case_notes_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER case_notes_append_only BEFORE DELETE OR UPDATE ON public.case_notes FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: case_notes case_notes_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER case_notes_no_truncate BEFORE TRUNCATE ON public.case_notes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: conversation_messages conversation_messages_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_messages_append_only BEFORE DELETE OR UPDATE ON public.conversation_messages FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: conversation_messages conversation_messages_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conversation_messages FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: support_case_status_changes support_case_status_changes_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER support_case_status_changes_append_only BEFORE DELETE OR UPDATE ON public.support_case_status_changes FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: support_case_status_changes support_case_status_changes_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER support_case_status_changes_no_truncate BEFORE TRUNCATE ON public.support_case_status_changes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
 -- Name: account_merges fk_account_merges_source; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2143,4 +2198,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195258'),
 ('20260823195257'),
 ('20260823193334');
-

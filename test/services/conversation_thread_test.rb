@@ -1,6 +1,10 @@
 require "test_helper"
 
 class ConversationThreadTest < ActiveSupport::TestCase
+  test "inbound resume is not a public case workflow command" do
+    refute_respond_to CaseWorkflow, :resume_for_inbound!
+  end
+
   test "start creates a conversation, case, initial history, and audits atomically" do
     now = Time.zone.parse("2026-08-23 12:00:00")
 
@@ -73,6 +77,30 @@ class ConversationThreadTest < ActiveSupport::TestCase
     assert_equal 1.minute.from_now.to_i, conversation.reload.last_message_at.to_i
   end
 
+  test "a delayed inbound message does not reopen a case changed after it occurred" do
+    conversation = start_conversation
+    support_case = conversation.support_case
+
+    %w[waiting_customer resolved closed].each do |status|
+      changed_at = Time.current
+      set_status(support_case, status, at: changed_at)
+
+      assert_no_difference "SupportCaseStatusChange.count" do
+        ConversationThread.append_inbound!(
+          workspace: conversation.workspace,
+          conversation: conversation,
+          author: conversation.contact,
+          body: "Delayed message",
+          occurred_at: changed_at - 1.minute,
+          source: :integration
+        )
+      end
+
+      assert_equal status, support_case.reload.status
+      assert_equal changed_at.to_i, support_case.status_changed_at.to_i
+    end
+  end
+
   test "inbound append fails closed across workspaces and for the wrong contact" do
     conversation = start_conversation
 
@@ -120,13 +148,12 @@ class ConversationThreadTest < ActiveSupport::TestCase
       )
     end
 
-    def set_status(support_case, status)
-      terminal_time = Time.current
+    def set_status(support_case, status, at: Time.current)
       support_case.update!(
         status: status,
-        status_changed_at: terminal_time,
-        resolved_at: %w[resolved closed].include?(status) ? terminal_time : nil,
-        closed_at: status == "closed" ? terminal_time : nil
+        status_changed_at: at,
+        resolved_at: %w[resolved closed].include?(status) ? at : nil,
+        closed_at: status == "closed" ? at : nil
       )
     end
 end

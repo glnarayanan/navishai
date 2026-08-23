@@ -43,7 +43,13 @@ class ConversationThread
         occurred_at: occurred_at
       )
       current_conversation.update!(last_message_at: [ current_conversation.last_message_at, occurred_at ].compact.max)
-      CaseWorkflow.resume_for_inbound!(workspace: workspace, support_case: current_conversation.support_case, source: source, occurred_at: occurred_at)
+      CaseWorkflow.send(
+        :resume_for_inbound!,
+        workspace: workspace,
+        support_case: current_conversation.support_case,
+        message: message,
+        source: source
+      )
       AuditEvent.record!(
         action: "conversation.message_added",
         source: source,

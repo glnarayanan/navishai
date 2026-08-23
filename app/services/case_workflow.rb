@@ -24,10 +24,8 @@ class CaseWorkflow
 
   def self.assign!(workspace:, support_case:, membership:, assignee:)
     SupportCase.transaction do
-      actor = managing_membership!(workspace, membership)
+      actor, target = assignment_memberships!(workspace, membership, assignee)
       current_case = workspace.support_cases.lock.find(support_case.id)
-      target = assignee && workspace.memberships.find(assignee.id)
-      raise Current::RoleAccessDenied if target&.viewer?
       return current_case if current_case.assigned_membership == target
 
       current_case.update!(assigned_membership: target)
@@ -90,12 +88,20 @@ class CaseWorkflow
     end
   end
 
-  def self.resume_for_inbound!(workspace:, support_case:, source:, occurred_at:)
-    current_case = workspace.support_cases.lock.find(support_case.id)
-    return current_case unless INBOUND_RESUMABLE.include?(current_case.status)
+  def self.resume_for_inbound!(workspace:, support_case:, message:, source:)
+    raise ArgumentError, "inbound resume requires an open transaction" unless SupportCase.connection.transaction_open?
 
-    change_status!(current_case, "investigating", reason: "new inbound message", occurred_at: occurred_at, source: source, actor: nil, inbound: true)
+    current_case = workspace.support_cases.lock.find(support_case.id)
+    current_message = workspace.conversation_messages.find(message.id)
+    unless current_message.inbound? && current_message.conversation_id == current_case.conversation_id
+      raise ArgumentError, "inbound resume requires a message from the case conversation"
+    end
+    return current_case unless INBOUND_RESUMABLE.include?(current_case.status)
+    return current_case unless current_message.occurred_at > current_case.status_changed_at
+
+    change_status!(current_case, "investigating", reason: "new inbound message", occurred_at: Time.current, source: source, actor: nil, inbound: true)
   end
+  private_class_method :resume_for_inbound!
 
   def self.change_tag!(workspace:, support_case:, membership:, tag:, adding:)
     SupportCaseTagging.transaction do
@@ -169,4 +175,18 @@ class CaseWorkflow
     end
   end
   private_class_method :managing_membership!
+
+  def self.assignment_memberships!(workspace, membership, assignee)
+    ids = [ membership.id, assignee&.id ].compact.uniq.sort
+    memberships = workspace.memberships.where(id: ids).order(:id).lock.index_by(&:id)
+    raise ActiveRecord::RecordNotFound unless memberships.size == ids.size
+
+    actor = memberships.fetch(membership.id)
+    target = assignee && memberships.fetch(assignee.id)
+    raise Current::RoleAccessDenied unless actor.can_manage_work?
+    raise Current::RoleAccessDenied if target&.viewer?
+
+    [ actor, target ]
+  end
+  private_class_method :assignment_memberships!
 end

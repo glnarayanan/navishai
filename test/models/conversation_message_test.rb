@@ -29,6 +29,25 @@ class ConversationMessageTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::ReadOnlyRecord) { message.destroy! }
   end
 
+  test "database rejects bulk mutation" do
+    conversation = start_conversation
+    message = ConversationThread.append_inbound!(
+      workspace: conversation.workspace, conversation: conversation, author: conversation.contact,
+      body: "Original", occurred_at: Time.current, source: :integration
+    )
+
+    update_error = assert_raises(ActiveRecord::StatementInvalid) do
+      ConversationMessage.transaction(requires_new: true) { ConversationMessage.where(id: message.id).update_all(body: "Changed") }
+    end
+    delete_error = assert_raises(ActiveRecord::StatementInvalid) do
+      ConversationMessage.transaction(requires_new: true) { ConversationMessage.where(id: message.id).delete_all }
+    end
+
+    assert_includes update_error.message, "helpdesk records are append-only"
+    assert_includes delete_error.message, "helpdesk records are append-only"
+    assert_equal "Original", message.reload.body
+  end
+
   test "database rejects a reply from another conversation" do
     first = start_conversation
     second = start_conversation

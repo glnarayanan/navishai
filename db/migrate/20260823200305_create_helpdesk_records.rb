@@ -7,6 +7,7 @@ class CreateHelpdeskRecords < ActiveRecord::Migration[8.1]
     create_case_status_changes
     create_tags
     create_case_notes
+    make_records_append_only
   end
 
   private
@@ -167,5 +168,53 @@ class CreateHelpdeskRecords < ActiveRecord::Migration[8.1]
         column: [ :workspace_id, :support_case_id ],
         primary_key: [ :workspace_id, :id ]
       add_foreign_key :case_notes, :users, column: :author_id
+    end
+
+    def make_records_append_only
+      reversible do |direction|
+        direction.up do
+          execute <<~SQL
+            CREATE FUNCTION prevent_helpdesk_record_mutation()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+              RAISE EXCEPTION 'helpdesk records are append-only';
+            END;
+            $$;
+
+            CREATE TRIGGER conversation_messages_append_only
+            BEFORE UPDATE OR DELETE ON conversation_messages
+            FOR EACH ROW EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+            CREATE TRIGGER conversation_messages_no_truncate
+            BEFORE TRUNCATE ON conversation_messages
+            FOR EACH STATEMENT EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+
+            CREATE TRIGGER support_case_status_changes_append_only
+            BEFORE UPDATE OR DELETE ON support_case_status_changes
+            FOR EACH ROW EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+            CREATE TRIGGER support_case_status_changes_no_truncate
+            BEFORE TRUNCATE ON support_case_status_changes
+            FOR EACH STATEMENT EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+
+            CREATE TRIGGER case_notes_append_only
+            BEFORE UPDATE OR DELETE ON case_notes
+            FOR EACH ROW EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+            CREATE TRIGGER case_notes_no_truncate
+            BEFORE TRUNCATE ON case_notes
+            FOR EACH STATEMENT EXECUTE FUNCTION prevent_helpdesk_record_mutation();
+          SQL
+        end
+
+        direction.down do
+          execute "DROP TRIGGER IF EXISTS case_notes_no_truncate ON case_notes"
+          execute "DROP TRIGGER IF EXISTS case_notes_append_only ON case_notes"
+          execute "DROP TRIGGER IF EXISTS support_case_status_changes_no_truncate ON support_case_status_changes"
+          execute "DROP TRIGGER IF EXISTS support_case_status_changes_append_only ON support_case_status_changes"
+          execute "DROP TRIGGER IF EXISTS conversation_messages_no_truncate ON conversation_messages"
+          execute "DROP TRIGGER IF EXISTS conversation_messages_append_only ON conversation_messages"
+          execute "DROP FUNCTION IF EXISTS prevent_helpdesk_record_mutation()"
+        end
+      end
     end
 end

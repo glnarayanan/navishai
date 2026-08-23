@@ -82,6 +82,25 @@ class CaseWorkflowTest < ActiveSupport::TestCase
     end
   end
 
+  test "assignment locks the target membership before checking its role" do
+    support_case = new_case
+    queries = []
+    subscriber = lambda do |_name, _started, _finished, _id, payload|
+      queries << payload[:sql] if payload[:sql].include?('FROM "memberships"')
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      CaseWorkflow.assign!(
+        workspace: support_case.workspace,
+        support_case: support_case,
+        membership: memberships(:owner_support),
+        assignee: memberships(:owner_support)
+      )
+    end
+
+    assert queries.any? { |sql| sql.include?("ORDER BY") && sql.include?("FOR UPDATE") }
+  end
+
   test "priority, tags, and private notes are audited without their text" do
     support_case = new_case
     actor = memberships(:owner_support)
@@ -110,6 +129,33 @@ class CaseWorkflowTest < ActiveSupport::TestCase
     assert_equal "normal", support_case.reload.priority
   ensure
     AuditEvent.singleton_class.define_method(:record!, original_record) if original_record
+  end
+
+  test "database rejects bulk changes to status history and private notes" do
+    support_case = new_case
+    CaseWorkflow.transition!(
+      workspace: support_case.workspace, support_case: support_case,
+      membership: memberships(:owner_support), to: :triaged, reason: "Reviewed"
+    )
+    note = CaseWorkflow.add_note!(
+      workspace: support_case.workspace, support_case: support_case,
+      membership: memberships(:owner_support), body: "Private diagnosis"
+    )
+    change = support_case.status_changes.order(:id).last
+
+    change_error = assert_raises(ActiveRecord::StatementInvalid) do
+      SupportCaseStatusChange.transaction(requires_new: true) do
+        SupportCaseStatusChange.where(id: change.id).update_all(reason: "Rewritten")
+      end
+    end
+    note_error = assert_raises(ActiveRecord::StatementInvalid) do
+      CaseNote.transaction(requires_new: true) { CaseNote.where(id: note.id).delete_all }
+    end
+
+    assert_includes change_error.message, "helpdesk records are append-only"
+    assert_includes note_error.message, "helpdesk records are append-only"
+    assert_equal "Reviewed", change.reload.reason
+    assert_equal "Private diagnosis", note.reload.body
   end
 
   private
