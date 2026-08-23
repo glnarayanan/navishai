@@ -12,6 +12,13 @@ class Workspace < ApplicationRecord
   has_many :identity_match_candidates, dependent: :restrict_with_exception
   has_many :account_merges, dependent: :restrict_with_exception
   has_many :contact_merges, dependent: :restrict_with_exception
+  has_many :conversations, dependent: :restrict_with_exception
+  has_many :conversation_messages, dependent: :restrict_with_exception
+  has_many :support_cases, dependent: :restrict_with_exception
+  has_many :support_case_status_changes, dependent: :restrict_with_exception
+  has_many :tags, dependent: :restrict_with_exception
+  has_many :support_case_taggings, dependent: :restrict_with_exception
+  has_many :case_notes, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

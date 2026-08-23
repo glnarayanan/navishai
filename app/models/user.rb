@@ -4,6 +4,9 @@ class User < ApplicationRecord
   has_many :sessions, dependent: :destroy
   has_many :workspace_invitations, foreign_key: :invited_by_id, dependent: :restrict_with_exception, inverse_of: :invited_by
   has_many :audit_events, foreign_key: :actor_id, dependent: :restrict_with_exception, inverse_of: :actor
+  has_many :authored_conversation_messages, class_name: "ConversationMessage", foreign_key: :author_user_id, dependent: :restrict_with_exception
+  has_many :support_case_status_changes, foreign_key: :actor_id, dependent: :restrict_with_exception, inverse_of: :actor
+  has_many :case_notes, foreign_key: :author_id, dependent: :restrict_with_exception, inverse_of: :author
 
   has_secure_password
 

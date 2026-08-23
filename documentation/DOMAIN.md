@@ -14,3 +14,11 @@ Use these terms in product copy, code, tests, and design notes.
 - **Merge:** a directed, reversible alias from one Account or Contact to another. Source identities and history stay on their original record.
 - **Canonical record:** the current root reached by following active merge history.
 - **Unmerge:** closure of one active merge. It restores the prior alias split but does not undo facts added after the merge.
+- **Conversation:** one ordered thread with a Contact. Messages in a Conversation are immutable.
+- **Message:** plain-text customer or staff content in a Conversation. Recording an outbound Message does not grant or prove authority to send it.
+- **Case:** the unit of support work for one Conversation. A Case has one current lifecycle state, priority, optional assignee, tags, and private notes.
+- **Case status change:** the durable record of a Case transition, including its prior state, next state, actor, source, time, and reason.
+- **Case note:** private staff context attached to a Case. It is never customer-visible Message content.
+- **Tag:** a Workspace-owned label that staff can apply to Cases.
+- **Resume:** a new inbound Message moves a Case from Waiting on Customer or Resolved to Investigating.
+- **Reopen:** a new inbound Message moves a Closed Case back to Investigating while retaining its assignment, priority, tags, notes, and history.

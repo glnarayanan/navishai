@@ -14,6 +14,19 @@ class AuditEvent < ApplicationRecord
     "contact.created" => {},
     "contact.merged" => {},
     "contact.unmerged" => {},
+    "conversation.created" => {},
+    "conversation.message_added" => { "direction" => %w[inbound outbound], "author_kind" => %w[contact user external] },
+    "case.assigned" => { "assignee_id" => Integer },
+    "case.created" => {},
+    "case.note_added" => {},
+    "case.priority_changed" => { "from_priority" => %w[low normal high urgent], "to_priority" => %w[low normal high urgent] },
+    "case.status_changed" => {
+      "from_status" => %w[new triaged investigating waiting_customer waiting_internal draft_ready awaiting_human_review resolved closed],
+      "to_status" => %w[new triaged investigating waiting_customer waiting_internal draft_ready awaiting_human_review resolved closed]
+    },
+    "case.tag_added" => { "tag_id" => Integer },
+    "case.tag_removed" => { "tag_id" => Integer },
+    "case.unassigned" => {},
     "email_verification.completed" => {},
     "installation.bootstrapped" => {},
     "password_reset.completed" => {},
@@ -21,6 +34,7 @@ class AuditEvent < ApplicationRecord
     "source_identity.ambiguous" => { "entity_kind" => %w[account contact], "candidate_count" => Integer },
     "source_identity.matched" => { "entity_kind" => %w[account contact], "resolution_method" => %w[created deterministic] },
     "source_identity.reviewed" => { "entity_kind" => %w[account contact], "resolution_method" => %w[reviewed] },
+    "tag.created" => {},
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },
     "workspace_invitation.revoked" => { "role" => Membership::ROLES }

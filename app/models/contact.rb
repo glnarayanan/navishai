@@ -5,6 +5,8 @@ class Contact < ApplicationRecord
   has_many :source_identities, dependent: :restrict_with_exception
   has_many :source_merges, class_name: "ContactMerge", foreign_key: :source_id, dependent: :restrict_with_exception
   has_many :target_merges, class_name: "ContactMerge", foreign_key: :target_id, dependent: :restrict_with_exception
+  has_many :conversations, dependent: :restrict_with_exception
+  has_many :authored_conversation_messages, class_name: "ConversationMessage", foreign_key: :author_contact_id, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
 

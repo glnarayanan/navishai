@@ -3,6 +3,7 @@ class Membership < ApplicationRecord
 
   belongs_to :workspace
   belongs_to :user
+  has_many :assigned_support_cases, class_name: "SupportCase", foreign_key: :assigned_membership_id, dependent: :restrict_with_exception
 
   enum :role, ROLES.index_by(&:itself), validate: true
 
