@@ -54,9 +54,15 @@ class AuditEventTest < ActiveSupport::TestCase
         AuditEvent.connection.execute("DELETE FROM audit_events WHERE id = #{event.id}")
       end
     end
+    truncate_error = assert_raises(ActiveRecord::StatementInvalid) do
+      AuditEvent.transaction(requires_new: true) do
+        AuditEvent.connection.execute("TRUNCATE audit_events")
+      end
+    end
 
     assert_includes update_error.message, "audit events are append-only"
     assert_includes delete_error.message, "audit events are append-only"
+    assert_includes truncate_error.message, "audit events are append-only"
   end
 
   test "rejects sensitive or oversized metadata" do
@@ -86,6 +92,40 @@ class AuditEventTest < ActiveSupport::TestCase
     assert_includes unknown_key.errors[:metadata], "contains an unsupported key"
     assert_not structured_value.valid?
     assert_includes structured_value.errors[:metadata], "contains a non-scalar value"
+  end
+
+  test "derives actor kind and rejects unsupported metadata values" do
+    event = AuditEvent.record!(
+      action: "authentication.succeeded",
+      source: :web,
+      actor: users(:owner),
+      actor_kind: :break_glass,
+      metadata: { method: "local" }
+    )
+    unsafe_value = AuditEvent.new(
+      action: "authentication.succeeded",
+      source: :web,
+      actor: users(:owner),
+      actor_kind: :user,
+      occurred_at: Time.current,
+      metadata: { method: "owner@example.com" }
+    )
+
+    assert event.user?
+    assert_not unsafe_value.valid?
+    assert_includes unsafe_value.errors[:metadata], "contains an unsupported value"
+  end
+
+  test "rejects a subject from another workspace" do
+    assert_raises(ArgumentError) do
+      AuditEvent.record!(
+        action: "workspace_invitation.created",
+        source: :web,
+        workspace: workspaces(:beta_support),
+        subject: workspace_invitations(:pending_member),
+        metadata: { role: "member" }
+      )
+    end
   end
 
   test "workspace scope does not return another tenant's events" do

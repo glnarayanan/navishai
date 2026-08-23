@@ -26,6 +26,21 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
     assert_notice "reset instructions sent"
   end
 
+  test "create does not enqueue mail when audit persistence fails" do
+    singleton = AuditEvent.singleton_class
+    original_record = AuditEvent.method(:record!)
+    singleton.define_method(:record!) do |**|
+      raise ActiveRecord::RecordInvalid, AuditEvent.new
+    end
+
+    assert_no_enqueued_emails do
+      post passwords_path, params: { email_address: @user.email_address }
+    end
+    assert_response :unprocessable_content
+  ensure
+    singleton&.define_method(:record!, original_record) if original_record
+  end
+
   test "edit" do
     get edit_password_path(token: @user.password_reset_token)
     assert_response :success

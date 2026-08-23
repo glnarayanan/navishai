@@ -56,6 +56,13 @@ class WorkspaceInvitationTest < ActiveSupport::TestCase
     end
   end
 
+  test "revocation reports whether it changed pending state" do
+    invitation = workspace_invitations(:pending_member)
+
+    assert invitation.revoke!
+    assert_nil invitation.revoke!
+  end
+
   test "marks pending invitations as expired" do
     invitation = workspace_invitations(:pending_member)
     invitation.update_column(:expires_at, 1.minute.ago)

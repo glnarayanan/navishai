@@ -47,7 +47,7 @@ class SecurityBaselineTest < ActionDispatch::IntegrationTest
   end
 
   test "security rate limits have shared conservative defaults" do
-    assert_equal({ to: 10, within: 3.minutes }, SecurityRateLimits::AUTHENTICATION)
-    assert_equal({ to: 5, within: 10.minutes }, SecurityRateLimits::SENSITIVE)
+    assert_equal({ to: 10, within: 3.minutes, scope: :authentication }, SecurityRateLimits::AUTHENTICATION)
+    assert_equal({ to: 5, within: 10.minutes, scope: :sensitive }, SecurityRateLimits::SENSITIVE)
   end
 end

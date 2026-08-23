@@ -12,7 +12,7 @@ class User < ApplicationRecord
   end
 
   generates_token_for :email_verification, expires_in: 2.days do
-    email_address
+    [ email_address, verified_at ]
   end
 
   normalizes :email_address, with: ->(email) { email.strip.downcase }

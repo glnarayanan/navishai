@@ -36,8 +36,9 @@ class WorkspaceInvitationsController < ApplicationController
     return head :forbidden unless Current.require_membership!.can_invite_role?(invitation.role)
 
     invitation.with_lock do
-      invitation.revoke!
-      audit_event("workspace_invitation.revoked", subject: invitation, metadata: { role: invitation.role })
+      if invitation.revoke!
+        audit_event("workspace_invitation.revoked", subject: invitation, metadata: { role: invitation.role })
+      end
     end
     redirect_to workspace_workspace_invitations_path(Current.workspace), notice: "Invitation revoked."
   end

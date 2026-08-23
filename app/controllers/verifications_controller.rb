@@ -9,6 +9,9 @@ class VerificationsController < ApplicationController
 
   def update
     @user.with_lock do
+      User.find_by_token_for!(:email_verification, params[:token])
+      raise ActiveSupport::MessageVerifier::InvalidSignature if @user.verified?
+
       @user.update!(verified_at: Time.current)
       audit_event("email_verification.completed", workspace: nil, actor: @user, subject: @user)
     end

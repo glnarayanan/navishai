@@ -18,6 +18,11 @@ class VerificationsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_session_path
     assert user.reload.verified?
     assert_equal "email_verification.completed", AuditEvent.order(:id).last.action
+
+    assert_no_difference "AuditEvent.count" do
+      patch verification_path(token: token)
+    end
+    assert_redirected_to new_session_path
   end
 
   test "rejects an invalid token" do

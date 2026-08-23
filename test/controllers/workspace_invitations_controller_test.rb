@@ -43,4 +43,16 @@ class WorkspaceInvitationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     assert workspace_invitations(:pending_member).reload.pending?
   end
+
+  test "owner revokes an invitation with one audit event" do
+    invitation = workspace_invitations(:pending_member)
+    sign_in_as users(:owner)
+
+    assert_difference "AuditEvent.count", 1 do
+      delete workspace_workspace_invitation_path(invitation.workspace, invitation)
+    end
+
+    assert invitation.reload.revoked?
+    assert_equal "workspace_invitation.revoked", AuditEvent.order(:id).last.action
+  end
 end
