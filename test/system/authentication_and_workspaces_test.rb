@@ -21,6 +21,9 @@ class AuthenticationAndWorkspacesTest < ApplicationSystemTestCase
     assert_title "Invitations · Acme Support — NavishAI"
     assert_field "Email address"
     assert_selector "select[name='workspace_invitation[role]'] option", count: 5
+
+    page.current_window.resize_to(375, 812)
+    assert_link "Workspaces", visible: true
   end
 
   test "sign-in form remains usable at a narrow viewport" do

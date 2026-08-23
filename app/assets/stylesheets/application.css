@@ -571,10 +571,6 @@ td {
     min-height: 4rem;
   }
 
-  .app-header nav > a {
-    display: none;
-  }
-
   .app-header nav {
     gap: 0.75rem;
   }
@@ -584,7 +580,7 @@ td {
   }
 
   .current-workspace {
-    max-width: 10rem;
+    display: none;
   }
 
   .auth-shell,
@@ -624,12 +620,6 @@ td {
   input,
   select {
     min-height: 3rem;
-  }
-}
-
-@media (max-width: 22rem) {
-  .current-workspace {
-    max-width: 7rem;
   }
 }
 
