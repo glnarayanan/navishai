@@ -1,0 +1,14 @@
+alice:
+  workspace: acme_support
+  account: acme
+  name: Alice Example
+
+alice_duplicate:
+  workspace: acme_support
+  account: acme_duplicate
+  name: Alice Duplicate
+
+bob:
+  workspace: beta_support
+  account: beta
+  name: Bob Example

@@ -1,17 +1,26 @@
 class AuditEvent < ApplicationRecord
   ACTOR_KINDS = %w[user break_glass system anonymous].freeze
   SOURCES = %w[web job task runner integration system].freeze
-  SENSITIVE_KEY = /passw|email|secret|token|key|crypt|salt|certificate|otp|ssn|cvv|cvc/i
+  SENSITIVE_KEY = /passw|email|secret|token|(?:\A|_)key(?:\z|_)|crypt|salt|certificate|otp|ssn|cvv|cvc/i
   MAX_METADATA_BYTES = 8.kilobytes
   EVENT_METADATA = {
     "authentication.failed" => { "method" => %w[local break_glass] },
     "authentication.signed_out" => {},
     "authentication.succeeded" => { "method" => %w[local break_glass] },
+    "account.created" => {},
+    "account.merged" => {},
+    "account.unmerged" => {},
     "break_glass.configured" => {},
+    "contact.created" => {},
+    "contact.merged" => {},
+    "contact.unmerged" => {},
     "email_verification.completed" => {},
     "installation.bootstrapped" => {},
     "password_reset.completed" => {},
     "password_reset.requested" => {},
+    "source_identity.ambiguous" => { "entity_kind" => %w[account contact], "candidate_count" => Integer },
+    "source_identity.matched" => { "entity_kind" => %w[account contact], "resolution_method" => %w[created deterministic] },
+    "source_identity.reviewed" => { "entity_kind" => %w[account contact], "resolution_method" => %w[reviewed] },
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },
     "workspace_invitation.revoked" => { "role" => Membership::ROLES }
@@ -94,9 +103,13 @@ class AuditEvent < ApplicationRecord
     def unsupported_metadata_value?
       allowed_metadata = EVENT_METADATA.fetch(action, {})
       metadata.any? do |key, value|
-        allowed_values = allowed_metadata[key.to_s]
-        allowed_values && !allowed_values.include?(value.to_s)
+        rule = allowed_metadata[key.to_s]
+        rule && !metadata_value_matches?(value, rule)
       end
+    end
+
+    def metadata_value_matches?(value, rule)
+      rule.is_a?(Array) ? rule.include?(value.to_s) : value.is_a?(rule)
     end
 
     def sensitive_key?(value)

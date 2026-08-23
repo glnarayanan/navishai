@@ -1,0 +1,17 @@
+acme_domain:
+  workspace: acme_support
+  source_identity: acme_domain
+  kind: domain
+  normalized_value: acme.example
+
+alice_email:
+  workspace: acme_support
+  source_identity: alice_email
+  kind: email
+  normalized_value: alice@example.com
+
+bob_email:
+  workspace: beta_support
+  source_identity: bob_email
+  kind: email
+  normalized_value: bob@example.com

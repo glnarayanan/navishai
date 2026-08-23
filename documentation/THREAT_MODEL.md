@@ -40,6 +40,7 @@ Browser input, mail and integration payloads, public web content, model output, 
 | Cross-site request, script, framing, or content injection | Rails CSRF protection, strict content security policy, frame denial, same-origin browser isolation, output escaping, and no runtime CDN. |
 | Secret or personal-data disclosure through logs and audit | Parameter filtering plus structured audit metadata that rejects credential-like keys and has a strict size bound. |
 | Audit tampering or ambiguous attribution | PostgreSQL rejects updates and deletes; events record actor kind, source, request, network address, subject, workspace, and stable action names. Direct database administration remains a privileged trust boundary. |
+| Source identity poisoning or cross-workspace merge | Match only exact normalized email or domain keys inside one workspace; block conflicting roots for Manager-or-higher review; preserve source identity, candidate, and merge history. |
 | Duplicate or reordered security actions | Database uniqueness, row locks, signed token state, idempotency keys where a protocol crosses processes, and transactional state-plus-audit writes. |
 | Compromised model, tool, or runtime | Rails never starts runtimes; the runner admits only approved versioned requests and must enforce roots, time, process, credential, and egress bounds. |
 | Unsafe external fetch or webhook | Authenticate webhooks; revalidate DNS and redirects; bound size and time; treat content as evidence, not instruction. These controls arrive with each integration. |
