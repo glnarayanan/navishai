@@ -1,3 +1,5 @@
+require "mail"
+
 class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
   def up
     add_index :memberships, [ :workspace_id, :id, :user_id ], unique: true,
@@ -7,6 +9,7 @@ class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
     add_index :email_threads, [ :workspace_id, :id, :conversation_id ], unique: true,
       name: "index_email_threads_on_workspace_thread_conversation"
     add_column :email_message_links, :reply_to_address, :string
+    backfill_reply_targets
     add_check_constraint :email_message_links,
       "reply_to_address IS NULL OR (length(reply_to_address) <= 254 AND reply_to_address ~ '^[^[:space:]<>@]+@[^[:space:]<>@]+$')",
       name: "email_message_links_reply_to_address"
@@ -107,6 +110,50 @@ class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
   end
 
   private
+    def backfill_reply_targets
+      execute "ALTER TABLE email_message_links DISABLE TRIGGER email_message_links_append_only"
+      rows = select_all(<<~SQL)
+        SELECT email_message_links.id, inbound_email_deliveries.raw_email
+        FROM email_message_links
+        INNER JOIN conversation_messages
+          ON conversation_messages.id = email_message_links.conversation_message_id
+          AND conversation_messages.direction = 'inbound'
+        INNER JOIN inbound_email_deliveries
+          ON inbound_email_deliveries.conversation_message_id = conversation_messages.id
+      SQL
+      rows.each do |row|
+        raw_email = PG::Connection.unescape_bytea(row.fetch("raw_email"))
+        target = reply_target_from(raw_email)
+        next unless target
+
+        execute <<~SQL.squish
+          UPDATE email_message_links
+          SET reply_to_address = #{connection.quote(target)}
+          WHERE id = #{connection.quote(row.fetch("id"))}
+        SQL
+      end
+    ensure
+      execute "ALTER TABLE email_message_links ENABLE TRIGGER email_message_links_append_only"
+    end
+
+    def reply_target_from(raw_email)
+      mail = Mail.read_from_string(raw_email)
+      normalize_email(first_address(mail[:reply_to])) || normalize_email(first_address(mail[:from]))
+    rescue Mail::Field::ParseError, Mail::UnknownEncodingType, EncodingError
+      nil
+    end
+
+    def first_address(field)
+      field.addresses&.first if field.respond_to?(:addresses)
+    rescue Mail::Field::ParseError, ArgumentError
+      nil
+    end
+
+    def normalize_email(value)
+      normalized = value.to_s.strip.downcase
+      normalized if normalized.length <= 254 && normalized.match?(URI::MailTo::EMAIL_REGEXP)
+    end
+
     def protect_delivery_records
       reversible do |direction|
         direction.up do

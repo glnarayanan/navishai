@@ -1,6 +1,15 @@
 class HumanEmailSend
-  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, transport: SharedEmailSmtpTransport.new)
-    new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, transport:).send!
+  DELIVERY_LOCK_NAMESPACE = 24_081_126
+  RecipientPreview = Data.define(:address, :trusted)
+
+  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address: nil, transport: SharedEmailSmtpTransport.new)
+    new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address:, transport:).send!
+  end
+
+  def self.recipient_preview(workspace:, support_case:)
+    current_case = workspace.support_cases.find(support_case.id)
+    thread = workspace.email_threads.find_by!(conversation_id: current_case.conversation_id)
+    recipient_for(workspace:, thread:)
   end
 
   def self.review_unknown!(workspace:, support_case:, membership:, delivery:, outcome:)
@@ -14,7 +23,22 @@ class HumanEmailSend
       current_case = workspace.support_cases.lock.find(support_case.id)
       current = workspace.outbound_email_deliveries.lock.find(delivery.id)
       raise ActiveRecord::RecordNotFound unless current.conversation_id == current_case.conversation_id
-      return current unless current.unknown?
+      review_lock = try_delivery_lock(current.id)
+      raise ArgumentError, "the delivery attempt is still active" unless review_lock
+      if current.sending?
+        current.update!(status: :unknown, failure_code: "unknown_outcome")
+        AuditEvent.record!(
+          action: "email.send_failed", source: :web, workspace: workspace,
+          actor: current.actor_user, subject: current, metadata: { failure_code: "unknown_outcome" }
+        )
+      elsif current.sent? || current.failed?
+        same_outcome = (outcome.to_s == "accepted" && current.sent?) ||
+          (outcome.to_s == "rejected" && current.failed? && current.failure_code == "confirmed_not_sent")
+        raise ArgumentError, "this delivery was already reviewed with the opposite outcome" unless same_outcome
+
+        return current
+      end
+      raise ArgumentError, "this delivery cannot be reviewed" unless current.unknown?
 
       if outcome.to_s == "accepted"
         message = ConversationThread.append_confirmed_outbound!(
@@ -44,13 +68,23 @@ class HumanEmailSend
     end
   end
 
-  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, transport:)
+  def self.try_delivery_lock(delivery_id)
+    value = OutboundEmailDelivery.connection.raw_connection.exec_params(
+      "SELECT pg_try_advisory_xact_lock($1, $2)",
+      [ DELIVERY_LOCK_NAMESPACE, Integer(delivery_id) ]
+    ).getvalue(0, 0)
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+  private_class_method :try_delivery_lock
+
+  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address:, transport:)
     @workspace = workspace
     @support_case = support_case
     @membership = membership
     @body = body
     @draft_version = draft_version.to_s
     @idempotency_key = idempotency_key.to_s
+    @confirmed_recipient_address = confirmed_recipient_address.to_s
     @transport = transport
   end
 
@@ -79,6 +113,8 @@ class HumanEmailSend
   rescue StandardError
     fail!(delivery, "unknown_outcome", retryable: false) if smtp_accepted
     raise
+  ensure
+    release_delivery_lock!
   end
 
   private
@@ -107,8 +143,13 @@ class HumanEmailSend
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
 
-        reply_link = latest_inbound_link(thread)
-        destination = reply_link.reply_to_address || destination_for(thread)
+        reply_link = self.class.send(:latest_inbound_link, thread)
+        recipient = self.class.send(:recipient_for, workspace: @workspace, thread: thread, reply_link: reply_link)
+        unless recipient.trusted || @confirmed_recipient_address == recipient.address
+          raise ArgumentError, "confirm the recipient address before sending"
+        end
+
+        destination = recipient.address
         in_reply_to = reply_link.message_id
         delivery = @workspace.outbound_email_deliveries.create!(
           email_draft: draft,
@@ -128,6 +169,7 @@ class HumanEmailSend
         )
         draft.update!(status: :sending)
         AuditEvent.record!(action: "email.send_started", source: :web, workspace: @workspace, actor: actor.user, subject: delivery)
+        acquire_delivery_lock!(delivery)
         [ delivery, true ]
       end
     end
@@ -173,8 +215,21 @@ class HumanEmailSend
       end
     end
 
-    def destination_for(thread)
-      identities = @workspace.source_identities.matched.where(
+    def self.recipient_for(workspace:, thread:, reply_link: latest_inbound_link(thread))
+      address = reply_link.reply_to_address || fallback_destination(workspace:, thread:)
+      contacts = [ thread.conversation.contact, thread.conversation.contact.canonical ].uniq
+      trusted_addresses = contacts.flat_map do |contact|
+        contact.source_identities.matched
+          .joins(:source_identity_keys)
+          .merge(SourceIdentityKey.current.where(kind: :email))
+          .pluck("source_identity_keys.normalized_value")
+      end
+      RecipientPreview.new(address: address, trusted: trusted_addresses.include?(address))
+    end
+    private_class_method :recipient_for
+
+    def self.fallback_destination(workspace:, thread:)
+      identities = workspace.source_identities.matched.where(
         source_namespace: "shared_email:#{thread.shared_email_inbox_id}",
         source_record_type: "sender"
       )
@@ -183,13 +238,33 @@ class HumanEmailSend
 
       identity.source_record_id
     end
+    private_class_method :fallback_destination
 
-    def latest_inbound_link(thread)
+    def self.latest_inbound_link(thread)
       thread.email_message_links
         .joins(:conversation_message)
         .where(conversation_messages: { direction: :inbound })
         .order("conversation_messages.occurred_at DESC, conversation_messages.id DESC")
         .first!
+    end
+    private_class_method :latest_inbound_link
+
+    def acquire_delivery_lock!(delivery)
+      @locked_delivery_id = delivery.id
+      OutboundEmailDelivery.connection.raw_connection.exec_params(
+        "SELECT pg_advisory_lock($1, $2)",
+        [ DELIVERY_LOCK_NAMESPACE, Integer(delivery.id) ]
+      )
+    end
+
+    def release_delivery_lock!
+      return unless @locked_delivery_id
+
+      OutboundEmailDelivery.connection.raw_connection.exec_params(
+        "SELECT pg_advisory_unlock($1, $2)",
+        [ DELIVERY_LOCK_NAMESPACE, Integer(@locked_delivery_id) ]
+      )
+      @locked_delivery_id = nil
     end
 
     def reply_subject(subject)

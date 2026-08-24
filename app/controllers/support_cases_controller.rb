@@ -37,6 +37,7 @@ class SupportCasesController < ApplicationController
       @contact_emails = identity_values(contact, :email)
       @account_domains = account ? identity_values(account, :domain) : []
       @email_thread = @workspace.email_threads.includes(:shared_email_inbox).find_by(conversation_id: @support_case.conversation_id)
+      @email_recipient = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: @support_case) if @email_thread
       @email_draft = @support_case.email_draft || @workspace.email_drafts.new(
         support_case: @support_case, email_thread: @email_thread, conversation: @support_case.conversation
       )

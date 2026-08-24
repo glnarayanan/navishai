@@ -64,6 +64,31 @@ class HumanEmailSendTest < ApplicationSystemTestCase
     refute_button "Send email"
   end
 
+  test "a human sees and confirms an external Reply-To before sending" do
+    support_case = email_support_case(reply_to: "third-party@example.org")
+    transport = RecordingTransport.new
+    sign_in_in_browser(users(:owner))
+
+    with_transport(transport) do
+      page.current_window.resize_to(390, 844)
+      visit workspace_support_case_path(support_case.workspace, support_case)
+      within ".recipient-review-warning" do
+        assert_text "third-party@example.org"
+        assert_text "not linked to the contact"
+        assert_unchecked_field "I checked this recipient address"
+      end
+      assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+      page.execute_script("arguments[0].scrollIntoView({ block: 'start' })", find(".recipient-review-warning"))
+      save_screenshot Rails.root.join(".amp/in/artifacts/human-email-external-recipient-mobile.png") if ENV["CAPTURE_HUMAN_EMAIL_SEND"]
+
+      find(".email-reply-form textarea[name='body']").set("Checked external reply")
+      check "I checked this recipient address"
+      accept_confirm { click_button "Send email" }
+      assert_text "Email sent."
+      assert_equal "third-party@example.org", transport.deliveries.sole[:to]
+    end
+  end
+
   test "a human reviews an uncertain outcome before a fresh send is allowed" do
     support_case = email_support_case
     sign_in_in_browser(users(:owner))
@@ -73,9 +98,18 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       find(".email-reply-form textarea[name='body']").set("Uncertain answer")
       accept_confirm { click_button "Send email" }
       assert_text "Delivery outcome needs review"
+      delivery = support_case.workspace.outbound_email_deliveries.sole
+      assert_text delivery.to_address
+      assert_text delivery.message_id
+      assert_text "Uncertain answer"
       assert_button "Mark accepted"
       assert_button "Mark not sent"
       refute_button "Send email"
+      page.current_window.resize_to(390, 844)
+      assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+      assert_operator find_button("Mark accepted").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+      assert_operator find_button("Mark not sent").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+      page.execute_script("arguments[0].scrollIntoView({ block: 'start' })", find(".inline-error"))
       save_screenshot Rails.root.join(".amp/in/artifacts/human-email-send-review.png") if ENV["CAPTURE_HUMAN_EMAIL_SEND"]
 
       accept_confirm { click_button "Mark not sent" }
@@ -86,7 +120,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
   end
 
   private
-    def email_support_case
+    def email_support_case(reply_to: nil)
       inbox = workspaces(:acme_support).shared_email_inboxes.create!(
         name: "Support",
         email_address: "support@example.com",
@@ -94,7 +128,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       )
       SharedEmailIntake.receive!(
         inbox: inbox,
-        raw_email: raw_email,
+        raw_email: raw_email(reply_to: reply_to),
         received_at: Time.zone.parse("2026-08-24 12:00:00 UTC")
       ).conversation.support_case
     end
@@ -117,17 +151,17 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       singleton.remove_method :new_without_test_transport
     end
 
-    def raw_email
-      <<~EMAIL.gsub("\n", "\r\n")
-        From: Alice Example <alice@example.net>
-        To: Support <support@example.com>
-        Date: Mon, 24 Aug 2026 11:55:00 +0000
-        Subject: Email help
-        Message-ID: <system-root@example.net>
-        MIME-Version: 1.0
-        Content-Type: text/plain; charset=UTF-8
-
-        Please help
-      EMAIL
+    def raw_email(reply_to: nil)
+      headers = [
+        "From: Alice Example <alice@example.net>",
+        ("Reply-To: #{reply_to}" if reply_to),
+        "To: Support <support@example.com>",
+        "Date: Mon, 24 Aug 2026 11:55:00 +0000",
+        "Subject: Email help",
+        "Message-ID: <system-root@example.net>",
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=UTF-8"
+      ].compact
+      (headers + [ "", "Please help" ]).join("\r\n")
     end
 end

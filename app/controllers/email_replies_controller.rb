@@ -20,7 +20,8 @@ class EmailRepliesController < SupportCasesController
       membership: Current.require_membership!,
       body: params[:body],
       draft_version: params[:draft_version],
-      idempotency_key: params[:idempotency_key]
+      idempotency_key: params[:idempotency_key],
+      confirmed_recipient_address: params[:confirmed_recipient_address]
     )
     if delivery.sent?
       redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Email sent."
@@ -39,7 +40,7 @@ class EmailRepliesController < SupportCasesController
       delivery: delivery,
       outcome: params[:outcome]
     )
-    notice = params[:outcome] == "accepted" ? "Delivery marked as accepted." : "Delivery marked as not sent. You can send a fresh reply."
+    notice = delivery.reload.sent? ? "Delivery marked as accepted." : "Delivery marked as not sent. You can send a fresh reply."
     redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "email-reply"), notice: notice
   end
 

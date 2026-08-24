@@ -67,13 +67,26 @@
         <section class="email-reply" id="email-reply" aria-labelledby="email-reply-title">
           <div>
             <h2 id="email-reply-title">Email reply</h2>
-            <p>Review the exact message, then press Send. Agents and jobs cannot send it.</p>
+            <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
+              <p>Review the frozen delivery attempt before recording its outcome.</p>
+            <% elsif @email_draft.sent? && !@email_follow_up_available %>
+              <p>The sent reply is locked. A new customer message will open a fresh draft.</p>
+            <% else %>
+              <p>Review the exact message, then press Send. Agents and jobs cannot send it.</p>
+            <% end %>
           </div>
           <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
             <div class="inline-error" role="status">
               <strong>Delivery outcome needs review</strong>
               <p>Check the shared mailbox or SMTP logs, then record whether SMTP accepted this exact message. Do not resend before checking.</p>
-              <% if @email_delivery.unknown? && @membership.can_write? %>
+              <dl class="case-facts delivery-review-facts">
+                <div><dt>To</dt><dd><%= @email_delivery.to_address %></dd></div>
+                <div><dt>Subject</dt><dd><%= @email_delivery.subject %></dd></div>
+                <div><dt>Message-ID</dt><dd><code><%= @email_delivery.message_id %></code></dd></div>
+                <div><dt>Attempted</dt><dd><time datetime="<%= @email_delivery.started_at.iso8601 %>"><%= @email_delivery.started_at.to_fs(:long) %></time></dd></div>
+              </dl>
+              <div class="message-body delivery-review-body"><%= simple_format(@email_delivery.body) %></div>
+              <% if @membership.can_write? %>
                 <div class="reply-actions">
                   <%= button_to "Mark accepted",
                     email_delivery_review_workspace_support_case_path(@workspace, @support_case, @email_delivery),
@@ -92,6 +105,17 @@
             <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
               <%= form.hidden_field :idempotency_key, value: @send_token %>
               <%= form.hidden_field :draft_version, value: @email_draft.persisted? ? @email_draft.lock_version : "new" %>
+              <div class="recipient-review <%= "recipient-review-warning" unless @email_recipient.trusted %>">
+                <span>To</span>
+                <strong><%= @email_recipient.address %></strong>
+                <% unless @email_recipient.trusted %>
+                  <p>This Reply-To address is not linked to the contact. Check it before sending customer data.</p>
+                  <label>
+                    <%= check_box_tag :confirmed_recipient_address, @email_recipient.address, false, required: true %>
+                    I checked this recipient address
+                  </label>
+                <% end %>
+              </div>
               <div class="field">
                 <%= form.label :body, "Message" %>
                 <%= form.text_area :body, value: @submitted_email_body || (@email_draft.sent? ? "" : @email_draft.body), required: true, rows: 8, maxlength: EmailDraft::MAX_BODY_BYTES %>

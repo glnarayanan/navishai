@@ -76,7 +76,18 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     )
     transport = RecordingTransport.new
 
-    delivery = send_email(transport: transport)
+    preview = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: @support_case)
+    assert_equal "alice+current@example.org", preview.address
+    refute preview.trusted
+    assert_no_difference "OutboundEmailDelivery.count" do
+      assert_raises(ArgumentError) { send_email(transport: transport) }
+    end
+    assert_no_difference "OutboundEmailDelivery.count" do
+      assert_raises(ArgumentError) do
+        send_email(transport: transport, confirmed_recipient_address: "alice+old@example.org")
+      end
+    end
+    delivery = send_email(transport: transport, confirmed_recipient_address: "alice+current@example.org")
 
     assert_equal "alice+current@example.org", delivery.to_address
     assert_equal "newest@example.net", delivery.in_reply_to_message_id
@@ -242,6 +253,70 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     assert_equal 1, retry_transport.deliveries.size
   end
 
+  test "a crashed sending claim can be reviewed but a live advisory lock cannot" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "A human reply", expected_lock_version: "new"
+    )
+    delivery = @workspace.outbound_email_deliveries.create!(
+      email_draft: draft, shared_email_inbox: @inbox, email_thread: @thread,
+      conversation: @support_case.conversation,
+      actor_membership: @membership, actor_user: @membership.user,
+      idempotency_key: "crashed-send", message_id: "crashed@navishai.local",
+      in_reply_to_message_id: "root@example.net", from_address: @inbox.email_address,
+      to_address: "alice@example.net", subject: "Re: Email help", body: draft.body,
+      started_at: 1.hour.ago
+    )
+    draft.update!(status: :sending)
+    database = ActiveRecord::Base.connection.select_value("SELECT current_database()")
+    lock_connection = PG.connect(dbname: database)
+    lock_connection.exec(
+      "SELECT pg_advisory_lock(#{HumanEmailSend::DELIVERY_LOCK_NAMESPACE}, #{delivery.id})"
+    )
+
+    assert_raises(ArgumentError) do
+      HumanEmailSend.review_unknown!(
+        workspace: @workspace, support_case: @support_case,
+        membership: @membership, delivery: delivery, outcome: "rejected"
+      )
+    end
+    assert delivery.reload.sending?
+
+    lock_connection.exec(
+      "SELECT pg_advisory_unlock(#{HumanEmailSend::DELIVERY_LOCK_NAMESPACE}, #{delivery.id})"
+    )
+    lock_connection.close
+    lock_connection = nil
+    HumanEmailSend.review_unknown!(
+      workspace: @workspace, support_case: @support_case,
+      membership: @membership, delivery: delivery, outcome: "rejected"
+    )
+    assert delivery.reload.failed?
+    assert_equal "confirmed_not_sent", delivery.failure_code
+  ensure
+    lock_connection&.close
+  end
+
+  test "an opposite stale review conflicts while a same-outcome replay is idempotent" do
+    delivery = send_email(transport: RecordingTransport.new(error: Net::ReadTimeout.new("timeout")))
+    HumanEmailSend.review_unknown!(
+      workspace: @workspace, support_case: @support_case,
+      membership: @membership, delivery: delivery, outcome: "accepted"
+    )
+
+    assert_equal delivery, HumanEmailSend.review_unknown!(
+      workspace: @workspace, support_case: @support_case,
+      membership: @membership, delivery: delivery, outcome: "accepted"
+    )
+    assert_raises(ArgumentError) do
+      HumanEmailSend.review_unknown!(
+        workspace: @workspace, support_case: @support_case,
+        membership: @membership, delivery: delivery, outcome: "rejected"
+      )
+    end
+    assert delivery.reload.sent?
+  end
+
   test "a persistence failure after SMTP acceptance becomes review required" do
     transport = RecordingTransport.new
     connection = ConversationMessage.connection
@@ -283,7 +358,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
   end
 
   private
-    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new", transport: RecordingTransport.new)
+    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new", confirmed_recipient_address: nil, transport: RecordingTransport.new)
       HumanEmailSend.send!(
         workspace: @workspace,
         support_case: support_case,
@@ -291,6 +366,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         body: body,
         draft_version: draft_version,
         idempotency_key: key,
+        confirmed_recipient_address: confirmed_recipient_address,
         transport: transport
       )
     end

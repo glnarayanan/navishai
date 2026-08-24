@@ -57,6 +57,39 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, transport.deliveries.size
   end
 
+  test "an untrusted Reply-To is shown and requires an explicit recipient check" do
+    intake = SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(
+        message_id: "external-reply-to@example.net",
+        reply_to: "third-party@example.org"
+      ),
+      received_at: Time.zone.parse("2026-08-24 12:05:00 UTC")
+    )
+    support_case = intake.conversation.support_case
+    get workspace_support_case_path(@workspace, support_case)
+    assert_response :success
+    assert_select ".recipient-review-warning", text: /third-party@example\.org/
+    assert_select "input[name='confirmed_recipient_address'][value='third-party@example.org'][required]"
+
+    transport = RecordingTransport.new
+    with_transport(transport) do
+      assert_no_difference "OutboundEmailDelivery.count" do
+        post email_send_workspace_support_case_path(@workspace, support_case), params: {
+          body: "Checked answer", draft_version: "new", idempotency_key: "unchecked-recipient"
+        }
+      end
+      assert_response :unprocessable_content
+
+      post email_send_workspace_support_case_path(@workspace, support_case), params: {
+        body: "Checked answer", draft_version: "new", idempotency_key: "checked-recipient",
+        confirmed_recipient_address: "third-party@example.org"
+      }
+    end
+    assert_redirected_to workspace_support_case_path(@workspace, support_case)
+    assert_equal "third-party@example.org", transport.deliveries.sole[:to]
+  end
+
   test "blank content returns 422 with the reply form preserved" do
     assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
       post email_send_workspace_support_case_path(@workspace, @support_case),
@@ -77,6 +110,11 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     delivery = @workspace.outbound_email_deliveries.sole
     assert delivery.unknown?
 
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select ".delivery-review-facts", text: /alice@example\.net/
+    assert_select ".delivery-review-facts", text: /#{Regexp.escape(delivery.message_id)}/
+    assert_select ".delivery-review-body", text: /Uncertain send/
+
     viewer = User.create!(email_address: "delivery-review-viewer@example.com", password: "password12345", verified_at: Time.current)
     Membership.create!(workspace: @workspace, user: viewer, role: :viewer)
     sign_in_as viewer
@@ -91,6 +129,11 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
     assert delivery.reload.failed?
     assert delivery.email_draft.reload.ready?
+
+    post email_delivery_review_workspace_support_case_path(@workspace, @support_case, delivery), params: { outcome: "accepted" }
+    assert_response :unprocessable_content
+    assert_select ".command-error", text: /opposite outcome/i
+    assert delivery.reload.failed?
   end
 
   test "a stale draft cannot overwrite or send a newer edit" do
@@ -172,17 +215,17 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
       singleton.remove_method :new_without_test_transport
     end
 
-    def raw_email
-      <<~EMAIL.gsub("\n", "\r\n")
-        From: Alice Example <alice@example.net>
-        To: Support <support@example.com>
-        Date: Mon, 24 Aug 2026 11:55:00 +0000
-        Subject: Email help
-        Message-ID: <controller-root@example.net>
-        MIME-Version: 1.0
-        Content-Type: text/plain; charset=UTF-8
-
-        Please help
-      EMAIL
+    def raw_email(message_id: "controller-root@example.net", reply_to: nil)
+      headers = [
+        "From: Alice Example <alice@example.net>",
+        ("Reply-To: #{reply_to}" if reply_to),
+        "To: Support <support@example.com>",
+        "Date: Mon, 24 Aug 2026 11:55:00 +0000",
+        "Subject: Email help",
+        "Message-ID: <#{message_id}>",
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=UTF-8"
+      ].compact
+      (headers + [ "", "Please help" ]).join("\r\n")
     end
 end
