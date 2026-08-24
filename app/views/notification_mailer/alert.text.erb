@@ -1,0 +1,7 @@
+<%= @notification.title %>
+
+<%= @notification.category.humanize %> in <%= @workspace.name %>, <%= time_ago_in_words(@notification.occurred_at) %> ago.
+
+Open in NavishAI: <%= @destination %>
+
+This alert contains no customer content. Sign in to review the retained work record.
