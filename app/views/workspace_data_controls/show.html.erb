@@ -46,4 +46,38 @@
       <%= form.submit "Save retention policy", class: "button button-primary" %>
     <% end %>
   </section>
+
+  <section class="section-block data-policy-form-section" aria-labelledby="content-expiry-title">
+    <div>
+      <h2 id="content-expiry-title">Content expiry</h2>
+      <p>NavishAI runs expiry each day. It removes object bytes and external Memory entries before replacing content older than the current cutoff with retained tombstones. Security and approval audits stay unchanged.</p>
+    </div>
+    <% if @policy.content_retention_days %>
+      <%= button_to "Run content expiry now", expire_workspace_data_controls_path(Current.workspace),
+        class: "button button-secondary",
+        form: { data: { turbo_confirm: "Expire all customer content older than #{@policy.content_retention_days} days? This cannot be undone." } } %>
+    <% else %>
+      <p class="empty-state">Choose a customer content period before running expiry.</p>
+    <% end %>
+
+    <% if @expiry_runs.any? %>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Requested</th><th scope="col">Cutoff</th><th scope="col">State</th><th scope="col">Records</th></tr></thead>
+          <tbody>
+            <% @expiry_runs.each do |run| %>
+              <tr>
+                <td><%= run.created_at.to_fs(:long) %></td>
+                <td><%= run.cutoff_at.to_fs(:long) %></td>
+                <td><%= run.failed? ? "Failed: #{run.failure_code.humanize}" : run.status.humanize %></td>
+                <td><%= run.completed? ? number_with_delimiter(run.expired_record_count) : "—" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="empty-state">No content expiry runs yet.</p>
+    <% end %>
+  </section>
 </main>

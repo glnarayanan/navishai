@@ -157,6 +157,10 @@ The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies
 
 GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
 
+### Retention expiry
+
+Owners set separate customer-content and security-audit periods under **Data controls**. When content retention is enabled, the production queue requests an expiry run each day. An Owner can also request one from the same page. Each run first removes expired attachment objects and indexed Memory documents. It then replaces expired plaintext and source identifiers in PostgreSQL with fixed tombstones while retaining tenant links, trusted times, outcomes, and audit history. A failed external removal stops database expiry and stays visible for retry on the next run. Back up before shortening retention: completed expiry cannot be undone.
+
 Run focused checks while working:
 
 ```sh

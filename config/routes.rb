@@ -6,7 +6,9 @@ Rails.application.routes.draw do
   end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
-    resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls"
+    resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls" do
+      post :expire
+    end
     resources :notifications, only: %i[ index update ] do
       post :read_all, on: :collection
     end
