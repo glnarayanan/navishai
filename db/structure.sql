@@ -84,12 +84,24 @@ BEGIN
       RAISE EXCEPTION 'used service calendar settings are immutable';
     END IF;
   ELSE
-    calendar_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.service_calendar_id ELSE OLD.service_calendar_id END;
-    SELECT EXISTS (
-      SELECT 1 FROM case_slas
-      JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
-      WHERE sla_policies.service_calendar_id = calendar_id
-    ) INTO referenced;
+    IF TG_OP = 'UPDATE' THEN
+      PERFORM 1 FROM service_calendars
+      WHERE id IN (OLD.service_calendar_id, NEW.service_calendar_id)
+      ORDER BY id FOR UPDATE;
+      SELECT EXISTS (
+        SELECT 1 FROM case_slas
+        JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+        WHERE sla_policies.service_calendar_id IN (OLD.service_calendar_id, NEW.service_calendar_id)
+      ) INTO referenced;
+    ELSE
+      calendar_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.service_calendar_id ELSE OLD.service_calendar_id END;
+      PERFORM 1 FROM service_calendars WHERE id = calendar_id FOR UPDATE;
+      SELECT EXISTS (
+        SELECT 1 FROM case_slas
+        JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+        WHERE sla_policies.service_calendar_id = calendar_id
+      ) INTO referenced;
+    END IF;
     IF referenced THEN
       RAISE EXCEPTION 'holidays on a used service calendar are immutable';
     END IF;

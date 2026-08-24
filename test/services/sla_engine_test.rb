@@ -265,6 +265,28 @@ class SlaEngineTest < ActiveSupport::TestCase
     end
   end
 
+  test "a holiday cannot move from an unused calendar onto a used calendar" do
+    create_case(at: @monday)
+    unused_calendar = ServiceCalendar.create!(
+      workspace: @workspace,
+      name: "Unused hours",
+      time_zone: "UTC",
+      weekly_hours: { "monday" => [ [ "09:00", "17:00" ] ] }
+    )
+    holiday = unused_calendar.holidays.create!(
+      workspace: @workspace,
+      date: @monday.to_date,
+      name: "Moved holiday"
+    )
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ServiceCalendarHoliday.transaction(requires_new: true) do
+        holiday.update!(service_calendar: @calendar)
+      end
+    end
+    assert_equal unused_calendar, holiday.reload.service_calendar
+  end
+
   test "replacement configuration serves new cases while a paused case keeps its clock" do
     old_case = create_case(at: @monday)
     old_sla = old_case.case_sla
