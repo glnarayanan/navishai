@@ -21,6 +21,8 @@ class EmailRepliesController < SupportCasesController
       body: params[:body],
       draft_version: params[:draft_version],
       idempotency_key: params[:idempotency_key],
+      expected_recipient_address: params[:expected_recipient_address],
+      expected_inbound_message_id: params[:expected_inbound_message_id],
       confirmed_recipient_address: params[:confirmed_recipient_address]
     )
     if delivery.sent?

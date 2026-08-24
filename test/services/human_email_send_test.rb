@@ -87,12 +87,44 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         send_email(transport: transport, confirmed_recipient_address: "alice+old@example.org")
       end
     end
+    assert_no_difference "OutboundEmailDelivery.count" do
+      assert_raises(ArgumentError) do
+        send_email(
+          transport: transport,
+          expected_recipient_address: "alice+old@example.org",
+          expected_inbound_message_id: preview.inbound_message_id,
+          confirmed_recipient_address: "alice+current@example.org"
+        )
+      end
+    end
     delivery = send_email(transport: transport, confirmed_recipient_address: "alice+current@example.org")
 
     assert_equal "alice+current@example.org", delivery.to_address
     assert_equal "newest@example.net", delivery.in_reply_to_message_id
     assert_equal "alice+current@example.org", transport.deliveries.sole[:to]
     assert_equal "newest@example.net", transport.deliveries.sole[:in_reply_to]
+  end
+
+  test "a new inbound after preview blocks a stale send even when the recipient is unchanged" do
+    preview = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: @support_case)
+    SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(message_id: "after-preview@example.net", references: "root@example.net"),
+      received_at: Time.zone.parse("2026-08-24 12:10:00 UTC")
+    )
+    transport = RecordingTransport.new
+
+    assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+      error = assert_raises(ArgumentError) do
+        send_email(
+          expected_recipient_address: preview.address,
+          expected_inbound_message_id: preview.inbound_message_id,
+          transport: transport
+        )
+      end
+      assert_match(/new customer message/i, error.message)
+    end
+    assert_empty transport.deliveries
   end
 
   test "a fresh inbound after a sent reply permits a second fresh human send" do
@@ -358,7 +390,8 @@ class HumanEmailSendTest < ActiveSupport::TestCase
   end
 
   private
-    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new", confirmed_recipient_address: nil, transport: RecordingTransport.new)
+    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new", expected_recipient_address: nil, expected_inbound_message_id: nil, confirmed_recipient_address: nil, transport: RecordingTransport.new)
+      preview = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: support_case)
       HumanEmailSend.send!(
         workspace: @workspace,
         support_case: support_case,
@@ -366,6 +399,8 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         body: body,
         draft_version: draft_version,
         idempotency_key: key,
+        expected_recipient_address: expected_recipient_address || preview.address,
+        expected_inbound_message_id: expected_inbound_message_id || preview.inbound_message_id,
         confirmed_recipient_address: confirmed_recipient_address,
         transport: transport
       )

@@ -105,6 +105,8 @@
             <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
               <%= form.hidden_field :idempotency_key, value: @send_token %>
               <%= form.hidden_field :draft_version, value: @email_draft.persisted? ? @email_draft.lock_version : "new" %>
+              <%= form.hidden_field :expected_recipient_address, value: @email_recipient.address %>
+              <%= form.hidden_field :expected_inbound_message_id, value: @email_recipient.inbound_message_id %>
               <div class="recipient-review <%= "recipient-review-warning" unless @email_recipient.trusted %>">
                 <span>To</span>
                 <strong><%= @email_recipient.address %></strong>

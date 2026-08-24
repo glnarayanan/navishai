@@ -46,7 +46,7 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     with_transport(transport) do
       assert_difference [ "OutboundEmailDelivery.sent.count", "ConversationMessage.outbound.count" ], 1 do
         post email_send_workspace_support_case_path(@workspace, @support_case),
-          params: { body: "Exact reviewed answer", draft_version: "new", idempotency_key: "browser-send" }
+          params: recipient_binding.merge(body: "Exact reviewed answer", draft_version: "new", idempotency_key: "browser-send")
       end
     end
 
@@ -71,23 +71,51 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select ".recipient-review-warning", text: /third-party@example\.org/
     assert_select "input[name='confirmed_recipient_address'][value='third-party@example.org'][required]"
+    binding = recipient_binding(support_case)
+    assert_select "input[name='expected_recipient_address'][value='third-party@example.org']"
+    assert_select "input[name='expected_inbound_message_id'][value='external-reply-to@example.net']"
 
     transport = RecordingTransport.new
     with_transport(transport) do
       assert_no_difference "OutboundEmailDelivery.count" do
-        post email_send_workspace_support_case_path(@workspace, support_case), params: {
+        post email_send_workspace_support_case_path(@workspace, support_case), params: binding.merge(
           body: "Checked answer", draft_version: "new", idempotency_key: "unchecked-recipient"
-        }
+        )
       end
       assert_response :unprocessable_content
 
-      post email_send_workspace_support_case_path(@workspace, support_case), params: {
+      post email_send_workspace_support_case_path(@workspace, support_case), params: binding.merge(
         body: "Checked answer", draft_version: "new", idempotency_key: "checked-recipient",
         confirmed_recipient_address: "third-party@example.org"
-      }
+      )
     end
     assert_redirected_to workspace_support_case_path(@workspace, support_case)
     assert_equal "third-party@example.org", transport.deliveries.sole[:to]
+  end
+
+  test "a new inbound after render blocks the stale recipient and parent binding" do
+    binding = recipient_binding
+    SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(
+        message_id: "new-after-render@example.net",
+        references: "controller-root@example.net"
+      ),
+      received_at: Time.zone.parse("2026-08-24 12:05:00 UTC")
+    )
+    transport = RecordingTransport.new
+
+    with_transport(transport) do
+      assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+        post email_send_workspace_support_case_path(@workspace, @support_case), params: binding.merge(
+          body: "Stale page reply", draft_version: "new", idempotency_key: "stale-conversation"
+        )
+      end
+    end
+
+    assert_response :unprocessable_content
+    assert_select ".command-error", text: /new customer message/i
+    assert_empty transport.deliveries
   end
 
   test "blank content returns 422 with the reply form preserved" do
@@ -105,7 +133,7 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     transport = RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))
     with_transport(transport) do
       post email_send_workspace_support_case_path(@workspace, @support_case),
-        params: { body: "Uncertain send", draft_version: "new", idempotency_key: "uncertain-send" }
+        params: recipient_binding.merge(body: "Uncertain send", draft_version: "new", idempotency_key: "uncertain-send")
     end
     delivery = @workspace.outbound_email_deliveries.sole
     assert delivery.unknown?
@@ -205,6 +233,14 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
   end
 
   private
+    def recipient_binding(support_case = @support_case)
+      preview = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: support_case)
+      {
+        expected_recipient_address: preview.address,
+        expected_inbound_message_id: preview.inbound_message_id
+      }
+    end
+
     def with_transport(transport)
       singleton = SharedEmailSmtpTransport.singleton_class
       singleton.alias_method :new_without_test_transport, :new
@@ -215,7 +251,7 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
       singleton.remove_method :new_without_test_transport
     end
 
-    def raw_email(message_id: "controller-root@example.net", reply_to: nil)
+    def raw_email(message_id: "controller-root@example.net", reply_to: nil, references: nil)
       headers = [
         "From: Alice Example <alice@example.net>",
         ("Reply-To: #{reply_to}" if reply_to),
@@ -223,6 +259,7 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
         "Date: Mon, 24 Aug 2026 11:55:00 +0000",
         "Subject: Email help",
         "Message-ID: <#{message_id}>",
+        ("References: <#{references}>" if references),
         "MIME-Version: 1.0",
         "Content-Type: text/plain; charset=UTF-8"
       ].compact

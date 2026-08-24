@@ -1,9 +1,9 @@
 class HumanEmailSend
   DELIVERY_LOCK_NAMESPACE = 24_081_126
-  RecipientPreview = Data.define(:address, :trusted)
+  RecipientPreview = Data.define(:address, :trusted, :inbound_message_id)
 
-  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address: nil, transport: SharedEmailSmtpTransport.new)
-    new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address:, transport:).send!
+  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address: nil, expected_inbound_message_id: nil, confirmed_recipient_address: nil, transport: SharedEmailSmtpTransport.new)
+    new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address:, expected_inbound_message_id:, confirmed_recipient_address:, transport:).send!
   end
 
   def self.recipient_preview(workspace:, support_case:)
@@ -77,13 +77,15 @@ class HumanEmailSend
   end
   private_class_method :try_delivery_lock
 
-  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, confirmed_recipient_address:, transport:)
+  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address:, expected_inbound_message_id:, confirmed_recipient_address:, transport:)
     @workspace = workspace
     @support_case = support_case
     @membership = membership
     @body = body
     @draft_version = draft_version.to_s
     @idempotency_key = idempotency_key.to_s
+    @expected_recipient_address = expected_recipient_address.to_s
+    @expected_inbound_message_id = expected_inbound_message_id.to_s
     @confirmed_recipient_address = confirmed_recipient_address.to_s
     @transport = transport
   end
@@ -145,6 +147,9 @@ class HumanEmailSend
 
         reply_link = self.class.send(:latest_inbound_link, thread)
         recipient = self.class.send(:recipient_for, workspace: @workspace, thread: thread, reply_link: reply_link)
+        unless @expected_recipient_address == recipient.address && @expected_inbound_message_id == reply_link.message_id
+          raise ArgumentError, "A new customer message arrived. Review the latest recipient and conversation before sending."
+        end
         unless recipient.trusted || @confirmed_recipient_address == recipient.address
           raise ArgumentError, "confirm the recipient address before sending"
         end
@@ -224,7 +229,11 @@ class HumanEmailSend
           .merge(SourceIdentityKey.current.where(kind: :email))
           .pluck("source_identity_keys.normalized_value")
       end
-      RecipientPreview.new(address: address, trusted: trusted_addresses.include?(address))
+      RecipientPreview.new(
+        address: address,
+        trusted: trusted_addresses.include?(address),
+        inbound_message_id: reply_link.message_id
+      )
     end
     private_class_method :recipient_for
 
