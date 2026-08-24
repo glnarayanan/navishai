@@ -2,6 +2,7 @@ package runtimecatalog
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,5 +84,54 @@ func TestDetectReportsOnlyNonSecretAuthenticatedAccountMetadata(t *testing.T) {
 	installation := catalog.Detect(context.Background())[0]
 	if installation.HealthStatus != "available" || installation.AccountMetadata["authentication"] != "test_subscription" {
 		t.Fatalf("unexpected account detection %#v", installation)
+	}
+}
+
+func TestDetectUsesAdapterAccountValidatorAndNamedEnvironment(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "json-runtime")
+	script := "#!/bin/sh\nif [ \"$1\" = auth ] && [ \"$ACCOUNT_HOME\" = /approved/account ]; then printf '{\"authenticated\":true}\\n'; else printf 'runtime 2.1.241\\n'; fi\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	t.Setenv("ACCOUNT_HOME", "/approved/account")
+	catalog, err := New([]Definition{{
+		AdapterKey: "json_fixture", ProtocolVersion: "v1", ExecutableNames: []string{"json-runtime"},
+		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth", "status"},
+		AccountValidator:   func(output string) bool { return output == `{"authenticated":true}` },
+		AccountEnvironment: []string{"ACCOUNT_HOME"}, AccountMetadata: map[string]string{"authentication": "test_subscription"},
+		MinimumVersion: "2.1.200", MaximumVersion: "2.1.299",
+	}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := catalog.Detect(context.Background())[0]
+	if installation.HealthStatus != "available" || installation.AccountMetadata["authentication"] != "test_subscription" {
+		t.Fatalf("unexpected account detection %#v", installation)
+	}
+}
+
+func TestNewRejectsAmbiguousAccountValidatorsAndUnsafeEnvironmentNames(t *testing.T) {
+	base := Definition{
+		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture"},
+		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth"},
+		AccountMetadata: map[string]string{"authentication": "fixture"},
+	}
+	definitions := []Definition{
+		base,
+		base,
+		base,
+	}
+	definitions[0].AccountMarker = "authenticated"
+	definitions[0].AccountValidator = func(string) bool { return true }
+	definitions[1].AccountValidator = func(string) bool { return true }
+	definitions[1].AccountEnvironment = []string{"NAVISHAI_SECRET"}
+	definitions[2].AccountValidator = func(string) bool { return true }
+	definitions[2].AccountEnvironment = []string{"ACCOUNT_HOME", "ACCOUNT_HOME"}
+	for _, definition := range definitions {
+		if _, err := New([]Definition{definition}, time.Now); !errors.Is(err, ErrInvalidDefinition) {
+			t.Fatalf("expected invalid definition error for %#v, got %v", definition, err)
+		}
 	}
 }
