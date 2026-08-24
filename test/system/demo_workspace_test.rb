@@ -17,6 +17,7 @@ class DemoWorkspaceTest < ApplicationSystemTestCase
     page.current_window.resize_to(1440, 1000)
     assert_text "SSO access fails for the onboarding team"
     assert_text "Weekly usage export"
+    assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     visit workspace_account_path(workspace, workspace.accounts.find_by!(name: "Northstar Labs"))
     assert_text "Deterministic signals"
     assert_text "Renewal-risk work"

@@ -44,6 +44,14 @@ class AccountHealthTest < ApplicationSystemTestCase
     assert_text "Separate deterministic facts from inference"
   end
 
+  test "account rows keep list and link semantics" do
+    workspace = workspaces(:acme_support)
+    sign_in_in_browser(users(:owner))
+    visit workspace_accounts_path(workspace)
+
+    assert_selector "[role='list'] [role='listitem'] a", text: accounts(:acme).name
+  end
+
   private
     def sign_in_in_browser(user)
       visit new_session_path
