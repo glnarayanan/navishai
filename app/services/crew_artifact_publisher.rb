@@ -60,7 +60,7 @@ class CrewArtifactPublisher
         body: bounded_text(payload.fetch("body"), 50.kilobytes, "Body"),
         uncertainty: bounded_text(payload.fetch("uncertainty"), 4_000, "Uncertainty"),
         review_outcome: review_outcome!(kind, payload),
-        citations: citations!(task, payload.fetch("citations")),
+        citations: citations!(task, run, payload.fetch("citations")),
         conflicts: conflicts!(payload.fetch("conflicts")),
         change_requests: change_requests!(kind, payload),
         payload_digest: digest
@@ -116,7 +116,7 @@ class CrewArtifactPublisher
       target
     end
 
-    def citations!(task, values)
+    def citations!(task, run, values)
       unless values.is_a?(Array) && values.size.in?(1..20)
         raise InvalidOutput, "Citations must contain between 1 and 20 entries."
       end
@@ -127,12 +127,12 @@ class CrewArtifactPublisher
         kind = value.fetch("kind").to_s
         locator = bounded_text(value.fetch("locator"), 2_000, "Citation locator")
         label = bounded_text(value.fetch("label"), 200, "Citation label")
-        validate_locator!(task, kind, locator)
+        validate_locator!(task, run, kind, locator)
         { "kind" => kind, "locator" => locator, "label" => label }
       end
     end
 
-    def validate_locator!(task, kind, locator)
+    def validate_locator!(task, run, kind, locator)
       case kind
       when "knowledge"
         match = locator.match(%r{\Aknowledge://sources/([0-9a-f-]{36})/versions/(\d+)\z})
@@ -156,6 +156,11 @@ class CrewArtifactPublisher
         result = match && @workspace.public_web_search_results.joins(:public_web_search)
           .find_by(citation_key: match[1], public_web_searches: { crew_task_id: task.id, status: "completed" })
         raise InvalidOutput, "Public-web citation is unavailable." unless result
+      when "memory"
+        match = locator.match(%r{\Amemory://([0-9a-f-]{36})\z})
+        selection = match && run.execution_memory_selections.joins(:memory_record)
+          .find_by(memory_records: { memory_key: match[1] })
+        raise InvalidOutput, "Memory citation is unavailable." unless selection
       else
         raise InvalidOutput, "Citation type is not supported."
       end

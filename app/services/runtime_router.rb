@@ -5,18 +5,21 @@ class RuntimeRouter
     :installation, :profile_key, :reason, :detail, :data_classes, :max_input_units, :max_output_units
   )
 
-  def self.resolve!(workspace:, profile_version:)
-    new(workspace:).resolve!(profile_version:)
+  def self.resolve!(workspace:, profile_version:, additional_data_classes: [])
+    new(workspace:).resolve!(profile_version:, additional_data_classes:)
   end
 
   def initialize(workspace:)
     @workspace = workspace
   end
 
-  def resolve!(profile_version:)
+  def resolve!(profile_version:, additional_data_classes: [])
     version = @workspace.agent_profile_versions.includes(:agent_profile).find(profile_version.id)
     profiles = [ version.runtime_profile_key, *version.fallback_profile_keys ]
-    data_classes = data_classes_for(version)
+    unless (additional_data_classes - RuntimeInstallation::DATA_CLASSES.keys).empty?
+      raise ArgumentError, "additional data class is invalid"
+    end
+    data_classes = (data_classes_for(version) + additional_data_classes).uniq.sort
     required_capabilities = [ "structured_output" ]
     required_capabilities << "tool_calling" if version.allowed_tools.any?
     rejections = []

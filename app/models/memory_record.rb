@@ -22,6 +22,7 @@ class MemoryRecord < ApplicationRecord
   has_one :memory_index_entry, dependent: :restrict_with_exception
   has_one :accepted_memory_proposal, class_name: "MemoryProposal", foreign_key: :published_memory_record_id,
     dependent: :restrict_with_exception, inverse_of: :published_memory_record
+  has_many :execution_memory_selections, dependent: :restrict_with_exception
 
   enum :memory_type, MEMORY_TYPES.index_by(&:itself), validate: true, prefix: true
   enum :scope_kind, SCOPE_KINDS.index_by(&:itself), validate: true, prefix: true

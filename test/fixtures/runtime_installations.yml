@@ -42,6 +42,7 @@ acme_scripted:
     - case_content
     - customer_identity
     - public_web_query
+    - retrieved_memory
   profile_keys:
     - fast
     - thorough

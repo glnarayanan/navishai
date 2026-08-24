@@ -417,6 +417,22 @@ $$;
 
 
 --
+-- Name: protect_execution_memory_selection(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_memory_selection() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'execution memory selections are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_execution_routing_snapshot(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1142,7 +1158,7 @@ DECLARE metadata_key text;
 BEGIN
   IF NEW.allowed_role_keys <@ '["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"]'::jsonb = false OR
      NEW.allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record", "web_extract"]'::jsonb = false OR
-     NEW.allowed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query"]'::jsonb = false OR
+     NEW.allowed_data_classes <@ '["case_content","customer_identity","account_context","approved_knowledge","public_web_query","retrieved_memory"]'::jsonb = false OR
      NEW.allowed_role_keys <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_role_keys)) values), '[]'::jsonb) OR
      NEW.allowed_tools <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_tools)) values), '[]'::jsonb) OR
      NEW.allowed_data_classes <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_data_classes)) values), '[]'::jsonb) OR
@@ -2187,6 +2203,42 @@ ALTER SEQUENCE public.execution_events_id_seq OWNED BY public.execution_events.i
 
 
 --
+-- Name: execution_memory_selections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.execution_memory_selections (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    execution_run_id bigint NOT NULL,
+    memory_record_id bigint NOT NULL,
+    rank integer NOT NULL,
+    relevance_score numeric(6,5) NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT execution_memory_selections_bounds CHECK ((((rank >= 1) AND (rank <= 8)) AND ((relevance_score >= 0.00000) AND (relevance_score <= 1.00000))))
+);
+
+
+--
+-- Name: execution_memory_selections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.execution_memory_selections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: execution_memory_selections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.execution_memory_selections_id_seq OWNED BY public.execution_memory_selections.id;
+
+
+--
 -- Name: execution_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2229,7 +2281,7 @@ CREATE TABLE public.execution_runs (
     max_output_units bigint DEFAULT 25000 NOT NULL,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
-    CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
+    CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
@@ -3782,6 +3834,13 @@ ALTER TABLE ONLY public.execution_events ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: execution_memory_selections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_memory_selections ALTER COLUMN id SET DEFAULT nextval('public.execution_memory_selections_id_seq'::regclass);
+
+
+--
 -- Name: execution_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4218,6 +4277,14 @@ ALTER TABLE ONLY public.email_threads
 
 ALTER TABLE ONLY public.execution_events
     ADD CONSTRAINT execution_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: execution_memory_selections execution_memory_selections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_memory_selections
+    ADD CONSTRAINT execution_memory_selections_pkey PRIMARY KEY (id);
 
 
 --
@@ -5162,6 +5229,48 @@ CREATE INDEX index_execution_events_on_workspace_id ON public.execution_events U
 --
 
 CREATE UNIQUE INDEX index_execution_events_on_workspace_run_id ON public.execution_events USING btree (workspace_id, execution_run_id, id);
+
+
+--
+-- Name: index_execution_memory_selections_on_execution_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_memory_selections_on_execution_run_id ON public.execution_memory_selections USING btree (execution_run_id);
+
+
+--
+-- Name: index_execution_memory_selections_on_execution_run_id_and_rank; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_memory_selections_on_execution_run_id_and_rank ON public.execution_memory_selections USING btree (execution_run_id, rank);
+
+
+--
+-- Name: index_execution_memory_selections_on_memory_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_memory_selections_on_memory_record_id ON public.execution_memory_selections USING btree (memory_record_id);
+
+
+--
+-- Name: index_execution_memory_selections_on_run_and_memory; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_memory_selections_on_run_and_memory ON public.execution_memory_selections USING btree (execution_run_id, memory_record_id);
+
+
+--
+-- Name: index_execution_memory_selections_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_memory_selections_on_workspace_id ON public.execution_memory_selections USING btree (workspace_id);
+
+
+--
+-- Name: index_execution_memory_selections_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_memory_selections_on_workspace_id_and_id ON public.execution_memory_selections USING btree (workspace_id, id);
 
 
 --
@@ -6317,6 +6426,20 @@ CREATE TRIGGER execution_events_no_truncate BEFORE TRUNCATE ON public.execution_
 --
 
 CREATE CONSTRAINT TRIGGER execution_events_require_link AFTER INSERT ON public.execution_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_linked_execution_event();
+
+
+--
+-- Name: execution_memory_selections execution_memory_selections_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_memory_selections_append_only BEFORE DELETE OR UPDATE ON public.execution_memory_selections FOR EACH ROW EXECUTE FUNCTION public.protect_execution_memory_selection();
+
+
+--
+-- Name: execution_memory_selections execution_memory_selections_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_memory_selections_no_truncate BEFORE TRUNCATE ON public.execution_memory_selections FOR EACH STATEMENT EXECUTE FUNCTION public.protect_execution_memory_selection();
 
 
 --
@@ -7496,6 +7619,22 @@ ALTER TABLE ONLY public.support_cases
 
 
 --
+-- Name: execution_memory_selections fk_rails_8362f08b7f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_memory_selections
+    ADD CONSTRAINT fk_rails_8362f08b7f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: execution_memory_selections fk_rails_87dc9e2226; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_memory_selections
+    ADD CONSTRAINT fk_rails_87dc9e2226 FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_profiles fk_rails_89533dda30; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7824,6 +7963,14 @@ ALTER TABLE ONLY public.active_storage_attachments
 
 
 --
+-- Name: execution_memory_selections fk_rails_c41ed85868; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_memory_selections
+    ADD CONSTRAINT fk_rails_c41ed85868 FOREIGN KEY (workspace_id, memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
 -- Name: public_web_extractions fk_rails_c6f2785e1f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8102,6 +8249,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824160000'),
 ('20260824150000'),
 ('20260824140000'),
 ('20260824130000'),
