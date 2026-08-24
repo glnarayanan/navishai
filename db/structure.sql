@@ -155,9 +155,9 @@ CREATE TABLE public.audit_events (
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT audit_events_action_format CHECK (((action)::text ~ '^[a-z0-9]+([._][a-z0-9]+)*$'::text)),
-    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying, 'system'::character varying, 'anonymous'::character varying])::text[]))),
-    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying])::text[])) = (actor_id IS NOT NULL))),
-    CONSTRAINT audit_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'runner'::character varying, 'integration'::character varying, 'system'::character varying])::text[])))
+    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text, ('system'::character varying)::text, ('anonymous'::character varying)::text]))),
+    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text])) = (actor_id IS NOT NULL))),
+    CONSTRAINT audit_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('job'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('integration'::character varying)::text, ('system'::character varying)::text])))
 );
 
 
@@ -212,6 +212,56 @@ CREATE SEQUENCE public.case_notes_id_seq
 --
 
 ALTER SEQUENCE public.case_notes_id_seq OWNED BY public.case_notes.id;
+
+
+--
+-- Name: case_slas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.case_slas (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    sla_policy_id bigint NOT NULL,
+    started_at timestamp(6) without time zone NOT NULL,
+    first_response_warning_at timestamp(6) without time zone NOT NULL,
+    first_response_due_at timestamp(6) without time zone NOT NULL,
+    resolution_warning_at timestamp(6) without time zone NOT NULL,
+    resolution_due_at timestamp(6) without time zone NOT NULL,
+    first_response_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    resolution_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    first_responded_at timestamp(6) without time zone,
+    resolved_at timestamp(6) without time zone,
+    paused_at timestamp(6) without time zone,
+    paused_business_minutes integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT case_slas_first_response_completion CHECK (((((first_response_status)::text <> 'met'::text) OR (first_responded_at IS NOT NULL)) AND ((first_responded_at IS NULL) OR ((first_response_status)::text <> 'pending'::text)))),
+    CONSTRAINT case_slas_first_response_status CHECK (((first_response_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
+    CONSTRAINT case_slas_paused_minutes CHECK ((paused_business_minutes >= 0)),
+    CONSTRAINT case_slas_resolution_completion CHECK (((((resolution_status)::text <> 'met'::text) OR (resolved_at IS NOT NULL)) AND ((resolved_at IS NULL) OR ((resolution_status)::text <> 'pending'::text)))),
+    CONSTRAINT case_slas_resolution_status CHECK (((resolution_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
+    CONSTRAINT case_slas_warning_before_due CHECK (((first_response_warning_at < first_response_due_at) AND (resolution_warning_at < resolution_due_at)))
+);
+
+
+--
+-- Name: case_slas_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.case_slas_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: case_slas_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.case_slas_id_seq OWNED BY public.case_slas.id;
 
 
 --
@@ -305,7 +355,7 @@ CREATE TABLE public.conversation_messages (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT conversation_messages_author CHECK (((((author_kind)::text = 'contact'::text) AND (author_contact_id IS NOT NULL) AND (author_user_id IS NULL) AND (external_author_name IS NULL)) OR (((author_kind)::text = 'user'::text) AND (author_contact_id IS NULL) AND (author_user_id IS NOT NULL) AND (external_author_name IS NULL)) OR (((author_kind)::text = 'external'::text) AND (author_contact_id IS NULL) AND (author_user_id IS NULL) AND (external_author_name IS NOT NULL)))),
-    CONSTRAINT conversation_messages_direction CHECK (((direction)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying])::text[])))
+    CONSTRAINT conversation_messages_direction CHECK (((direction)::text = ANY (ARRAY[('inbound'::character varying)::text, ('outbound'::character varying)::text])))
 );
 
 
@@ -376,7 +426,7 @@ CREATE TABLE public.identity_match_candidates (
     key_kind character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT identity_match_candidates_key_kind CHECK (((key_kind)::text = ANY ((ARRAY['email'::character varying, 'domain'::character varying])::text[]))),
+    CONSTRAINT identity_match_candidates_key_kind CHECK (((key_kind)::text = ANY (ARRAY[('email'::character varying)::text, ('domain'::character varying)::text]))),
     CONSTRAINT identity_match_candidates_one_record CHECK (((((account_id IS NOT NULL))::integer + ((contact_id IS NOT NULL))::integer) = 1))
 );
 
@@ -444,7 +494,7 @@ CREATE TABLE public.memberships (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     role character varying NOT NULL,
-    CONSTRAINT memberships_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[])))
+    CONSTRAINT memberships_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text])))
 );
 
 
@@ -509,6 +559,74 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: service_calendar_holidays; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.service_calendar_holidays (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    service_calendar_id bigint NOT NULL,
+    date date NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: service_calendar_holidays_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.service_calendar_holidays_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: service_calendar_holidays_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.service_calendar_holidays_id_seq OWNED BY public.service_calendar_holidays.id;
+
+
+--
+-- Name: service_calendars; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.service_calendars (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    time_zone character varying NOT NULL,
+    weekly_hours jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: service_calendars_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.service_calendars_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: service_calendars_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.service_calendars_id_seq OWNED BY public.service_calendars.id;
+
+
+--
 -- Name: sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -522,7 +640,7 @@ CREATE TABLE public.sessions (
     updated_at timestamp(6) without time zone NOT NULL,
     authentication_method character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY ((ARRAY['local'::character varying, 'break_glass'::character varying])::text[])))
+    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('break_glass'::character varying)::text])))
 );
 
 
@@ -546,6 +664,86 @@ ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
 
 
 --
+-- Name: sla_escalation_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sla_escalation_tasks (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    case_sla_id bigint NOT NULL,
+    objective character varying NOT NULL,
+    kind character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT sla_escalation_tasks_kind CHECK (((kind)::text = ANY ((ARRAY['warning'::character varying, 'breach'::character varying])::text[]))),
+    CONSTRAINT sla_escalation_tasks_objective CHECK (((objective)::text = ANY ((ARRAY['first_response'::character varying, 'resolution'::character varying])::text[]))),
+    CONSTRAINT sla_escalation_tasks_status CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'completed'::character varying])::text[])))
+);
+
+
+--
+-- Name: sla_escalation_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sla_escalation_tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sla_escalation_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sla_escalation_tasks_id_seq OWNED BY public.sla_escalation_tasks.id;
+
+
+--
+-- Name: sla_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sla_policies (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    service_calendar_id bigint NOT NULL,
+    name character varying NOT NULL,
+    priority character varying NOT NULL,
+    first_response_minutes integer NOT NULL,
+    resolution_minutes integer NOT NULL,
+    warning_percent integer DEFAULT 80 NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT sla_policies_positive_targets CHECK (((first_response_minutes > 0) AND (resolution_minutes > 0))),
+    CONSTRAINT sla_policies_priority CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'urgent'::character varying])::text[]))),
+    CONSTRAINT sla_policies_warning_percent CHECK (((warning_percent >= 1) AND (warning_percent <= 99)))
+);
+
+
+--
+-- Name: sla_policies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sla_policies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sla_policies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sla_policies_id_seq OWNED BY public.sla_policies.id;
+
+
+--
 -- Name: source_identities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -565,10 +763,10 @@ CREATE TABLE public.source_identities (
     retired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT source_identities_entity_kind CHECK (((entity_kind)::text = ANY ((ARRAY['account'::character varying, 'contact'::character varying])::text[]))),
-    CONSTRAINT source_identities_resolution_method CHECK (((resolution_method IS NULL) OR ((resolution_method)::text = ANY ((ARRAY['created'::character varying, 'deterministic'::character varying, 'reviewed'::character varying])::text[])))),
-    CONSTRAINT source_identities_resolution_state CHECK (((((status)::text = ANY ((ARRAY['pending'::character varying, 'ambiguous'::character varying])::text[])) AND (account_id IS NULL) AND (contact_id IS NULL) AND (resolution_method IS NULL) AND (resolved_by_id IS NULL) AND (resolved_at IS NULL)) OR (((status)::text = 'matched'::text) AND ((((entity_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (contact_id IS NULL)) OR (((entity_kind)::text = 'contact'::text) AND (contact_id IS NOT NULL) AND (account_id IS NULL))) AND (resolution_method IS NOT NULL) AND (resolved_at IS NOT NULL)))),
-    CONSTRAINT source_identities_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ambiguous'::character varying, 'matched'::character varying])::text[])))
+    CONSTRAINT source_identities_entity_kind CHECK (((entity_kind)::text = ANY (ARRAY[('account'::character varying)::text, ('contact'::character varying)::text]))),
+    CONSTRAINT source_identities_resolution_method CHECK (((resolution_method IS NULL) OR ((resolution_method)::text = ANY (ARRAY[('created'::character varying)::text, ('deterministic'::character varying)::text, ('reviewed'::character varying)::text])))),
+    CONSTRAINT source_identities_resolution_state CHECK (((((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ambiguous'::character varying)::text])) AND (account_id IS NULL) AND (contact_id IS NULL) AND (resolution_method IS NULL) AND (resolved_by_id IS NULL) AND (resolved_at IS NULL)) OR (((status)::text = 'matched'::text) AND ((((entity_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (contact_id IS NULL)) OR (((entity_kind)::text = 'contact'::text) AND (contact_id IS NOT NULL) AND (account_id IS NULL))) AND (resolution_method IS NOT NULL) AND (resolved_at IS NOT NULL)))),
+    CONSTRAINT source_identities_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ambiguous'::character varying)::text, ('matched'::character varying)::text])))
 );
 
 
@@ -604,7 +802,7 @@ CREATE TABLE public.source_identity_keys (
     retired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT source_identity_keys_kind CHECK (((kind)::text = ANY ((ARRAY['email'::character varying, 'domain'::character varying])::text[])))
+    CONSTRAINT source_identity_keys_kind CHECK (((kind)::text = ANY (ARRAY[('email'::character varying)::text, ('domain'::character varying)::text])))
 );
 
 
@@ -643,10 +841,10 @@ CREATE TABLE public.support_case_status_changes (
     reason character varying NOT NULL,
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT support_case_status_changes_actor CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying])::text[])) AND ((((actor_kind)::text = 'user'::text) AND (actor_id IS NOT NULL)) OR (((actor_kind)::text = 'system'::text) AND (actor_id IS NULL))))),
-    CONSTRAINT support_case_status_changes_from_status CHECK (((from_status IS NULL) OR ((from_status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[])))),
-    CONSTRAINT support_case_status_changes_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'runner'::character varying, 'integration'::character varying, 'system'::character varying])::text[]))),
-    CONSTRAINT support_case_status_changes_to_status CHECK (((to_status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[])))
+    CONSTRAINT support_case_status_changes_actor CHECK ((((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('system'::character varying)::text])) AND ((((actor_kind)::text = 'user'::text) AND (actor_id IS NOT NULL)) OR (((actor_kind)::text = 'system'::text) AND (actor_id IS NULL))))),
+    CONSTRAINT support_case_status_changes_from_status CHECK (((from_status IS NULL) OR ((from_status)::text = ANY (ARRAY[('new'::character varying)::text, ('triaged'::character varying)::text, ('investigating'::character varying)::text, ('waiting_customer'::character varying)::text, ('waiting_internal'::character varying)::text, ('draft_ready'::character varying)::text, ('awaiting_human_review'::character varying)::text, ('resolved'::character varying)::text, ('closed'::character varying)::text])))),
+    CONSTRAINT support_case_status_changes_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('job'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('integration'::character varying)::text, ('system'::character varying)::text]))),
+    CONSTRAINT support_case_status_changes_to_status CHECK (((to_status)::text = ANY (ARRAY[('new'::character varying)::text, ('triaged'::character varying)::text, ('investigating'::character varying)::text, ('waiting_customer'::character varying)::text, ('waiting_internal'::character varying)::text, ('draft_ready'::character varying)::text, ('awaiting_human_review'::character varying)::text, ('resolved'::character varying)::text, ('closed'::character varying)::text])))
 );
 
 
@@ -718,9 +916,9 @@ CREATE TABLE public.support_cases (
     closed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT support_cases_priority CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'urgent'::character varying])::text[]))),
-    CONSTRAINT support_cases_status CHECK (((status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[]))),
-    CONSTRAINT support_cases_terminal_timestamps CHECK (((((status)::text = 'resolved'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NULL)) OR (((status)::text = 'closed'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NOT NULL)) OR (((status)::text <> ALL ((ARRAY['resolved'::character varying, 'closed'::character varying])::text[])) AND (resolved_at IS NULL) AND (closed_at IS NULL))))
+    CONSTRAINT support_cases_priority CHECK (((priority)::text = ANY (ARRAY[('low'::character varying)::text, ('normal'::character varying)::text, ('high'::character varying)::text, ('urgent'::character varying)::text]))),
+    CONSTRAINT support_cases_status CHECK (((status)::text = ANY (ARRAY[('new'::character varying)::text, ('triaged'::character varying)::text, ('investigating'::character varying)::text, ('waiting_customer'::character varying)::text, ('waiting_internal'::character varying)::text, ('draft_ready'::character varying)::text, ('awaiting_human_review'::character varying)::text, ('resolved'::character varying)::text, ('closed'::character varying)::text]))),
+    CONSTRAINT support_cases_terminal_timestamps CHECK (((((status)::text = 'resolved'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NULL)) OR (((status)::text = 'closed'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NOT NULL)) OR (((status)::text <> ALL (ARRAY[('resolved'::character varying)::text, ('closed'::character varying)::text])) AND (resolved_at IS NULL) AND (closed_at IS NULL))))
 );
 
 
@@ -826,8 +1024,8 @@ CREATE TABLE public.workspace_invitations (
     accepted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[]))),
-    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[])))
+    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text]))),
+    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('accepted'::character varying)::text, ('revoked'::character varying)::text, ('expired'::character varying)::text])))
 );
 
 
@@ -912,6 +1110,13 @@ ALTER TABLE ONLY public.case_notes ALTER COLUMN id SET DEFAULT nextval('public.c
 
 
 --
+-- Name: case_slas id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_slas ALTER COLUMN id SET DEFAULT nextval('public.case_slas_id_seq'::regclass);
+
+
+--
 -- Name: contact_merges id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -968,10 +1173,38 @@ ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: service_calendar_holidays id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendar_holidays ALTER COLUMN id SET DEFAULT nextval('public.service_calendar_holidays_id_seq'::regclass);
+
+
+--
+-- Name: service_calendars id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendars ALTER COLUMN id SET DEFAULT nextval('public.service_calendars_id_seq'::regclass);
+
+
+--
 -- Name: sessions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
+
+
+--
+-- Name: sla_escalation_tasks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_escalation_tasks ALTER COLUMN id SET DEFAULT nextval('public.sla_escalation_tasks_id_seq'::regclass);
+
+
+--
+-- Name: sla_policies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_policies ALTER COLUMN id SET DEFAULT nextval('public.sla_policies_id_seq'::regclass);
 
 
 --
@@ -1078,6 +1311,14 @@ ALTER TABLE ONLY public.case_notes
 
 
 --
+-- Name: case_slas case_slas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_slas
+    ADD CONSTRAINT case_slas_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: contact_merges contact_merges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1150,11 +1391,43 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: service_calendar_holidays service_calendar_holidays_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendar_holidays
+    ADD CONSTRAINT service_calendar_holidays_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: service_calendars service_calendars_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendars
+    ADD CONSTRAINT service_calendars_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sla_escalation_tasks sla_escalation_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_escalation_tasks
+    ADD CONSTRAINT sla_escalation_tasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sla_policies sla_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_policies
+    ADD CONSTRAINT sla_policies_pkey PRIMARY KEY (id);
 
 
 --
@@ -1230,6 +1503,13 @@ ALTER TABLE ONLY public.workspaces
 
 
 --
+-- Name: idx_on_service_calendar_id_date_e0bbb87882; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_service_calendar_id_date_e0bbb87882 ON public.service_calendar_holidays USING btree (service_calendar_id, date);
+
+
+--
 -- Name: index_account_merges_on_merged_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1286,6 +1566,13 @@ CREATE UNIQUE INDEX index_active_contact_merges_on_source ON public.contact_merg
 
 
 --
+-- Name: index_active_sla_policies_on_priority; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_sla_policies_on_priority ON public.sla_policies USING btree (workspace_id, priority) WHERE active;
+
+
+--
 -- Name: index_audit_events_on_action_and_occurred_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1339,6 +1626,41 @@ CREATE INDEX index_case_notes_on_support_case_id_and_created_at_and_id ON public
 --
 
 CREATE INDEX index_case_notes_on_workspace_id ON public.case_notes USING btree (workspace_id);
+
+
+--
+-- Name: index_case_slas_on_first_response_clock; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_slas_on_first_response_clock ON public.case_slas USING btree (workspace_id, first_response_status, first_response_warning_at);
+
+
+--
+-- Name: index_case_slas_on_resolution_clock; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_slas_on_resolution_clock ON public.case_slas USING btree (workspace_id, resolution_status, resolution_warning_at);
+
+
+--
+-- Name: index_case_slas_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_slas_on_workspace_id ON public.case_slas USING btree (workspace_id);
+
+
+--
+-- Name: index_case_slas_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_case_slas_on_workspace_id_and_id ON public.case_slas USING btree (workspace_id, id);
+
+
+--
+-- Name: index_case_slas_on_workspace_id_and_support_case_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_case_slas_on_workspace_id_and_support_case_id ON public.case_slas USING btree (workspace_id, support_case_id);
 
 
 --
@@ -1517,6 +1839,41 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_service_calendar_holidays_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_service_calendar_holidays_on_workspace_id ON public.service_calendar_holidays USING btree (workspace_id);
+
+
+--
+-- Name: index_service_calendar_holidays_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_service_calendar_holidays_on_workspace_id_and_id ON public.service_calendar_holidays USING btree (workspace_id, id);
+
+
+--
+-- Name: index_service_calendars_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_service_calendars_on_workspace_id ON public.service_calendars USING btree (workspace_id);
+
+
+--
+-- Name: index_service_calendars_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_service_calendars_on_workspace_id_and_id ON public.service_calendars USING btree (workspace_id, id);
+
+
+--
+-- Name: index_service_calendars_on_workspace_id_and_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_service_calendars_on_workspace_id_and_name ON public.service_calendars USING btree (workspace_id, name);
+
+
+--
 -- Name: index_sessions_on_expires_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1528,6 +1885,41 @@ CREATE INDEX index_sessions_on_expires_at ON public.sessions USING btree (expire
 --
 
 CREATE INDEX index_sessions_on_user_id ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: index_sla_escalation_tasks_on_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sla_escalation_tasks_on_event ON public.sla_escalation_tasks USING btree (case_sla_id, objective, kind);
+
+
+--
+-- Name: index_sla_escalation_tasks_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sla_escalation_tasks_on_workspace_id ON public.sla_escalation_tasks USING btree (workspace_id);
+
+
+--
+-- Name: index_sla_escalation_tasks_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sla_escalation_tasks_on_workspace_id_and_id ON public.sla_escalation_tasks USING btree (workspace_id, id);
+
+
+--
+-- Name: index_sla_policies_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sla_policies_on_workspace_id ON public.sla_policies USING btree (workspace_id);
+
+
+--
+-- Name: index_sla_policies_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sla_policies_on_workspace_id_and_id ON public.sla_policies USING btree (workspace_id, id);
 
 
 --
@@ -1810,6 +2202,14 @@ ALTER TABLE ONLY public.account_merges
 
 
 --
+-- Name: case_slas fk_rails_048a2ba7c7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_slas
+    ADD CONSTRAINT fk_rails_048a2ba7c7 FOREIGN KEY (workspace_id, sla_policy_id) REFERENCES public.sla_policies(workspace_id, id);
+
+
+--
 -- Name: contact_merges fk_rails_105e45e7a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1823,6 +2223,14 @@ ALTER TABLE ONLY public.contact_merges
 
 ALTER TABLE ONLY public.support_case_taggings
     ADD CONSTRAINT fk_rails_1557a3d783 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: service_calendars fk_rails_28a2d1884f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendars
+    ADD CONSTRAINT fk_rails_28a2d1884f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -1858,11 +2266,43 @@ ALTER TABLE ONLY public.workspaces
 
 
 --
+-- Name: service_calendar_holidays fk_rails_3efa0e2453; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendar_holidays
+    ADD CONSTRAINT fk_rails_3efa0e2453 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: support_case_taggings fk_rails_418830fb15; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.support_case_taggings
     ADD CONSTRAINT fk_rails_418830fb15 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: service_calendar_holidays fk_rails_4308962f7b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_calendar_holidays
+    ADD CONSTRAINT fk_rails_4308962f7b FOREIGN KEY (workspace_id, service_calendar_id) REFERENCES public.service_calendars(workspace_id, id);
+
+
+--
+-- Name: case_slas fk_rails_480547c7a0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_slas
+    ADD CONSTRAINT fk_rails_480547c7a0 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: sla_escalation_tasks fk_rails_4c05045338; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_escalation_tasks
+    ADD CONSTRAINT fk_rails_4c05045338 FOREIGN KEY (workspace_id, case_sla_id) REFERENCES public.case_slas(workspace_id, id);
 
 
 --
@@ -1906,6 +2346,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: sla_policies fk_rails_62486d6140; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_policies
+    ADD CONSTRAINT fk_rails_62486d6140 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: workspace_invitations fk_rails_627a78e220; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1927,6 +2375,14 @@ ALTER TABLE ONLY public.contacts
 
 ALTER TABLE ONLY public.contacts
     ADD CONSTRAINT fk_rails_64c9be5440 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: case_slas fk_rails_667d0037a5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_slas
+    ADD CONSTRAINT fk_rails_667d0037a5 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
 
 
 --
@@ -2058,6 +2514,14 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: sla_escalation_tasks fk_rails_a0e954d864; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_escalation_tasks
+    ADD CONSTRAINT fk_rails_a0e954d864 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: source_identities fk_rails_a2b33597e3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2162,6 +2626,14 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: sla_policies fk_rails_e77dea60a1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sla_policies
+    ADD CONSTRAINT fk_rails_e77dea60a1 FOREIGN KEY (workspace_id, service_calendar_id) REFERENCES public.service_calendars(workspace_id, id);
+
+
+--
 -- Name: memberships fk_rails_e7b442f67c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2184,6 +2656,7 @@ ALTER TABLE ONLY public.contact_merges
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260823200306'),
 ('20260823200305'),
 ('20260823200304'),
 ('20260823200303'),

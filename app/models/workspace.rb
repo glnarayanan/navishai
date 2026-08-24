@@ -19,6 +19,11 @@ class Workspace < ApplicationRecord
   has_many :tags, dependent: :restrict_with_exception
   has_many :support_case_taggings, dependent: :restrict_with_exception
   has_many :case_notes, dependent: :restrict_with_exception
+  has_many :service_calendars, dependent: :restrict_with_exception
+  has_many :service_calendar_holidays, dependent: :restrict_with_exception
+  has_many :sla_policies, dependent: :restrict_with_exception
+  has_many :case_slas, dependent: :restrict_with_exception
+  has_many :sla_escalation_tasks, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

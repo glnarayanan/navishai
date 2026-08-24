@@ -20,6 +20,7 @@ class ConversationThread
         reason: "case created",
         occurred_at: occurred_at
       )
+      SlaEngine.start!(workspace: workspace, support_case: support_case, at: occurred_at)
       AuditEvent.record!(action: "conversation.created", source: :web, workspace: workspace, actor: actor.user, subject: conversation)
       AuditEvent.record!(action: "case.created", source: :web, workspace: workspace, actor: actor.user, subject: support_case)
       conversation

@@ -10,6 +10,7 @@ class SupportCase < ApplicationRecord
   has_many :support_case_taggings, dependent: :restrict_with_exception
   has_many :tags, through: :support_case_taggings
   has_many :case_notes, dependent: :restrict_with_exception
+  has_one :case_sla, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true, prefix: true
   enum :priority, PRIORITIES.index_by(&:itself), validate: true

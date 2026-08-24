@@ -158,6 +158,7 @@ class CaseWorkflow
       subject: change,
       metadata: { from_status: from, to_status: target }
     )
+    SlaEngine.status_changed!(workspace: support_case.workspace, support_case: support_case, from: from, to: target, at: occurred_at)
     support_case
   end
   private_class_method :change_status!
