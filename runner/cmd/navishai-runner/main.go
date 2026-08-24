@@ -50,8 +50,25 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	certificate, key, err := tlsFiles(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if certificate != "" {
+		log.Printf("NavishAI runner listening with TLS on %s", address)
+		log.Fatal(server.ListenAndServeTLS(certificate, key))
+	}
 	log.Printf("NavishAI runner listening on %s", address)
 	log.Fatal(server.ListenAndServe())
+}
+
+func tlsFiles(getenv func(string) string) (string, string, error) {
+	certificate := getenv("NAVISHAI_RUNNER_TLS_CERT_FILE")
+	key := getenv("NAVISHAI_RUNNER_TLS_KEY_FILE")
+	if (certificate == "") != (key == "") {
+		return "", "", fmt.Errorf("NAVISHAI_RUNNER_TLS_CERT_FILE and NAVISHAI_RUNNER_TLS_KEY_FILE must be set together")
+	}
+	return certificate, key, nil
 }
 
 func newHandler(secret []byte, store *admission.Store, searchStatePath string, now func() time.Time) (http.Handler, error) {

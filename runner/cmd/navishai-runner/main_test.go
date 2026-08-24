@@ -47,3 +47,33 @@ func TestHandlerRequiresASecret(t *testing.T) {
 		t.Fatal("expected a short secret to fail")
 	}
 }
+
+func TestTLSFiles(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment map[string]string
+		certificate string
+		key         string
+		wantError   bool
+	}{
+		{name: "cleartext loopback default", environment: map[string]string{}},
+		{name: "certificate pair", environment: map[string]string{
+			"NAVISHAI_RUNNER_TLS_CERT_FILE": "/run/secrets/runner.crt",
+			"NAVISHAI_RUNNER_TLS_KEY_FILE":  "/run/secrets/runner.key",
+		}, certificate: "/run/secrets/runner.crt", key: "/run/secrets/runner.key"},
+		{name: "missing key", environment: map[string]string{
+			"NAVISHAI_RUNNER_TLS_CERT_FILE": "/run/secrets/runner.crt",
+		}, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			certificate, key, err := tlsFiles(func(name string) string { return test.environment[name] })
+			if (err != nil) != test.wantError {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if certificate != test.certificate || key != test.key {
+				t.Fatalf("got certificate %q and key %q", certificate, key)
+			}
+		})
+	}
+}
