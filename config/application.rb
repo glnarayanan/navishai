@@ -19,6 +19,9 @@ module Navishai
     # Preserve PostgreSQL constraints and triggers that enforce security invariants.
     config.active_record.schema_format = :sql
 
+    # Files are available only through workspace-authorized controllers.
+    config.active_storage.draw_routes = false
+
     config.action_dispatch.default_headers = {
       "X-Frame-Options" => "DENY",
       "X-XSS-Protection" => "0",

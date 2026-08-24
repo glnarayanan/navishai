@@ -23,6 +23,7 @@ class EmailDraftWorkflow
       if draft.sent?
         raise ArgumentError, "a new customer message is required before another reply" unless follow_up_available?(draft)
 
+        draft.email_draft_attachments.destroy_all
         draft.status = :ready
       elsif draft.persisted? && !draft.ready?
         raise ArgumentError, "sent or sending drafts cannot be edited"

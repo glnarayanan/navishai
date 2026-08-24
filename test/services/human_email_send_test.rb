@@ -1,6 +1,12 @@
 require "test_helper"
 
 class HumanEmailSendTest < ActiveSupport::TestCase
+  class CleanScanner
+    def scan(**)
+      AttachmentScanner::Result.new(status: :clean, code: "clean")
+    end
+  end
+
   class RecordingTransport
     attr_reader :deliveries
 
@@ -152,6 +158,90 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     assert_equal 2, @support_case.conversation.conversation_messages.outbound.count
   end
 
+  test "sends only scanned draft attachments and links the frozen file to the outbound message" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "A human reply", expected_lock_version: "new"
+    )
+    attachment = EmailAttachmentWorkflow.add!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      draft_version: draft.lock_version,
+      files: [ { filename: "details.txt", data: "frozen details" } ], scanner: CleanScanner.new
+    ).sole
+    transport = RecordingTransport.new
+
+    delivery = send_email(
+      draft_version: draft.reload.lock_version.to_s,
+      transport: transport
+    )
+
+    assert delivery.sent?
+    assert_equal [ attachment ], delivery.stored_attachments
+    assert_equal [ attachment ], delivery.conversation_message.stored_attachments
+    sent_attachment = transport.deliveries.sole[:attachments].sole
+    assert_equal "details.txt", sent_attachment[:filename]
+    assert_equal "frozen details", sent_attachment[:content]
+
+    SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(
+        message_id: "attachment-follow-up@example.net", references: delivery.message_id,
+        body: "Follow-up without the old file"
+      ),
+      received_at: Time.zone.parse("2026-08-24 12:30:00 UTC")
+    )
+    EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "New reply", expected_lock_version: draft.reload.lock_version.to_s
+    )
+    assert_empty draft.reload.stored_attachments
+    assert_equal [ attachment ], delivery.reload.stored_attachments
+    assert_equal [ attachment ], delivery.conversation_message.stored_attachments
+  end
+
+  test "quarantined draft attachments block SMTP and roll back the send claim" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "A human reply", expected_lock_version: "new"
+    )
+    EmailAttachmentWorkflow.add!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      draft_version: draft.lock_version,
+      files: [ { filename: "pending.txt", data: "pending scan" } ]
+    )
+    transport = RecordingTransport.new
+
+    assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+      assert_raises(AttachmentIntake::InvalidAttachment) do
+        send_email(draft_version: draft.reload.lock_version.to_s, transport: transport)
+      end
+    end
+    assert_empty transport.deliveries
+    assert draft.reload.ready?
+  end
+
+  test "a changed attachment object fails before SMTP and permits a fresh retry" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "A human reply", expected_lock_version: "new"
+    )
+    attachment = EmailAttachmentWorkflow.add!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      draft_version: draft.lock_version,
+      files: [ { filename: "changed.txt", data: "scanned bytes" } ], scanner: CleanScanner.new
+    ).sole
+    attachment.file.blob.service.upload(attachment.file.key, StringIO.new("changed bytes"))
+    transport = RecordingTransport.new
+
+    delivery = send_email(draft_version: draft.reload.lock_version.to_s, transport: transport)
+
+    assert delivery.failed?
+    assert_equal "attachment_unavailable", delivery.failure_code
+    assert delivery.email_draft.reload.ready?
+    assert_empty transport.deliveries
+    assert_nil delivery.conversation_message
+  end
+
   test "an idempotent replay cannot send twice or cross cases" do
     transport = RecordingTransport.new
     first = send_email(transport: transport)
@@ -245,7 +335,19 @@ class HumanEmailSendTest < ActiveSupport::TestCase
   end
 
   test "a fresh human can confirm an ambiguous delivery was accepted" do
-    delivery = send_email(transport: RecordingTransport.new(error: Net::ReadTimeout.new("timeout")))
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "A human reply", expected_lock_version: "new"
+    )
+    attachment = EmailAttachmentWorkflow.add!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      draft_version: draft.lock_version,
+      files: [ { filename: "confirmed.txt", data: "confirmed bytes" } ], scanner: CleanScanner.new
+    ).sole
+    delivery = send_email(
+      draft_version: draft.reload.lock_version.to_s,
+      transport: RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))
+    )
     reviewer = User.create!(email_address: "delivery-reviewer@example.com", password: "password12345", verified_at: Time.current)
     reviewer_membership = @workspace.memberships.create!(user: reviewer, role: :owner)
     @membership.update!(role: :viewer)
@@ -261,6 +363,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     assert delivery.reload.sent?
     assert_equal delivery.started_at, delivery.sent_at
     assert_equal users(:owner), delivery.conversation_message.author_user
+    assert_equal [ attachment ], delivery.conversation_message.stored_attachments
     assert delivery.email_draft.reload.sent?
     assert AuditEvent.where(action: "email.send_reviewed", actor: reviewer, subject_id: delivery.id, metadata: { outcome: "accepted" }).exists?
   end

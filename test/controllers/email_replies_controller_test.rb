@@ -118,6 +118,31 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_empty transport.deliveries
   end
 
+  test "a writer uploads and removes a quarantined draft attachment" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case,
+      membership: memberships(:owner_support), body: "Draft answer", expected_lock_version: "new"
+    )
+
+    assert_difference [ "StoredAttachment.count", "EmailDraftAttachment.count" ], 1 do
+      post email_attachments_workspace_support_case_path(@workspace, @support_case), params: {
+        draft_version: draft.lock_version,
+        files: [ uploaded_file("notes.txt", "private notes") ]
+      }
+    end
+
+    attachment = draft.reload.stored_attachments.sole
+    assert attachment.quarantined?
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
+
+    assert_difference "EmailDraftAttachment.count", -1 do
+      delete email_attachment_workspace_support_case_path(@workspace, @support_case, attachment), params: {
+        draft_version: draft.lock_version
+      }
+    end
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
+  end
+
   test "blank content returns 422 with the reply form preserved" do
     assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
       post email_send_workspace_support_case_path(@workspace, @support_case),
@@ -210,6 +235,34 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_empty transport.deliveries
   end
 
+  test "viewer and stale attachment forgeries leave no records or blobs" do
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case,
+      membership: memberships(:owner_support), body: "Draft answer", expected_lock_version: "new"
+    )
+    viewer = User.create!(email_address: "attachment-controller-viewer@example.com", password: "password12345", verified_at: Time.current)
+    Membership.create!(workspace: @workspace, user: viewer, role: :viewer)
+    sign_in_as viewer
+
+    assert_no_difference [ "StoredAttachment.count", "ActiveStorage::Blob.count", "AuditEvent.count" ] do
+      post email_attachments_workspace_support_case_path(@workspace, @support_case), params: {
+        draft_version: draft.lock_version,
+        files: [ uploaded_file("forged.txt", "forged") ]
+      }
+    end
+    assert_response :forbidden
+
+    sign_in_as users(:owner)
+    assert_no_difference [ "StoredAttachment.count", "ActiveStorage::Blob.count", "AuditEvent.count" ] do
+      post email_attachments_workspace_support_case_path(@workspace, @support_case), params: {
+        draft_version: -1,
+        files: [ uploaded_file("stale.txt", "stale") ]
+      }
+    end
+    assert_response :unprocessable_content
+    assert_select ".command-error", text: /changed in another session/i
+  end
+
   test "an expired session is redirected to authentication without sending" do
     Current.session.update!(expires_at: 1.minute.ago)
 
@@ -239,6 +292,13 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
         expected_recipient_address: preview.address,
         expected_inbound_message_id: preview.inbound_message_id
       }
+    end
+
+    def uploaded_file(filename, content)
+      Rack::Test::UploadedFile.new(
+        StringIO.new(content.dup), "application/octet-stream", true,
+        original_filename: filename
+      )
     end
 
     def with_transport(transport)

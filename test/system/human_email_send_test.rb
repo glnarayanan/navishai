@@ -15,6 +15,12 @@ class HumanEmailSendTest < ApplicationSystemTestCase
     end
   end
 
+  class CleanScanner
+    def scan(**)
+      AttachmentScanner::Result.new(status: :clean, code: "clean")
+    end
+  end
+
   test "a human reviews, edits, and deliberately sends an email on desktop and mobile" do
     support_case = email_support_case
     transport = RecordingTransport.new
@@ -64,6 +70,34 @@ class HumanEmailSendTest < ApplicationSystemTestCase
     refute_button "Send email"
   end
 
+  test "a human adds and removes a quarantined draft attachment on mobile" do
+    support_case = email_support_case
+    sign_in_in_browser(users(:owner))
+    visit workspace_support_case_path(support_case.workspace, support_case)
+    find(".email-reply-form textarea[name='body']").set("Draft with a file")
+    click_button "Save draft"
+    assert_text "Draft saved."
+
+    page.current_window.resize_to(390, 844)
+    attach_file "Add attachments", Rails.root.join("test/fixtures/files/note.txt")
+    click_button "Add files"
+    assert_text "Attachments added."
+    within ".draft-attachment-list" do
+      assert_text "note.txt"
+      assert_text "Quarantined: Scanner unavailable"
+      assert_operator find_link("Remove").evaluate_script("this.getBoundingClientRect().height"), :>=, 44
+    end
+    assert_text "Send stays blocked until every attachment passes malware scanning."
+    assert_button "Send email", disabled: true
+    assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    page.execute_script("arguments[0].scrollIntoView({ block: 'center' })", find(".draft-attachment-list"))
+    save_screenshot Rails.root.join(".amp/in/artifacts/email-attachment-mobile.png") if ENV["CAPTURE_HUMAN_EMAIL_SEND"]
+
+    click_link "Remove"
+    assert_text "Attachment removed."
+    assert_no_text "note.txt"
+  end
+
   test "a human sees and confirms an external Reply-To before sending" do
     support_case = email_support_case(reply_to: "third-party@example.org")
     transport = RecordingTransport.new
@@ -91,6 +125,15 @@ class HumanEmailSendTest < ApplicationSystemTestCase
 
   test "a human reviews an uncertain outcome before a fresh send is allowed" do
     support_case = email_support_case
+    draft = EmailDraftWorkflow.save!(
+      workspace: support_case.workspace, support_case: support_case,
+      membership: memberships(:owner_support), body: "Uncertain answer", expected_lock_version: "new"
+    )
+    attachment = EmailAttachmentWorkflow.add!(
+      workspace: support_case.workspace, support_case: support_case,
+      membership: memberships(:owner_support), draft_version: draft.lock_version,
+      files: [ { filename: "review-copy.txt", data: "review bytes" } ], scanner: CleanScanner.new
+    ).sole
     sign_in_in_browser(users(:owner))
 
     with_transport(RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))) do
@@ -102,6 +145,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       assert_text delivery.to_address
       assert_text delivery.message_id
       assert_text "Uncertain answer"
+      assert_link attachment.filename
       assert_button "Mark accepted"
       assert_button "Mark not sent"
       refute_button "Send email"

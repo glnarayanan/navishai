@@ -24,6 +24,36 @@ COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access met
 
 
 --
+-- Name: enforce_clean_outbound_attachment(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_clean_outbound_attachment() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'conversation_message_attachments' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM conversation_messages
+      WHERE id = NEW.conversation_message_id
+        AND direction = 'outbound'
+    ) THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM stored_attachments
+    WHERE id = NEW.stored_attachment_id
+      AND workspace_id = NEW.workspace_id
+      AND scan_status = 'available'
+  ) THEN
+    RAISE EXCEPTION 'outbound attachments must be available';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -138,6 +168,19 @@ $$;
 
 
 --
+-- Name: protect_attachment_join(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_attachment_join() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'attachment history is append only';
+END;
+$$;
+
+
+--
 -- Name: protect_outbound_email_delivery(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -162,6 +205,76 @@ BEGIN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'outbound email delivery records are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_stored_attachment(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_stored_attachment() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.uploaded_by_membership_id, OLD.uploaded_by_user_id,
+         OLD.source, OLD.filename, OLD.byte_size, OLD.content_sha256,
+         OLD.detected_content_type, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.uploaded_by_membership_id, NEW.uploaded_by_user_id,
+         NEW.source, NEW.filename, NEW.byte_size, NEW.content_sha256,
+         NEW.detected_content_type, NEW.created_at) AND
+     (ROW(OLD.scan_status, OLD.scan_result_code, OLD.scanned_at)
+        IS NOT DISTINCT FROM
+      ROW(NEW.scan_status, NEW.scan_result_code, NEW.scanned_at) OR
+      (OLD.scan_status = 'quarantined' AND NEW.scan_status IN ('available', 'rejected'))) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'stored attachment records are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_stored_attachment_file(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_stored_attachment_file() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    IF EXISTS (SELECT 1 FROM active_storage_attachments WHERE record_type = 'StoredAttachment') THEN
+      RAISE EXCEPTION 'stored attachment files are durable';
+    END IF;
+    RETURN NULL;
+  END IF;
+  IF TG_TABLE_NAME = 'active_storage_attachments' THEN
+    IF OLD.record_type = 'StoredAttachment' THEN
+      IF TG_OP = 'UPDATE' AND
+         ROW(OLD.id, OLD.name, OLD.record_type, OLD.record_id, OLD.blob_id, OLD.created_at)
+         IS NOT DISTINCT FROM
+         ROW(NEW.id, NEW.name, NEW.record_type, NEW.record_id, NEW.blob_id, NEW.created_at) THEN
+        RETURN NEW;
+      END IF;
+      RAISE EXCEPTION 'stored attachment files are durable';
+    END IF;
+  ELSIF EXISTS (
+    SELECT 1 FROM active_storage_attachments
+    WHERE blob_id = OLD.id AND record_type = 'StoredAttachment'
+  ) THEN
+    IF TG_OP = 'UPDATE' AND
+       ROW(OLD.id, OLD.key, OLD.filename, OLD.content_type,
+           OLD.service_name, OLD.byte_size, OLD.checksum, OLD.created_at)
+       IS NOT DISTINCT FROM
+       ROW(NEW.id, NEW.key, NEW.filename, NEW.content_type,
+           NEW.service_name, NEW.byte_size, NEW.checksum, NEW.created_at) THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'stored attachment files are durable';
+  END IF;
+  RETURN COALESCE(NEW, OLD);
 END;
 $$;
 
@@ -239,6 +352,105 @@ CREATE SEQUENCE public.accounts_id_seq
 --
 
 ALTER SEQUENCE public.accounts_id_seq OWNED BY public.accounts.id;
+
+
+--
+-- Name: active_storage_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_attachments (
+    id bigint NOT NULL,
+    name character varying NOT NULL,
+    record_type character varying NOT NULL,
+    record_id bigint NOT NULL,
+    blob_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: active_storage_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_attachments_id_seq OWNED BY public.active_storage_attachments.id;
+
+
+--
+-- Name: active_storage_blobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_blobs (
+    id bigint NOT NULL,
+    key character varying NOT NULL,
+    filename character varying NOT NULL,
+    content_type character varying,
+    metadata text,
+    service_name character varying NOT NULL,
+    byte_size bigint NOT NULL,
+    checksum character varying,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: active_storage_blobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_blobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_blobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_blobs_id_seq OWNED BY public.active_storage_blobs.id;
+
+
+--
+-- Name: active_storage_variant_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.active_storage_variant_records (
+    id bigint NOT NULL,
+    blob_id bigint NOT NULL,
+    variation_digest character varying NOT NULL
+);
+
+
+--
+-- Name: active_storage_variant_records_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.active_storage_variant_records_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: active_storage_variant_records_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.active_storage_variant_records_id_seq OWNED BY public.active_storage_variant_records.id;
 
 
 --
@@ -454,6 +666,40 @@ ALTER SEQUENCE public.contacts_id_seq OWNED BY public.contacts.id;
 
 
 --
+-- Name: conversation_message_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_message_attachments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    conversation_message_id bigint NOT NULL,
+    stored_attachment_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: conversation_message_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.conversation_message_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: conversation_message_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.conversation_message_attachments_id_seq OWNED BY public.conversation_message_attachments.id;
+
+
+--
 -- Name: conversation_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -531,6 +777,39 @@ ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
+-- Name: email_draft_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_draft_attachments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    email_draft_id bigint NOT NULL,
+    stored_attachment_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: email_draft_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_draft_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_draft_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_draft_attachments_id_seq OWNED BY public.email_draft_attachments.id;
+
+
+--
 -- Name: email_drafts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -547,7 +826,7 @@ CREATE TABLE public.email_drafts (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT email_drafts_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT email_drafts_status CHECK (((status)::text = ANY ((ARRAY['ready'::character varying, 'sending'::character varying, 'sent'::character varying])::text[])))
+    CONSTRAINT email_drafts_status CHECK (((status)::text = ANY (ARRAY[('ready'::character varying)::text, ('sending'::character varying)::text, ('sent'::character varying)::text])))
 );
 
 
@@ -855,8 +1134,8 @@ CREATE TABLE public.outbound_email_deliveries (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT outbound_email_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT outbound_email_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['sending'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (conversation_message_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (failure_code IS NOT NULL)))))),
-    CONSTRAINT outbound_email_deliveries_status CHECK (((status)::text = ANY ((ARRAY['sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])))
+    CONSTRAINT outbound_email_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY (ARRAY[('sending'::character varying)::text, ('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (conversation_message_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (failure_code IS NOT NULL)))))),
+    CONSTRAINT outbound_email_deliveries_status CHECK (((status)::text = ANY (ARRAY[('sending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text, ('unknown'::character varying)::text])))
 );
 
 
@@ -877,6 +1156,39 @@ CREATE SEQUENCE public.outbound_email_deliveries_id_seq
 --
 
 ALTER SEQUENCE public.outbound_email_deliveries_id_seq OWNED BY public.outbound_email_deliveries.id;
+
+
+--
+-- Name: outbound_email_delivery_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_email_delivery_attachments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    outbound_email_delivery_id bigint NOT NULL,
+    stored_attachment_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: outbound_email_delivery_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.outbound_email_delivery_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: outbound_email_delivery_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.outbound_email_delivery_attachments_id_seq OWNED BY public.outbound_email_delivery_attachments.id;
 
 
 --
@@ -1192,6 +1504,53 @@ ALTER SEQUENCE public.source_identity_keys_id_seq OWNED BY public.source_identit
 
 
 --
+-- Name: stored_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stored_attachments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    uploaded_by_membership_id bigint,
+    uploaded_by_user_id bigint,
+    source character varying NOT NULL,
+    filename character varying NOT NULL,
+    byte_size bigint NOT NULL,
+    content_sha256 character varying NOT NULL,
+    detected_content_type character varying NOT NULL,
+    scan_status character varying NOT NULL,
+    scan_result_code character varying,
+    scanned_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT stored_attachments_actor CHECK (((((source)::text = 'inbound_email'::text) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
+    CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY ((ARRAY['available'::character varying, 'rejected'::character varying])::text[])) AND (scanned_at IS NOT NULL))))),
+    CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY ((ARRAY['quarantined'::character varying, 'available'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT stored_attachments_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT stored_attachments_size CHECK (((byte_size >= 1) AND (byte_size <= 5242880))),
+    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'user_upload'::character varying])::text[])))
+);
+
+
+--
+-- Name: stored_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.stored_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: stored_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.stored_attachments_id_seq OWNED BY public.stored_attachments.id;
+
+
+--
 -- Name: support_case_status_changes; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1462,6 +1821,27 @@ ALTER TABLE ONLY public.accounts ALTER COLUMN id SET DEFAULT nextval('public.acc
 
 
 --
+-- Name: active_storage_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments ALTER COLUMN id SET DEFAULT nextval('public.active_storage_attachments_id_seq'::regclass);
+
+
+--
+-- Name: active_storage_blobs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_blobs ALTER COLUMN id SET DEFAULT nextval('public.active_storage_blobs_id_seq'::regclass);
+
+
+--
+-- Name: active_storage_variant_records id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records ALTER COLUMN id SET DEFAULT nextval('public.active_storage_variant_records_id_seq'::regclass);
+
+
+--
 -- Name: audit_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1497,6 +1877,13 @@ ALTER TABLE ONLY public.contacts ALTER COLUMN id SET DEFAULT nextval('public.con
 
 
 --
+-- Name: conversation_message_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_message_attachments ALTER COLUMN id SET DEFAULT nextval('public.conversation_message_attachments_id_seq'::regclass);
+
+
+--
 -- Name: conversation_messages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1508,6 +1895,13 @@ ALTER TABLE ONLY public.conversation_messages ALTER COLUMN id SET DEFAULT nextva
 --
 
 ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('public.conversations_id_seq'::regclass);
+
+
+--
+-- Name: email_draft_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_draft_attachments ALTER COLUMN id SET DEFAULT nextval('public.email_draft_attachments_id_seq'::regclass);
 
 
 --
@@ -1574,6 +1968,13 @@ ALTER TABLE ONLY public.outbound_email_deliveries ALTER COLUMN id SET DEFAULT ne
 
 
 --
+-- Name: outbound_email_delivery_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_delivery_attachments ALTER COLUMN id SET DEFAULT nextval('public.outbound_email_delivery_attachments_id_seq'::regclass);
+
+
+--
 -- Name: service_calendar_holidays id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1627,6 +2028,13 @@ ALTER TABLE ONLY public.source_identities ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.source_identity_keys ALTER COLUMN id SET DEFAULT nextval('public.source_identity_keys_id_seq'::regclass);
+
+
+--
+-- Name: stored_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stored_attachments ALTER COLUMN id SET DEFAULT nextval('public.stored_attachments_id_seq'::regclass);
 
 
 --
@@ -1695,6 +2103,30 @@ ALTER TABLE ONLY public.accounts
 
 
 --
+-- Name: active_storage_attachments active_storage_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments
+    ADD CONSTRAINT active_storage_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: active_storage_blobs active_storage_blobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_blobs
+    ADD CONSTRAINT active_storage_blobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: active_storage_variant_records active_storage_variant_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records
+    ADD CONSTRAINT active_storage_variant_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1743,6 +2175,14 @@ ALTER TABLE ONLY public.contacts
 
 
 --
+-- Name: conversation_message_attachments conversation_message_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_message_attachments
+    ADD CONSTRAINT conversation_message_attachments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversation_messages conversation_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1756,6 +2196,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_draft_attachments email_draft_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_draft_attachments
+    ADD CONSTRAINT email_draft_attachments_pkey PRIMARY KEY (id);
 
 
 --
@@ -1831,6 +2279,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: outbound_email_delivery_attachments outbound_email_delivery_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_delivery_attachments
+    ADD CONSTRAINT outbound_email_delivery_attachments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1903,6 +2359,14 @@ ALTER TABLE ONLY public.source_identity_keys
 
 
 --
+-- Name: stored_attachments stored_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stored_attachments
+    ADD CONSTRAINT stored_attachments_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: support_case_status_changes support_case_status_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1956,6 +2420,13 @@ ALTER TABLE ONLY public.workspace_invitations
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_on_email_draft_id_stored_attachment_id_e495be539b; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_email_draft_id_stored_attachment_id_e495be539b ON public.email_draft_attachments USING btree (email_draft_id, stored_attachment_id);
 
 
 --
@@ -2040,6 +2511,41 @@ CREATE UNIQUE INDEX index_active_contact_merges_on_source ON public.contact_merg
 --
 
 CREATE UNIQUE INDEX index_active_sla_policies_on_priority ON public.sla_policies USING btree (workspace_id, priority) WHERE active;
+
+
+--
+-- Name: index_active_storage_attachments_on_blob_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_active_storage_attachments_on_blob_id ON public.active_storage_attachments USING btree (blob_id);
+
+
+--
+-- Name: index_active_storage_attachments_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_attachments_uniqueness ON public.active_storage_attachments USING btree (record_type, record_id, name, blob_id);
+
+
+--
+-- Name: index_active_storage_blobs_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_blobs_on_key ON public.active_storage_blobs USING btree (key);
+
+
+--
+-- Name: index_active_storage_stored_attachment_file; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_stored_attachment_file ON public.active_storage_attachments USING btree (record_type, record_id, name) WHERE ((record_type)::text = 'StoredAttachment'::text);
+
+
+--
+-- Name: index_active_storage_variant_records_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_active_storage_variant_records_uniqueness ON public.active_storage_variant_records USING btree (blob_id, variation_digest);
 
 
 --
@@ -2183,6 +2689,20 @@ CREATE INDEX index_contacts_on_workspace_id_and_name ON public.contacts USING bt
 
 
 --
+-- Name: index_conversation_message_attachments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversation_message_attachments_on_workspace_id ON public.conversation_message_attachments USING btree (workspace_id);
+
+
+--
+-- Name: index_conversation_message_attachments_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_conversation_message_attachments_on_workspace_id_and_id ON public.conversation_message_attachments USING btree (workspace_id, id);
+
+
+--
 -- Name: index_conversation_messages_for_replies; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2229,6 +2749,34 @@ CREATE INDEX index_conversations_on_workspace_id_and_last_message_at ON public.c
 --
 
 CREATE UNIQUE INDEX index_current_source_identity_keys ON public.source_identity_keys USING btree (source_identity_id, kind, normalized_value) WHERE (retired_at IS NULL);
+
+
+--
+-- Name: index_delivery_attachments_on_delivery_and_attachment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_delivery_attachments_on_delivery_and_attachment ON public.outbound_email_delivery_attachments USING btree (outbound_email_delivery_id, stored_attachment_id);
+
+
+--
+-- Name: index_delivery_attachments_on_workspace_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_delivery_attachments_on_workspace_and_id ON public.outbound_email_delivery_attachments USING btree (workspace_id, id);
+
+
+--
+-- Name: index_email_draft_attachments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_email_draft_attachments_on_workspace_id ON public.email_draft_attachments USING btree (workspace_id);
+
+
+--
+-- Name: index_email_draft_attachments_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_draft_attachments_on_workspace_id_and_id ON public.email_draft_attachments USING btree (workspace_id, id);
 
 
 --
@@ -2407,6 +2955,13 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_id_user_id ON public.membe
 
 
 --
+-- Name: index_message_attachments_on_message_and_attachment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_message_attachments_on_message_and_attachment ON public.conversation_message_attachments USING btree (conversation_message_id, stored_attachment_id);
+
+
+--
 -- Name: index_organizations_on_slug; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2432,6 +2987,13 @@ CREATE INDEX index_outbound_email_deliveries_on_workspace_id ON public.outbound_
 --
 
 CREATE UNIQUE INDEX index_outbound_email_deliveries_on_workspace_id_and_id ON public.outbound_email_deliveries USING btree (workspace_id, id);
+
+
+--
+-- Name: index_outbound_email_delivery_attachments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbound_email_delivery_attachments_on_workspace_id ON public.outbound_email_delivery_attachments USING btree (workspace_id);
 
 
 --
@@ -2596,6 +3158,20 @@ CREATE INDEX index_source_identity_keys_on_workspace_id ON public.source_identit
 
 
 --
+-- Name: index_stored_attachments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_stored_attachments_on_workspace_id ON public.stored_attachments USING btree (workspace_id);
+
+
+--
+-- Name: index_stored_attachments_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_stored_attachments_on_workspace_id_and_id ON public.stored_attachments USING btree (workspace_id, id);
+
+
+--
 -- Name: index_support_case_status_changes_on_timeline; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2736,6 +3312,34 @@ CREATE UNIQUE INDEX index_workspaces_on_organization_id_and_slug ON public.works
 
 
 --
+-- Name: active_storage_attachments active_storage_attachments_no_stored_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER active_storage_attachments_no_stored_truncate BEFORE TRUNCATE ON public.active_storage_attachments FOR EACH STATEMENT EXECUTE FUNCTION public.protect_stored_attachment_file();
+
+
+--
+-- Name: active_storage_attachments active_storage_attachments_protect_stored; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER active_storage_attachments_protect_stored BEFORE DELETE OR UPDATE ON public.active_storage_attachments FOR EACH ROW EXECUTE FUNCTION public.protect_stored_attachment_file();
+
+
+--
+-- Name: active_storage_blobs active_storage_blobs_no_stored_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER active_storage_blobs_no_stored_truncate BEFORE TRUNCATE ON public.active_storage_blobs FOR EACH STATEMENT EXECUTE FUNCTION public.protect_stored_attachment_file();
+
+
+--
+-- Name: active_storage_blobs active_storage_blobs_protect_stored; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER active_storage_blobs_protect_stored BEFORE DELETE OR UPDATE ON public.active_storage_blobs FOR EACH ROW EXECUTE FUNCTION public.protect_stored_attachment_file();
+
+
+--
 -- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2761,6 +3365,20 @@ CREATE TRIGGER case_notes_append_only BEFORE DELETE OR UPDATE ON public.case_not
 --
 
 CREATE TRIGGER case_notes_no_truncate BEFORE TRUNCATE ON public.case_notes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: conversation_message_attachments conversation_message_attachments_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_message_attachments_append_only BEFORE DELETE OR UPDATE ON public.conversation_message_attachments FOR EACH ROW EXECUTE FUNCTION public.protect_attachment_join();
+
+
+--
+-- Name: conversation_message_attachments conversation_message_attachments_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_message_attachments_no_truncate BEFORE TRUNCATE ON public.conversation_message_attachments FOR EACH STATEMENT EXECUTE FUNCTION public.protect_attachment_join();
 
 
 --
@@ -2834,6 +3452,34 @@ CREATE TRIGGER outbound_email_deliveries_protect_record BEFORE DELETE OR UPDATE 
 
 
 --
+-- Name: outbound_email_delivery_attachments outbound_email_delivery_attachments_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_email_delivery_attachments_append_only BEFORE DELETE OR UPDATE ON public.outbound_email_delivery_attachments FOR EACH ROW EXECUTE FUNCTION public.protect_attachment_join();
+
+
+--
+-- Name: outbound_email_delivery_attachments outbound_email_delivery_attachments_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_email_delivery_attachments_no_truncate BEFORE TRUNCATE ON public.outbound_email_delivery_attachments FOR EACH STATEMENT EXECUTE FUNCTION public.protect_attachment_join();
+
+
+--
+-- Name: outbound_email_delivery_attachments outbound_email_delivery_attachments_require_clean; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_email_delivery_attachments_require_clean BEFORE INSERT ON public.outbound_email_delivery_attachments FOR EACH ROW EXECUTE FUNCTION public.enforce_clean_outbound_attachment();
+
+
+--
+-- Name: conversation_message_attachments outbound_message_attachments_require_clean; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON public.conversation_message_attachments FOR EACH ROW EXECUTE FUNCTION public.enforce_clean_outbound_attachment();
+
+
+--
 -- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2852,6 +3498,20 @@ CREATE TRIGGER service_calendars_protect_used_settings BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER sla_policies_protect_used_settings BEFORE DELETE OR UPDATE ON public.sla_policies FOR EACH ROW EXECUTE FUNCTION public.prevent_used_sla_configuration_change();
+
+
+--
+-- Name: stored_attachments stored_attachments_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER stored_attachments_no_truncate BEFORE TRUNCATE ON public.stored_attachments FOR EACH STATEMENT EXECUTE FUNCTION public.protect_stored_attachment();
+
+
+--
+-- Name: stored_attachments stored_attachments_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER stored_attachments_protect_record BEFORE DELETE OR UPDATE ON public.stored_attachments FOR EACH ROW EXECUTE FUNCTION public.protect_stored_attachment();
 
 
 --
@@ -3045,6 +3705,14 @@ ALTER TABLE ONLY public.case_slas
 
 
 --
+-- Name: stored_attachments fk_rails_49367e49f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stored_attachments
+    ADD CONSTRAINT fk_rails_49367e49f1 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: sla_escalation_tasks fk_rails_4c05045338; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3053,11 +3721,27 @@ ALTER TABLE ONLY public.sla_escalation_tasks
 
 
 --
+-- Name: outbound_email_delivery_attachments fk_rails_4d393bb9b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_delivery_attachments
+    ADD CONSTRAINT fk_rails_4d393bb9b0 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
 -- Name: account_merges fk_rails_4f29f8ae3c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_merges
     ADD CONSTRAINT fk_rails_4f29f8ae3c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: conversation_message_attachments fk_rails_5474042175; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_message_attachments
+    ADD CONSTRAINT fk_rails_5474042175 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
 
 
 --
@@ -3189,6 +3873,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: stored_attachments fk_rails_728f214969; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stored_attachments
+    ADD CONSTRAINT fk_rails_728f214969 FOREIGN KEY (workspace_id, uploaded_by_membership_id, uploaded_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: account_merges fk_rails_73bbb32f1d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3226,6 +3918,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.email_drafts
     ADD CONSTRAINT fk_rails_77812b41a4 FOREIGN KEY (workspace_id, support_case_id, conversation_id) REFERENCES public.support_cases(workspace_id, id, conversation_id);
+
+
+--
+-- Name: email_draft_attachments fk_rails_7bd5733974; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_draft_attachments
+    ADD CONSTRAINT fk_rails_7bd5733974 FOREIGN KEY (workspace_id, email_draft_id) REFERENCES public.email_drafts(workspace_id, id);
 
 
 --
@@ -3325,6 +4025,22 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: active_storage_variant_records fk_rails_993965df05; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_variant_records
+    ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: conversation_message_attachments fk_rails_9f51c96886; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_message_attachments
+    ADD CONSTRAINT fk_rails_9f51c96886 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
 -- Name: sla_escalation_tasks fk_rails_a0e954d864; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3341,6 +4057,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: email_draft_attachments fk_rails_a6b8203129; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_draft_attachments
+    ADD CONSTRAINT fk_rails_a6b8203129 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_a79332c57f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3354,6 +4078,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.workspace_invitations
     ADD CONSTRAINT fk_rails_aa0ff4982f FOREIGN KEY (accepted_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: stored_attachments fk_rails_ab39bdb694; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stored_attachments
+    ADD CONSTRAINT fk_rails_ab39bdb694 FOREIGN KEY (uploaded_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -3442,6 +4174,14 @@ ALTER TABLE ONLY public.support_case_status_changes
 
 ALTER TABLE ONLY public.support_case_status_changes
     ADD CONSTRAINT fk_rails_c15e982c02 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: active_storage_attachments fk_rails_c3b3935057; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.active_storage_attachments
+    ADD CONSTRAINT fk_rails_c3b3935057 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
 
 
 --
@@ -3549,11 +4289,35 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: outbound_email_delivery_attachments fk_rails_f20f8e12d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_delivery_attachments
+    ADD CONSTRAINT fk_rails_f20f8e12d5 FOREIGN KEY (workspace_id, outbound_email_delivery_id) REFERENCES public.outbound_email_deliveries(workspace_id, id);
+
+
+--
+-- Name: conversation_message_attachments fk_rails_f28ac313d8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_message_attachments
+    ADD CONSTRAINT fk_rails_f28ac313d8 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_f29673b049; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.outbound_email_deliveries
     ADD CONSTRAINT fk_rails_f29673b049 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: outbound_email_delivery_attachments fk_rails_f9dc4462b2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_delivery_attachments
+    ADD CONSTRAINT fk_rails_f9dc4462b2 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -3573,12 +4337,22 @@ ALTER TABLE ONLY public.contact_merges
 
 
 --
+-- Name: email_draft_attachments fk_rails_fefc5eb6d1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_draft_attachments
+    ADD CONSTRAINT fk_rails_fefc5eb6d1 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040006'),
+('20260824040005'),
 ('20260823200308'),
 ('20260823200307'),
 ('20260823200306'),

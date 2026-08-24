@@ -1,6 +1,6 @@
 class OutboundEmailDelivery < ApplicationRecord
   STATUSES = %w[sending sent failed unknown].freeze
-  FAILURE_CODES = %w[configuration_error rejected unknown_outcome confirmed_not_sent].freeze
+  FAILURE_CODES = %w[configuration_error rejected attachment_unavailable unknown_outcome confirmed_not_sent].freeze
 
   belongs_to :workspace
   belongs_to :email_draft
@@ -10,6 +10,8 @@ class OutboundEmailDelivery < ApplicationRecord
   belongs_to :conversation_message, optional: true
   belongs_to :actor_membership, class_name: "Membership"
   belongs_to :actor_user, class_name: "User"
+  has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
+  has_many :stored_attachments, through: :outbound_email_delivery_attachments
 
   enum :status, STATUSES.index_by(&:itself), validate: true
 

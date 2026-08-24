@@ -153,8 +153,10 @@ class SharedEmailIntake
       body = plain_text_body(mail)
       raise ProcessingError, "empty_body" if body.blank?
       raise ProcessingError, "body_too_large" if body.bytesize > MAX_BODY_BYTES
+      inputs = attachment_inputs(mail)
+      prepared_attachments = AttachmentIntake.prepare!(inputs) if inputs.any?
 
-      InboundEmailDelivery.transaction do
+      result = InboundEmailDelivery.transaction do
         current_delivery = @inbox.inbound_email_deliveries.lock.find(delivery.id)
         return current_delivery if current_delivery.processed?
 
@@ -172,6 +174,16 @@ class SharedEmailIntake
         thread, message = find_or_create_thread!(mail, identity.record, body)
         message ||= append_message!(thread, mail, identity.record, body)
         create_message_link!(thread, message, mail, reply_target(mail, sender_email))
+        attachments = AttachmentIntake.persist!(
+          workspace: @workspace, prepared: prepared_attachments || [],
+          source: :inbound_email, message: message
+        )
+        attachments.each do |attachment|
+          AuditEvent.record!(
+            action: "attachment.uploaded", source: :integration, workspace: @workspace,
+            actor_kind: :system, subject: attachment, metadata: { scan_status: attachment.scan_status }
+          )
+        end
         current_delivery.update!(
           status: :processed,
           conversation: thread.conversation,
@@ -180,12 +192,18 @@ class SharedEmailIntake
         )
         current_delivery
       end
+      prepared_attachments = nil if result.processed?
+      result
     rescue ProcessingError => error
       mark_failed!(delivery, error.code)
+    rescue AttachmentIntake::InvalidAttachment
+      mark_failed!(delivery, "persistence_error")
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound, ActiveRecord::StatementInvalid
       mark_failed!(delivery, "persistence_error")
     rescue ArgumentError
       mark_failed!(delivery, "identity_error")
+    ensure
+      prepared_attachments&.each(&:purge!)
     end
 
     def resolve_contact(email, name)
@@ -252,9 +270,10 @@ class SharedEmailIntake
     end
 
     def reply_target(mail, sender_email)
-      address = mail[:reply_to]&.addresses&.first
+      field = mail[:reply_to]
+      address = field.addresses&.first if field.respond_to?(:addresses)
       address ? IdentityKeyNormalizer.normalize(:email, address) : sender_email
-    rescue ArgumentError
+    rescue Mail::Field::ParseError, ArgumentError
       sender_email
     end
 
@@ -300,6 +319,19 @@ class SharedEmailIntake
 
         part.multipart? ? body_parts(part, mime_type) : (part.mime_type == mime_type ? [ part ] : [])
       end
+    end
+
+    def attachment_inputs(mail)
+      return [] unless mail.multipart?
+
+      leaf_parts(mail).filter_map.with_index do |part, index|
+        attachment = part.filename.present? || part.content_disposition.to_s.match?(/\Aattachment(?:;|\z)/i) || !%w[text/plain text/html].include?(part.mime_type)
+        { filename: part.filename.presence || "attachment-#{index + 1}", data: part.decoded } if attachment
+      end
+    end
+
+    def leaf_parts(container)
+      container.parts.flat_map { |part| part.multipart? && part.mime_type != "message/rfc822" ? leaf_parts(part) : [ part ] }
     end
 
     def html_to_text(html)

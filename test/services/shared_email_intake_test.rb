@@ -28,6 +28,17 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
     assert AuditEvent.where(action: "email.intake_received", subject_id: @delivery.id).exists?
   end
 
+  test "an invalid Reply-To falls back to the valid sender" do
+    delivery = SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(message_id: "invalid-reply-to@example.net", reply_to: "not an email"),
+      received_at: @received_at
+    )
+
+    assert delivery.processed?
+    assert_equal "alice@example.net", delivery.conversation_message.email_message_link.reply_to_address
+  end
+
   test "threads replies and out-of-order parents by the root reference" do
     child = raw_email(
       message_id: "child@example.net",
@@ -181,6 +192,10 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
 
     assert_equal "Visible request", delivery.conversation_message.body
     refute_includes delivery.conversation_message.body, "ATTACHMENT SECRET"
+    attachment = delivery.conversation_message.stored_attachments.sole
+    assert_equal "attachment-2", attachment.filename
+    assert attachment.quarantined?
+    assert_equal "ATTACHMENT SECRET", attachment.file.download
   end
 
   test "permanent failures cannot starve received reconciliation work" do
@@ -354,9 +369,10 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
   end
 
   private
-    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8", from: "Alice Example <alice@example.net>")
+    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8", from: "Alice Example <alice@example.net>")
       headers = [
         "From: #{from}",
+        ("Reply-To: #{reply_to}" if reply_to),
         "To: Support <support@example.com>",
         "Date: #{date.rfc2822}",
         "Subject: Email help",

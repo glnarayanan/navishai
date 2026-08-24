@@ -34,6 +34,8 @@ The forwarding service must post the raw RFC 5322 message to the inbox endpoint.
 
 To send replies, put SMTP settings in Rails credentials at `shared_email.<credential_key>.smtp` with `address`, `port`, `user_name`, `password`, and optional `authentication` keys. You can instead set the matching `NAVISHAI_SHARED_EMAIL_<UPPERCASE_CREDENTIAL_KEY>_SMTP_ADDRESS`, `_PORT`, `_USER_NAME`, `_PASSWORD`, and `_AUTHENTICATION` environment variables. NavishAI sends plain text only after a signed-in workspace writer reviews the exact draft and presses **Send email**. An uncertain SMTP result blocks another send until a signed-in writer checks SMTP or the shared mailbox and marks the attempt as accepted or not sent.
 
+Inbound and user-uploaded attachments stay quarantined unless a deployment configures `AttachmentScanner.default` with an adapter whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
+
 ## Checks
 
 Run the full local check suite with:

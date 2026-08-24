@@ -53,6 +53,13 @@ class HumanEmailSend
           conversation_message: message,
           message_id: current.message_id
         )
+        current.stored_attachments.each do |attachment|
+          workspace.conversation_message_attachments.create!(
+            conversation: current.conversation,
+            conversation_message: message,
+            stored_attachment: attachment
+          )
+        end
         current.update!(status: :sent, failure_code: nil, conversation_message: message, sent_at: current.started_at)
         current.email_draft.update!(status: :sent)
         AuditEvent.record!(action: "email.send_succeeded", source: :web, workspace: workspace, actor: current.actor_user, subject: current)
@@ -95,6 +102,18 @@ class HumanEmailSend
     return delivery unless claimed
 
     smtp_accepted = false
+    attachments = begin
+      delivery.stored_attachments.map do |attachment|
+        {
+          filename: attachment.filename,
+          content_type: attachment.detected_content_type,
+          content: attachment.download_verified!
+        }
+      end
+    rescue StandardError
+      return fail!(delivery, "attachment_unavailable", retryable: true)
+    end
+    smtp_attempted = true
     @transport.deliver!(
       inbox: delivery.shared_email_inbox,
       message_id: delivery.message_id,
@@ -102,7 +121,8 @@ class HumanEmailSend
       references: [ delivery.email_thread.thread_key, delivery.in_reply_to_message_id ].compact.uniq,
       to: delivery.to_address,
       subject: delivery.subject,
-      body: delivery.body
+      body: delivery.body,
+      attachments: attachments
     )
     smtp_accepted = true
     complete!(delivery)
@@ -113,7 +133,7 @@ class HumanEmailSend
   rescue IOError, SystemCallError, Timeout::Error, EOFError
     fail!(delivery, "unknown_outcome", retryable: false)
   rescue StandardError
-    fail!(delivery, "unknown_outcome", retryable: false) if smtp_accepted
+    fail!(delivery, "unknown_outcome", retryable: false) if smtp_attempted || smtp_accepted
     raise
   ensure
     release_delivery_lock!
@@ -144,6 +164,10 @@ class HumanEmailSend
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
+        attachments = draft.stored_attachments.to_a
+        unless attachments.all? { |attachment| attachment.available? && attachment.file.attached? }
+          raise AttachmentIntake::InvalidAttachment, "Every attachment must pass malware scanning before send."
+        end
 
         reply_link = self.class.send(:latest_inbound_link, thread)
         recipient = self.class.send(:recipient_for, workspace: @workspace, thread: thread, reply_link: reply_link)
@@ -172,6 +196,12 @@ class HumanEmailSend
           body: draft.body,
           started_at: [ Time.current, current_case.conversation.last_message_at ].compact.max
         )
+        attachments.each do |attachment|
+          @workspace.outbound_email_delivery_attachments.create!(
+            outbound_email_delivery: delivery,
+            stored_attachment: attachment
+          )
+        end
         draft.update!(status: :sending)
         AuditEvent.record!(action: "email.send_started", source: :web, workspace: @workspace, actor: actor.user, subject: delivery)
         acquire_delivery_lock!(delivery)
@@ -199,6 +229,13 @@ class HumanEmailSend
           conversation_message: message,
           message_id: current.message_id
         )
+        current.stored_attachments.each do |attachment|
+          @workspace.conversation_message_attachments.create!(
+            conversation: current.conversation,
+            conversation_message: message,
+            stored_attachment: attachment
+          )
+        end
         current.update!(status: :sent, conversation_message: message, sent_at: message.occurred_at)
         current.email_draft.update!(status: :sent)
         AuditEvent.record!(action: "email.send_succeeded", source: :web, workspace: @workspace, actor: current.actor_user, subject: current)

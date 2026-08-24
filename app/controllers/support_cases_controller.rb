@@ -27,6 +27,7 @@ class SupportCasesController < ApplicationController
       @membership = Current.require_membership!
       load_queue(limit: 25)
       @messages = @support_case.conversation.conversation_messages
+        .includes(stored_attachments: { file_attachment: :blob })
       @status_changes = @support_case.status_changes.includes(:actor).order(occurred_at: :desc, id: :desc)
       @notes = @support_case.case_notes.includes(:author).order(created_at: :desc, id: :desc)
       @available_tags = @workspace.tags.where.not(id: @support_case.tag_ids).order(:name)
@@ -41,8 +42,9 @@ class SupportCasesController < ApplicationController
       @email_draft = @support_case.email_draft || @workspace.email_drafts.new(
         support_case: @support_case, email_thread: @email_thread, conversation: @support_case.conversation
       )
-      @email_delivery = @email_draft.persisted? ? @email_draft.outbound_email_deliveries.order(created_at: :desc).first : nil
       @email_follow_up_available = EmailDraftWorkflow.follow_up_available?(@email_draft)
+      @draft_attachments = @email_draft.persisted? && !@email_follow_up_available ? @email_draft.stored_attachments.with_attached_file.to_a : []
+      @email_delivery = @email_draft.persisted? ? @email_draft.outbound_email_deliveries.order(created_at: :desc).first : nil
       @send_token ||= SecureRandom.uuid
     end
 
