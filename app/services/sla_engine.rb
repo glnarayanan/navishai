@@ -7,10 +7,10 @@ class SlaEngine
       current_case = workspace.support_cases.lock.find(support_case.id)
       return current_case.case_sla if current_case.case_sla
 
-      policy = workspace.sla_policies.active.find_by(priority: current_case.priority)
+      policy = workspace.sla_policies.active.lock.find_by(priority: current_case.priority)
       return unless policy
 
-      calendar = policy.service_calendar
+      calendar = workspace.service_calendars.lock.find(policy.service_calendar_id)
       case_sla = workspace.case_slas.create!(
         support_case: current_case,
         sla_policy: policy,
