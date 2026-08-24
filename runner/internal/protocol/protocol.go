@@ -207,6 +207,79 @@ func NewCanonicalEvent(runID string, sequence int, eventType string, occurredAt 
 	}, nil
 }
 
+func (event CanonicalEvent) Validate() error {
+	if event.ProtocolVersion != Version || !uuidPattern.MatchString(event.EventID) || !uuidPattern.MatchString(event.RunID) ||
+		event.Sequence < 1 || event.OccurredAt.IsZero() || event.Data == nil {
+		return ErrInvalidRequest
+	}
+	valid := false
+	switch event.EventType {
+	case "run.admitted":
+		valid = exactKeys(event.Data, "workspace_key", "task_key", "attempt") &&
+			uuidValue(event.Data["workspace_key"]) && uuidValue(event.Data["task_key"]) && integerValue(event.Data["attempt"], 1)
+	case "run.started":
+		valid = exactKeys(event.Data, "adapter", "scenario", "attempt") && stringValue(event.Data["adapter"], 64) &&
+			stringValue(event.Data["scenario"], 100) && integerValue(event.Data["attempt"], 1)
+	case "tool.completed":
+		valid = exactKeys(event.Data, "tool", "result") && stringValue(event.Data["tool"], 64) && stringValue(event.Data["result"], 100)
+	case "output.produced":
+		valid = exactKeys(event.Data, "text") && stringValue(event.Data["text"], 100*1024)
+	case "usage.observed":
+		valid = exactKeys(event.Data, "input_units", "output_units") && integerValue(event.Data["input_units"], 0) &&
+			integerValue(event.Data["output_units"], 0)
+	case "run.completed":
+		valid = exactKeys(event.Data, "outcome") && event.Data["outcome"] == "completed"
+	case "run.failed":
+		_, boolean := event.Data["retryable"].(bool)
+		valid = exactKeys(event.Data, "code", "retryable") && stringValue(event.Data["code"], 100) && boolean
+	case "run.timed_out", "run.canceled":
+		valid = exactKeys(event.Data, "reason") && stringValue(event.Data["reason"], 500)
+	case "run.policy_denied":
+		valid = exactKeys(event.Data, "code", "tool") && stringValue(event.Data["code"], 100) && stringValue(event.Data["tool"], 64)
+	}
+	if !valid {
+		return ErrInvalidRequest
+	}
+	encoded, err := json.Marshal(event.Data)
+	if err != nil || len(encoded) > 128*1024 {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
+func exactKeys(data map[string]any, keys ...string) bool {
+	if len(data) != len(keys) {
+		return false
+	}
+	for _, key := range keys {
+		if _, exists := data[key]; !exists {
+			return false
+		}
+	}
+	return true
+}
+
+func uuidValue(value any) bool {
+	text, ok := value.(string)
+	return ok && uuidPattern.MatchString(text)
+}
+
+func stringValue(value any, maximum int) bool {
+	text, ok := value.(string)
+	return ok && byteLength(text, 1, maximum)
+}
+
+func integerValue(value any, minimum int) bool {
+	switch number := value.(type) {
+	case int:
+		return number >= minimum
+	case float64:
+		return number >= float64(minimum) && number == float64(int64(number))
+	default:
+		return false
+	}
+}
+
 func ensureEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
@@ -216,8 +289,8 @@ func ensureEOF(decoder *json.Decoder) error {
 }
 
 func byteLength(value string, minimum, maximum int) bool {
-	length := len([]byte(strings.TrimSpace(value)))
-	return length >= minimum && length <= maximum
+	length := len([]byte(value))
+	return strings.TrimSpace(value) != "" && length >= minimum && length <= maximum
 }
 
 func validDistinctValues(values []string, maximum int, pattern *regexp.Regexp) bool {

@@ -26,7 +26,7 @@ func TestSuccessfulScriptProducesCanonicalEvents(t *testing.T) {
 	expected := []string{"run.started", "tool.completed", "tool.completed", "output.produced", "usage.observed", "run.completed"}
 	assertEventTypes(t, events, expected)
 	for index, event := range events {
-		if event.ProtocolVersion != protocol.Version || event.RunID != request.RunID || event.Sequence != index+2 || event.EventID == "" {
+		if event.ProtocolVersion != protocol.Version || event.RunID != request.RunID || event.Sequence != index+2 || event.EventID == "" || event.Validate() != nil {
 			t.Fatalf("event is not canonical: %#v", event)
 		}
 	}
