@@ -190,6 +190,7 @@ func TestRunRejectsEscapesAndOversizedInput(t *testing.T) {
 	}
 	requests := []Request{
 		{Executable: "/bin/true", WorkingDir: working},
+		{Executable: filepath.Join(testBinaries, "navishai-exec"), WorkingDir: working},
 		{Executable: targetPath(), WorkingDir: escape},
 		{Executable: targetPath(), WorkingDir: working, Input: make([]byte, maxInputBytes+1)},
 		{Executable: targetPath(), WorkingDir: working, Arguments: []string{strings.Repeat("x", maxArgumentBytes+1)}},
@@ -206,6 +207,7 @@ func testSupervisor(t *testing.T, working string) *Supervisor {
 	t.Helper()
 	value, err := New(Config{
 		HelperPath: filepath.Join(testBinaries, "navishai-exec"), AllowedExecutableRoots: []string{testBinaries},
+		ApprovedExecutables: []string{targetPath()},
 		AllowedWorkingRoots: []string{working}, RuntimeReadRoots: []string{testBinaries},
 		Limits: Limits{WallTime: 2 * time.Second, CPUSeconds: 1, MemoryBytes: 2 * 1024 * 1024 * 1024,
 			OpenFiles: 32, Processes: 4096, OutputBytes: 16 * 1024, KillGrace: 10 * time.Millisecond},

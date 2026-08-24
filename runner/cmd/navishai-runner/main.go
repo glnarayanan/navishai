@@ -10,6 +10,7 @@ import (
 
 	"github.com/glnarayanan/navishai/runner/internal/admission"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 )
 
 func main() {
@@ -49,10 +50,15 @@ func newHandler(secret []byte, store *admission.Store, now func() time.Time) (ht
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
 	}
+	runtimeHandler, err := runtimecatalog.NewHandler(secret, runtimecatalog.Empty(), now)
+	if err != nil {
+		return nil, fmt.Errorf("create runtime detection handler: %w", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", healthHandler)
 	mux.HandleFunc("GET /readyz", healthHandler)
 	mux.Handle("POST /v1/runs/admit", admissionHandler)
+	mux.Handle("POST "+runtimecatalog.DetectionPath, runtimeHandler)
 	return mux, nil
 }
 

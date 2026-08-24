@@ -47,6 +47,7 @@ class Workspace < ApplicationRecord
   has_many :execution_runs, dependent: :restrict_with_exception
   has_many :execution_events, dependent: :restrict_with_exception
   has_many :crew_artifacts, dependent: :restrict_with_exception
+  has_many :runtime_installations, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

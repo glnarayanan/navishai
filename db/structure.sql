@@ -929,6 +929,46 @@ END;
 $$;
 
 
+--
+-- Name: validate_runtime_installation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_runtime_installation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE metadata_key text;
+BEGIN
+  IF NEW.allowed_role_keys <@ '["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"]'::jsonb = false OR
+     NEW.allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record"]'::jsonb = false OR
+     NEW.allowed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query"]'::jsonb = false OR
+     NEW.allowed_role_keys <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_role_keys)) values), '[]'::jsonb) OR
+     NEW.allowed_tools <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_tools)) values), '[]'::jsonb) OR
+     NEW.allowed_data_classes <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_data_classes)) values), '[]'::jsonb) OR
+     NEW.capabilities <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.capabilities)) values), '[]'::jsonb) THEN
+    RAISE EXCEPTION 'runtime policy values must be bounded, sorted, and distinct';
+  END IF;
+  FOR metadata_key IN SELECT jsonb_object_keys(NEW.account_metadata) LOOP
+    IF metadata_key ~* '(passw|secret|token|credential|cookie|authorization|private|session)' THEN
+      RAISE EXCEPTION 'runtime account metadata cannot contain secret fields';
+    END IF;
+  END LOOP;
+  IF NEW.approved AND (NEW.health_status <> 'available' OR NEW.compatibility_status = 'incompatible') THEN
+    RAISE EXCEPTION 'unavailable or incompatible runtimes cannot be approved';
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.approved AND NEW.approved AND
+     ROW(OLD.adapter_key, OLD.protocol_version, OLD.executable_path, OLD.executable_version,
+         OLD.account_metadata, OLD.capabilities, OLD.minimum_version, OLD.maximum_version,
+         OLD.compatibility_status) IS DISTINCT FROM
+     ROW(NEW.adapter_key, NEW.protocol_version, NEW.executable_path, NEW.executable_version,
+         NEW.account_metadata, NEW.capabilities, NEW.minimum_version, NEW.maximum_version,
+         NEW.compatibility_status) THEN
+    RAISE EXCEPTION 'runtime detection changed without revoking approval';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -2349,6 +2389,67 @@ ALTER SEQUENCE public.outbound_email_delivery_attachments_id_seq OWNED BY public
 
 
 --
+-- Name: runtime_installations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.runtime_installations (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    detection_key character varying NOT NULL,
+    adapter_key character varying NOT NULL,
+    protocol_version character varying NOT NULL,
+    executable_path text NOT NULL,
+    executable_version character varying NOT NULL,
+    account_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    capabilities jsonb DEFAULT '[]'::jsonb NOT NULL,
+    minimum_version character varying DEFAULT ''::character varying NOT NULL,
+    maximum_version character varying DEFAULT ''::character varying NOT NULL,
+    compatibility_status character varying NOT NULL,
+    incompatibility_reason text DEFAULT ''::text NOT NULL,
+    health_status character varying NOT NULL,
+    checked_at timestamp(6) without time zone NOT NULL,
+    approved boolean DEFAULT false NOT NULL,
+    allowed_role_keys jsonb DEFAULT '[]'::jsonb NOT NULL,
+    allowed_tools jsonb DEFAULT '[]'::jsonb NOT NULL,
+    allowed_data_classes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    max_timeout_seconds integer DEFAULT 300 NOT NULL,
+    max_steps integer DEFAULT 10 NOT NULL,
+    max_tool_calls integer DEFAULT 20 NOT NULL,
+    approved_by_membership_id bigint,
+    approved_by_user_id bigint,
+    approved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
+    CONSTRAINT runtime_installations_budgets CHECK ((((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
+    CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
+    CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
+    CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
+    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[]))))
+);
+
+
+--
+-- Name: runtime_installations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.runtime_installations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: runtime_installations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.runtime_installations_id_seq OWNED BY public.runtime_installations.id;
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3210,6 +3311,13 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments ALTER COLUMN id SET 
 
 
 --
+-- Name: runtime_installations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations ALTER COLUMN id SET DEFAULT nextval('public.runtime_installations_id_seq'::regclass);
+
+
+--
 -- Name: service_calendar_holidays id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3607,6 +3715,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.outbound_email_delivery_attachments
     ADD CONSTRAINT outbound_email_delivery_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: runtime_installations runtime_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations
+    ADD CONSTRAINT runtime_installations_pkey PRIMARY KEY (id);
 
 
 --
@@ -4656,6 +4772,27 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_runtime_installations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_runtime_installations_on_workspace_id ON public.runtime_installations USING btree (workspace_id);
+
+
+--
+-- Name: index_runtime_installations_on_workspace_id_and_detection_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_runtime_installations_on_workspace_id_and_detection_key ON public.runtime_installations USING btree (workspace_id, detection_key);
+
+
+--
+-- Name: index_runtime_installations_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_runtime_installations_on_workspace_id_and_id ON public.runtime_installations USING btree (workspace_id, id);
+
+
+--
 -- Name: index_service_calendar_holidays_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5363,6 +5500,13 @@ CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON publi
 
 
 --
+-- Name: runtime_installations runtime_installations_validate_policy; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER runtime_installations_validate_policy BEFORE INSERT OR UPDATE ON public.runtime_installations FOR EACH ROW EXECUTE FUNCTION public.validate_runtime_installation();
+
+
+--
 -- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5691,6 +5835,14 @@ ALTER TABLE ONLY public.service_calendars
 
 
 --
+-- Name: runtime_installations fk_rails_2d6bafe6cf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations
+    ADD CONSTRAINT fk_rails_2d6bafe6cf FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: conversation_messages fk_rails_317b29f039; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5720,6 +5872,14 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT fk_rails_3633c0c202 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: runtime_installations fk_rails_3cc870d257; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations
+    ADD CONSTRAINT fk_rails_3cc870d257 FOREIGN KEY (approved_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -6315,6 +6475,14 @@ ALTER TABLE ONLY public.knowledge_sources
 
 
 --
+-- Name: runtime_installations fk_rails_ada199aa31; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations
+    ADD CONSTRAINT fk_rails_ada199aa31 FOREIGN KEY (workspace_id, approved_by_membership_id, approved_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: source_identities fk_rails_b04720ccd3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6641,6 +6809,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824090000'),
 ('20260824081944'),
 ('20260824040011'),
 ('20260824040010'),

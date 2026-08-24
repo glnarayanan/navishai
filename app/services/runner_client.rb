@@ -69,6 +69,29 @@ class RunnerClient
     false
   end
 
+  def detect_runtimes!(workspace_key:)
+    body = JSON.generate(protocol_version: RunnerProtocol::VERSION, workspace_key: workspace_key)
+    timestamp = @clock.call.to_i.to_s
+    request = Net::HTTP::Post.new(RunnerProtocol::RUNTIME_DETECTION_PATH)
+    request["Content-Type"] = "application/json"
+    request["X-NavishAI-Timestamp"] = timestamp
+    request["X-NavishAI-Signature"] = RunnerProtocol.signature(
+      secret: @secret, timestamp: timestamp, method: "POST",
+      path: RunnerProtocol::RUNTIME_DETECTION_PATH, body: body
+    )
+    request.body = body
+    response = perform(request)
+    raise_for_response(response) unless response.code == 200
+
+    RunnerProtocol::RuntimeDetectionResponse.parse(response.body).installations
+  rescue RunnerProtocol::MalformedMessage => error
+    raise MalformedResponse, error.message
+  rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
+    raise AmbiguousResult, "runner detection outcome is unknown: #{error.class}"
+  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+    raise Unavailable, "runner is unavailable: #{error.class}"
+  end
+
   private
 
   def parse_address(address)

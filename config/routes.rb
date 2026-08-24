@@ -14,6 +14,9 @@ Rails.application.routes.draw do
     resources :crew_templates, path: "crews", only: :index do
       resources :agent_profiles, only: :update
     end
+    resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
+      post :detect, on: :collection
+    end
     resources :support_cases, path: "cases", only: %i[ index show ] do
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member

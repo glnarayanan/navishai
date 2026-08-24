@@ -46,6 +46,7 @@ type Limits struct {
 type Config struct {
 	HelperPath             string
 	AllowedExecutableRoots []string
+	ApprovedExecutables    []string
 	AllowedWorkingRoots    []string
 	RuntimeReadRoots       []string
 	Limits                 Limits
@@ -69,11 +70,12 @@ type Result struct {
 }
 
 type Supervisor struct {
-	helperPath       string
-	executableRoots  []string
-	workingRoots     []string
-	runtimeReadRoots []string
-	limits           Limits
+	helperPath          string
+	executableRoots     []string
+	approvedExecutables map[string]bool
+	workingRoots        []string
+	runtimeReadRoots    []string
+	limits              Limits
 }
 
 func New(config Config) (*Supervisor, error) {
@@ -95,7 +97,16 @@ func New(config Config) (*Supervisor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Supervisor{helperPath: helper, executableRoots: executableRoots, workingRoots: workingRoots, runtimeReadRoots: runtimeReadRoots, limits: config.Limits}, nil
+	approvedExecutables := make(map[string]bool, len(config.ApprovedExecutables))
+	for _, path := range config.ApprovedExecutables {
+		executable, approvalErr := approvedFile(path, executableRoots)
+		if approvalErr != nil {
+			return nil, approvalErr
+		}
+		approvedExecutables[executable] = true
+	}
+	return &Supervisor{helperPath: helper, executableRoots: executableRoots, approvedExecutables: approvedExecutables,
+		workingRoots: workingRoots, runtimeReadRoots: runtimeReadRoots, limits: config.Limits}, nil
 }
 
 func approvedExecutable(path string) (string, error) {
@@ -112,8 +123,8 @@ func approvedExecutable(path string) (string, error) {
 
 func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result, error) {
 	executable, err := approvedFile(request.Executable, supervisor.executableRoots)
-	if err != nil {
-		return Result{}, err
+	if err != nil || !supervisor.approvedExecutables[executable] {
+		return Result{}, ErrInvalidRequest
 	}
 	workingDir, err := approvedDirectory(request.WorkingDir, supervisor.workingRoots)
 	if err != nil || len(request.Arguments) > maxArguments || len(request.Input) > maxInputBytes || len(request.Credentials) > maxCredentialKeys {
