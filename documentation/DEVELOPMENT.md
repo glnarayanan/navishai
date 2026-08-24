@@ -46,6 +46,8 @@ bin/ci
 
 The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails tests, vets the Go runner, and runs Go tests.
 
+GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
+
 Run focused checks while working:
 
 ```sh
