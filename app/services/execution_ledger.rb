@@ -17,7 +17,7 @@ class ExecutionLedger
     "run.policy_denied" => [ "running", "policy_denied" ]
   }.freeze
 
-  def self.start!(workspace:, task:, request_key:, client: RunnerClient.new)
+  def self.start!(workspace:, task:, request_key:, client: nil)
     ledger = new(workspace:)
     run = ledger.prepare!(task:, request_key:)
     ledger.admit!(run:, client:)
@@ -63,7 +63,7 @@ class ExecutionLedger
     raise InvalidRun, error.record.errors.full_messages.to_sentence
   end
 
-  def admit!(run:, client: RunnerClient.new)
+  def admit!(run:, client: nil)
     run = @workspace.execution_runs.find(run.id)
     run.with_lock do
       return run unless run.admitting?
@@ -75,7 +75,7 @@ class ExecutionLedger
       )
     end
 
-    response = client.admit!(
+    response = (client || RunnerClient.new).admit!(
       task: run.crew_task,
       input_context: run.input_context,
       run_id: run.run_key,

@@ -1,0 +1,165 @@
+<%= turbo_frame_tag "task-execution-runs",
+  data: {
+    controller: "run-poll",
+    run_poll_active_value: @active_run.present?,
+    run_poll_interval_value: 3_000,
+    run_poll_url_value: workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, @task)
+  } do %>
+  <section class="execution-panel" aria-labelledby="execution-title">
+    <div class="execution-heading">
+      <div>
+        <h3 id="execution-title">Specialist runs</h3>
+        <p>Runner attempts, output, and recovery stay tied to this task.</p>
+      </div>
+      <% if @active_run %>
+        <% if @active_run.admitting? && @active_run.last_admission_error.present? %>
+          <span class="run-state run-state-warning" role="status">Degraded</span>
+        <% else %>
+          <span class="run-state run-state-active" role="status"><%= @active_run.status == "admitting" ? "Connecting" : @active_run.status.humanize %></span>
+        <% end %>
+      <% elsif @runs.first %>
+        <span class="run-state run-state-<%= @runs.first.status.dasherize %>" role="status"><%= @runs.first.status.humanize %></span>
+      <% end %>
+    </div>
+
+    <% if @command_error %>
+      <div class="execution-alert execution-alert-error" role="alert">
+        <strong>Run not changed</strong>
+        <p><%= @command_error %></p>
+      </div>
+    <% end %>
+
+    <% latest_run = @runs.first %>
+    <% if latest_run %>
+      <article class="run-current">
+        <header>
+          <div>
+            <strong>Attempt <%= latest_run.attempt_number %></strong>
+            <p><%= latest_run.agent_profile.name %> · policy v<%= latest_run.agent_profile_version.version_number %></p>
+          </div>
+          <time datetime="<%= latest_run.created_at.iso8601 %>"><%= latest_run.created_at.to_fs(:short) %></time>
+        </header>
+
+        <% if latest_run.admitting? && latest_run.last_admission_error.present? %>
+          <div class="execution-alert execution-alert-warning">
+            <strong>Runner connection degraded</strong>
+            <p>The request is durable, but the runner did not confirm it. Retrying uses the same key and cannot create a second attempt.</p>
+          </div>
+        <% elsif latest_run.admitted? %>
+          <div class="execution-alert">
+            <strong>Accepted by runner</strong>
+            <p>The run is queued. This panel refreshes while events arrive.</p>
+          </div>
+        <% elsif latest_run.running? %>
+          <div class="execution-alert">
+            <strong>Work in progress</strong>
+            <p>Sequence <%= latest_run.current_sequence %> is saved. You can leave this page without losing the record.</p>
+          </div>
+        <% elsif latest_run.failed? || latest_run.timed_out? || latest_run.policy_denied? %>
+          <div class="execution-alert execution-alert-error">
+            <strong><%= latest_run.policy_denied? ? "Blocked by policy" : "Run did not complete" %></strong>
+            <p><%= latest_run.failure_code.to_s.humanize.presence || "The runner recorded a terminal failure." %> Review the event record before starting another attempt.</p>
+          </div>
+        <% elsif latest_run.canceled? %>
+          <div class="execution-alert execution-alert-warning">
+            <strong>Cancellation confirmed</strong>
+            <p>The runner stopped this attempt. Its saved events remain available for review.</p>
+          </div>
+        <% end %>
+
+        <% if latest_run.crew_artifact %>
+          <% artifact = latest_run.crew_artifact %>
+          <section class="run-artifact" aria-labelledby="artifact-<%= artifact.id %>-title">
+            <header>
+              <div>
+                <h4 id="artifact-<%= artifact.id %>-title"><%= artifact.artifact_kind.humanize %> · v<%= artifact.version_number %></h4>
+                <% if artifact.review_outcome %><span class="run-state run-state-<%= artifact.review_outcome.dasherize %>"><%= artifact.review_outcome.humanize %></span><% end %>
+              </div>
+            </header>
+            <div class="run-artifact-body"><%= simple_format(artifact.body) %></div>
+            <dl class="run-artifact-facts">
+              <div><dt>Uncertainty</dt><dd><%= artifact.uncertainty %></dd></div>
+              <div>
+                <dt>Citations</dt>
+                <dd>
+                  <ul>
+                    <% artifact.citations.each do |citation| %>
+                      <li><strong><%= citation.fetch("label") %></strong><code><%= citation.fetch("locator") %></code></li>
+                    <% end %>
+                  </ul>
+                </dd>
+              </div>
+              <% if artifact.conflicts.any? %>
+                <div><dt>Conflicts</dt><dd><%= artifact.conflicts.map { |conflict| conflict.fetch("summary") }.to_sentence %></dd></div>
+              <% end %>
+              <% if artifact.change_requests.any? %>
+                <div><dt>Requested changes</dt><dd><%= artifact.change_requests.to_sentence %></dd></div>
+              <% end %>
+            </dl>
+          </section>
+        <% end %>
+
+        <% recent_events = latest_run.events.order(sequence_number: :desc).limit(8) %>
+        <% if recent_events.any? %>
+          <ol class="run-event-list">
+            <% recent_events.each do |event| %>
+              <li>
+                <span><%= event.sequence_number %></span>
+                <div><strong><%= event.event_type.tr(".", " ").humanize %></strong><time datetime="<%= event.occurred_at.iso8601 %>"><%= event.occurred_at.to_fs(:short) %></time></div>
+              </li>
+            <% end %>
+          </ol>
+        <% end %>
+
+        <% if @membership.can_write? && latest_run.admitting? %>
+          <%= button_to "Retry runner connection",
+            reconcile_workspace_support_case_crew_task_execution_run_path(@workspace, @support_case, @task, latest_run),
+            class: "button button-secondary run-action" %>
+        <% end %>
+
+        <details class="run-diagnostics">
+          <summary>Operator details</summary>
+          <dl>
+            <div><dt>Run ID</dt><dd><code><%= latest_run.run_key %></code></dd></div>
+            <div><dt>Status</dt><dd><%= latest_run.status.humanize %></dd></div>
+            <div><dt>Event sequence</dt><dd><%= latest_run.current_sequence %></dd></div>
+            <div><dt>Admission checks</dt><dd><%= latest_run.admission_attempt_count %></dd></div>
+            <% if latest_run.last_admission_error %><div><dt>Last admission result</dt><dd><%= latest_run.last_admission_error.humanize %></dd></div><% end %>
+            <% if latest_run.current_event %><div><dt>Last event</dt><dd><%= latest_run.current_event.event_type.tr(".", " ").humanize %> at <%= latest_run.current_event.occurred_at.to_fs(:long) %></dd></div><% end %>
+            <div><dt>Usage observed</dt><dd><%= latest_run.input_units %> in · <%= latest_run.output_units %> out</dd></div>
+          </dl>
+        </details>
+      </article>
+    <% else %>
+      <div class="execution-empty">
+        <strong>No run requested yet</strong>
+        <% if @task.in_progress? %>
+          <p>Start the assigned specialist when the task context is ready.</p>
+        <% elsif @task.blocked? %>
+          <p>Resolve the task block before starting a specialist.</p>
+        <% else %>
+          <p>Start the task first. Its run history will appear here.</p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if @membership.can_write? && @task.in_progress? && @active_run.nil? %>
+      <%= button_to latest_run ? "Run specialist again" : "Run specialist",
+        workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, @task),
+        params: { request_key: "web:#{SecureRandom.uuid}" }, class: "button button-primary run-action" %>
+    <% elsif @active_run %>
+      <p class="execution-footnote">A new attempt stays blocked until this run reaches a confirmed terminal state.</p>
+    <% end %>
+
+    <% if @runs.size > 1 %>
+      <details class="run-history">
+        <summary>Earlier attempts (<%= @runs.size - 1 %>)</summary>
+        <ol>
+          <% @runs.drop(1).each do |run| %>
+            <li><span>Attempt <%= run.attempt_number %></span><strong><%= run.status.humanize %></strong><time datetime="<%= run.created_at.iso8601 %>"><%= run.created_at.to_fs(:short) %></time></li>
+          <% end %>
+        </ol>
+      </details>
+    <% end %>
+  </section>
+<% end %>

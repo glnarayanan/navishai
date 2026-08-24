@@ -14,6 +14,8 @@ class AuditEvent < ApplicationRecord
     "crew.artifact_published" => { "artifact_kind" => CrewArtifact::KINDS, "version" => Integer },
     "crew.task_created" => {},
     "crew.task_event_recorded" => { "event_kind" => CrewTaskEvent::KINDS },
+    "execution.run_reconciled" => {},
+    "execution.run_requested" => {},
     "attachment.downloaded" => {},
     "attachment.removed" => { "attachment_id" => Integer },
     "attachment.uploaded" => { "scan_status" => StoredAttachment::SCAN_STATUSES },

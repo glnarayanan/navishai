@@ -1,5 +1,6 @@
 class ExecutionRun < ApplicationRecord
   STATUSES = %w[admitting admitted running completed failed timed_out canceled policy_denied].freeze
+  TERMINAL_STATUSES = %w[completed failed timed_out canceled policy_denied].freeze
 
   attribute :run_key, default: -> { SecureRandom.uuid }
 
@@ -25,7 +26,12 @@ class ExecutionRun < ApplicationRecord
   validate :assignment_is_consistent
   validate :content_fits
 
-  scope :terminal, -> { where(status: %w[completed failed timed_out canceled policy_denied]) }
+  scope :terminal, -> { where(status: TERMINAL_STATUSES) }
+  scope :active, -> { where.not(status: TERMINAL_STATUSES) }
+
+  def active?
+    !status.in?(TERMINAL_STATUSES)
+  end
 
   private
     def assignment_is_consistent
