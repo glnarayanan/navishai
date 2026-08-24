@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG RUBY_VERSION=3.4.10
-FROM ruby:${RUBY_VERSION}-slim AS base
+FROM ruby:${RUBY_VERSION}-slim@sha256:66ce991f12c58f5038c9f7c34df36d624d10c84500b748a7036c621c43cf154e AS base
 
 WORKDIR /rails
 ENV RAILS_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_PATH=/usr/local/bundle BUNDLE_WITHOUT=development:test

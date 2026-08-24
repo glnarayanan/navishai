@@ -77,4 +77,4 @@ The chart keeps runner state on one persistent StatefulSet replica. Do not incre
 
 Deployment files do not set SMTP, Intercom, runtime subscription, or object-storage credentials. Supply only the integrations in use. Never place runtime subscription credentials in Rails; they belong on the runner and must stay scoped to approved adapters.
 
-Use [OPERATIONS.md](./OPERATIONS.md) for backup, restore tests, and upgrade preflight. Release artifact checks remain separate from deployment setup.
+Use [OPERATIONS.md](./OPERATIONS.md) for backup, restore tests, and upgrade preflight. Use [RELEASE.md](./RELEASE.md) for release artifacts, checksums, signatures, and the SBOM.

@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+require "bundler"
+require "json"
+require "open3"
+
+root = File.expand_path("..", __dir__)
+definition = Bundler::Definition.build(
+  File.join(root, "Gemfile"), File.join(root, "Gemfile.lock"), nil
+)
+components = definition.specs_for([ :default ]).map do |spec|
+  platform = spec.platform.to_s
+  reference = "pkg:gem/#{spec.name}@#{spec.version}"
+  reference += "?platform=#{platform}" unless platform == "ruby"
+  component = {
+    "type" => "library", "bom-ref" => reference, "name" => spec.name,
+    "version" => spec.version.to_s, "purl" => reference
+  }
+  licenses = spec.licenses.compact.reject(&:empty?).uniq.sort
+  component["licenses"] = licenses.map { |license| { "license" => { "name" => license } } } if licenses.any?
+  component
+end
+
+commit, status = Open3.capture2("git", "rev-parse", "HEAD", chdir: root)
+abort "cannot resolve the source commit" unless status.success?
+commit = commit.strip
+bom = {
+  "bomFormat" => "CycloneDX", "specVersion" => "1.6", "version" => 1,
+  "metadata" => {
+    "component" => {
+      "type" => "application", "bom-ref" => "pkg:github/glnarayanan/navishai@#{commit}",
+      "name" => "navishai", "version" => commit,
+      "purl" => "pkg:github/glnarayanan/navishai@#{commit}"
+    }
+  },
+  "components" => components.sort_by { |component| component.fetch("bom-ref") }
+}
+
+if ARGV == [ "--check" ]
+  abort "SBOM contains no production components" if components.empty?
+  abort "SBOM component references are not unique" unless components.map { |component| component.fetch("bom-ref") }.uniq.size == components.size
+  puts "CycloneDX SBOM contains #{components.size} locked production components"
+else
+  output = ARGV.fetch(0) { abort "usage: script/sbom OUTPUT.json or script/sbom --check" }
+  abort "usage: script/sbom OUTPUT.json or script/sbom --check" unless ARGV.one?
+  File.write(output, JSON.pretty_generate(bom) << "\n")
+  puts "Wrote #{output} with #{components.size} locked production components"
+end
