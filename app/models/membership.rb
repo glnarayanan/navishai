@@ -26,6 +26,10 @@ class Membership < ApplicationRecord
     owner? || admin?
   end
 
+  def can_configure_agents?
+    owner? || admin?
+  end
+
   def can_invite_role?(invited_role)
     return true if owner? && ROLES.include?(invited_role.to_s)
 

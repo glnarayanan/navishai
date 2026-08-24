@@ -36,6 +36,9 @@ class Workspace < ApplicationRecord
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
   has_many :knowledge_sources, dependent: :restrict_with_exception
   has_many :knowledge_source_versions, dependent: :restrict_with_exception
+  has_many :crew_templates, dependent: :restrict_with_exception
+  has_many :agent_profiles, dependent: :restrict_with_exception
+  has_many :agent_profile_versions, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
@@ -47,5 +50,12 @@ class Workspace < ApplicationRecord
     format: { with: /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ },
     uniqueness: { scope: :organization_id }
 
+  after_create :install_default_crew_configuration
+
   scope :accessible_to, ->(user) { joins(:memberships).where(memberships: { user: user }).distinct }
+
+  private
+    def install_default_crew_configuration
+      CrewConfiguration.install_defaults!(workspace: self)
+    end
 end
