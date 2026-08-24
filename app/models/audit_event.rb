@@ -120,7 +120,8 @@ class AuditEvent < ApplicationRecord
     "workspace.data_policy_updated" => {
       "content_retention_days" => Integer,
       "audit_retention_days" => Integer
-    }
+    },
+    "webhook.endpoint_configured" => { "active" => %w[true false] }
   }.freeze
 
   belongs_to :workspace, optional: true

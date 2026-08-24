@@ -4,6 +4,7 @@ class Notification < ApplicationRecord
   belongs_to :workspace
   belongs_to :recipient_membership, class_name: "Membership"
   belongs_to :source_audit_event, class_name: "AuditEvent"
+  has_many :outbound_webhook_deliveries, dependent: :restrict_with_exception
 
   enum :category, CATEGORIES.index_by(&:itself), validate: true, prefix: true
 
@@ -17,6 +18,7 @@ class Notification < ApplicationRecord
   scope :unread, -> { where(read_at: nil) }
 
   after_create_commit -> { NotificationMailer.alert(self).deliver_later }
+  after_create_commit -> { OutboundWebhookFanoutJob.enqueue_after_commit(self) }
 
   private
     def read_time_follows_event

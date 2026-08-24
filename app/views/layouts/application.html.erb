@@ -52,6 +52,8 @@
             <% if Current.require_membership!.can_configure_integrations? %>
               <%= link_to "Email", workspace_shared_email_inboxes_path(Current.workspace),
                 aria: { current: controller_name == "shared_email_inboxes" ? "page" : nil } %>
+              <%= link_to "Webhooks", workspace_outbound_webhook_endpoints_path(Current.workspace),
+                aria: { current: controller_name == "outbound_webhook_endpoints" ? "page" : nil } %>
             <% end %>
             <% if Current.require_membership!.owner? %>
               <%= link_to "Data", workspace_data_controls_path(Current.workspace),
