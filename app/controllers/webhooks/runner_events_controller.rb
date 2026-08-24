@@ -11,7 +11,7 @@ class Webhooks::RunnerEventsController < ActionController::API
     return head :unauthorized unless valid_signature?(body)
     return head :unsupported_media_type unless request.media_type == "application/json"
 
-    workspace = Workspace.find_by!(runner_key: request.headers["X-NavishAI-Workspace-Key"])
+    workspace = Workspace.active.find_by!(runner_key: request.headers["X-NavishAI-Workspace-Key"])
     event = RunnerProtocol::CanonicalEvent.parse(body)
     record = ExecutionLedger.ingest!(workspace:, event:)
     render json: { event_id: record.event_key, sequence: record.sequence_number }, status: :accepted

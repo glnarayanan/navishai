@@ -8,6 +8,9 @@ class OutboundWebhookFanoutJob < ApplicationJob
   end
 
   def perform(notification_id)
-    OutboundWebhookFanout.call(Notification.find(notification_id))
+    notification = Notification.find(notification_id)
+    return if notification.workspace.deletion_requested?
+
+    OutboundWebhookFanout.call(notification)
   end
 end

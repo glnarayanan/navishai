@@ -8,6 +8,9 @@ class WorkspaceContentExpiryJob < ApplicationJob
   end
 
   def perform(run_id)
-    WorkspaceContentExpiry.perform!(run: WorkspaceContentExpiryRun.find(run_id))
+    run = WorkspaceContentExpiryRun.find(run_id)
+    return if run.workspace.deletion_requested?
+
+    WorkspaceContentExpiry.perform!(run:)
   end
 end

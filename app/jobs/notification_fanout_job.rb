@@ -10,6 +10,9 @@ class NotificationFanoutJob < ApplicationJob
   end
 
   def perform(audit_event_id)
-    NotificationFanout.call(AuditEvent.find(audit_event_id))
+    event = AuditEvent.find(audit_event_id)
+    return if event.workspace&.deletion_requested?
+
+    NotificationFanout.call(event)
   end
 end

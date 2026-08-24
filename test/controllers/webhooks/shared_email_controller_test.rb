@@ -91,6 +91,16 @@ class Webhooks::SharedEmailControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a workspace pending deletion rejects intake" do
+    @inbox.workspace.update!(deletion_requested_at: Time.current)
+
+    assert_no_difference "InboundEmailDelivery.count" do
+      post webhooks_shared_email_path(@inbox.webhook_key),
+        params: @raw_email, headers: signed_headers(Time.current.to_i)
+    end
+    assert_response :not_found
+  end
+
   private
     def signed_headers(timestamp)
       signature = OpenSSL::HMAC.hexdigest("SHA256", @secret, "#{timestamp}.#{@inbox.webhook_key}.#{@raw_email}")

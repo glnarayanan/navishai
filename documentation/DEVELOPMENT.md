@@ -161,6 +161,8 @@ GitHub Actions runs this same check set only when started by hand. Run `bin/ci` 
 
 Owners set separate customer-content and security-audit periods under **Data controls**. When retention is enabled, the production queue requests expiry each day. An Owner can also request it from the same page. Content expiry first removes expired attachment objects and indexed Memory documents. It then replaces expired plaintext and source identifiers in PostgreSQL with fixed tombstones while retaining tenant links, trusted times, outcomes, and audit history. A failed external removal stops database expiry and stays visible for retry on the next run. Audit expiry removes actor, network, request, and metadata fields after its later cutoff, but keeps the action, subject, trusted time, and an expiry mark so ledger links remain valid. Back up before shortening either period: completed expiry cannot be undone.
 
+Only an Owner can delete a Workspace. The Owner must type its exact slug on **Data controls**. NavishAI blocks browser, webhook, runner, scheduled-retention, notification, and indexing work as soon as it records the request. The background deletion removes attachment objects and external Memory documents before erasing tenant rows from PostgreSQL. A failed external cleanup leaves the Workspace blocked and shows a retry on the Workspace chooser. Completion retains one immutable tombstone and one global audit event with the Organisation, Owner, times, and row counts; it retains no customer content. Export and back up first because deletion cannot be undone.
+
 Owners can download the complete logical Workspace snapshot from the same page. See [WORKSPACE_ARCHIVE.md](./WORKSPACE_ARCHIVE.md) for its scope and security boundary.
 
 Run focused checks while working:

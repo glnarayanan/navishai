@@ -25,6 +25,7 @@ class OutboundWebhookDeliveryJob < ApplicationJob
     def claim!(delivery_id)
       OutboundWebhookDelivery.transaction do
         delivery = OutboundWebhookDelivery.lock.find(delivery_id)
+        return if delivery.workspace.deletion_requested?
         return if delivery.delivered? || delivery.attempt_count >= OutboundWebhookDelivery::MAX_ATTEMPTS
         return unless delivery.outbound_webhook_endpoint.active?
         return if delivery.sending? && delivery.last_attempted_at > 15.minutes.ago

@@ -78,6 +78,17 @@ class Webhooks::RunnerEventsControllerTest < ActionDispatch::IntegrationTest
     assert_empty @run.events
   end
 
+  test "a workspace pending deletion rejects runner events" do
+    @workspace.update!(deletion_requested_at: Time.current)
+    body = event_body(1, "run.admitted",
+      workspace_key: @workspace.runner_key, task_key: @run.crew_task.task_key, attempt: 1)
+
+    assert_no_difference "ExecutionEvent.count" do
+      post webhooks_runner_events_path, params: body, headers: signed_headers(body)
+    end
+    assert_response :not_found
+  end
+
   private
     def event_body(sequence, type, **data)
       JSON.generate(

@@ -139,4 +139,19 @@
       <p class="empty-state">No audit expiry runs yet.</p>
     <% end %>
   </section>
+
+  <section class="section-block data-policy-form-section danger-zone" aria-labelledby="workspace-deletion-title">
+    <div>
+      <h2 id="workspace-deletion-title">Delete Workspace</h2>
+      <p>Deletion blocks access at once, removes attachment objects and external Memory entries, then erases this Workspace from PostgreSQL. A small immutable tombstone keeps the tenant, actor, time, and record counts. Export first. This cannot be undone.</p>
+    </div>
+    <%= form_with url: workspace_deletion_path(Current.workspace), class: "data-policy-form" do |form| %>
+      <div class="field">
+        <%= form.label :confirmation, "Type #{Current.workspace.slug} to confirm" %>
+        <%= form.text_field :confirmation, required: true, autocomplete: "off" %>
+      </div>
+      <%= form.submit "Delete Workspace", class: "button button-danger",
+        data: { turbo_confirm: "Delete #{Current.workspace.name}? Access will stop now and the data cannot be recovered." } %>
+    <% end %>
+  </section>
 </main>

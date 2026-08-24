@@ -13,6 +13,8 @@ class AccountHealthRecalculationJob < ApplicationJob
 
   def perform(account_id)
     account = Account.find(account_id).canonical
+    return if account.workspace.deletion_requested?
+
     AccountHealth.recalculate!(workspace: account.workspace, account:, trigger_kind: "input_change")
   end
 end

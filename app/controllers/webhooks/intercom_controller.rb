@@ -2,7 +2,7 @@ class Webhooks::IntercomController < ActionController::API
   rate_limit to: 120, within: 1.minute, by: -> { request.remote_ip }, with: -> { head :too_many_requests }
 
   def create
-    connection = IntercomConnection.active.find_by!(webhook_key: params[:webhook_key])
+    connection = IntercomConnection.active.joins(:workspace).merge(Workspace.active).find_by!(webhook_key: params[:webhook_key])
     return head :content_too_large if request.content_length.to_i > IntercomWebhookDelivery::MAX_BYTES
 
     raw_payload = request.body.read(IntercomWebhookDelivery::MAX_BYTES + 1).to_s.b

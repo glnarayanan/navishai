@@ -25,4 +25,27 @@
       title: "No workspace access",
       description: "Ask an Owner or Admin to invite you to a workspace." %>
   <% end %>
+
+  <% if @deleting_workspaces.any? %>
+    <section class="section-block" aria-labelledby="workspace-deletions-title">
+      <h2 id="workspace-deletions-title">Deletion in progress</h2>
+      <ul class="workspace-list" role="list">
+        <% @deleting_workspaces.each do |workspace| %>
+          <% request = workspace.workspace_deletion_request %>
+          <li class="workspace-status-row">
+            <span>
+              <strong><%= workspace.name %></strong>
+              <small><%= workspace.organization.name %></small>
+            </span>
+            <span><%= request&.failed? ? "Failed: #{request.failure_code.humanize}" : "Access blocked" %></span>
+            <% membership = workspace.memberships.find { |candidate| candidate.user_id == Current.user.id } %>
+            <% if request&.failed? && membership&.owner? %>
+              <%= button_to "Retry deletion", workspace_deletion_path(workspace), method: :patch,
+                class: "button button-secondary" %>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
 </main>
