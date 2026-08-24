@@ -40,6 +40,18 @@ Inbound and user-uploaded attachments stay quarantined unless a deployment confi
 
 Managers, Admins, and Owners can maintain approved text, ingest plain-text uploads, store reviewed URL snapshots, and register Intercom Help Center snapshots. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.
 
+## Execution runner
+
+Set `NAVISHAI_RUNNER_SHARED_SECRET` to the same random value of at least 32 bytes for Rails and the Go runner. Rails uses `NAVISHAI_RUNNER_ADDRESS`, which defaults to `http://127.0.0.1:8081`. Cleartext HTTP works only on a loopback address; other addresses must use HTTPS. Set `NAVISHAI_RUNNER_BIND_ADDRESS` to change the Go listener from `127.0.0.1:8081`. Set `NAVISHAI_RUNNER_STATE_PATH` to change its durable admission store from `tmp/runner-admissions.json`.
+
+Start the runner with:
+
+```sh
+NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' go run ./runner/cmd/navishai-runner
+```
+
+Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains accepted idempotency keys before it replies. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
+
 ## Checks
 
 Run the full local check suite with:
@@ -48,7 +60,7 @@ Run the full local check suite with:
 bin/ci
 ```
 
-The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails tests, vets the Go runner, and runs Go tests.
+The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails and system tests, vets and tests the Go runner, and runs the Rails-to-Go protocol contract.
 
 GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
 
@@ -59,4 +71,4 @@ bin/rails test
 go test ./...
 ```
 
-The Rails control plane exposes `GET /up`. The runner skeleton exposes `GET /livez` and `GET /readyz` on port 8081 by default. Set `NAVISHAI_RUNNER_ADDRESS` to change the runner bind address.
+The Rails control plane exposes `GET /up`. The runner exposes `GET /livez` and `GET /readyz` on port 8081 by default.
