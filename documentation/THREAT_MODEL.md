@@ -25,11 +25,13 @@ This baseline records NavishAI's main assets, trust boundaries, threats, and cur
                       ┌───────────────┐
                       │ Go runner     │
                       └───────┬───────┘
-                              │ approved adapter
-                              ▼
-                      ┌───────────────┐
-                      │ Agent runtime │
-                      └───────────────┘
+                              │
+                  ┌───────────┴───────────┐
+                  │ approved adapter      │ bounded search
+                  ▼                       ▼
+          ┌───────────────┐       ┌───────────────┐
+          │ Agent runtime │       │ Search service│
+          └───────────────┘       └───────────────┘
 ```
 
 Browser input, mail and integration payloads, public web content, model output, runtime output, uploads, and retrieved memory are untrusted. Rails owns user and workspace authority. PostgreSQL owns durable business, policy, security, and audit state. Only the Go runner may start an agent runtime or arbitrary process.
@@ -50,6 +52,7 @@ Browser input, mail and integration payloads, public web content, model output, 
 | Runtime egress escape or profile substitution | Deny sockets and io_uring by default. Bind each network profile to one canonical approved executable and an owner-checked subordinate user/network namespace pair. The launcher clears capabilities before execution; Seccomp blocks namespace and mount changes for the full process tree. Deployment must enforce destination policy inside the namespace. |
 | Agent authority expansion through configuration | Fixed specialist roles cap allowed tools; runtime profiles come from an approved provider-neutral registry; budgets have hard bounds; profile changes are immutable, tenant-scoped, and limited to Owners and Admins. Customer send is not an agent tool. |
 | Unsafe external fetch or webhook | Authenticate webhooks; revalidate DNS and redirects; bound size and time; treat content as evidence, not instruction. These controls arrive with each integration. |
+| Public search leaks customer data or imports hostile instructions | Rails removes common email, phone, and secret patterns before disclosure; role policy gates the tool. The signed runner endpoint uses an approved provider, bounded requests and responses, no redirects, HTTPS-only result links, normalized fields, durable idempotency, and cost records. Rails stores and displays results as untrusted evidence and validates each citation against the task that obtained it. |
 | Knowledge URL SSRF, DNS rebinding, or active HTML | Allow HTTPS without URL credentials; reject every private or reserved DNS answer; pin the validated address while retaining TLS hostname checks; revalidate redirects; bound time and decoded bytes; extract text and discard active markup. |
 | Forged, replayed, or oversized inbound email | Use a per-inbox unguessable endpoint plus a deployment-held HMAC secret, reject stale timestamps and oversized bodies before parsing, suppress duplicate Message-IDs, retain a source digest, and render extracted body text without trusted HTML. |
 | Unauthorised customer communication | No agent, job, or background trigger receives send authority. A current authenticated human must review and issue each send command. |

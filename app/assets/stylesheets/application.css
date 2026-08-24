@@ -2895,3 +2895,79 @@ td {
     scroll-behavior: auto !important;
   }
 }
+/* Public-web evidence review */
+.public-web-research {
+  margin: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.public-web-research > header,
+.public-web-search > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.public-web-research h3,
+.public-web-results h4 { margin: 0; }
+
+.public-web-warning {
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 0.7);
+  background: var(--accent-soft);
+}
+
+.public-web-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.public-web-form .field { margin: 0; }
+.public-web-form small { display: block; margin-top: 0.35rem; color: var(--muted); }
+.public-web-search-list,
+.public-web-results { margin: 0; padding: 0; list-style: none; }
+
+.public-web-search {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.public-web-search > header > div { min-width: 0; }
+.public-web-search > header strong { overflow-wrap: anywhere; }
+.public-web-search > header span { margin-left: 0.5rem; color: var(--muted); }
+.public-web-meta { color: var(--muted); }
+
+.public-web-results {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.public-web-results > li {
+  padding: 0.9rem;
+  border-radius: calc(var(--radius) * 0.7);
+  background: var(--canvas);
+}
+
+.public-web-results a { overflow-wrap: anywhere; }
+.public-web-result-url { color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+.public-web-results dl { display: grid; gap: 0.35rem; margin: 0; }
+.public-web-results dl div { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: 0.5rem; }
+.public-web-results dt { color: var(--muted); }
+.public-web-results dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.public-web-results code { font-size: 0.78rem; }
+
+@media (max-width: 40rem) {
+  .public-web-research { margin: 1rem 0.75rem; padding: 0.8rem; }
+  .public-web-form { grid-template-columns: 1fr; }
+  .public-web-form .button { width: 100%; min-height: 48px; }
+  .public-web-search > header { flex-direction: column; gap: 0.25rem; }
+  .public-web-results dl div { grid-template-columns: 1fr; gap: 0; }
+}

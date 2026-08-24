@@ -52,6 +52,12 @@ NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' go run ./ru
 
 Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains accepted idempotency keys before it replies. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
 
+### Public-web search
+
+Set `NAVISHAI_WEB_SEARCH_PROVIDER=searxng` and `NAVISHAI_SEARXNG_URL` to an HTTPS SearXNG origin. Loopback HTTP is allowed for local development. `NAVISHAI_WEB_SEARCH_STATE_PATH` can set a separate durable idempotency file; it defaults to `<NAVISHAI_RUNNER_STATE_PATH>.web-search`. Keep this file across runner restarts.
+
+The signed `POST /v1/tools/web-search` endpoint accepts only minimized queries from Rails. The runner bounds provider time and bytes, rejects redirects, accepts only HTTPS evidence links without credentials or fragments, normalizes dates and excerpts, deduplicates links, and records observed cost units. Search results are untrusted evidence. Rails shows them for human review, stores stable `public-web://` citations, and marks them as untrusted in later run context. Current runtime adapters keep their native web-search features disabled; a future adapter may register native search only when it returns the same auditable structured contract. This search endpoint does not grant general runner or agent-runtime egress.
+
 The deterministic scripted adapter under `runner/internal/scripted` proves success, retry, timeout, cancellation, malformed-output, and policy-denial behavior without a model or network access. Its bounded JSON fixtures are test and demo inputs, not a live runtime.
 
 Build `runner/cmd/navishai-exec` beside the runner before enabling process execution. The supervisor accepts only exact approved executables inside configured executable roots, resolves symlinks before launch, and passes only named run credentials into the child. An executable inside an allowed directory still cannot run until it appears in the approval set. The helper applies CPU, memory, file-descriptor, and process limits; bounds output; enforces the wall deadline and cancellation; terminates the process group; and waits for the child. Linux Landlock limits reads to configured runtime and executable roots and limits writes to the run's working root. Seccomp blocks socket calls by default.

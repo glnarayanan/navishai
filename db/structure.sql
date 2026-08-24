@@ -666,6 +666,51 @@ $$;
 
 
 --
+-- Name: protect_public_web_search(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_public_web_search() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
+    RAISE EXCEPTION 'public web search identity is immutable';
+  ELSIF ROW(OLD.id, OLD.workspace_id, OLD.crew_task_id, OLD.request_key, OLD.query,
+    OLD.requested_by_membership_id, OLD.requested_by_user_id, OLD.created_at)
+    IS DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.crew_task_id, NEW.request_key, NEW.query,
+    NEW.requested_by_membership_id, NEW.requested_by_user_id, NEW.created_at) THEN
+    RAISE EXCEPTION 'public web search identity is immutable';
+  END IF;
+  IF OLD.status <> 'searching' OR NEW.status NOT IN ('completed', 'failed') THEN
+    RAISE EXCEPTION 'public web search result is terminal';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_public_web_search_result(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_public_web_search_result() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    PERFORM 1 FROM public_web_searches
+    WHERE id = NEW.public_web_search_id AND workspace_id = NEW.workspace_id AND status = 'completed';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'public web search results require a completed search';
+    END IF;
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'public web search results are append-only';
+END;
+$$;
+
+
+--
 -- Name: protect_stored_attachment(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2440,6 +2485,91 @@ ALTER SEQUENCE public.outbound_email_delivery_attachments_id_seq OWNED BY public
 
 
 --
+-- Name: public_web_search_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.public_web_search_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    public_web_search_id bigint NOT NULL,
+    rank integer NOT NULL,
+    citation_key character varying NOT NULL,
+    title character varying NOT NULL,
+    url text NOT NULL,
+    excerpt text DEFAULT ''::text NOT NULL,
+    published_at timestamp(6) without time zone,
+    retrieved_at timestamp(6) without time zone NOT NULL,
+    content_digest character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT public_web_search_results_content CHECK ((((rank >= 1) AND (rank <= 10)) AND ((citation_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text) AND ((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 500)) AND ((octet_length(url) >= 9) AND (octet_length(url) <= 2048)) AND (url ~ '^https://'::text) AND (octet_length(excerpt) <= 4000) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: public_web_search_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.public_web_search_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: public_web_search_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.public_web_search_results_id_seq OWNED BY public.public_web_search_results.id;
+
+
+--
+-- Name: public_web_searches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.public_web_searches (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    request_key character varying NOT NULL,
+    query text NOT NULL,
+    provider_key character varying,
+    status character varying DEFAULT 'searching'::character varying NOT NULL,
+    policy_decision character varying DEFAULT 'allowed'::character varying NOT NULL,
+    cost_units bigint DEFAULT 0 NOT NULL,
+    failure_code character varying,
+    requested_by_membership_id bigint NOT NULL,
+    requested_by_user_id bigint NOT NULL,
+    retrieved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT public_web_searches_result CHECK (((((status)::text = 'searching'::text) AND (provider_key IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (provider_key IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL)))),
+    CONSTRAINT public_web_searches_state CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY ((ARRAY['searching'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((policy_decision)::text = ANY ((ARRAY['allowed'::character varying, 'redacted'::character varying])::text[])) AND (cost_units >= 0)))
+);
+
+
+--
+-- Name: public_web_searches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.public_web_searches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: public_web_searches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.public_web_searches_id_seq OWNED BY public.public_web_searches.id;
+
+
+--
 -- Name: runtime_installations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3367,6 +3497,20 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments ALTER COLUMN id SET 
 
 
 --
+-- Name: public_web_search_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_search_results ALTER COLUMN id SET DEFAULT nextval('public.public_web_search_results_id_seq'::regclass);
+
+
+--
+-- Name: public_web_searches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches ALTER COLUMN id SET DEFAULT nextval('public.public_web_searches_id_seq'::regclass);
+
+
+--
 -- Name: runtime_installations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3774,6 +3918,22 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments
 
 
 --
+-- Name: public_web_search_results public_web_search_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_search_results
+    ADD CONSTRAINT public_web_search_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: public_web_searches public_web_searches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT public_web_searches_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: runtime_installations runtime_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3922,6 +4082,20 @@ ALTER TABLE ONLY public.workspaces
 --
 
 CREATE UNIQUE INDEX idx_on_email_draft_id_stored_attachment_id_e495be539b ON public.email_draft_attachments USING btree (email_draft_id, stored_attachment_id);
+
+
+--
+-- Name: idx_on_public_web_search_id_rank_c0f5f4d15a; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_public_web_search_id_rank_c0f5f4d15a ON public.public_web_search_results USING btree (public_web_search_id, rank);
+
+
+--
+-- Name: idx_on_public_web_search_id_url_74ee90fc19; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_public_web_search_id_url_74ee90fc19 ON public.public_web_search_results USING btree (public_web_search_id, url);
 
 
 --
@@ -4835,6 +5009,62 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_public_web_search_results_on_citation_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_search_results_on_citation_key ON public.public_web_search_results USING btree (citation_key);
+
+
+--
+-- Name: index_public_web_search_results_on_public_web_search_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_search_results_on_public_web_search_id ON public.public_web_search_results USING btree (public_web_search_id);
+
+
+--
+-- Name: index_public_web_search_results_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_search_results_on_workspace_id ON public.public_web_search_results USING btree (workspace_id);
+
+
+--
+-- Name: index_public_web_search_results_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_search_results_on_workspace_id_and_id ON public.public_web_search_results USING btree (workspace_id, id);
+
+
+--
+-- Name: index_public_web_searches_on_crew_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_searches_on_crew_task_id ON public.public_web_searches USING btree (crew_task_id);
+
+
+--
+-- Name: index_public_web_searches_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_searches_on_workspace_id ON public.public_web_searches USING btree (workspace_id);
+
+
+--
+-- Name: index_public_web_searches_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_searches_on_workspace_id_and_id ON public.public_web_searches USING btree (workspace_id, id);
+
+
+--
+-- Name: index_public_web_searches_on_workspace_id_and_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_searches_on_workspace_id_and_request_key ON public.public_web_searches USING btree (workspace_id, request_key);
+
+
+--
 -- Name: index_runtime_installations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5570,6 +5800,34 @@ CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON publi
 
 
 --
+-- Name: public_web_search_results public_web_search_results_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_search_results_no_truncate BEFORE TRUNCATE ON public.public_web_search_results FOR EACH STATEMENT EXECUTE FUNCTION public.protect_public_web_search_result();
+
+
+--
+-- Name: public_web_search_results public_web_search_results_no_update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_search_results_no_update BEFORE INSERT OR DELETE OR UPDATE ON public.public_web_search_results FOR EACH ROW EXECUTE FUNCTION public.protect_public_web_search_result();
+
+
+--
+-- Name: public_web_searches public_web_searches_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_searches_no_truncate BEFORE TRUNCATE ON public.public_web_searches FOR EACH STATEMENT EXECUTE FUNCTION public.protect_public_web_search();
+
+
+--
+-- Name: public_web_searches public_web_searches_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_searches_protect BEFORE DELETE OR UPDATE ON public.public_web_searches FOR EACH ROW EXECUTE FUNCTION public.protect_public_web_search();
+
+
+--
 -- Name: runtime_installations runtime_installations_validate_policy; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5896,6 +6154,14 @@ ALTER TABLE ONLY public.crew_task_events
 
 
 --
+-- Name: public_web_search_results fk_rails_1ab678e4ab; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_search_results
+    ADD CONSTRAINT fk_rails_1ab678e4ab FOREIGN KEY (workspace_id, public_web_search_id) REFERENCES public.public_web_searches(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: email_drafts fk_rails_1aceaa280f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6021,6 +6287,14 @@ ALTER TABLE ONLY public.service_calendar_holidays
 
 ALTER TABLE ONLY public.knowledge_source_versions
     ADD CONSTRAINT fk_rails_4502cdedde FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: public_web_searches fk_rails_46a5546050; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT fk_rails_46a5546050 FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -6456,6 +6730,22 @@ ALTER TABLE ONLY public.case_notes
 
 
 --
+-- Name: public_web_searches fk_rails_986394303c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT fk_rails_986394303c FOREIGN KEY (requested_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: public_web_search_results fk_rails_98800978bc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_search_results
+    ADD CONSTRAINT fk_rails_98800978bc FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: memberships fk_rails_99326fb65d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6640,6 +6930,14 @@ ALTER TABLE ONLY public.crew_artifacts
 
 
 --
+-- Name: public_web_searches fk_rails_bfba850d20; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT fk_rails_bfba850d20 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: support_case_status_changes fk_rails_c0b65ffdac; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6816,6 +7114,14 @@ ALTER TABLE ONLY public.email_threads
 
 
 --
+-- Name: public_web_searches fk_rails_ea64d80603; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT fk_rails_ea64d80603 FOREIGN KEY (workspace_id, requested_by_membership_id, requested_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: email_message_links fk_rails_edb13a72d9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6894,6 +7200,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824120000'),
 ('20260824110000'),
 ('20260824090000'),
 ('20260824081944'),

@@ -58,6 +58,8 @@ class CrewTasksController < ApplicationController
       if @task
         @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
         @active_run = @runs.find(&:active?)
+        @public_web_searches = @task.public_web_searches
+          .includes(:requested_by_user, :results).order(created_at: :desc, id: :desc)
       end
     end
 

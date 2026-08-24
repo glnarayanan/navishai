@@ -16,6 +16,7 @@ class CrewTask < ApplicationRecord
   has_many :dependency_links, class_name: "CrewTaskDependency", dependent: :restrict_with_exception
   has_many :dependencies, through: :dependency_links, source: :depends_on_task
   has_many :execution_runs, dependent: :restrict_with_exception
+  has_many :public_web_searches, dependent: :restrict_with_exception
   has_many :artifacts, -> { order(:artifact_kind, :version_number) },
     class_name: "CrewArtifact", dependent: :restrict_with_exception
 

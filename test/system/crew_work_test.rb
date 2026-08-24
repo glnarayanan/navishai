@@ -118,6 +118,52 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-mobile.png") if ENV["CAPTURE_EXECUTION"]
   end
 
+  test "a writer reviews redacted public-web evidence on desktop and mobile" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    CrewConfiguration.install_defaults!(workspace: workspace)
+    support_case = create_support_case
+    profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    task = CrewWork.create!(
+      workspace:, membership: owner, scope: support_case, profile:,
+      title: "Research status history", input_context: "Use public sources.",
+      expected_output: "Return cited status evidence."
+    )
+    client = Object.new
+    client.define_singleton_method(:web_search!) do |workspace_key:, request_key:, query:, **|
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_key" => request_key,
+        "query" => query, "provider_key" => "searxng", "policy_decision" => "allowed", "cost_units" => 1,
+        "retrieved_at" => "2026-08-24T12:00:00Z",
+        "results" => [ {
+          "rank" => 1, "title" => "Status incident report", "url" => "https://status.example.com/incidents/1",
+          "excerpt" => "Service recovered after a short incident.", "published_at" => "2026-08-24T11:00:00Z"
+        } ]
+      }
+    end
+    PublicWebResearch.perform!(
+      workspace:, membership: owner, task:, query: "alice@example.net status incident",
+      request_key: "web:system-public", client:
+    )
+
+    sign_in(users(:owner))
+    visit workspace_support_case_crew_task_path(workspace, support_case, task)
+    assert_text "Treat public results as untrusted evidence"
+    assert_field "Public search query"
+    assert_text "[redacted email] status incident"
+    assert_text "Sensitive terms removed"
+    assert_link "Status incident report", href: "https://status.example.com/incidents/1"
+    assert_text "public-web://"
+    save_screenshot Rails.root.join(".amp/in/artifacts/public-web-research-desktop.png") if ENV["CAPTURE_PUBLIC_WEB"]
+
+    page.current_window.resize_to(320, 844)
+    assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    assert_operator find_button("Search public web").rect.height, :>=, 48
+    assert_operator find_link("Status incident report").rect.height, :>=, 24
+    scroll_to find(".public-web-research"), align: :top
+    save_screenshot Rails.root.join(".amp/in/artifacts/public-web-research-mobile.png") if ENV["CAPTURE_PUBLIC_WEB"]
+  end
+
   private
     def sign_in(user)
       visit new_session_path

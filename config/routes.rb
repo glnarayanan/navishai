@@ -20,6 +20,7 @@ Rails.application.routes.draw do
     resources :support_cases, path: "cases", only: %i[ index show ] do
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member
+        resources :public_web_searches, path: "public-web-searches", only: :create
         resources :execution_runs, path: "runs", only: %i[ index create ] do
           post :reconcile, on: :member
         end

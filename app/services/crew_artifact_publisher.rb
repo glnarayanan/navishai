@@ -149,6 +149,11 @@ class CrewArtifactPublisher
       when "account"
         account_id = task.account_id || task.support_case&.conversation&.contact&.account_id
         raise InvalidOutput, "Account citation is unavailable." unless account_id && locator == "account://#{account_id}"
+      when "public_web"
+        match = locator.match(%r{\Apublic-web://([0-9a-f-]{36})\z})
+        result = match && @workspace.public_web_search_results.joins(:public_web_search)
+          .find_by(citation_key: match[1], public_web_searches: { crew_task_id: task.id, status: "completed" })
+        raise InvalidOutput, "Public-web citation is unavailable." unless result
       else
         raise InvalidOutput, "Citation type is not supported."
       end
