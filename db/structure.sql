@@ -653,6 +653,36 @@ $$;
 
 
 --
+-- Name: protect_memory_correction_proposal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_memory_correction_proposal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'memory correction proposals cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'DELETE' OR ROW(OLD.id, OLD.workspace_id, OLD.memory_record_id,
+    OLD.proposed_by_membership_id, OLD.proposed_by_user_id, OLD.proposal_key, OLD.content,
+    OLD.content_digest, OLD.confidence, OLD.retention_policy, OLD.retention_until, OLD.created_at)
+    IS DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.memory_record_id,
+    NEW.proposed_by_membership_id, NEW.proposed_by_user_id, NEW.proposal_key, NEW.content,
+    NEW.content_digest, NEW.confidence, NEW.retention_policy, NEW.retention_until, NEW.created_at) THEN
+    RAISE EXCEPTION 'memory correction proposal identity is immutable';
+  END IF;
+  IF OLD.status <> 'proposed' OR NEW.status NOT IN ('accepted', 'rejected') THEN
+    RAISE EXCEPTION 'memory correction review is terminal';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_memory_index_entry(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -759,6 +789,35 @@ BEGIN
   END IF;
   IF TG_OP <> 'INSERT' THEN
     RAISE EXCEPTION 'memory records are append only';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_memory_tombstone(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_memory_tombstone() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'memory tombstones cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'DELETE' OR ROW(OLD.id, OLD.workspace_id, OLD.memory_record_id,
+    OLD.deleted_by_membership_id, OLD.deleted_by_user_id, OLD.reason, OLD.created_at)
+    IS DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.memory_record_id,
+    NEW.deleted_by_membership_id, NEW.deleted_by_user_id, NEW.reason, NEW.created_at) THEN
+    RAISE EXCEPTION 'memory tombstone identity is immutable';
+  END IF;
+  IF NOT ((OLD.index_status IN ('pending', 'failed', 'unknown') AND NEW.index_status = 'removing') OR
+          (OLD.index_status = 'removing' AND NEW.index_status IN ('removed', 'failed', 'unknown'))) THEN
+    RAISE EXCEPTION 'memory tombstone transition is invalid';
   END IF;
   RETURN NEW;
 END;
@@ -2557,6 +2616,54 @@ ALTER SEQUENCE public.memberships_id_seq OWNED BY public.memberships.id;
 
 
 --
+-- Name: memory_correction_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_correction_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    memory_record_id bigint NOT NULL,
+    proposed_by_membership_id bigint NOT NULL,
+    proposed_by_user_id bigint NOT NULL,
+    reviewed_by_membership_id bigint,
+    reviewed_by_user_id bigint,
+    published_memory_record_id bigint,
+    proposal_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    content text NOT NULL,
+    content_digest character varying NOT NULL,
+    confidence numeric(4,3) NOT NULL,
+    retention_policy character varying NOT NULL,
+    retention_until timestamp(6) without time zone,
+    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+    reviewed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT memory_corrections_content CHECK ((((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_corrections_retention CHECK ((((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying])::text[])) AND ((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL)) OR (((retention_policy)::text = 'indefinite'::text) AND (retention_until IS NULL))))),
+    CONSTRAINT memory_corrections_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL))))
+);
+
+
+--
+-- Name: memory_correction_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.memory_correction_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: memory_correction_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.memory_correction_proposals_id_seq OWNED BY public.memory_correction_proposals.id;
+
+
+--
 -- Name: memory_index_entries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2727,6 +2834,48 @@ CREATE SEQUENCE public.memory_records_id_seq
 --
 
 ALTER SEQUENCE public.memory_records_id_seq OWNED BY public.memory_records.id;
+
+
+--
+-- Name: memory_tombstones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_tombstones (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    memory_record_id bigint NOT NULL,
+    deleted_by_membership_id bigint NOT NULL,
+    deleted_by_user_id bigint NOT NULL,
+    reason character varying NOT NULL,
+    index_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    failure_code character varying,
+    last_attempted_at timestamp(6) without time zone,
+    removed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT memory_tombstones_reason CHECK (((octet_length((reason)::text) >= 1) AND (octet_length((reason)::text) <= 500))),
+    CONSTRAINT memory_tombstones_state CHECK (((((index_status)::text = 'pending'::text) AND (attempt_count = 0) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removing'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removed'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NOT NULL)) OR (((index_status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL))))
+);
+
+
+--
+-- Name: memory_tombstones_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.memory_tombstones_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: memory_tombstones_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.memory_tombstones_id_seq OWNED BY public.memory_tombstones.id;
 
 
 --
@@ -3890,6 +4039,13 @@ ALTER TABLE ONLY public.memberships ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: memory_correction_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals ALTER COLUMN id SET DEFAULT nextval('public.memory_correction_proposals_id_seq'::regclass);
+
+
+--
 -- Name: memory_index_entries id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3908,6 +4064,13 @@ ALTER TABLE ONLY public.memory_proposals ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.memory_records ALTER COLUMN id SET DEFAULT nextval('public.memory_records_id_seq'::regclass);
+
+
+--
+-- Name: memory_tombstones id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_tombstones ALTER COLUMN id SET DEFAULT nextval('public.memory_tombstones_id_seq'::regclass);
 
 
 --
@@ -4344,6 +4507,14 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: memory_correction_proposals memory_correction_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT memory_correction_proposals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: memory_index_entries memory_index_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4365,6 +4536,14 @@ ALTER TABLE ONLY public.memory_proposals
 
 ALTER TABLE ONLY public.memory_records
     ADD CONSTRAINT memory_records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: memory_tombstones memory_tombstones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_tombstones
+    ADD CONSTRAINT memory_tombstones_pkey PRIMARY KEY (id);
 
 
 --
@@ -5498,6 +5677,41 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_id_user_id ON public.membe
 
 
 --
+-- Name: index_memory_correction_proposals_on_memory_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_correction_proposals_on_memory_record_id ON public.memory_correction_proposals USING btree (memory_record_id);
+
+
+--
+-- Name: index_memory_correction_proposals_on_proposal_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_correction_proposals_on_proposal_key ON public.memory_correction_proposals USING btree (proposal_key);
+
+
+--
+-- Name: index_memory_correction_proposals_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_correction_proposals_on_workspace_id ON public.memory_correction_proposals USING btree (workspace_id);
+
+
+--
+-- Name: index_memory_correction_proposals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_correction_proposals_on_workspace_id_and_id ON public.memory_correction_proposals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_memory_correction_proposals_on_workspace_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_correction_proposals_on_workspace_id_and_status ON public.memory_correction_proposals USING btree (workspace_id, status);
+
+
+--
 -- Name: index_memory_index_entries_on_memory_record_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5677,6 +5891,41 @@ CREATE INDEX index_memory_records_on_workspace_id_and_user_id ON public.memory_r
 --
 
 CREATE INDEX index_memory_records_on_workspace_type_topic ON public.memory_records USING btree (workspace_id, memory_type, topic);
+
+
+--
+-- Name: index_memory_tombstones_on_memory_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_tombstones_on_memory_record_id ON public.memory_tombstones USING btree (memory_record_id);
+
+
+--
+-- Name: index_memory_tombstones_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_tombstones_on_workspace_id ON public.memory_tombstones USING btree (workspace_id);
+
+
+--
+-- Name: index_memory_tombstones_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_tombstones_on_workspace_id_and_id ON public.memory_tombstones USING btree (workspace_id, id);
+
+
+--
+-- Name: index_memory_tombstones_on_workspace_id_and_index_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_tombstones_on_workspace_id_and_index_status ON public.memory_tombstones USING btree (workspace_id, index_status);
+
+
+--
+-- Name: index_memory_tombstones_on_workspace_id_and_memory_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_tombstones_on_workspace_id_and_memory_record_id ON public.memory_tombstones USING btree (workspace_id, memory_record_id);
 
 
 --
@@ -6527,6 +6776,20 @@ CREATE CONSTRAINT TRIGGER knowledge_sources_require_current_version AFTER INSERT
 
 
 --
+-- Name: memory_correction_proposals memory_correction_proposals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_correction_proposals_no_truncate BEFORE TRUNCATE ON public.memory_correction_proposals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_correction_proposal();
+
+
+--
+-- Name: memory_correction_proposals memory_correction_proposals_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_correction_proposals_protect BEFORE DELETE OR UPDATE ON public.memory_correction_proposals FOR EACH ROW EXECUTE FUNCTION public.protect_memory_correction_proposal();
+
+
+--
 -- Name: memory_index_entries memory_index_entries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6566,6 +6829,20 @@ CREATE TRIGGER memory_records_contract BEFORE INSERT OR DELETE OR UPDATE ON publ
 --
 
 CREATE TRIGGER memory_records_no_truncate BEFORE TRUNCATE ON public.memory_records FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_record();
+
+
+--
+-- Name: memory_tombstones memory_tombstones_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_tombstones_no_truncate BEFORE TRUNCATE ON public.memory_tombstones FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_tombstone();
+
+
+--
+-- Name: memory_tombstones memory_tombstones_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_tombstones_protect BEFORE DELETE OR UPDATE ON public.memory_tombstones FOR EACH ROW EXECUTE FUNCTION public.protect_memory_tombstone();
 
 
 --
@@ -6875,6 +7152,30 @@ ALTER TABLE ONLY public.knowledge_sources
 
 
 --
+-- Name: memory_correction_proposals fk_memory_corrections_proposer; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT fk_memory_corrections_proposer FOREIGN KEY (workspace_id, proposed_by_membership_id, proposed_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: memory_correction_proposals fk_memory_corrections_publication; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT fk_memory_corrections_publication FOREIGN KEY (workspace_id, published_memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
+-- Name: memory_correction_proposals fk_memory_corrections_reviewer; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT fk_memory_corrections_reviewer FOREIGN KEY (workspace_id, reviewed_by_membership_id, reviewed_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: memory_records fk_memory_records_organization_workspace; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6920,6 +7221,14 @@ ALTER TABLE ONLY public.memory_records
 
 ALTER TABLE ONLY public.memory_records
     ADD CONSTRAINT fk_memory_records_supersedes FOREIGN KEY (workspace_id, supersedes_memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
+-- Name: memory_tombstones fk_memory_tombstones_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_tombstones
+    ADD CONSTRAINT fk_memory_tombstones_actor FOREIGN KEY (workspace_id, deleted_by_membership_id, deleted_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
 
 
 --
@@ -7139,6 +7448,14 @@ ALTER TABLE ONLY public.tags
 
 
 --
+-- Name: memory_correction_proposals fk_rails_3c417b5b0f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT fk_rails_3c417b5b0f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: memory_proposals fk_rails_3c71138a19; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7323,6 +7640,14 @@ ALTER TABLE ONLY public.memory_proposals
 
 
 --
+-- Name: memory_correction_proposals fk_rails_5d140239d8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_correction_proposals
+    ADD CONSTRAINT fk_rails_5d140239d8 FOREIGN KEY (workspace_id, memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
 -- Name: knowledge_sources fk_rails_5d7fc285cc; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7496,6 +7821,14 @@ ALTER TABLE ONLY public.public_web_extractions
 
 ALTER TABLE ONLY public.memory_proposals
     ADD CONSTRAINT fk_rails_71ef40da68 FOREIGN KEY (workspace_id, reviewed_by_membership_id, reviewed_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: memory_tombstones fk_rails_720402ccee; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_tombstones
+    ADD CONSTRAINT fk_rails_720402ccee FOREIGN KEY (workspace_id, memory_record_id) REFERENCES public.memory_records(workspace_id, id);
 
 
 --
@@ -7931,6 +8264,14 @@ ALTER TABLE ONLY public.crew_artifacts
 
 
 --
+-- Name: memory_tombstones fk_rails_bbc0186171; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_tombstones
+    ADD CONSTRAINT fk_rails_bbc0186171 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: public_web_searches fk_rails_bfba850d20; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8249,6 +8590,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824170000'),
 ('20260824160000'),
 ('20260824150000'),
 ('20260824140000'),

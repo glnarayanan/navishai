@@ -39,6 +39,10 @@
               aria: { current: controller_name.in?(%w[support_cases support_case_commands]) ? "page" : nil } %>
             <%= link_to "Knowledge", workspace_knowledge_sources_path(Current.workspace),
               aria: { current: controller_name == "knowledge_sources" ? "page" : nil } %>
+            <% if Current.require_membership!.can_inspect_memory? %>
+              <%= link_to "Memory", workspace_memory_records_path(Current.workspace),
+                aria: { current: controller_name.in?(%w[memory_records memory_corrections]) ? "page" : nil } %>
+            <% end %>
             <%= link_to "Crews", workspace_crew_templates_path(Current.workspace),
               aria: { current: controller_name.in?(%w[crew_templates agent_profiles]) ? "page" : nil } %>
             <%= link_to "Runtimes", workspace_runtime_installations_path(Current.workspace),

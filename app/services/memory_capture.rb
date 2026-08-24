@@ -56,7 +56,7 @@ class MemoryCapture
         action: "memory.record_captured", source: :system, workspace:, actor_kind: :system,
         subject: record, metadata: { memory_type: record.memory_type }
       )
-      enqueue_after_commit(entry)
+      MemoryIndexJob.enqueue_after_commit(entry)
       record
     end
   end
@@ -69,15 +69,6 @@ class MemoryCapture
     association = kind == "crew" ? :crew_template : kind.to_sym
     { scope_kind: kind, association => target }
   end
-
-  def self.enqueue_after_commit(entry)
-    ActiveRecord.after_all_transactions_commit do
-      MemoryIndexJob.perform_later(entry.id)
-    rescue ActiveJob::EnqueueError
-      Rails.logger.error("Memory index job enqueue failed for entry #{entry.id}")
-    end
-  end
-  private_class_method :enqueue_after_commit
 
   def self.lock_capture!(workspace, capture_key)
     value = MemoryRecord.connection.quote("memory-capture:#{workspace.id}:#{capture_key}")
