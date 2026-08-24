@@ -51,8 +51,37 @@ class SlaEngineTest < ActiveSupport::TestCase
 
     case_sla.reload
     assert_nil case_sla.paused_at
-    assert_equal 480, case_sla.paused_business_minutes
+    assert_equal 28_800, case_sla.paused_business_seconds
     assert_equal Time.zone.parse("2026-08-25 17:00:00 UTC"), case_sla.resolution_due_at
+  end
+
+  test "delayed inbound receipt uses customer message time for waiting and terminal clocks" do
+    %w[waiting_customer resolved].each do |status|
+      support_case = create_case(at: @monday)
+      support_case.update!(
+        status: status,
+        status_changed_at: @monday + 1.hour,
+        resolved_at: status == "resolved" ? @monday + 1.hour : nil
+      )
+      SlaEngine.status_changed!(
+        workspace: @workspace, support_case: support_case,
+        from: "investigating", to: status, at: @monday + 1.hour
+      )
+
+      travel_to @monday + 25.hours do
+        ConversationThread.append_inbound!(
+          workspace: @workspace,
+          conversation: support_case.conversation,
+          author: contacts(:alice),
+          body: "Delayed by the provider",
+          occurred_at: @monday + 2.hours,
+          source: :integration
+        )
+      end
+
+      assert_equal @monday + 2.hours, support_case.reload.status_changed_at
+      assert_equal Time.zone.parse("2026-08-25 10:00:00 UTC"), support_case.case_sla.reload.resolution_due_at
+    end
   end
 
   test "warnings and breaches create idempotent escalation tasks" do
@@ -73,6 +102,19 @@ class SlaEngineTest < ActiveSupport::TestCase
     assert case_sla.reload.first_response_breached?
     assert case_sla.escalation_tasks.find_by(objective: :first_response, kind: :warning).completed?
     assert case_sla.escalation_tasks.find_by(objective: :first_response, kind: :breach).open?
+  end
+
+  test "sub-minute pauses retain exact business time across resumes" do
+    support_case = create_case(at: @monday)
+    case_sla = support_case.case_sla
+
+    SlaEngine.status_changed!(workspace: @workspace, support_case: support_case, from: "investigating", to: "waiting_customer", at: @monday + 1.hour)
+    SlaEngine.status_changed!(workspace: @workspace, support_case: support_case, from: "waiting_customer", to: "investigating", at: @monday + 1.hour + 30.seconds)
+    SlaEngine.status_changed!(workspace: @workspace, support_case: support_case, from: "investigating", to: "waiting_customer", at: @monday + 2.hours)
+    SlaEngine.status_changed!(workspace: @workspace, support_case: support_case, from: "waiting_customer", to: "investigating", at: @monday + 2.hours + 30.seconds)
+
+    assert_equal 60, case_sla.reload.paused_business_seconds
+    assert_equal @monday + 121.minutes, case_sla.first_response_due_at
   end
 
   test "an outbound record completes first response without granting send authority" do
@@ -190,6 +232,79 @@ class SlaEngineTest < ActiveSupport::TestCase
     assert case_sla.resolution_pending?
     assert_nil case_sla.resolved_at
     assert_equal Time.zone.parse("2026-08-25 17:00:00 UTC"), case_sla.resolution_due_at
+  end
+
+  test "reopen evaluation reactivates a completed resolution warning" do
+    support_case = create_case(at: @monday)
+    support_case.update!(status: :investigating, status_changed_at: @monday)
+    case_sla = support_case.case_sla
+    SlaEngine.evaluate!(workspace: @workspace, at: case_sla.resolution_warning_at)
+    CaseWorkflow.transition!(
+      workspace: @workspace, support_case: support_case,
+      membership: memberships(:owner_support), to: :resolved,
+      reason: "Solved", occurred_at: @monday + 7.hours
+    )
+    warning = case_sla.escalation_tasks.find_by!(objective: :resolution, kind: :warning)
+    assert warning.reload.completed?
+
+    SlaEngine.status_changed!(
+      workspace: @workspace, support_case: support_case,
+      from: "resolved", to: "investigating", at: @monday + 25.hours
+    )
+    SlaEngine.evaluate!(workspace: @workspace, at: @monday + 25.hours)
+
+    assert warning.reload.open?
+    assert AuditEvent.where(action: "sla.escalation_reactivated", subject_id: warning.id).exists?
+  end
+
+  test "used calendar clock settings and holidays cannot change" do
+    create_case(at: @monday)
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      @calendar.update_columns(weekly_hours: { "monday" => [ [ "09:00", "10:00" ] ] })
+    end
+  end
+
+  test "replacement configuration serves new cases while a paused case keeps its clock" do
+    old_case = create_case(at: @monday)
+    old_sla = old_case.case_sla
+    old_case.update!(status: :waiting_customer, status_changed_at: @monday + 1.hour)
+    SlaEngine.status_changed!(
+      workspace: @workspace, support_case: old_case,
+      from: "investigating", to: "waiting_customer", at: @monday + 1.hour
+    )
+    @policy.update!(active: false)
+    replacement_calendar = ServiceCalendar.create!(
+      workspace: @workspace,
+      name: "Replacement hours",
+      time_zone: "UTC",
+      weekly_hours: %w[monday tuesday wednesday thursday friday].index_with { [ [ "08:00", "16:00" ] ] }
+    )
+    replacement_policy = SlaPolicy.create!(
+      workspace: @workspace,
+      service_calendar: replacement_calendar,
+      name: "Replacement normal",
+      priority: :normal,
+      first_response_minutes: 60,
+      resolution_minutes: 240,
+      warning_percent: 75
+    )
+
+    travel_to @monday + 2.hours do
+      ConversationThread.append_inbound!(
+        workspace: @workspace,
+        conversation: old_case.conversation,
+        author: contacts(:alice),
+        body: "Reply after configuration replacement",
+        occurred_at: @monday + 2.hours,
+        source: :integration
+      )
+    end
+    new_case = create_case(at: @monday + 3.hours)
+
+    assert_equal @policy, old_sla.reload.sla_policy
+    assert_equal @monday + 3.hours, old_sla.first_response_due_at
+    assert_equal replacement_policy, new_case.case_sla.sla_policy
   end
 
   test "audit failure rolls back breach state and task" do

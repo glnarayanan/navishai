@@ -4,6 +4,7 @@ class CreateSlaRecords < ActiveRecord::Migration[8.1]
     create_sla_policies
     create_case_slas
     create_sla_escalation_tasks
+    protect_used_configuration
   end
 
   private
@@ -69,7 +70,7 @@ class CreateSlaRecords < ActiveRecord::Migration[8.1]
         t.datetime :first_responded_at
         t.datetime :resolved_at
         t.datetime :paused_at
-        t.integer :paused_business_minutes, null: false, default: 0
+        t.integer :paused_business_seconds, null: false, default: 0
         t.timestamps
       end
       add_index :case_slas, [ :workspace_id, :id ], unique: true
@@ -84,7 +85,7 @@ class CreateSlaRecords < ActiveRecord::Migration[8.1]
         primary_key: [ :workspace_id, :id ]
       add_check_constraint :case_slas, "first_response_status IN ('pending', 'met', 'breached')", name: "case_slas_first_response_status"
       add_check_constraint :case_slas, "resolution_status IN ('pending', 'met', 'breached')", name: "case_slas_resolution_status"
-      add_check_constraint :case_slas, "paused_business_minutes >= 0", name: "case_slas_paused_minutes"
+      add_check_constraint :case_slas, "paused_business_seconds >= 0", name: "case_slas_paused_seconds"
       add_check_constraint :case_slas, "first_response_warning_at < first_response_due_at AND resolution_warning_at < resolution_due_at", name: "case_slas_warning_before_due"
       add_check_constraint :case_slas, "(first_response_status != 'met' OR first_responded_at IS NOT NULL) AND (first_responded_at IS NULL OR first_response_status != 'pending')", name: "case_slas_first_response_completion"
       add_check_constraint :case_slas, "(resolution_status != 'met' OR resolved_at IS NOT NULL) AND (resolved_at IS NULL OR resolution_status != 'pending')", name: "case_slas_resolution_completion"
@@ -108,5 +109,77 @@ class CreateSlaRecords < ActiveRecord::Migration[8.1]
       add_check_constraint :sla_escalation_tasks, "objective IN ('first_response', 'resolution')", name: "sla_escalation_tasks_objective"
       add_check_constraint :sla_escalation_tasks, "kind IN ('warning', 'breach')", name: "sla_escalation_tasks_kind"
       add_check_constraint :sla_escalation_tasks, "status IN ('open', 'completed')", name: "sla_escalation_tasks_status"
+    end
+
+    def protect_used_configuration
+      reversible do |direction|
+        direction.up do
+          execute <<~SQL
+            CREATE FUNCTION prevent_used_sla_configuration_change()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+            DECLARE
+              referenced boolean;
+              calendar_id bigint;
+            BEGIN
+              IF TG_TABLE_NAME = 'sla_policies' THEN
+                SELECT EXISTS (SELECT 1 FROM case_slas WHERE sla_policy_id = OLD.id) INTO referenced;
+                IF referenced AND (TG_OP = 'DELETE' OR
+                   OLD.workspace_id IS DISTINCT FROM NEW.workspace_id OR
+                   OLD.service_calendar_id IS DISTINCT FROM NEW.service_calendar_id OR
+                   OLD.priority IS DISTINCT FROM NEW.priority OR
+                   OLD.first_response_minutes IS DISTINCT FROM NEW.first_response_minutes OR
+                   OLD.resolution_minutes IS DISTINCT FROM NEW.resolution_minutes OR
+                   OLD.warning_percent IS DISTINCT FROM NEW.warning_percent) THEN
+                  RAISE EXCEPTION 'used SLA policy settings are immutable';
+                END IF;
+              ELSIF TG_TABLE_NAME = 'service_calendars' THEN
+                SELECT EXISTS (
+                  SELECT 1 FROM case_slas
+                  JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+                  WHERE sla_policies.service_calendar_id = OLD.id
+                ) INTO referenced;
+                IF referenced AND (TG_OP = 'DELETE' OR
+                   OLD.workspace_id IS DISTINCT FROM NEW.workspace_id OR
+                   OLD.time_zone IS DISTINCT FROM NEW.time_zone OR
+                   OLD.weekly_hours IS DISTINCT FROM NEW.weekly_hours) THEN
+                  RAISE EXCEPTION 'used service calendar settings are immutable';
+                END IF;
+              ELSE
+                calendar_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.service_calendar_id ELSE OLD.service_calendar_id END;
+                SELECT EXISTS (
+                  SELECT 1 FROM case_slas
+                  JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+                  WHERE sla_policies.service_calendar_id = calendar_id
+                ) INTO referenced;
+                IF referenced THEN
+                  RAISE EXCEPTION 'holidays on a used service calendar are immutable';
+                END IF;
+              END IF;
+              IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+              RETURN NEW;
+            END;
+            $$;
+
+            CREATE TRIGGER sla_policies_protect_used_settings
+            BEFORE UPDATE OR DELETE ON sla_policies
+            FOR EACH ROW EXECUTE FUNCTION prevent_used_sla_configuration_change();
+            CREATE TRIGGER service_calendars_protect_used_settings
+            BEFORE UPDATE OR DELETE ON service_calendars
+            FOR EACH ROW EXECUTE FUNCTION prevent_used_sla_configuration_change();
+            CREATE TRIGGER service_calendar_holidays_protect_used_settings
+            BEFORE INSERT OR UPDATE OR DELETE ON service_calendar_holidays
+            FOR EACH ROW EXECUTE FUNCTION prevent_used_sla_configuration_change();
+          SQL
+        end
+
+        direction.down do
+          execute "DROP TRIGGER IF EXISTS service_calendar_holidays_protect_used_settings ON service_calendar_holidays"
+          execute "DROP TRIGGER IF EXISTS service_calendars_protect_used_settings ON service_calendars"
+          execute "DROP TRIGGER IF EXISTS sla_policies_protect_used_settings ON sla_policies"
+          execute "DROP FUNCTION IF EXISTS prevent_used_sla_configuration_change()"
+        end
+      end
     end
 end

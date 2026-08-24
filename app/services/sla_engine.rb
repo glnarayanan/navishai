@@ -82,13 +82,13 @@ class SlaEngine
     return unless case_sla.paused_at
 
     calendar = case_sla.sla_policy.service_calendar
-    paused_minutes = calendar.business_minutes_between(case_sla.paused_at, at)
-    updates = { paused_at: nil, paused_business_minutes: case_sla.paused_business_minutes + paused_minutes }
+    paused_seconds = calendar.business_seconds_between(case_sla.paused_at, at)
+    updates = { paused_at: nil, paused_business_seconds: case_sla.paused_business_seconds + paused_seconds }
     OBJECTIVES.each do |objective|
       next unless case_sla.public_send("#{objective}_pending?")
 
-      updates["#{objective}_warning_at"] = calendar.add_business_minutes(case_sla.public_send("#{objective}_warning_at"), paused_minutes)
-      updates["#{objective}_due_at"] = calendar.add_business_minutes(case_sla.public_send("#{objective}_due_at"), paused_minutes)
+      updates["#{objective}_warning_at"] = calendar.add_business_seconds(case_sla.public_send("#{objective}_warning_at"), paused_seconds)
+      updates["#{objective}_due_at"] = calendar.add_business_seconds(case_sla.public_send("#{objective}_due_at"), paused_seconds)
     end
     case_sla.update!(updates)
   end
@@ -98,12 +98,12 @@ class SlaEngine
     return unless case_sla.resolved_at
 
     calendar = case_sla.sla_policy.service_calendar
-    terminal_minutes = calendar.business_minutes_between(case_sla.resolved_at, at)
+    terminal_seconds = calendar.business_seconds_between(case_sla.resolved_at, at)
     case_sla.update!(
       resolution_status: "pending",
       resolved_at: nil,
-      resolution_warning_at: calendar.add_business_minutes(case_sla.resolution_warning_at, terminal_minutes),
-      resolution_due_at: calendar.add_business_minutes(case_sla.resolution_due_at, terminal_minutes)
+      resolution_warning_at: calendar.add_business_seconds(case_sla.resolution_warning_at, terminal_seconds),
+      resolution_due_at: calendar.add_business_seconds(case_sla.resolution_due_at, terminal_seconds)
     )
   end
   private_class_method :reopen_resolution!
@@ -142,6 +142,14 @@ class SlaEngine
     task = case_sla.escalation_tasks.find_or_create_by!(objective: objective, kind: kind) do |record|
       record.workspace = case_sla.workspace
       record.occurred_at = at
+    end
+    if !task.previously_new_record? && task.completed?
+      task.update!(status: :open)
+      AuditEvent.record!(
+        action: "sla.escalation_reactivated", source: :system, workspace: case_sla.workspace,
+        actor_kind: :system, subject: task, metadata: { objective: objective, kind: kind }
+      )
+      return task
     end
     return task unless task.previously_new_record?
 

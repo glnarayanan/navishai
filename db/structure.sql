@@ -49,6 +49,57 @@ END;
 $$;
 
 
+--
+-- Name: prevent_used_sla_configuration_change(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_used_sla_configuration_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  referenced boolean;
+  calendar_id bigint;
+BEGIN
+  IF TG_TABLE_NAME = 'sla_policies' THEN
+    SELECT EXISTS (SELECT 1 FROM case_slas WHERE sla_policy_id = OLD.id) INTO referenced;
+    IF referenced AND (TG_OP = 'DELETE' OR
+       OLD.workspace_id IS DISTINCT FROM NEW.workspace_id OR
+       OLD.service_calendar_id IS DISTINCT FROM NEW.service_calendar_id OR
+       OLD.priority IS DISTINCT FROM NEW.priority OR
+       OLD.first_response_minutes IS DISTINCT FROM NEW.first_response_minutes OR
+       OLD.resolution_minutes IS DISTINCT FROM NEW.resolution_minutes OR
+       OLD.warning_percent IS DISTINCT FROM NEW.warning_percent) THEN
+      RAISE EXCEPTION 'used SLA policy settings are immutable';
+    END IF;
+  ELSIF TG_TABLE_NAME = 'service_calendars' THEN
+    SELECT EXISTS (
+      SELECT 1 FROM case_slas
+      JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+      WHERE sla_policies.service_calendar_id = OLD.id
+    ) INTO referenced;
+    IF referenced AND (TG_OP = 'DELETE' OR
+       OLD.workspace_id IS DISTINCT FROM NEW.workspace_id OR
+       OLD.time_zone IS DISTINCT FROM NEW.time_zone OR
+       OLD.weekly_hours IS DISTINCT FROM NEW.weekly_hours) THEN
+      RAISE EXCEPTION 'used service calendar settings are immutable';
+    END IF;
+  ELSE
+    calendar_id := CASE WHEN TG_OP = 'INSERT' THEN NEW.service_calendar_id ELSE OLD.service_calendar_id END;
+    SELECT EXISTS (
+      SELECT 1 FROM case_slas
+      JOIN sla_policies ON sla_policies.id = case_slas.sla_policy_id
+      WHERE sla_policies.service_calendar_id = calendar_id
+    ) INTO referenced;
+    IF referenced THEN
+      RAISE EXCEPTION 'holidays on a used service calendar are immutable';
+    END IF;
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -233,12 +284,12 @@ CREATE TABLE public.case_slas (
     first_responded_at timestamp(6) without time zone,
     resolved_at timestamp(6) without time zone,
     paused_at timestamp(6) without time zone,
-    paused_business_minutes integer DEFAULT 0 NOT NULL,
+    paused_business_seconds integer DEFAULT 0 NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT case_slas_first_response_completion CHECK (((((first_response_status)::text <> 'met'::text) OR (first_responded_at IS NOT NULL)) AND ((first_responded_at IS NULL) OR ((first_response_status)::text <> 'pending'::text)))),
     CONSTRAINT case_slas_first_response_status CHECK (((first_response_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
-    CONSTRAINT case_slas_paused_minutes CHECK ((paused_business_minutes >= 0)),
+    CONSTRAINT case_slas_paused_seconds CHECK ((paused_business_seconds >= 0)),
     CONSTRAINT case_slas_resolution_completion CHECK (((((resolution_status)::text <> 'met'::text) OR (resolved_at IS NOT NULL)) AND ((resolved_at IS NULL) OR ((resolution_status)::text <> 'pending'::text)))),
     CONSTRAINT case_slas_resolution_status CHECK (((resolution_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
     CONSTRAINT case_slas_warning_before_due CHECK (((first_response_warning_at < first_response_due_at) AND (resolution_warning_at < resolution_due_at)))
@@ -2137,6 +2188,27 @@ CREATE TRIGGER conversation_messages_append_only BEFORE DELETE OR UPDATE ON publ
 --
 
 CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conversation_messages FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER service_calendar_holidays_protect_used_settings BEFORE INSERT OR DELETE OR UPDATE ON public.service_calendar_holidays FOR EACH ROW EXECUTE FUNCTION public.prevent_used_sla_configuration_change();
+
+
+--
+-- Name: service_calendars service_calendars_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER service_calendars_protect_used_settings BEFORE DELETE OR UPDATE ON public.service_calendars FOR EACH ROW EXECUTE FUNCTION public.prevent_used_sla_configuration_change();
+
+
+--
+-- Name: sla_policies sla_policies_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER sla_policies_protect_used_settings BEFORE DELETE OR UPDATE ON public.sla_policies FOR EACH ROW EXECUTE FUNCTION public.prevent_used_sla_configuration_change();
 
 
 --

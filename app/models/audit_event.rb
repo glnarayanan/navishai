@@ -36,6 +36,7 @@ class AuditEvent < ApplicationRecord
     "source_identity.matched" => { "entity_kind" => %w[account contact], "resolution_method" => %w[created deterministic] },
     "source_identity.reviewed" => { "entity_kind" => %w[account contact], "resolution_method" => %w[reviewed] },
     "sla.escalation_created" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
+    "sla.escalation_reactivated" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
     "tag.created" => {},
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },

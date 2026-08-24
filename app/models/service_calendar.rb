@@ -11,8 +11,12 @@ class ServiceCalendar < ApplicationRecord
   validate :weekly_hours_are_valid
 
   def add_business_minutes(start_time, minutes)
-    remaining_seconds = Integer(minutes) * 60
-    raise ArgumentError, "minutes must not be negative" if remaining_seconds.negative?
+    add_business_seconds(start_time, Integer(minutes) * 60)
+  end
+
+  def add_business_seconds(start_time, seconds)
+    remaining_seconds = Integer(seconds)
+    raise ArgumentError, "duration must not be negative" if remaining_seconds.negative?
 
     cursor = start_time
     return cursor if remaining_seconds.zero?
@@ -28,6 +32,10 @@ class ServiceCalendar < ApplicationRecord
   end
 
   def business_minutes_between(from, to)
+    (business_seconds_between(from, to) / 60).floor
+  end
+
+  def business_seconds_between(from, to)
     return 0 if to <= from
 
     seconds = 0
@@ -36,7 +44,7 @@ class ServiceCalendar < ApplicationRecord
       overlap_end = [ to, interval_end ].min
       seconds += overlap_end - overlap_start if overlap_end > overlap_start
     end
-    (seconds / 60).floor
+    seconds.to_i
   end
 
   private

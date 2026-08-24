@@ -19,6 +19,12 @@ class SlaTenancyTest < ActiveSupport::TestCase
       resolution_minutes: 240,
       warning_percent: 80
     )
+    @unused_calendar = ServiceCalendar.create!(
+      workspace: @acme,
+      name: "Unused hours",
+      time_zone: "UTC",
+      weekly_hours: { "monday" => [ [ "09:00", "17:00" ] ] }
+    )
     @case_sla = ConversationThread.start!(
       workspace: @acme,
       contact: contacts(:alice),
@@ -35,7 +41,7 @@ class SlaTenancyTest < ActiveSupport::TestCase
   test "holiday composite foreign key rejects a cross-workspace calendar" do
     assert_raises(ActiveRecord::InvalidForeignKey) do
       ServiceCalendarHoliday.insert_all!([ {
-        workspace_id: @beta.id, service_calendar_id: @calendar.id,
+        workspace_id: @beta.id, service_calendar_id: @unused_calendar.id,
         date: Date.new(2026, 8, 24), name: "Wrong tenant",
         created_at: Time.current, updated_at: Time.current
       } ])
@@ -60,7 +66,7 @@ class SlaTenancyTest < ActiveSupport::TestCase
         started_at: Time.current, first_response_warning_at: 1.hour.from_now,
         first_response_due_at: 2.hours.from_now, resolution_warning_at: 3.hours.from_now,
         resolution_due_at: 4.hours.from_now, first_response_status: "pending",
-        resolution_status: "pending", paused_business_minutes: 0,
+        resolution_status: "pending", paused_business_seconds: 0,
         created_at: Time.current, updated_at: Time.current
       } ])
     end

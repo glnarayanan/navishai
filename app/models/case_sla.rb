@@ -11,7 +11,7 @@ class CaseSla < ApplicationRecord
 
   validates :started_at, :first_response_warning_at, :first_response_due_at,
     :resolution_warning_at, :resolution_due_at, presence: true
-  validates :paused_business_minutes, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :paused_business_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :records_belong_to_workspace
 
   private
