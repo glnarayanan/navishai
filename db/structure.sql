@@ -691,6 +691,28 @@ $$;
 
 
 --
+-- Name: protect_health_scorecard_record(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_health_scorecard_record() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_TABLE_NAME = 'health_scorecards' AND TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.name, OLD.created_at)
+       IS NOT DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.name, NEW.created_at) AND
+     OLD.current_version_id IS DISTINCT FROM NEW.current_version_id THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'health scorecard records are durable';
+END;
+$$;
+
+
+--
 -- Name: protect_intercom_outbound_delivery(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1402,6 +1424,7 @@ CREATE TABLE public.account_health_assessments (
     calculated_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    health_scorecard_version_id bigint NOT NULL,
     CONSTRAINT account_health_assessments_risk CHECK (((risk_level)::text = ANY ((ARRAY['healthy'::character varying, 'watch'::character varying, 'at_risk'::character varying])::text[]))),
     CONSTRAINT account_health_assessments_score CHECK (((score >= 0) AND (score <= 100))),
     CONSTRAINT account_health_assessments_trigger CHECK (((trigger_kind)::text = ANY ((ARRAY['input_change'::character varying, 'schedule'::character varying, 'renewal_window'::character varying, 'human_request'::character varying])::text[])))
@@ -2664,6 +2687,158 @@ CREATE SEQUENCE public.execution_runs_id_seq
 --
 
 ALTER SEQUENCE public.execution_runs_id_seq OWNED BY public.execution_runs.id;
+
+
+--
+-- Name: health_scorecard_backtests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecard_backtests (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    health_scorecard_version_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    source_digest character varying NOT NULL,
+    results jsonb DEFAULT '{}'::jsonb NOT NULL,
+    sample_count integer NOT NULL,
+    generated_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT health_scorecard_backtests_digest CHECK (((source_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT health_scorecard_backtests_sample_count CHECK (((sample_count >= 0) AND (sample_count <= 500)))
+);
+
+
+--
+-- Name: health_scorecard_backtests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecard_backtests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecard_backtests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecard_backtests_id_seq OWNED BY public.health_scorecard_backtests.id;
+
+
+--
+-- Name: health_scorecard_design_turns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecard_design_turns (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    health_scorecard_id bigint NOT NULL,
+    health_scorecard_version_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    prompt text NOT NULL,
+    response text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT health_scorecard_design_turns_content CHECK ((((octet_length(prompt) >= 1) AND (octet_length(prompt) <= 4000)) AND ((octet_length(response) >= 1) AND (octet_length(response) <= 8000))))
+);
+
+
+--
+-- Name: health_scorecard_design_turns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecard_design_turns_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecard_design_turns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecard_design_turns_id_seq OWNED BY public.health_scorecard_design_turns.id;
+
+
+--
+-- Name: health_scorecard_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecard_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    health_scorecard_id bigint NOT NULL,
+    version_number integer NOT NULL,
+    design_prompt text NOT NULL,
+    explanation text NOT NULL,
+    definition jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by_membership_id bigint,
+    created_by_user_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT health_scorecard_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
+    CONSTRAINT health_scorecard_versions_content CHECK ((((octet_length(design_prompt) >= 1) AND (octet_length(design_prompt) <= 4000)) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)))),
+    CONSTRAINT health_scorecard_versions_number CHECK ((version_number > 0))
+);
+
+
+--
+-- Name: health_scorecard_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecard_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecard_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecard_versions_id_seq OWNED BY public.health_scorecard_versions.id;
+
+
+--
+-- Name: health_scorecards; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecards (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: health_scorecards_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecards_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecards_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecards_id_seq OWNED BY public.health_scorecards.id;
 
 
 --
@@ -4672,6 +4847,34 @@ ALTER TABLE ONLY public.execution_runs ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: health_scorecard_backtests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests ALTER COLUMN id SET DEFAULT nextval('public.health_scorecard_backtests_id_seq'::regclass);
+
+
+--
+-- Name: health_scorecard_design_turns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns ALTER COLUMN id SET DEFAULT nextval('public.health_scorecard_design_turns_id_seq'::regclass);
+
+
+--
+-- Name: health_scorecard_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions ALTER COLUMN id SET DEFAULT nextval('public.health_scorecard_versions_id_seq'::regclass);
+
+
+--
+-- Name: health_scorecards id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecards ALTER COLUMN id SET DEFAULT nextval('public.health_scorecards_id_seq'::regclass);
+
+
+--
 -- Name: identity_match_candidates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5222,6 +5425,38 @@ ALTER TABLE ONLY public.execution_runs
 
 
 --
+-- Name: health_scorecard_backtests health_scorecard_backtests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests
+    ADD CONSTRAINT health_scorecard_backtests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: health_scorecard_design_turns health_scorecard_design_turns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT health_scorecard_design_turns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: health_scorecard_versions health_scorecard_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT health_scorecard_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: health_scorecards health_scorecards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecards
+    ADD CONSTRAINT health_scorecards_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: identity_match_candidates identity_match_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5570,6 +5805,27 @@ ALTER TABLE ONLY public.workspaces
 --
 
 CREATE UNIQUE INDEX idx_on_email_draft_id_stored_attachment_id_e495be539b ON public.email_draft_attachments USING btree (email_draft_id, stored_attachment_id);
+
+
+--
+-- Name: idx_on_health_scorecard_id_version_number_9d7e490c0a; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_health_scorecard_id_version_number_9d7e490c0a ON public.health_scorecard_versions USING btree (health_scorecard_id, version_number);
+
+
+--
+-- Name: idx_on_health_scorecard_version_id_4459fbe5bb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_health_scorecard_version_id_4459fbe5bb ON public.account_health_assessments USING btree (health_scorecard_version_id);
+
+
+--
+-- Name: idx_on_health_scorecard_version_id_created_at_fe6bf6a5dc; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_health_scorecard_version_id_created_at_fe6bf6a5dc ON public.health_scorecard_backtests USING btree (health_scorecard_version_id, created_at);
 
 
 --
@@ -6473,6 +6729,69 @@ CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_request_key ON publ
 --
 
 CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_task ON public.execution_runs USING btree (workspace_id, id, crew_task_id);
+
+
+--
+-- Name: index_health_scorecard_backtests_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_backtests_on_workspace_id ON public.health_scorecard_backtests USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecard_backtests_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_backtests_on_workspace_id_and_id ON public.health_scorecard_backtests USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_design_turns_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_design_turns_on_workspace_id ON public.health_scorecard_design_turns USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecard_design_turns_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_design_turns_on_workspace_id_and_id ON public.health_scorecard_design_turns USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_versions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_versions_on_workspace_id ON public.health_scorecard_versions USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecard_versions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_versions_on_workspace_id_and_id ON public.health_scorecard_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_versions_tenant_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_versions_tenant_chain ON public.health_scorecard_versions USING btree (workspace_id, health_scorecard_id, id);
+
+
+--
+-- Name: index_health_scorecards_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecards_on_workspace_id ON public.health_scorecards USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecards_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecards_on_workspace_id_and_id ON public.health_scorecards USING btree (workspace_id, id);
 
 
 --
@@ -7953,6 +8272,62 @@ CREATE TRIGGER execution_runs_protect_routing BEFORE UPDATE ON public.execution_
 
 
 --
+-- Name: health_scorecard_backtests health_scorecard_backtests_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_backtests_append_only BEFORE DELETE OR UPDATE ON public.health_scorecard_backtests FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_backtests health_scorecard_backtests_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_backtests_no_truncate BEFORE TRUNCATE ON public.health_scorecard_backtests FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_design_turns health_scorecard_design_turns_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_design_turns_append_only BEFORE DELETE OR UPDATE ON public.health_scorecard_design_turns FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_design_turns health_scorecard_design_turns_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_design_turns_no_truncate BEFORE TRUNCATE ON public.health_scorecard_design_turns FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_versions health_scorecard_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_versions_append_only BEFORE DELETE OR UPDATE ON public.health_scorecard_versions FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_versions health_scorecard_versions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_versions_no_truncate BEFORE TRUNCATE ON public.health_scorecard_versions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecards health_scorecards_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecards_no_truncate BEFORE TRUNCATE ON public.health_scorecards FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecards health_scorecards_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecards_protect BEFORE DELETE OR UPDATE ON public.health_scorecards FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
 -- Name: inbound_email_deliveries inbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8451,6 +8826,22 @@ ALTER TABLE ONLY public.execution_runs
 
 
 --
+-- Name: health_scorecard_versions fk_health_scorecard_versions_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_health_scorecard_versions_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: health_scorecards fk_health_scorecards_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecards
+    ADD CONSTRAINT fk_health_scorecards_current_version FOREIGN KEY (workspace_id, id, current_version_id) REFERENCES public.health_scorecard_versions(workspace_id, health_scorecard_id, id);
+
+
+--
 -- Name: knowledge_sources fk_knowledge_sources_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8627,6 +9018,14 @@ ALTER TABLE ONLY public.memory_records
 
 
 --
+-- Name: health_scorecard_backtests fk_rails_0f66ec7d78; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests
+    ADD CONSTRAINT fk_rails_0f66ec7d78 FOREIGN KEY (workspace_id, health_scorecard_version_id) REFERENCES public.health_scorecard_versions(workspace_id, id);
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_1042d38a26; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8696,6 +9095,14 @@ ALTER TABLE ONLY public.public_web_search_results
 
 ALTER TABLE ONLY public.email_drafts
     ADD CONSTRAINT fk_rails_1aceaa280f FOREIGN KEY (workspace_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, id, conversation_id);
+
+
+--
+-- Name: health_scorecard_versions fk_rails_1ef1d40a69; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_rails_1ef1d40a69 FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
 
 
 --
@@ -8843,6 +9250,22 @@ ALTER TABLE ONLY public.intercom_connections
 
 
 --
+-- Name: health_scorecard_design_turns fk_rails_3a805638f3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT fk_rails_3a805638f3 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: health_scorecard_design_turns fk_rails_3bc3ca1f2f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT fk_rails_3bc3ca1f2f FOREIGN KEY (workspace_id, health_scorecard_version_id) REFERENCES public.health_scorecard_versions(workspace_id, id);
+
+
+--
 -- Name: memory_correction_proposals fk_rails_3c417b5b0f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8907,6 +9330,14 @@ ALTER TABLE ONLY public.support_case_taggings
 
 
 --
+-- Name: health_scorecards fk_rails_422df8aa02; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecards
+    ADD CONSTRAINT fk_rails_422df8aa02 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: service_calendar_holidays fk_rails_4308962f7b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8923,6 +9354,14 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: health_scorecard_versions fk_rails_464bd1eeeb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_rails_464bd1eeeb FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: public_web_searches fk_rails_46a5546050; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8936,6 +9375,14 @@ ALTER TABLE ONLY public.public_web_searches
 
 ALTER TABLE ONLY public.case_slas
     ADD CONSTRAINT fk_rails_480547c7a0 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: health_scorecard_backtests fk_rails_49045831df; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests
+    ADD CONSTRAINT fk_rails_49045831df FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -9024,6 +9471,14 @@ ALTER TABLE ONLY public.memory_index_entries
 
 ALTER TABLE ONLY public.memory_records
     ADD CONSTRAINT fk_rails_522a4d29cb FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_design_turns fk_rails_53922c0c70; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT fk_rails_53922c0c70 FOREIGN KEY (workspace_id, membership_id, user_id) REFERENCES public.memberships(workspace_id, id, user_id);
 
 
 --
@@ -9184,6 +9639,14 @@ ALTER TABLE ONLY public.crew_templates
 
 ALTER TABLE ONLY public.case_slas
     ADD CONSTRAINT fk_rails_667d0037a5 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_design_turns fk_rails_672c2dca10; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT fk_rails_672c2dca10 FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -9480,6 +9943,14 @@ ALTER TABLE ONLY public.support_case_taggings
 
 ALTER TABLE ONLY public.crew_task_dependencies
     ADD CONSTRAINT fk_rails_9030464aa5 FOREIGN KEY (workspace_id, depends_on_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_versions fk_rails_91017e7908; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_rails_91017e7908 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -9851,6 +10322,14 @@ ALTER TABLE ONLY public.account_health_inputs
 
 
 --
+-- Name: health_scorecard_design_turns fk_rails_c6843b5d52; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_design_turns
+    ADD CONSTRAINT fk_rails_c6843b5d52 FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
 -- Name: public_web_extractions fk_rails_c6f2785e1f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10027,6 +10506,14 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: health_scorecard_backtests fk_rails_e06550e89d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests
+    ADD CONSTRAINT fk_rails_e06550e89d FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: crew_tasks fk_rails_e3cb7df8ab; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10147,6 +10634,14 @@ ALTER TABLE ONLY public.intercom_part_links
 
 
 --
+-- Name: health_scorecard_backtests fk_rails_f7564a3040; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_backtests
+    ADD CONSTRAINT fk_rails_f7564a3040 FOREIGN KEY (workspace_id, membership_id, user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: intercom_outbound_deliveries fk_rails_f98c838305; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10203,12 +10698,21 @@ ALTER TABLE ONLY public.agent_profile_versions
 
 
 --
+-- Name: account_health_assessments fk_rails_ff4368efa6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments
+    ADD CONSTRAINT fk_rails_ff4368efa6 FOREIGN KEY (workspace_id, health_scorecard_version_id) REFERENCES public.health_scorecard_versions(workspace_id, id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824220000'),
 ('20260824210000'),
 ('20260824200000'),
 ('20260824190000'),

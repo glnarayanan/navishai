@@ -8,6 +8,7 @@
       <p>Deterministic account facts stay separate from crew analysis and proposed interventions.</p>
     </div>
     <div class="account-health-actions">
+      <%= link_to "Scorecard", workspace_health_scorecard_path(@workspace), class: "button button-secondary" %>
       <%= link_to "Crew work", workspace_account_crew_tasks_path(@workspace, @account), class: "button button-secondary" %>
       <% if @membership.can_write? %>
         <%= button_to "Recalculate", recalculate_workspace_account_path(@workspace, @account), class: "button button-secondary" %>
@@ -33,6 +34,8 @@
         <div><dt>Trigger</dt><dd><%= @assessment.trigger_kind.humanize %></dd></div>
         <div><dt>Change</dt><dd><%= @assessment.material_change? ? "Material change" : "Below material threshold" %></dd></div>
         <div><dt>Prior score</dt><dd><%= @assessment.previous_assessment&.score || "First snapshot" %></dd></div>
+        <div><dt>Scorecard</dt><dd>Version <%= @assessment.health_scorecard_version.version_number %></dd></div>
+        <div><dt>Scored rules</dt><dd><%= pluralize(@assessment.health_scorecard_version.definition.fetch("rules").size, "signal") %></dd></div>
       </dl>
     </section>
 

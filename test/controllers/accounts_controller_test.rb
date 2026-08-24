@@ -21,6 +21,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".health-score-panel strong", text: /#{assessment.score}/
     assert_select ".health-signals tbody tr", count: assessment.signals.count
     assert_select "small", text: assessment.signals.first.citation_uri
+    assert_select ".health-context dd", text: "Version #{assessment.health_scorecard_version.version_number}"
     assert_select "h2", text: "Renewal-risk work"
   end
 

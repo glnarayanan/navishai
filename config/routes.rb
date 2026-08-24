@@ -30,6 +30,12 @@ Rails.application.routes.draw do
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
     end
+    resource :health_scorecard, path: "scorecard", only: :show do
+      post :propose
+      post :backtest
+      post :publish
+      post :rollback
+    end
     resources :accounts, only: %i[ index show ] do
       post :recalculate, on: :member
       post :request_risk_review, on: :member

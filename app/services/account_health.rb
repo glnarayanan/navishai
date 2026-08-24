@@ -34,13 +34,18 @@ class AccountHealth
     AccountHealthAssessment.transaction do
       lock_account!(account)
       prior = account.health_assessments.first
-      signals = build_signals(account, at)
+      scorecard_version = HealthScorecardDesigner.install_default!(workspace: @workspace).current_version
+      signals = HealthScorecardDefinition.apply(
+        signals: build_signals(account, at), definition: scorecard_version.definition, calculated_at: at
+      )
       score = [ 100 - signals.sum(&:risk_points), 0 ].max
-      level = score < 50 ? "at_risk" : score < 75 ? "watch" : "healthy"
+      level = score >= scorecard_version.definition.fetch("healthy_min") ? "healthy" :
+        score >= scorecard_version.definition.fetch("watch_min") ? "watch" : "at_risk"
       material = prior.present? && ((prior.score - score).abs >= MATERIAL_SCORE_CHANGE || prior.risk_level != level)
       renewal = latest(account, "renewal_on")&.date_value
       assessment = account.health_assessments.create!(
         workspace: @workspace, previous_assessment: prior, score:, risk_level: level,
+        health_scorecard_version: scorecard_version,
         trigger_kind: trigger_kind.to_s, material_change: material, renewal_on: renewal, calculated_at: at
       )
       signals.each { |signal| assessment.signals.create!(workspace: @workspace, **signal.to_h) }
@@ -63,58 +68,42 @@ class AccountHealth
       inactivity_days = last_inbound ? [ ((at - last_inbound) / 1.day).floor, 0 ].max : 365
 
       signals = [
-        number_signal("open_cases", open_count, 20, [ open_count * 5, 20 ].min,
+        number_signal("open_cases", open_count,
           "support_cases", "account://#{account.id}/cases", nil, at),
-        number_signal("sla_breaches", breach_count, 25, [ breach_count * 10, 25 ].min,
+        number_signal("sla_breaches", breach_count,
           "sla", "account://#{account.id}/slas", nil, at),
-        number_signal("internal_notes_90d", note_count, 0, 0,
+        number_signal("internal_notes_90d", note_count,
           "case_notes", "account://#{account.id}/notes", notes_since, at),
-        number_signal("customer_inactivity_days", inactivity_days, 20, inactivity_risk(inactivity_days),
+        number_signal("customer_inactivity_days", inactivity_days,
           "conversation", "account://#{account.id}/conversations", last_inbound, at)
       ]
       if (renewal = latest(account, "renewal_on"))
-        days = (renewal.date_value - at.to_date).to_i
-        signals << date_signal("renewal_on", renewal.date_value, 25, renewal_risk(days), renewal, at)
+        signals << date_signal("renewal_on", renewal.date_value, renewal, at)
       end
       active = latest(account, "active_users")
       licensed = latest(account, "licensed_seats")
       if active&.numeric_value && licensed&.numeric_value&.positive?
         utilization = ((active.numeric_value / licensed.numeric_value) * 100).round(2)
-        risk = utilization < 30 ? 15 : utilization < 60 ? 8 : 0
-        signals << number_signal("seat_utilization_percent", utilization, 15, risk,
+        signals << number_signal("seat_utilization_percent", utilization,
           "account_input", active.source_locator, [ active.observed_at, licensed.observed_at ].min, at)
       end
       if (contract = latest(account, "contract_value"))
-        signals << number_signal("contract_value", contract.numeric_value, 0, 0,
+        signals << number_signal("contract_value", contract.numeric_value,
           "account_input", contract.source_locator, contract.observed_at, at)
       end
       signals
     end
 
-    def number_signal(key, value, weight, risk, source_kind, locator, starts_at, ends_at)
+    def number_signal(key, value, source_kind, locator, starts_at, ends_at)
       Signal.new(signal_key: key, value_kind: "number", numeric_value: value, date_value: nil,
-        weight:, risk_points: risk, source_kind:, source_locator: locator,
+        weight: 0, risk_points: 0, source_kind:, source_locator: locator,
         range_starts_at: starts_at, range_ends_at: ends_at)
     end
 
-    def date_signal(key, value, weight, risk, input, at)
+    def date_signal(key, value, input, at)
       Signal.new(signal_key: key, value_kind: "date", numeric_value: nil, date_value: value,
-        weight:, risk_points: risk, source_kind: "account_input", source_locator: input.source_locator,
+        weight: 0, risk_points: 0, source_kind: "account_input", source_locator: input.source_locator,
         range_starts_at: input.observed_at, range_ends_at: at)
-    end
-
-    def inactivity_risk(days)
-      return 20 if days >= 60
-      return 12 if days >= 30
-      return 5 if days >= 14
-      0
-    end
-
-    def renewal_risk(days)
-      return 25 if days <= 30
-      return 15 if days <= 90
-      return 5 if days <= 180
-      0
     end
 
     def latest(account, key)

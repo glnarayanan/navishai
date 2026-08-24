@@ -4,6 +4,7 @@ class AccountHealthAssessment < ApplicationRecord
 
   belongs_to :workspace
   belongs_to :account
+  belongs_to :health_scorecard_version
   belongs_to :previous_assessment, class_name: "AccountHealthAssessment", optional: true
   has_many :signals, -> { order(:id) }, class_name: "AccountHealthSignal", dependent: :restrict_with_exception
   has_one :risk_investigation, class_name: "AccountRiskInvestigation", dependent: :restrict_with_exception

@@ -1,0 +1,128 @@
+<% content_for :title, "Health scorecard — NavishAI" %>
+<% definition = @selected_version.definition %>
+
+<main class="scorecard-page">
+  <header class="scorecard-heading">
+    <div>
+      <%= link_to "Accounts", workspace_accounts_path(@workspace), class: "back-link" %>
+      <h1>Health scorecard</h1>
+      <p>Shape a clear scoring proposal, test it against retained facts, then choose what future snapshots use.</p>
+    </div>
+    <div class="scorecard-current" aria-label="Current published scorecard">
+      <span>Published</span>
+      <strong>Version <%= @scorecard.current_version.version_number %></strong>
+      <small><%= @scorecard.current_version.design_prompt %></small>
+    </div>
+  </header>
+
+  <% if @command_error %>
+    <div class="inline-error" role="alert"><strong>Scorecard not changed</strong><p><%= @command_error %></p></div>
+  <% end %>
+
+  <% if @membership.can_write? %>
+    <section class="scorecard-designer" aria-labelledby="designer-title">
+      <header><span class="section-number">01</span><div><h2 id="designer-title">Describe and map</h2><p>Tell the designer what should drive risk. Choose only facts NavishAI retains and set their maximum risk points.</p></div></header>
+      <%= form_with url: propose_workspace_health_scorecard_path(@workspace), class: "scorecard-form" do |form| %>
+        <div class="field scorecard-goal">
+          <%= form.label :goal_prompt, "Scoring goal" %>
+          <%= form.text_area :goal_prompt, value: @selected_version.design_prompt, required: true, minlength: 10, maxlength: 500, rows: 3,
+            placeholder: "Flag accounts with near renewals, low use, unresolved cases, and SLA breaches." %>
+          <span class="field-hint">This text records your intent. The mapped rules below do the scoring.</span>
+        </div>
+        <fieldset class="scorecard-signal-map">
+          <legend>Signal map</legend>
+          <% @catalog.each do |key, item| %>
+            <% rule = definition.fetch("rules").find { |candidate| candidate.fetch("signal_key") == key } %>
+            <div class="scorecard-signal">
+              <label class="scorecard-signal-choice">
+                <%= check_box_tag "signals[#{key}][enabled]", "1", rule.present? %>
+                <span><strong><%= item.fetch(:label) %></strong><small><%= item.fetch(:detail) %></small></span>
+              </label>
+              <label>Max points
+                <%= number_field_tag "signals[#{key}][weight]", rule&.fetch("weight") || item.fetch(:default_weight), min: 0, max: 100, step: 1, inputmode: "numeric" %>
+              </label>
+            </div>
+          <% end %>
+        </fieldset>
+        <fieldset class="scorecard-bands">
+          <legend>Health bands</legend>
+          <label>Healthy starts at <%= number_field_tag :healthy_min, definition.fetch("healthy_min"), min: 2, max: 99, required: true %></label>
+          <label>Watch starts at <%= number_field_tag :watch_min, definition.fetch("watch_min"), min: 1, max: 98, required: true %></label>
+          <span class="field-hint">Scores below the watch threshold are At risk.</span>
+        </fieldset>
+        <%= form.submit "Create proposal", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="scorecard-proposal" aria-labelledby="proposal-title">
+    <header><span class="section-number">02</span><div><h2 id="proposal-title">Review proposal</h2><p>The proposal is immutable. Edit by creating another version.</p></div></header>
+    <div class="scorecard-proposal-head">
+      <div><span class="version-label"><%= @scorecard.current_version_id == @selected_version.id ? "Published" : "Proposal" %></span><h3>Version <%= @selected_version.version_number %></h3><p><%= @selected_version.explanation %></p></div>
+    </div>
+    <dl class="scorecard-rule-summary">
+      <% definition.fetch("rules").each do |rule| %>
+        <div><dt><%= @catalog.fetch(rule.fetch("signal_key")).fetch(:label) %></dt><dd>Up to <strong><%= rule.fetch("weight") %></strong> risk points</dd></div>
+      <% end %>
+      <div><dt>Health bands</dt><dd>Healthy ≥ <strong><%= definition.fetch("healthy_min") %></strong> · Watch ≥ <strong><%= definition.fetch("watch_min") %></strong></dd></div>
+    </dl>
+  </section>
+
+  <section class="scorecard-preview" id="preview" aria-labelledby="preview-title">
+    <header><span class="section-number">03</span><div><h2 id="preview-title">Preview and backtest</h2><p>Compare this version with retained account snapshots. Publishing never rewrites those past results.</p></div></header>
+    <% if @backtest %>
+      <% summary = @backtest.results.fetch("summary") %>
+      <div class="scorecard-preview-stats">
+        <div><strong><%= @backtest.sample_count %></strong><span>snapshots tested</span></div>
+        <div><strong><%= summary.fetch("changed_count") %></strong><span>scores changed</span></div>
+        <div><strong><%= summary.fetch("band_changed_count") %></strong><span>bands changed</span></div>
+        <div><strong><%= summary.fetch("at_risk_count") %></strong><span>at risk</span></div>
+      </div>
+      <% current_rows = @backtest.results.fetch("current") %>
+      <% if current_rows.any? %>
+        <div class="table-scroll"><table><thead><tr><th>Account</th><th>Published snapshot</th><th>Proposal</th><th>Change</th></tr></thead><tbody>
+          <% current_rows.each do |row| %><tr><th scope="row"><%= row.fetch("account_name") %></th><td><%= row.fetch("existing_score") %> · <%= row.fetch("existing_risk_level").humanize %></td><td><strong><%= row.fetch("proposed_score") %> · <%= row.fetch("proposed_risk_level").humanize %></strong></td><td><%= row.fetch("proposed_score") - row.fetch("existing_score") %></td></tr><% end %>
+        </tbody></table></div>
+      <% end %>
+      <p class="scorecard-evidence">Evidence digest <code><%= @backtest.source_digest %></code> · <%= @backtest.generated_at.to_fs(:long) %></p>
+      <% if @membership.can_write? %>
+        <%= button_to "Refresh preview and backtest", backtest_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id }, class: "button button-secondary" %>
+      <% end %>
+    <% else %>
+      <div class="scorecard-empty"><div><strong>No preview for this version</strong><p>Test it against current accounts and retained history before publishing.</p></div>
+        <% if @membership.can_write? %>
+          <%= button_to "Run preview and backtest", backtest_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id }, class: "button button-secondary" %>
+        <% end %>
+      </div>
+    <% end %>
+  </section>
+
+  <section class="scorecard-publish" aria-labelledby="publish-title">
+    <header><span class="section-number">04</span><div><h2 id="publish-title">Publish or roll back</h2><p>Only Owners and Admins can change which immutable version scores future snapshots.</p></div></header>
+    <% if @membership.can_configure_agents? && @backtest %>
+      <% if @scorecard.current_version_id == @selected_version.id %>
+        <p class="scorecard-published-notice"><strong>Version <%= @selected_version.version_number %> is published.</strong> New snapshots use these rules.</p>
+      <% elsif @selected_version.version_number < @scorecard.current_version.version_number %>
+        <%= button_to "Roll back to version #{@selected_version.version_number}", rollback_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id }, class: "button button-danger" %>
+      <% else %>
+        <%= button_to "Publish version #{@selected_version.version_number}", publish_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id }, class: "button button-primary" %>
+      <% end %>
+    <% else %>
+      <p class="read-only-notice"><%= @backtest ? "You can review this version, but an Owner or Admin must publish it." : "Run a preview before this version can be published." %></p>
+    <% end %>
+  </section>
+
+  <section class="scorecard-history" aria-labelledby="history-title">
+    <header><h2 id="history-title">Version history</h2><p>Every proposal, test, publish, and rollback remains in the audit trail.</p></header>
+    <ol>
+      <% @versions.each do |version| %>
+        <li class="<%= "is-selected" if version.id == @selected_version.id %>">
+          <%= link_to workspace_health_scorecard_path(@workspace, version_id: version.id) do %>
+            <span><strong>Version <%= version.version_number %></strong><small><%= version.design_prompt %></small></span>
+            <span><%= @scorecard.current_version_id == version.id ? "Published" : pluralize(version.backtests.size, "backtest") %></span>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  </section>
+</main>
