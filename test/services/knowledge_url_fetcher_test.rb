@@ -99,7 +99,7 @@ class KnowledgeUrlFetcherTest < ActiveSupport::TestCase
       url_fetcher: fetcher
     )
 
-    assert_equal "https://docs.example.com/final", source.canonical_url
+    assert_equal "https://docs.example.com/start", source.canonical_url
     assert_equal "https://docs.example.com/final", source.current_version.retrieved_from_url
     assert_equal "Fetched recovery guidance", source.current_version.content
     assert_equal fetched_at, source.current_version.retrieved_at

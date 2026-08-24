@@ -35,7 +35,6 @@ class KnowledgeIngestion
 
     locator = locator_for(kind:, url:, external_id:)
     fetched = fetch_url_if_needed(kind:, content:, url: locator[:canonical_url])
-    locator[:canonical_url] = fetched.url if fetched
     prepared, normalized_content = prepare_content(kind:, content: fetched&.content || content, upload:)
     source = nil
     KnowledgeSource.transaction do
