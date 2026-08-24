@@ -666,6 +666,30 @@ $$;
 
 
 --
+-- Name: protect_public_web_extraction(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_public_web_extraction() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP IN ('DELETE', 'TRUNCATE') THEN
+    RAISE EXCEPTION 'public web extraction is append-only';
+  ELSIF ROW(OLD.id, OLD.workspace_id, OLD.public_web_search_result_id, OLD.request_key, OLD.source_url,
+    OLD.requested_by_membership_id, OLD.requested_by_user_id, OLD.created_at)
+    IS DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.public_web_search_result_id, NEW.request_key, NEW.source_url,
+    NEW.requested_by_membership_id, NEW.requested_by_user_id, NEW.created_at) THEN
+    RAISE EXCEPTION 'public web extraction identity is immutable';
+  END IF;
+  IF OLD.status <> 'extracting' OR NEW.status NOT IN ('completed', 'failed') THEN
+    RAISE EXCEPTION 'public web extraction result is terminal';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_public_web_search(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -935,11 +959,11 @@ BEGIN
   FOR UPDATE;
   maximum_tools := CASE role
     WHEN 'support_coordinator' THEN '["conversation_read", "case_read"]'::jsonb
-    WHEN 'support_investigator' THEN '["conversation_read", "case_read", "knowledge_search", "public_web_search"]'::jsonb
+    WHEN 'support_investigator' THEN '["conversation_read", "case_read", "knowledge_search", "public_web_search", "web_extract"]'::jsonb
     WHEN 'resolution_drafter' THEN '["conversation_read", "case_read", "knowledge_search", "draft_propose"]'::jsonb
     WHEN 'support_reviewer' THEN '["conversation_read", "case_read", "knowledge_search", "review_record"]'::jsonb
     WHEN 'account_analyst' THEN '["account_read", "conversation_read"]'::jsonb
-    WHEN 'risk_investigator' THEN '["account_read", "conversation_read", "knowledge_search", "public_web_search"]'::jsonb
+    WHEN 'risk_investigator' THEN '["account_read", "conversation_read", "knowledge_search", "public_web_search", "web_extract"]'::jsonb
     WHEN 'success_strategist' THEN '["account_read", "knowledge_search", "note_propose"]'::jsonb
     WHEN 'success_reviewer' THEN '["account_read", "knowledge_search", "review_record"]'::jsonb
   END;
@@ -1004,7 +1028,7 @@ CREATE FUNCTION public.validate_runtime_installation() RETURNS trigger
 DECLARE metadata_key text;
 BEGIN
   IF NEW.allowed_role_keys <@ '["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"]'::jsonb = false OR
-     NEW.allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record"]'::jsonb = false OR
+     NEW.allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record", "web_extract"]'::jsonb = false OR
      NEW.allowed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query"]'::jsonb = false OR
      NEW.allowed_role_keys <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_role_keys)) values), '[]'::jsonb) OR
      NEW.allowed_tools <> COALESCE((SELECT jsonb_agg(value ORDER BY value) FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_tools)) values), '[]'::jsonb) OR
@@ -1254,7 +1278,7 @@ CREATE TABLE public.agent_profile_versions (
     CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
     CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY (ARRAY[('required'::character varying)::text, ('on_policy_flag'::character varying)::text]))),
     CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
-    CONSTRAINT agent_profile_versions_tools CHECK (((jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record"]'::jsonb)))
+    CONSTRAINT agent_profile_versions_tools CHECK (((jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record", "web_extract"]'::jsonb)))
 );
 
 
@@ -2485,6 +2509,51 @@ ALTER SEQUENCE public.outbound_email_delivery_attachments_id_seq OWNED BY public
 
 
 --
+-- Name: public_web_extractions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.public_web_extractions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    public_web_search_result_id bigint NOT NULL,
+    request_key character varying NOT NULL,
+    status character varying DEFAULT 'extracting'::character varying NOT NULL,
+    source_url text NOT NULL,
+    final_url text,
+    content text,
+    content_digest character varying,
+    failure_code character varying,
+    requested_by_membership_id bigint NOT NULL,
+    requested_by_user_id bigint NOT NULL,
+    retrieved_at timestamp(6) without time zone,
+    source_updated_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT public_web_extractions_identity CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((status)::text = ANY ((ARRAY['extracting'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((octet_length(source_url) >= 9) AND (octet_length(source_url) <= 2048)) AND (source_url ~ '^https://'::text))),
+    CONSTRAINT public_web_extractions_result CHECK (((((status)::text = 'extracting'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((octet_length(final_url) >= 9) AND (octet_length(final_url) <= 2048)) AND (final_url ~ '^https://'::text) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 1048576)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL))))
+);
+
+
+--
+-- Name: public_web_extractions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.public_web_extractions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: public_web_extractions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.public_web_extractions_id_seq OWNED BY public.public_web_extractions.id;
+
+
+--
 -- Name: public_web_search_results; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2609,7 +2678,7 @@ CREATE TABLE public.runtime_installations (
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
-    CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
+    CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 9) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
     CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
     CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[])))),
     CONSTRAINT runtime_installations_unit_budgets CHECK ((((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
@@ -3497,6 +3566,13 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments ALTER COLUMN id SET 
 
 
 --
+-- Name: public_web_extractions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions ALTER COLUMN id SET DEFAULT nextval('public.public_web_extractions_id_seq'::regclass);
+
+
+--
 -- Name: public_web_search_results id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3915,6 +3991,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.outbound_email_delivery_attachments
     ADD CONSTRAINT outbound_email_delivery_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: public_web_extractions public_web_extractions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions
+    ADD CONSTRAINT public_web_extractions_pkey PRIMARY KEY (id);
 
 
 --
@@ -5009,6 +5093,34 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_public_web_extractions_on_public_web_search_result_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_extractions_on_public_web_search_result_id ON public.public_web_extractions USING btree (public_web_search_result_id);
+
+
+--
+-- Name: index_public_web_extractions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_extractions_on_workspace_id ON public.public_web_extractions USING btree (workspace_id);
+
+
+--
+-- Name: index_public_web_extractions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_extractions_on_workspace_id_and_id ON public.public_web_extractions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_public_web_extractions_on_workspace_id_and_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_public_web_extractions_on_workspace_id_and_request_key ON public.public_web_extractions USING btree (workspace_id, request_key);
+
+
+--
 -- Name: index_public_web_search_results_on_citation_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5800,6 +5912,20 @@ CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON publi
 
 
 --
+-- Name: public_web_extractions public_web_extractions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_extractions_no_truncate BEFORE TRUNCATE ON public.public_web_extractions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_public_web_extraction();
+
+
+--
+-- Name: public_web_extractions public_web_extractions_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_extractions_protect BEFORE DELETE OR UPDATE ON public.public_web_extractions FOR EACH ROW EXECUTE FUNCTION public.protect_public_web_extraction();
+
+
+--
 -- Name: public_web_search_results public_web_search_results_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6530,6 +6656,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: public_web_extractions fk_rails_714893ef9b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions
+    ADD CONSTRAINT fk_rails_714893ef9b FOREIGN KEY (workspace_id, requested_by_membership_id, requested_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: stored_attachments fk_rails_728f214969; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6655,6 +6789,14 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.agent_profiles
     ADD CONSTRAINT fk_rails_89533dda30 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: public_web_extractions fk_rails_8a71b0b31d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions
+    ADD CONSTRAINT fk_rails_8a71b0b31d FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -6962,6 +7104,14 @@ ALTER TABLE ONLY public.active_storage_attachments
 
 
 --
+-- Name: public_web_extractions fk_rails_c6f2785e1f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions
+    ADD CONSTRAINT fk_rails_c6f2785e1f FOREIGN KEY (workspace_id, public_web_search_result_id) REFERENCES public.public_web_search_results(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: shared_email_inboxes fk_rails_c70ce652a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7063,6 +7213,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.knowledge_source_versions
     ADD CONSTRAINT fk_rails_d40427c568 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
+-- Name: public_web_extractions fk_rails_d470a92618; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_extractions
+    ADD CONSTRAINT fk_rails_d470a92618 FOREIGN KEY (requested_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -7200,6 +7358,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824130000'),
 ('20260824120000'),
 ('20260824110000'),
 ('20260824090000'),

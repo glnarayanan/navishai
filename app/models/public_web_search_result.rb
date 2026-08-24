@@ -5,6 +5,8 @@ class PublicWebSearchResult < ApplicationRecord
 
   belongs_to :workspace
   belongs_to :public_web_search
+  has_many :extractions, -> { order(created_at: :desc, id: :desc) },
+    class_name: "PublicWebExtraction", dependent: :restrict_with_exception
 
   validates :rank, numericality: { only_integer: true, in: 1..10 }, uniqueness: { scope: :public_web_search_id }
   validates :citation_key, format: { with: RunnerProtocol::UUID_PATTERN }, uniqueness: true

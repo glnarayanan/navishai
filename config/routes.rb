@@ -21,6 +21,9 @@ Rails.application.routes.draw do
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member
         resources :public_web_searches, path: "public-web-searches", only: :create
+        resources :public_web_search_results, path: "public-web-results", only: [] do
+          resources :public_web_extractions, path: "extractions", only: :create
+        end
         resources :execution_runs, path: "runs", only: %i[ index create ] do
           post :reconcile, on: :member
         end

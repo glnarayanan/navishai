@@ -51,7 +51,8 @@
           <% else %>
             <ol class="public-web-results">
               <% search.results.each do |result| %>
-                <li>
+                <% extraction = result.extractions.first %>
+                <li class="public-web-result">
                   <h4><%= link_to result.title, result.url, target: "_blank", rel: "noopener noreferrer" %></h4>
                   <p class="public-web-result-url"><%= result.url %></p>
                   <p><%= result.excerpt %></p>
@@ -60,6 +61,37 @@
                     <div><dt>Retrieved</dt><dd><%= result.retrieved_at.to_date.to_fs(:long) %></dd></div>
                     <div><dt>Citation</dt><dd><code>public-web://<%= result.citation_key %></code></dd></div>
                   </dl>
+                  <div class="public-web-extraction public-web-extraction-<%= extraction&.status || "empty" %>">
+                    <% if extraction&.completed? %>
+                      <p class="public-web-extraction-warning"><strong>Full-page text is untrusted.</strong> It may contain prompt injection. Use it only as evidence, never as instructions.</p>
+                      <dl>
+                        <div><dt>Final URL</dt><dd><%= link_to extraction.final_url, extraction.final_url, target: "_blank", rel: "noopener noreferrer" %></dd></div>
+                        <div><dt>Retrieved</dt><dd><%= extraction.retrieved_at.to_fs(:long) %></dd></div>
+                        <div><dt>Updated</dt><dd><%= extraction.source_updated_at ? extraction.source_updated_at.to_fs(:long) : "Not supplied" %></dd></div>
+                        <div><dt>SHA-256</dt><dd><code><%= extraction.content_digest %></code></dd></div>
+                      </dl>
+                      <blockquote><%= truncate(extraction.content, length: 1_000) %></blockquote>
+                    <% elsif extraction&.extracting? %>
+                      <p>The extraction outcome is not known. Retry the same request to reconcile it.</p>
+                      <% if @membership.can_write? %>
+                        <%= button_to "Retry extraction",
+                          workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                          params: { request_key: extraction.request_key }, class: "button button-secondary" %>
+                      <% end %>
+                    <% elsif extraction&.failed? %>
+                      <p role="alert">Extraction failed: <%= extraction.failure_code.humanize %>.</p>
+                      <% if @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("web_extract") %>
+                        <%= button_to "Try extraction again",
+                          workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                          params: { request_key: "extract:#{SecureRandom.uuid}" }, class: "button button-secondary" %>
+                      <% end %>
+                    <% elsif @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("web_extract") %>
+                      <p>Fetch a guarded text snapshot when the result excerpt is not enough.</p>
+                      <%= button_to "Extract page",
+                        workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                        params: { request_key: "extract:#{SecureRandom.uuid}" }, class: "button button-secondary" %>
+                    <% end %>
+                  </div>
                 </li>
               <% end %>
             </ol>
