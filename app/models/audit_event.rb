@@ -11,6 +11,7 @@ class AuditEvent < ApplicationRecord
     "account.merged" => {},
     "account.unmerged" => {},
     "agent.profile_updated" => {},
+    "crew.artifact_published" => { "artifact_kind" => CrewArtifact::KINDS, "version" => Integer },
     "crew.task_created" => {},
     "crew.task_event_recorded" => { "event_kind" => CrewTaskEvent::KINDS },
     "attachment.downloaded" => {},

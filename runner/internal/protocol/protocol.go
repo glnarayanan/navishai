@@ -124,7 +124,7 @@ func (request AdmissionRequest) Validate() error {
 		return ErrInvalidRequest
 	}
 	if !uuidPattern.MatchString(request.Task.TaskKey) || request.Task.Attempt < 1 || request.Task.Attempt > 100 ||
-		!byteLength(request.Task.Title, 1, 200) || !byteLength(request.Task.InputContext, 1, 8000) ||
+		!byteLength(request.Task.Title, 1, 200) || !byteLength(request.Task.InputContext, 1, 128*1024) ||
 		!byteLength(request.Task.ExpectedOutput, 1, 8000) {
 		return ErrInvalidRequest
 	}
