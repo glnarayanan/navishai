@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,6 +32,13 @@ func TestMain(m *testing.M) {
 		}
 	}
 	build("navishai-exec", "../../cmd/navishai-exec")
+	command := exec.Command(
+		"cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
+		"-o", filepath.Join(directory, "navishai-netns-launch"), "../../cmd/navishai-netns-launch/main.c",
+	)
+	if result, buildErr := command.CombinedOutput(); buildErr != nil {
+		panic(string(result) + buildErr.Error())
+	}
 	source := filepath.Join(directory, "target.go")
 	if err := os.WriteFile(source, []byte(testTarget), 0o600); err != nil {
 		panic(err)
@@ -89,14 +97,165 @@ func TestRunAllowsWritesInsideWorkingRoot(t *testing.T) {
 
 func TestRunDeniesNetwork(t *testing.T) {
 	working := t.TempDir()
+	for _, operation := range []string{"socket", "io-uring"} {
+		result, err := testSupervisor(t, working).Run(context.Background(), Request{
+			Executable: targetPath(), Arguments: []string{operation}, WorkingDir: working,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.ExitCode != 0 || strings.TrimSpace(result.StandardOutput) != "operation not permitted" {
+			t.Fatalf("%s was not denied: %#v", operation, result)
+		}
+	}
+}
+
+func TestRunDeniesNetworkNamespaceEscape(t *testing.T) {
+	working := t.TempDir()
+	for _, operation := range []string{"unshare-network", "clone-network"} {
+		result, err := testSupervisor(t, working).Run(context.Background(), Request{
+			Executable: targetPath(), Arguments: []string{operation}, WorkingDir: working,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.ExitCode != 0 || strings.TrimSpace(result.StandardOutput) != "operation not permitted" {
+			t.Fatalf("%s was not denied: %#v", operation, result)
+		}
+	}
 	result, err := testSupervisor(t, working).Run(context.Background(), Request{
-		Executable: targetPath(), Arguments: []string{"socket"}, WorkingDir: working,
+		Executable: targetPath(), Arguments: []string{"clone3"}, WorkingDir: working,
+	})
+	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.StandardOutput) != "function not implemented" {
+		t.Fatalf("clone3 did not force a safe fallback: result=%#v err=%v", result, err)
+	}
+}
+
+func TestEgressProfileBindsNamespaceAndEnvironmentToApprovedExecutable(t *testing.T) {
+	userNamespace, networkNamespace := testNamespaces(t)
+	profiles, err := resolveEgressProfiles([]EgressProfile{{
+		Key: "model_api", Executable: targetPath(), UserNamespacePath: userNamespace, NetworkNamespacePath: networkNamespace,
+		Environment: map[string]string{"HTTPS_PROXY": "http://egress-proxy:8080", "NO_PROXY": ""},
+	}}, []string{testBinaries}, map[string]bool{targetPath(): true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer profiles["model_api"].userNamespace.Close()
+	defer profiles["model_api"].networkNamespace.Close()
+	profile := profiles["model_api"]
+	if profile.executable != targetPath() || !reflect.DeepEqual(profile.environment, []string{
+		"HTTPS_PROXY=http://egress-proxy:8080", "NO_PROXY=",
+	}) {
+		t.Fatalf("unexpected resolved profile %#v", profile)
+	}
+}
+
+func TestRunUsesBoundedEgressNamespaceWithoutCapabilities(t *testing.T) {
+	working := t.TempDir()
+	userNamespace, networkNamespace := testNamespaces(t)
+	expectedUser, err := os.Readlink(userNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedNetwork, err := os.Readlink(networkNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := New(Config{
+		HelperPath:             filepath.Join(testBinaries, "navishai-exec"),
+		NamespaceLauncherPath:  filepath.Join(testBinaries, "navishai-netns-launch"),
+		AllowedExecutableRoots: []string{testBinaries}, ApprovedExecutables: []string{targetPath()},
+		AllowedWorkingRoots: []string{working}, RuntimeReadRoots: []string{testBinaries, "/proc"},
+		EgressProfiles: []EgressProfile{{
+			Key: "model_api", Executable: targetPath(), UserNamespacePath: userNamespace, NetworkNamespacePath: networkNamespace,
+			Environment: map[string]string{"HTTPS_PROXY": "http://egress-proxy:8080"},
+		}},
+		Limits: testLimits(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ExitCode != 0 || strings.TrimSpace(result.StandardOutput) != "operation not permitted" {
-		t.Fatalf("socket was not denied: %#v", result)
+	result, err := value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"profile"}, WorkingDir: working, EgressProfileKey: "model_api",
+	})
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("profile result=%#v err=%v", result, err)
+	}
+	expected := strings.Join([]string{
+		"1000", expectedUser, expectedNetwork, "0000000000000000", "0000000000000000",
+		"0000000000000000", "0000000000000000", "http://egress-proxy:8080", "socket-ok",
+	}, "|")
+	if strings.TrimSpace(result.StandardOutput) != expected {
+		t.Fatalf("profile output %q, expected %q", result.StandardOutput, expected)
+	}
+	result, err = value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"unshare-network"}, WorkingDir: working, EgressProfileKey: "model_api",
+	})
+	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.StandardOutput) != "operation not permitted" {
+		t.Fatalf("profile namespace escape result=%#v err=%v", result, err)
+	}
+}
+
+func TestEgressProfileRejectsUnapprovedExecutableNamespaceAndEnvironment(t *testing.T) {
+	userNamespace, networkNamespace := testNamespaces(t)
+	otherUserNamespace, _ := testNamespaces(t)
+	regularFile := filepath.Join(t.TempDir(), "not-a-namespace")
+	if err := os.WriteFile(regularFile, []byte("no"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []EgressProfile{
+		{Key: "model_api", Executable: targetPath(), UserNamespacePath: regularFile, NetworkNamespacePath: networkNamespace},
+		{Key: "model_api", Executable: targetPath(), UserNamespacePath: userNamespace, NetworkNamespacePath: regularFile},
+		{Key: "model_api", Executable: targetPath(), UserNamespacePath: otherUserNamespace, NetworkNamespacePath: networkNamespace},
+		{Key: "model_api", Executable: targetPath(), UserNamespacePath: userNamespace, NetworkNamespacePath: networkNamespace, Environment: map[string]string{"PATH": "/tmp"}},
+		{Key: "model_api", Executable: filepath.Join(testBinaries, "navishai-exec"), UserNamespacePath: userNamespace, NetworkNamespacePath: networkNamespace},
+	}
+	for index, profile := range tests {
+		if _, err := resolveEgressProfiles([]EgressProfile{profile}, []string{testBinaries}, map[string]bool{targetPath(): true}); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("profile %d: got %v", index, err)
+		}
+	}
+}
+
+func testNamespaces(t *testing.T) (string, string) {
+	t.Helper()
+	pidPath := filepath.Join(t.TempDir(), "namespace.pid")
+	command := exec.Command(
+		"unshare", "--user", "--net", "--map-user=1000", "--map-group=1000",
+		"sh", "-c", `echo $$ > "$1"; exec sleep 30`, "sh", pidPath,
+	)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Wait()
+	})
+	deadline := time.Now().Add(time.Second)
+	for {
+		if pidBytes, err := os.ReadFile(pidPath); err == nil {
+			pid := strings.TrimSpace(string(pidBytes))
+			userNamespace := filepath.Join("/proc", pid, "ns/user")
+			networkNamespace := filepath.Join("/proc", pid, "ns/net")
+			if _, err := os.Stat(networkNamespace); err == nil {
+				return userNamespace, networkNamespace
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("namespace process did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestRunRejectsUnknownEgressProfile(t *testing.T) {
+	working := t.TempDir()
+	_, err := testSupervisor(t, working).Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"socket"}, WorkingDir: working, EgressProfileKey: "not_approved",
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -195,6 +354,8 @@ func TestRunRejectsEscapesAndOversizedInput(t *testing.T) {
 		{Executable: targetPath(), WorkingDir: working, Input: make([]byte, maxInputBytes+1)},
 		{Executable: targetPath(), WorkingDir: working, Arguments: []string{strings.Repeat("x", maxArgumentBytes+1)}},
 		{Executable: targetPath(), WorkingDir: working, Credentials: map[string]string{"bad": "value"}},
+		{Executable: targetPath(), WorkingDir: working, Credentials: map[string]string{"HTTPS_PROXY": "http://unapproved"}},
+		{Executable: targetPath(), WorkingDir: working, Credentials: map[string]string{"HOME": "/tmp"}},
 	}
 	for index, request := range requests {
 		if _, err := supervisor.Run(context.Background(), request); !errors.Is(err, ErrInvalidRequest) {
@@ -209,13 +370,17 @@ func testSupervisor(t *testing.T, working string) *Supervisor {
 		HelperPath: filepath.Join(testBinaries, "navishai-exec"), AllowedExecutableRoots: []string{testBinaries},
 		ApprovedExecutables: []string{targetPath()},
 		AllowedWorkingRoots: []string{working}, RuntimeReadRoots: []string{testBinaries},
-		Limits: Limits{WallTime: 2 * time.Second, CPUSeconds: 1, MemoryBytes: 2 * 1024 * 1024 * 1024,
-			OpenFiles: 32, Processes: 4096, OutputBytes: 16 * 1024, KillGrace: 10 * time.Millisecond},
+		Limits: testLimits(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return value
+}
+
+func testLimits() Limits {
+	return Limits{WallTime: 2 * time.Second, CPUSeconds: 1, MemoryBytes: 2 * 1024 * 1024 * 1024,
+		OpenFiles: 32, Processes: 4096, OutputBytes: 16 * 1024, KillGrace: 10 * time.Millisecond}
 }
 
 func targetPath() string { return filepath.Join(testBinaries, "target") }
@@ -236,6 +401,16 @@ func main() {
   case "read": _, err := os.ReadFile(os.Args[2]); fmt.Print(err)
   case "write": if err := os.WriteFile(os.Args[2], []byte("result"), 0600); err != nil { fmt.Print(err); os.Exit(1) }
   case "socket": _, _, errno := syscall.Syscall(syscall.SYS_SOCKET, syscall.AF_INET, syscall.SOCK_STREAM, 0); fmt.Print(errno)
+  case "io-uring": _, _, errno := syscall.RawSyscall(425, 1, 0, 0); fmt.Print(errno)
+  case "unshare-network": _, _, errno := syscall.RawSyscall(syscall.SYS_UNSHARE, 0x40000000, 0, 0); fmt.Print(errno)
+  case "clone-network": _, _, errno := syscall.RawSyscall6(syscall.SYS_CLONE, 0x10000011, 0, 0, 0, 0, 0); fmt.Print(errno)
+  case "clone3": _, _, errno := syscall.RawSyscall(435, 0, 0, 0); fmt.Print(errno)
+  case "profile":
+	userNamespace, _ := os.Readlink("/proc/self/ns/user"); networkNamespace, _ := os.Readlink("/proc/self/ns/net")
+	status, _ := os.ReadFile("/proc/self/status"); capabilities := make([]string, 0, 4)
+	for _, name := range []string{"CapEff:", "CapPrm:", "CapAmb:", "CapBnd:"} { for _, line := range strings.Split(string(status), "\n") { if strings.HasPrefix(line, name) { capabilities = append(capabilities, strings.TrimSpace(strings.TrimPrefix(line, name))) } } }
+	fd, _, errno := syscall.Syscall(syscall.SYS_SOCKET, syscall.AF_INET, syscall.SOCK_STREAM, 0); socketResult := "socket-ok"; if errno != 0 { socketResult = errno.Error() } else { syscall.Close(int(fd)) }
+	fmt.Print(strings.Join(append([]string{strconv.Itoa(os.Getuid()), userNamespace, networkNamespace}, append(capabilities, os.Getenv("HTTPS_PROXY"), socketResult)...), "|"))
   case "sleep": time.Sleep(10 * time.Second)
   case "spawn":
 	output, err := os.OpenFile(os.Args[2]+".log", os.O_CREATE|os.O_WRONLY, 0600); if err != nil { fmt.Print(err); os.Exit(1) }

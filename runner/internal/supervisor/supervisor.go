@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,13 +26,20 @@ const (
 	maxArgumentBytes  = 16 * 1024
 	maxInputBytes     = 256 * 1024
 	maxCredentialKeys = 32
+	maxEgressProfiles = 32
 )
 
 var (
 	ErrInvalidRequest = errors.New("invalid supervised process request")
 	ErrOutputLimit    = errors.New("process output limit exceeded")
 	credentialPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+	profileKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 )
+
+var allowedEgressEnvironment = map[string]bool{
+	"ALL_PROXY": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
+	"SSL_CERT_DIR": true, "SSL_CERT_FILE": true,
+}
 
 type Limits struct {
 	WallTime    time.Duration
@@ -45,19 +53,30 @@ type Limits struct {
 
 type Config struct {
 	HelperPath             string
+	NamespaceLauncherPath  string
 	AllowedExecutableRoots []string
 	ApprovedExecutables    []string
 	AllowedWorkingRoots    []string
 	RuntimeReadRoots       []string
+	EgressProfiles         []EgressProfile
 	Limits                 Limits
 }
 
+type EgressProfile struct {
+	Key                  string
+	Executable           string
+	UserNamespacePath    string
+	NetworkNamespacePath string
+	Environment          map[string]string
+}
+
 type Request struct {
-	Executable  string
-	Arguments   []string
-	WorkingDir  string
-	Input       []byte
-	Credentials map[string]string
+	Executable       string
+	Arguments        []string
+	WorkingDir       string
+	Input            []byte
+	Credentials      map[string]string
+	EgressProfileKey string
 }
 
 type Result struct {
@@ -75,7 +94,16 @@ type Supervisor struct {
 	approvedExecutables map[string]bool
 	workingRoots        []string
 	runtimeReadRoots    []string
+	namespaceLauncher   string
+	egressProfiles      map[string]resolvedEgressProfile
 	limits              Limits
+}
+
+type resolvedEgressProfile struct {
+	executable       string
+	userNamespace    *os.File
+	networkNamespace *os.File
+	environment      []string
 }
 
 func New(config Config) (*Supervisor, error) {
@@ -103,10 +131,135 @@ func New(config Config) (*Supervisor, error) {
 		if approvalErr != nil {
 			return nil, approvalErr
 		}
+		if executable == helper {
+			return nil, ErrInvalidRequest
+		}
 		approvedExecutables[executable] = true
 	}
+	launcher := ""
+	if len(config.EgressProfiles) > 0 {
+		launcher, err = approvedExecutable(config.NamespaceLauncherPath)
+		if err != nil || launcher == helper || approvedExecutables[launcher] {
+			return nil, ErrInvalidRequest
+		}
+	}
+	egressProfiles, err := resolveEgressProfiles(config.EgressProfiles, executableRoots, approvedExecutables)
+	if err != nil {
+		return nil, err
+	}
 	return &Supervisor{helperPath: helper, executableRoots: executableRoots, approvedExecutables: approvedExecutables,
-		workingRoots: workingRoots, runtimeReadRoots: runtimeReadRoots, limits: config.Limits}, nil
+		workingRoots: workingRoots, runtimeReadRoots: runtimeReadRoots, namespaceLauncher: launcher,
+		egressProfiles: egressProfiles, limits: config.Limits}, nil
+}
+
+func resolveEgressProfiles(values []EgressProfile, executableRoots []string, approved map[string]bool) (map[string]resolvedEgressProfile, error) {
+	if len(values) > maxEgressProfiles {
+		return nil, ErrInvalidRequest
+	}
+	result := make(map[string]resolvedEgressProfile, len(values))
+	closeResult := func() {
+		for _, profile := range result {
+			_ = profile.userNamespace.Close()
+			_ = profile.networkNamespace.Close()
+		}
+	}
+	for _, value := range values {
+		executable, err := approvedFile(value.Executable, executableRoots)
+		if err != nil || !approved[executable] || !profileKeyPattern.MatchString(value.Key) {
+			closeResult()
+			return nil, ErrInvalidRequest
+		}
+		if _, exists := result[value.Key]; exists {
+			closeResult()
+			return nil, ErrInvalidRequest
+		}
+		userNamespace, networkNamespace, err := openNamespacePair(value.UserNamespacePath, value.NetworkNamespacePath)
+		if err != nil {
+			closeResult()
+			return nil, err
+		}
+		environment, err := egressEnvironment(value.Environment)
+		if err != nil {
+			_ = userNamespace.Close()
+			_ = networkNamespace.Close()
+			closeResult()
+			return nil, err
+		}
+		result[value.Key] = resolvedEgressProfile{
+			executable: executable, userNamespace: userNamespace, networkNamespace: networkNamespace, environment: environment,
+		}
+	}
+	return result, nil
+}
+
+func openNamespace(path string, expectedType uintptr) (*os.File, error) {
+	if !filepath.IsAbs(path) {
+		return nil, ErrInvalidRequest
+	}
+	namespace, err := os.Open(path)
+	if err != nil {
+		return nil, ErrInvalidRequest
+	}
+	var filesystem syscall.Statfs_t
+	const namespaceFilesystem = 0x6e736673
+	if syscall.Fstatfs(int(namespace.Fd()), &filesystem) != nil || uint64(filesystem.Type) != namespaceFilesystem {
+		_ = namespace.Close()
+		return nil, ErrInvalidRequest
+	}
+	const namespaceGetType = 0xb703
+	namespaceType, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, namespace.Fd(), namespaceGetType, 0)
+	if errno != 0 || namespaceType != expectedType {
+		_ = namespace.Close()
+		return nil, ErrInvalidRequest
+	}
+	return namespace, nil
+}
+
+func openNamespacePair(userPath, networkPath string) (*os.File, *os.File, error) {
+	const cloneNewUser = 0x10000000
+	const cloneNewNetwork = 0x40000000
+	userNamespace, err := openNamespace(userPath, cloneNewUser)
+	if err != nil {
+		return nil, nil, err
+	}
+	networkNamespace, err := openNamespace(networkPath, cloneNewNetwork)
+	if err != nil {
+		_ = userNamespace.Close()
+		return nil, nil, err
+	}
+	const namespaceGetUser = 0xb701
+	ownerFD, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, networkNamespace.Fd(), namespaceGetUser, 0)
+	if errno != 0 {
+		_ = userNamespace.Close()
+		_ = networkNamespace.Close()
+		return nil, nil, ErrInvalidRequest
+	}
+	owner := os.NewFile(ownerFD, "network-user-namespace")
+	defer owner.Close()
+	var configuredInfo, ownerInfo syscall.Stat_t
+	if syscall.Fstat(int(userNamespace.Fd()), &configuredInfo) != nil || syscall.Fstat(int(owner.Fd()), &ownerInfo) != nil ||
+		configuredInfo.Dev != ownerInfo.Dev || configuredInfo.Ino != ownerInfo.Ino {
+		_ = userNamespace.Close()
+		_ = networkNamespace.Close()
+		return nil, nil, ErrInvalidRequest
+	}
+	return userNamespace, networkNamespace, nil
+}
+
+func egressEnvironment(values map[string]string) ([]string, error) {
+	keys := make([]string, 0, len(values))
+	for key, value := range values {
+		if !allowedEgressEnvironment[key] || len(value) > 4096 || strings.ContainsRune(value, 0) {
+			return nil, ErrInvalidRequest
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, key+"="+values[key])
+	}
+	return result, nil
 }
 
 func approvedExecutable(path string) (string, error) {
@@ -141,11 +294,27 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 		return Result{}, ErrInvalidRequest
 	}
 	environment := []string{
-		"HOME=" + workingDir, "LANG=C.UTF-8", "NAVISHAI_DENY_NETWORK=1",
+		"HOME=" + workingDir, "LANG=C.UTF-8",
 		"NAVISHAI_LIMIT_CPU_SECONDS=" + strconv.FormatUint(supervisor.limits.CPUSeconds, 10),
 		"NAVISHAI_LIMIT_MEMORY_BYTES=" + strconv.FormatUint(supervisor.limits.MemoryBytes, 10),
 		"NAVISHAI_LIMIT_OPEN_FILES=" + strconv.FormatUint(supervisor.limits.OpenFiles, 10),
 		"NAVISHAI_LIMIT_PROCESSES=" + strconv.FormatUint(supervisor.limits.Processes, 10),
+	}
+	commandPath := supervisor.helperPath
+	commandArguments := append([]string{executable}, request.Arguments...)
+	var extraFiles []*os.File
+	if request.EgressProfileKey == "" {
+		environment = append(environment, "NAVISHAI_DENY_NETWORK=1")
+	} else {
+		profile, ok := supervisor.egressProfiles[request.EgressProfileKey]
+		if !ok || profile.executable != executable {
+			return Result{}, ErrInvalidRequest
+		}
+		commandPath = supervisor.namespaceLauncher
+		commandArguments = append([]string{supervisor.helperPath, executable}, request.Arguments...)
+		environment = append(environment, "NAVISHAI_EXEC_ALLOW_NETWORK=1")
+		environment = append(environment, profile.environment...)
+		extraFiles = []*os.File{profile.userNamespace, profile.networkNamespace}
 	}
 	readRoots, err := json.Marshal(append(supervisor.runtimeReadRoots, supervisor.executableRoots...))
 	if err != nil {
@@ -157,7 +326,8 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 	}
 	environment = append(environment, "NAVISHAI_EXEC_READ_ROOTS="+string(readRoots), "NAVISHAI_EXEC_WRITE_ROOTS="+string(writeRoots))
 	for key, value := range request.Credentials {
-		if !credentialPattern.MatchString(key) || strings.HasPrefix(key, "NAVISHAI_") || len(value) > 16*1024 || strings.ContainsRune(value, 0) {
+		if !credentialPattern.MatchString(key) || strings.HasPrefix(key, "NAVISHAI_") || allowedEgressEnvironment[key] ||
+			key == "HOME" || key == "LANG" || len(value) > 16*1024 || strings.ContainsRune(value, 0) {
 			return Result{}, ErrInvalidRequest
 		}
 		environment = append(environment, key+"="+value)
@@ -165,9 +335,10 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 
 	runContext, cancel := context.WithTimeout(ctx, supervisor.limits.WallTime)
 	defer cancel()
-	command := exec.Command(supervisor.helperPath, append([]string{executable}, request.Arguments...)...)
+	command := exec.Command(commandPath, commandArguments...)
 	command.Dir = workingDir
 	command.Env = environment
+	command.ExtraFiles = extraFiles
 	command.Stdin = bytes.NewReader(request.Input)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	output := newBoundedOutput(supervisor.limits.OutputBytes)

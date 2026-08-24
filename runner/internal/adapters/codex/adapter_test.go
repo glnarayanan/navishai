@@ -55,6 +55,9 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	if !reflect.DeepEqual(runner.request.Credentials, map[string]string{"CODEX_HOME": "/runtime/codex"}) {
 		t.Fatalf("unexpected credential environment %#v", runner.request.Credentials)
 	}
+	if runner.request.EgressProfileKey != "model_api" {
+		t.Fatalf("unexpected egress profile %q", runner.request.EgressProfileKey)
+	}
 	eventTypes := make([]string, len(events))
 	for index, event := range events {
 		eventTypes[index] = event.EventType
@@ -125,7 +128,7 @@ func testInvocation() Invocation {
 				TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
 		},
 		Executable: "/opt/codex", WorkingDir: "/work/run", CodexHome: "/runtime/codex",
-		Model: "gpt-5-codex", Prompt: "Investigate the case.",
+		Model: "gpt-5-codex", Prompt: "Investigate the case.", EgressProfileKey: "model_api",
 	}
 }
 

@@ -29,7 +29,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "invalid filesystem roots")
 		os.Exit(125)
 	}
-	if err := isolation.Apply(limits, os.Getenv("NAVISHAI_DENY_NETWORK") == "1", readRoots, writeRoots); err != nil {
+	if err := isolation.Apply(
+		limits, os.Getenv("NAVISHAI_DENY_NETWORK") == "1", os.Getenv("NAVISHAI_EXEC_ALLOW_NETWORK") == "1",
+		readRoots, writeRoots,
+	); err != nil {
 		fmt.Fprintln(os.Stderr, "cannot apply execution isolation")
 		os.Exit(125)
 	}

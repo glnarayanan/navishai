@@ -16,7 +16,7 @@ type Limits struct {
 	Processes   uint64
 }
 
-func Apply(limits Limits, denyNetwork bool, readRoots, writeRoots []string) error {
+func Apply(limits Limits, denyNetwork, allowNetwork bool, readRoots, writeRoots []string) error {
 	if limits.CPUSeconds < 1 || limits.MemoryBytes < 32*1024*1024 || limits.OpenFiles < 3 || limits.Processes < 1 {
 		return errors.New("invalid process limits")
 	}
@@ -31,13 +31,13 @@ func Apply(limits Limits, denyNetwork bool, readRoots, writeRoots []string) erro
 			return err
 		}
 	}
+	if denyNetwork == allowNetwork {
+		return errors.New("exactly one network policy is required")
+	}
 	if err := restrictFilesystem(readRoots, writeRoots); err != nil {
 		return fmt.Errorf("restrict filesystem: %w", err)
 	}
-	if denyNetwork {
-		return denyNetworkSyscalls()
-	}
-	return errors.New("network-enabled execution is not supported")
+	return restrictNetworkSyscalls(denyNetwork)
 }
 
 func restrictFilesystem(readRoots, writeRoots []string) error {
@@ -130,24 +130,35 @@ func restrictFilesystem(readRoots, writeRoots []string) error {
 	return nil
 }
 
-func denyNetworkSyscalls() error {
+func restrictNetworkSyscalls(denyNetwork bool) error {
 	const (
 		prSetNoNewPrivileges   = 38
 		prSetSeccomp           = 22
 		seccompModeFilter      = 2
 		bpfLoadWordAbsolute    = 0x20
 		bpfJumpEqual           = 0x15
+		bpfAnd                 = 0x54
 		bpfReturn              = 0x06
 		seccompAllow           = 0x7fff0000
 		seccompErrno           = 0x00050000
 		seccompKillProcess     = 0x80000000
 		auditArchitectureAMD64 = 0xc000003e
 		bpfJumpGreaterEqual    = 0x35
+		setns                  = 308
+		ioUringSetup           = 425
+		clone3                 = 435
+		cloneNamespaceFlags    = 0x7e020080
 	)
 	denied := []uint32{
-		syscall.SYS_SOCKET, syscall.SYS_SOCKETPAIR, syscall.SYS_CONNECT,
-		syscall.SYS_ACCEPT, syscall.SYS_ACCEPT4, syscall.SYS_BIND, syscall.SYS_LISTEN,
-		syscall.SYS_SENDTO, syscall.SYS_RECVFROM, syscall.SYS_SENDMSG, syscall.SYS_RECVMSG,
+		setns, syscall.SYS_UNSHARE, syscall.SYS_MOUNT, syscall.SYS_UMOUNT2,
+	}
+	if denyNetwork {
+		denied = append(denied,
+			syscall.SYS_SOCKET, syscall.SYS_SOCKETPAIR, syscall.SYS_CONNECT,
+			syscall.SYS_ACCEPT, syscall.SYS_ACCEPT4, syscall.SYS_BIND, syscall.SYS_LISTEN,
+			syscall.SYS_SENDTO, syscall.SYS_RECVFROM, syscall.SYS_SENDMSG, syscall.SYS_RECVMSG,
+			ioUringSetup,
+		)
 	}
 	filters := []syscall.SockFilter{
 		{Code: bpfLoadWordAbsolute, K: 4},
@@ -163,6 +174,15 @@ func denyNetworkSyscalls() error {
 			syscall.SockFilter{Code: bpfReturn, K: seccompErrno | uint32(syscall.EPERM)},
 		)
 	}
+	filters = append(filters,
+		syscall.SockFilter{Code: bpfJumpEqual, Jt: 0, Jf: 1, K: clone3},
+		syscall.SockFilter{Code: bpfReturn, K: seccompErrno | uint32(syscall.ENOSYS)},
+		syscall.SockFilter{Code: bpfJumpEqual, Jt: 0, Jf: 4, K: syscall.SYS_CLONE},
+		syscall.SockFilter{Code: bpfLoadWordAbsolute, K: 16},
+		syscall.SockFilter{Code: bpfAnd, K: cloneNamespaceFlags},
+		syscall.SockFilter{Code: bpfJumpEqual, Jt: 1, Jf: 0, K: 0},
+		syscall.SockFilter{Code: bpfReturn, K: seccompErrno | uint32(syscall.EPERM)},
+	)
 	filters = append(filters, syscall.SockFilter{Code: bpfReturn, K: seccompAllow})
 	program := syscall.SockFprog{Len: uint16(len(filters)), Filter: &filters[0]}
 	if _, _, errno := syscall.Syscall6(syscall.SYS_PRCTL, prSetNoNewPrivileges, 1, 0, 0, 0, 0); errno != 0 {
