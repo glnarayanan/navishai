@@ -250,6 +250,47 @@ strong {
   margin-top: 2rem;
 }
 
+.auth-alternative {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-areas:
+    "before label after"
+    "action action action";
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.auth-alternative::before,
+.auth-alternative::after {
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.auth-alternative::before {
+  grid-area: before;
+}
+
+.auth-alternative span {
+  grid-area: label;
+}
+
+.auth-alternative::after {
+  grid-area: after;
+}
+
+.auth-alternative form,
+.auth-alternative .button {
+  grid-area: action;
+  width: 100%;
+  min-height: 48px;
+  white-space: normal;
+}
+
 .field,
 fieldset {
   display: grid;

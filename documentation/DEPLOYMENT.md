@@ -29,6 +29,8 @@ Supermemory needs its first-boot local model setup. Start it, complete that setu
 
 Keep `.env` and `ops/secrets/runner` outside source control. Back up both through the host's secret and backup systems. To rotate runner TLS, stop `web`, `jobs`, and `runner`, remove the three generated runner TLS files, run `script/generate_runner_tls`, then restart those services. Rotating the shared secret also requires one coordinated stop and restart.
 
+To enable OpenID Connect, set the three optional `NAVISHAI_OIDC_*` values in `.env`. Keep the client secret in the host secret store. Leave all three blank to keep single sign-on off.
+
 Optional S3-compatible object storage and SearXNG remain external. Configure them only when used; the default stack has no general runner egress.
 
 ## Native Linux
@@ -63,6 +65,8 @@ Create the application secret with these keys:
 - `NAVISHAI_DATABASE_PASSWORD`
 - `NAVISHAI_RUNNER_SHARED_SECRET`
 - `NAVISHAI_SUPERMEMORY_API_KEY`
+
+To enable OpenID Connect, also add `NAVISHAI_OIDC_ISSUER`, `NAVISHAI_OIDC_CLIENT_ID`, and `NAVISHAI_OIDC_CLIENT_SECRET` to this Secret. Omit all three to keep it off.
 
 Create the runner TLS secret with `tls.crt`, `tls.key`, and `ca.crt`. The certificate DNS SAN must match `<release>-navishai-runner` in the target namespace. Set the database host, app host, image tags or digests, storage classes, replica counts, and resource limits in a private values file. Validate before install:
 

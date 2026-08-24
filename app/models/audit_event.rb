@@ -4,9 +4,9 @@ class AuditEvent < ApplicationRecord
   SENSITIVE_KEY = /passw|email|secret|token|(?:\A|_)key(?:\z|_)|crypt|salt|certificate|otp|ssn|cvv|cvc/i
   MAX_METADATA_BYTES = 8.kilobytes
   EVENT_METADATA = {
-    "authentication.failed" => { "method" => %w[local break_glass] },
+    "authentication.failed" => { "method" => %w[local oidc break_glass] },
     "authentication.signed_out" => {},
-    "authentication.succeeded" => { "method" => %w[local break_glass] },
+    "authentication.succeeded" => { "method" => %w[local oidc break_glass] },
     "account.created" => {},
     "account.data_imported" => { "source_kind" => AccountHealthInput::SOURCE_KINDS, "record_count" => Integer },
     "account.health_recalculated" => {

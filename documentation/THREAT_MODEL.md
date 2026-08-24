@@ -5,7 +5,7 @@ This baseline records NavishAI's main assets, trust boundaries, threats, and cur
 ## Assets
 
 - Workspace identity, membership, role, policy, and customer-operation data
-- User sessions, password and invitation tokens, application secrets, and integration credentials
+- User sessions, password and invitation tokens, OIDC identity bindings, application secrets, and integration credentials
 - Agent tasks, evidence, drafts, memory, runtime approvals, and execution records
 - Append-only security, approval, and human-action audit events
 
@@ -36,7 +36,7 @@ This baseline records NavishAI's main assets, trust boundaries, threats, and cur
           └───────────────┘       └───────────────┘
 ```
 
-Browser input, mail and integration payloads, public web content, model output, runtime output, uploads, and retrieved memory are untrusted. Rails owns user and workspace authority. PostgreSQL owns durable business, policy, security, and audit state. Only the Go runner may start an agent runtime or arbitrary process.
+Browser input, identity-provider responses, mail and integration payloads, public web content, model output, runtime output, uploads, and retrieved memory are untrusted. Rails owns user and workspace authority. PostgreSQL owns durable business, policy, security, and audit state. Only the Go runner may start an agent runtime or arbitrary process.
 
 ## Baseline threats and controls
 
@@ -44,6 +44,7 @@ Browser input, mail and integration payloads, public web content, model output, 
 |---|---|
 | Cross-workspace access or insecure object reference | Resolve records through the current user's membership and current workspace; fail closed; test another tenant's identifiers. |
 | Credential guessing and account discovery | Generic failures, constant-work password checks, shared IP rate limits, short-lived signed tokens, and filtered logs. |
+| Forged, replayed, or misbound OIDC login | Require HTTPS discovery with an exact issuer match, authorization code plus PKCE, one-use state and nonce, a ten-minute flow limit, bounded provider responses, an allowlisted RSA signature algorithm and key, and exact issuer, audience, time, subject, and verified-email claims. Bind only an existing verified non-break-glass User, retain issuer and subject for later login, reset the browser session, and audit only the method. |
 | Session theft, replay, or stale authority | Signed secure HTTP-only cookies, fixed expiry, server-side revocation, row-locked credential changes, and role revalidation. |
 | Cross-site request, script, framing, or content injection | Rails CSRF protection, strict content security policy, frame denial, same-origin browser isolation, output escaping, and no runtime CDN. |
 | Secret or personal-data disclosure through logs and audit | Parameter filtering plus structured audit metadata that rejects credential-like keys and has a strict size bound. |

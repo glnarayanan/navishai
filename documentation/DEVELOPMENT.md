@@ -26,6 +26,12 @@ Set `NAVISHAI_BREAK_GLASS_TOKEN` to a separate random value of at least 32 bytes
 
 Set `NAVISHAI_APP_HOST` to the public application host in production so password reset and invitation emails use valid HTTPS links.
 
+### OpenID Connect
+
+Set `NAVISHAI_OIDC_ISSUER`, `NAVISHAI_OIDC_CLIENT_ID`, and `NAVISHAI_OIDC_CLIENT_SECRET` to enable generic OpenID Connect login. You can instead set `oidc.issuer`, `oidc.client_id`, and `oidc.client_secret` in Rails credentials. The provider must publish HTTPS discovery, token, and JWKS endpoints and sign ID tokens with RS256, RS384, or RS512. Register `https://<NAVISHAI_APP_HOST>/session/oidc/callback` as the redirect URI.
+
+NavishAI uses the authorization-code flow with PKCE, state, and nonce checks. It accepts only a provider-verified email that matches an existing verified NavishAI User. It does not create Users or grant Workspace access. The first login binds the provider issuer and subject to that User; later logins use that stable binding. Local password login stays available, and OIDC cannot sign in the protected break-glass User.
+
 ## Shared email intake
 
 An Owner or Admin adds a shared inbox with a lowercase credential key. Put its webhook secret in Rails credentials at `shared_email.<credential_key>.webhook_secret`, or set `NAVISHAI_SHARED_EMAIL_<UPPERCASE_CREDENTIAL_KEY>_WEBHOOK_SECRET` to a random value of at least 32 bytes.
