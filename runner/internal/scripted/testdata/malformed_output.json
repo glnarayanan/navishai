@@ -1,0 +1,13 @@
+{
+  "scenario": "malformed output",
+  "attempts": [
+    {
+      "number": 1,
+      "result": "success",
+      "delay_millis": 0,
+      "tool_calls": [],
+      "output_json": "{\"unexpected\":true}",
+      "usage": {"input_units": 30, "output_units": 2}
+    }
+  ]
+}

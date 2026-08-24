@@ -52,6 +52,8 @@ NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' go run ./ru
 
 Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains accepted idempotency keys before it replies. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
 
+The deterministic scripted adapter under `runner/internal/scripted` proves success, retry, timeout, cancellation, malformed-output, and policy-denial behavior without a model or network access. Its bounded JSON fixtures are test and demo inputs, not a live runtime.
+
 ## Checks
 
 Run the full local check suite with:

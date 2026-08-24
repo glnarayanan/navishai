@@ -1,0 +1,21 @@
+{
+  "scenario": "retry then succeed",
+  "attempts": [
+    {
+      "number": 1,
+      "result": "retryable_error",
+      "delay_millis": 0,
+      "tool_calls": [],
+      "output_json": "",
+      "usage": {"input_units": 0, "output_units": 0}
+    },
+    {
+      "number": 2,
+      "result": "success",
+      "delay_millis": 0,
+      "tool_calls": ["case_read"],
+      "output_json": "{\"text\":\"The retry completed from the same frozen task policy.\"}",
+      "usage": {"input_units": 80, "output_units": 12}
+    }
+  ]
+}

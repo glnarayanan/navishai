@@ -1,0 +1,13 @@
+{
+  "scenario": "unapproved tool",
+  "attempts": [
+    {
+      "number": 1,
+      "result": "success",
+      "delay_millis": 0,
+      "tool_calls": ["public_web_search"],
+      "output_json": "{\"text\":\"This output must not be reached.\"}",
+      "usage": {"input_units": 20, "output_units": 8}
+    }
+  ]
+}

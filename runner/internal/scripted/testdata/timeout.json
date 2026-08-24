@@ -1,0 +1,13 @@
+{
+  "scenario": "timeout",
+  "attempts": [
+    {
+      "number": 1,
+      "result": "wait",
+      "delay_millis": 1000,
+      "tool_calls": [],
+      "output_json": "",
+      "usage": {"input_units": 0, "output_units": 0}
+    }
+  ]
+}
