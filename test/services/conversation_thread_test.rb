@@ -61,6 +61,7 @@ class ConversationThreadTest < ActiveSupport::TestCase
 
   test "inbound message in an active state does not change case status" do
     conversation = start_conversation
+    occurred_at = 1.minute.from_now
 
     assert_no_difference "SupportCaseStatusChange.count" do
       ConversationThread.append_inbound!(
@@ -68,13 +69,13 @@ class ConversationThreadTest < ActiveSupport::TestCase
         conversation: conversation,
         author: conversation.contact,
         body: "More context",
-        occurred_at: 1.minute.from_now,
+        occurred_at: occurred_at,
         source: :integration
       )
     end
 
     assert_equal "new", conversation.support_case.reload.status
-    assert_equal 1.minute.from_now.to_i, conversation.reload.last_message_at.to_i
+    assert_equal occurred_at.to_i, conversation.reload.last_message_at.to_i
   end
 
   test "a delayed inbound message does not reopen a case changed after it occurred" do
