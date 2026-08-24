@@ -1,5 +1,6 @@
 require "net/http"
 require "ipaddr"
+require "openssl"
 
 class RunnerClient
   class Error < StandardError; end
@@ -13,9 +14,15 @@ class RunnerClient
 
   Response = Data.define(:code, :body)
 
-  def initialize(address: ENV["NAVISHAI_RUNNER_ADDRESS"], secret: ENV["NAVISHAI_RUNNER_SHARED_SECRET"], clock: -> { Time.current })
+  def initialize(
+    address: ENV["NAVISHAI_RUNNER_ADDRESS"],
+    secret: ENV["NAVISHAI_RUNNER_SHARED_SECRET"],
+    ca_file: ENV["NAVISHAI_RUNNER_CA_FILE"],
+    clock: -> { Time.current }
+  )
     @base_uri = parse_address(address.presence || "http://127.0.0.1:8081")
     @secret = secret.to_s.b
+    @cert_store = build_cert_store(ca_file)
     @clock = clock
     raise ConfigurationError, "runner shared secret must contain at least 32 bytes" if @secret.bytesize < 32
   end
@@ -55,7 +62,7 @@ class RunnerClient
     raise_for_response(response)
   rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
     raise AmbiguousResult, "runner admission outcome is unknown: #{error.class}"
-  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+  rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
@@ -65,7 +72,7 @@ class RunnerClient
 
     payload = JSON.parse(response.body)
     payload == { "status" => "ok", "protocol_versions" => [ RunnerProtocol::VERSION ] }
-  rescue Error, JSON::ParserError, SystemCallError, Timeout::Error
+  rescue Error, JSON::ParserError, OpenSSL::SSL::SSLError, SystemCallError, Timeout::Error
     false
   end
 
@@ -88,7 +95,7 @@ class RunnerClient
     raise MalformedResponse, error.message
   rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
     raise AmbiguousResult, "runner detection outcome is unknown: #{error.class}"
-  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+  rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
@@ -112,7 +119,7 @@ class RunnerClient
     raise MalformedResponse, error.message
   rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
     raise AmbiguousResult, "web search outcome is unknown: #{error.class}"
-  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+  rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
@@ -137,10 +144,25 @@ class RunnerClient
     false
   end
 
+  def build_cert_store(ca_file)
+    return if ca_file.blank?
+    raise ConfigurationError, "runner CA file requires an HTTPS runner address" unless @base_uri.scheme == "https"
+
+    store = OpenSSL::X509::Store.new
+    store.set_default_paths
+    store.add_file(ca_file)
+    store
+  rescue OpenSSL::X509::StoreError, SystemCallError => error
+    raise ConfigurationError, "runner CA file could not be loaded: #{error.message}"
+  end
+
   def perform(request)
     http = Net::HTTP.new(@base_uri.host, @base_uri.port, nil)
     http.use_ssl = @base_uri.scheme == "https"
-    http.verify_mode = OpenSSL::SSL::VERIFY_PEER if http.use_ssl?
+    if http.use_ssl?
+      http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      http.cert_store = @cert_store if @cert_store
+    end
     http.open_timeout = 3
     http.read_timeout = 10
     http.write_timeout = 10

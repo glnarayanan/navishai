@@ -1,0 +1,18 @@
+{{- range $name, $volume := .Values.storage }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "navishai.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "navishai.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml $volume.accessModes | nindent 4 }}
+  {{- if $volume.storageClassName }}
+  storageClassName: {{ $volume.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $volume.size }}
+---
+{{- end }}

@@ -1,10 +1,42 @@
 require "test_helper"
+require "tempfile"
 
 class RunnerClientTest < ActiveSupport::TestCase
   test "rejects short secrets and cleartext non-loopback addresses" do
     assert_raises(RunnerClient::ConfigurationError) { RunnerClient.new(secret: "short") }
     assert_raises(RunnerClient::ConfigurationError) do
       RunnerClient.new(address: "http://runner.internal:8081", secret: "s" * 32)
+    end
+    assert_raises(RunnerClient::ConfigurationError) do
+      RunnerClient.new(address: "http://127.0.0.1:8081", secret: "s" * 32, ca_file: "/tmp/runner-ca.pem")
+    end
+  end
+
+  test "adds a custom runner CA after the operating system trust roots" do
+    Tempfile.create("runner-ca") do |file|
+      key = OpenSSL::PKey::RSA.new(2048)
+      certificate = OpenSSL::X509::Certificate.new
+      certificate.version = 2
+      certificate.serial = 1
+      certificate.subject = certificate.issuer = OpenSSL::X509::Name.parse("/CN=Runner Test CA")
+      certificate.public_key = key.public_key
+      certificate.not_before = Time.current
+      certificate.not_after = 1.hour.from_now
+      certificate.sign(key, OpenSSL::Digest::SHA256.new)
+      file.write(certificate.to_pem)
+      file.flush
+
+      client = RunnerClient.new(
+        address: "https://runner:8081", secret: "s" * 32, ca_file: file.path
+      )
+
+      assert_instance_of OpenSSL::X509::Store, client.instance_variable_get(:@cert_store)
+    end
+  end
+
+  test "fails closed when a custom runner CA cannot be loaded" do
+    assert_raises(RunnerClient::ConfigurationError) do
+      RunnerClient.new(address: "https://runner:8081", secret: "s" * 32, ca_file: "/missing/runner-ca.pem")
     end
   end
 

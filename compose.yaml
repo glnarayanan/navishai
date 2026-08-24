@@ -1,0 +1,109 @@
+name: navishai
+
+x-rails-environment: &rails-environment
+  RAILS_ENV: production
+  RAILS_SERVE_STATIC_FILES: "true"
+  NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set NAVISHAI_APP_HOST}
+  NAVISHAI_DATABASE_HOST: postgres
+  NAVISHAI_DATABASE_PORT: "5432"
+  NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
+  NAVISHAI_RUNNER_ADDRESS: https://runner:8081
+  NAVISHAI_RUNNER_CA_FILE: /run/navishai/runner-ca.crt
+  NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
+  NAVISHAI_SUPERMEMORY_ADDRESS: http://127.0.0.1:6767
+  NAVISHAI_SUPERMEMORY_API_KEY: ${NAVISHAI_SUPERMEMORY_API_KEY:?set NAVISHAI_SUPERMEMORY_API_KEY}
+  SECRET_KEY_BASE: ${NAVISHAI_SECRET_KEY_BASE:?set NAVISHAI_SECRET_KEY_BASE}
+
+x-rails-service: &rails-service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: navishai-rails:local
+  restart: unless-stopped
+  environment: *rails-environment
+  volumes:
+    - rails_storage:/rails/storage
+    - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/ca.crt:/run/navishai/runner-ca.crt:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    runner:
+      condition: service_started
+    supermemory:
+      condition: service_started
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg15@sha256:94aee7e88f98125114657cab98e28c5dfa8dd517a6bf83fd98b503439f1e3de6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: navishai
+      POSTGRES_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
+      POSTGRES_DB: navishai_production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U navishai -d navishai_production"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [control]
+
+  runner:
+    build:
+      context: .
+      dockerfile: ops/docker/runner.Dockerfile
+    image: navishai-runner:local
+    restart: unless-stopped
+    environment:
+      NAVISHAI_RUNNER_BIND_ADDRESS: 0.0.0.0:8081
+      NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
+      NAVISHAI_RUNNER_STATE_PATH: /var/lib/navishai/admissions.json
+      NAVISHAI_RUNNER_TLS_CERT_FILE: /run/navishai/tls.crt
+      NAVISHAI_RUNNER_TLS_KEY_FILE: /run/navishai/tls.key
+    volumes:
+      - runner_data:/var/lib/navishai
+      - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.crt:/run/navishai/tls.crt:ro
+      - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.key:/run/navishai/tls.key:ro
+    networks: [control]
+
+  supermemory:
+    build:
+      context: .
+      dockerfile: ops/docker/supermemory.Dockerfile
+    image: navishai-supermemory:0.0.8
+    restart: unless-stopped
+    volumes:
+      - supermemory_data:/var/lib/supermemory
+    ports:
+      - "${NAVISHAI_HTTP_PORT:-3000}:3000"
+    networks: [control, edge]
+
+  web:
+    <<: *rails-service
+    command: ["bin/rails", "server", "-b", "0.0.0.0"]
+    network_mode: service:supermemory
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  jobs:
+    <<: *rails-service
+    command: ["bin/jobs"]
+    network_mode: service:supermemory
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  rails_storage:
+  runner_data:
+  supermemory_data:
+
+networks:
+  control:
+    internal: true
+  edge:

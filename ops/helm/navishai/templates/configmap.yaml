@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "navishai.fullname" . }}
+  labels:
+    {{- include "navishai.labels" . | nindent 4 }}
+data:
+  RAILS_ENV: production
+  RAILS_SERVE_STATIC_FILES: "true"
+  NAVISHAI_APP_HOST: {{ .Values.appHost | quote }}
+  NAVISHAI_DATABASE_HOST: {{ .Values.database.host | quote }}
+  NAVISHAI_DATABASE_PORT: {{ .Values.database.port | quote }}
+  NAVISHAI_RUNNER_ADDRESS: {{ printf "https://%s-runner:8081" (include "navishai.fullname" .) | quote }}
+  NAVISHAI_RUNNER_CA_FILE: /run/navishai/runner-ca.crt
+  NAVISHAI_SUPERMEMORY_ADDRESS: {{ .Values.supermemory.address | quote }}

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+destination="${1:-ops/secrets/runner}"
+if [[ -e "$destination/ca.crt" || -e "$destination/server.crt" || -e "$destination/server.key" ]]; then
+  printf 'Runner TLS files already exist in %s; remove them first to rotate.\n' "$destination" >&2
+  exit 1
+fi
+
+mkdir -p "$destination"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+cat >"$work/server.cnf" <<'EOF'
+[req]
+distinguished_name = subject
+req_extensions = extensions
+prompt = no
+[subject]
+CN = runner
+[extensions]
+subjectAltName = DNS:runner
+extendedKeyUsage = serverAuth
+keyUsage = critical,digitalSignature,keyEncipherment
+EOF
+
+openssl genrsa -out "$work/ca.key" 4096
+openssl req -x509 -new -sha256 -days 3650 -key "$work/ca.key" \
+  -subj "/CN=NavishAI local runner CA" -out "$destination/ca.crt"
+openssl genrsa -out "$destination/server.key" 3072
+openssl req -new -sha256 -key "$destination/server.key" -config "$work/server.cnf" -out "$work/server.csr"
+openssl x509 -req -sha256 -days 825 -in "$work/server.csr" \
+  -CA "$destination/ca.crt" -CAkey "$work/ca.key" -CAcreateserial \
+  -extfile "$work/server.cnf" -extensions extensions -out "$destination/server.crt"
+chmod 0600 "$destination/server.key"
+chmod 0644 "$destination/ca.crt" "$destination/server.crt"
+printf 'Generated runner TLS files in %s. Keep the key private and back it up securely.\n' "$destination"
