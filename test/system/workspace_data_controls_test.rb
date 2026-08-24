@@ -10,6 +10,10 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Data controls"
     assert_text "No content expiry runs yet."
     assert_link "Download workspace export"
+    assert_selector "h2", text: "Workspace import"
+    assert_field "New Workspace name"
+    assert_field "New Workspace slug"
+    assert_field "Compressed Workspace archive"
 
     page.current_window.resize_to(320, 844)
     assert_equal 320, page.evaluate_script("window.innerWidth")
@@ -17,6 +21,7 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_operator find_button("Run content expiry now").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_button("Run audit expiry now").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_link("Download workspace export").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    assert_operator find_button("Import as new Workspace").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_link("Data").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
 
     accept_confirm { click_button "Run content expiry now" }

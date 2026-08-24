@@ -10,6 +10,7 @@ Rails.application.routes.draw do
       post :expire
       post :expire_audit
       get :export
+      post :import
     end
     resources :notifications, only: %i[ index update ] do
       post :read_all, on: :collection

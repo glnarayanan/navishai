@@ -114,4 +114,44 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "navishai-workspace-v1", archive.fetch("format")
     assert_equal @workspace.runner_key, archive.dig("workspace", "runner_key")
   end
+
+  test "owner imports an archive as a new workspace" do
+    archive = WorkspacePortability.export(workspace: @workspace, membership: memberships(:owner_support))
+    file = Tempfile.new([ "workspace", ".json.gz" ], binmode: true)
+    file.write(archive)
+    file.rewind
+    sign_in_as users(:owner)
+
+    assert_difference "Workspace.count", 1 do
+      post import_workspace_data_controls_path(@workspace), params: {
+        workspace_name: "Imported Support", workspace_slug: "imported-support",
+        workspace_archive: Rack::Test::UploadedFile.new(file.path, "application/gzip")
+      }
+    end
+
+    imported = @workspace.organization.workspaces.find_by!(slug: "imported-support")
+    assert_redirected_to workspace_data_controls_path(imported)
+    assert imported.memberships.find_by(user: users(:owner)).owner?
+  ensure
+    file&.close!
+  end
+
+  test "invalid import rerenders without creating a workspace" do
+    file = Tempfile.new([ "workspace", ".json.gz" ], binmode: true)
+    file.write("not gzip")
+    file.rewind
+    sign_in_as users(:owner)
+
+    assert_no_difference "Workspace.count" do
+      post import_workspace_data_controls_path(@workspace), params: {
+        workspace_name: "Broken", workspace_slug: "broken",
+        workspace_archive: Rack::Test::UploadedFile.new(file.path, "application/gzip")
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_select "[role='alert']", text: /Workspace archive is invalid/
+  ensure
+    file&.close!
+  end
 end

@@ -132,6 +132,11 @@ class AuditEvent < ApplicationRecord
       "record_count" => Integer,
       "attachment_count" => Integer
     },
+    "workspace.imported" => {
+      "table_count" => Integer,
+      "record_count" => Integer,
+      "attachment_count" => Integer
+    },
     "webhook.endpoint_configured" => { "active" => %w[true false] }
   }.freeze
 

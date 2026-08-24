@@ -27,6 +27,32 @@
       class: "button button-secondary" %>
   </section>
 
+  <section class="section-block data-policy-form-section" aria-labelledby="workspace-import-title">
+    <div>
+      <h2 id="workspace-import-title">Workspace import</h2>
+      <p>Restore an export as a new Workspace in this Organization. Referenced users must already have verified local accounts. NavishAI gives the new Workspace fresh endpoint and ledger IDs and rebuilds its external Memory index.</p>
+    </div>
+    <% if @import_error %><p class="inline-error" role="alert"><%= @import_error %></p><% end %>
+    <%= form_with url: import_workspace_data_controls_path(Current.workspace), multipart: true, class: "data-policy-form" do |form| %>
+      <div class="field">
+        <%= form.label :workspace_name, "New Workspace name" %>
+        <%= form.text_field :workspace_name, required: true, maxlength: 100, autocomplete: "off" %>
+      </div>
+      <div class="field">
+        <%= form.label :workspace_slug, "New Workspace slug" %>
+        <%= form.text_field :workspace_slug, required: true, maxlength: 63, pattern: "[a-z0-9]+(?:-[a-z0-9]+)*", autocomplete: "off" %>
+        <span class="field-hint">Use lowercase letters, numbers, and single hyphens.</span>
+      </div>
+      <div class="field">
+        <%= form.label :workspace_archive, "Compressed Workspace archive" %>
+        <%= form.file_field :workspace_archive, required: true, accept: ".json.gz,application/gzip" %>
+        <span class="field-hint">The compressed file limit is 8 MiB.</span>
+      </div>
+      <%= form.submit "Import as new Workspace", class: "button button-secondary",
+        data: { turbo_confirm: "Import this archive as a new Workspace?" } %>
+    <% end %>
+  </section>
+
   <section class="section-block data-policy-form-section" aria-labelledby="retention-policy-title">
     <div>
       <h2 id="retention-policy-title">Retention policy</h2>

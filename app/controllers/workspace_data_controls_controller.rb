@@ -49,6 +49,22 @@ class WorkspaceDataControlsController < ApplicationController
       type: "application/gzip", disposition: "attachment"
   end
 
+  def import
+    upload = params[:workspace_archive]
+    raise WorkspacePortability::InvalidArchive, "Choose a workspace archive." unless upload.respond_to?(:read)
+
+    imported = WorkspacePortability.import(
+      workspace: Current.workspace, membership: Current.require_membership!, archive_io: upload,
+      name: params[:workspace_name], slug: params[:workspace_slug]
+    )
+    redirect_to workspace_data_controls_path(imported), notice: "Workspace imported."
+  rescue WorkspacePortability::InvalidArchive => error
+    @policy = Current.workspace.workspace_data_policy || Current.workspace.create_workspace_data_policy!
+    @import_error = error.message
+    load_expiry_runs
+    render :show, status: :unprocessable_content
+  end
+
   private
     def policy_params
       params.require(:workspace_data_policy).permit(:content_retention_days, :audit_retention_days)
