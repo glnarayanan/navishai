@@ -675,6 +675,33 @@ $$;
 
 
 --
+-- Name: protect_intercom_outbound_delivery(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_intercom_outbound_delivery() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.intercom_draft_id, OLD.intercom_connection_id,
+         OLD.intercom_conversation_link_id, OLD.conversation_id, OLD.actor_membership_id,
+         OLD.actor_user_id, OLD.idempotency_key, OLD.remote_conversation_id,
+         OLD.source_part_id, OLD.admin_id, OLD.body, OLD.started_at, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.intercom_draft_id, NEW.intercom_connection_id,
+         NEW.intercom_conversation_link_id, NEW.conversation_id, NEW.actor_membership_id,
+         NEW.actor_user_id, NEW.idempotency_key, NEW.remote_conversation_id,
+         NEW.source_part_id, NEW.admin_id, NEW.body, NEW.started_at, NEW.created_at) AND
+     ((OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown')) OR
+      (OLD.status = 'unknown' AND NEW.status IN ('sent', 'failed'))) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Intercom outbound delivery records are durable';
+END;
+$$;
+
+
+--
 -- Name: protect_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2648,6 +2675,98 @@ ALTER SEQUENCE public.intercom_conversation_links_id_seq OWNED BY public.interco
 
 
 --
+-- Name: intercom_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_drafts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    intercom_conversation_link_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    updated_by_id bigint NOT NULL,
+    body text NOT NULL,
+    status character varying DEFAULT 'ready'::character varying NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_drafts_body_size CHECK ((octet_length(body) <= 1048576)),
+    CONSTRAINT intercom_drafts_status CHECK (((status)::text = ANY ((ARRAY['ready'::character varying, 'sending'::character varying, 'sent'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_drafts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_drafts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_drafts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_drafts_id_seq OWNED BY public.intercom_drafts.id;
+
+
+--
+-- Name: intercom_outbound_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_outbound_deliveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_draft_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    intercom_conversation_link_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    conversation_message_id bigint,
+    actor_membership_id bigint NOT NULL,
+    actor_user_id bigint NOT NULL,
+    idempotency_key character varying NOT NULL,
+    remote_conversation_id character varying NOT NULL,
+    source_part_id character varying NOT NULL,
+    remote_part_id character varying,
+    admin_id character varying NOT NULL,
+    body text NOT NULL,
+    status character varying DEFAULT 'sending'::character varying NOT NULL,
+    failure_code character varying,
+    started_at timestamp(6) without time zone NOT NULL,
+    sent_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_outbound_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
+    CONSTRAINT intercom_outbound_deliveries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['configuration_error'::character varying, 'remote_rejected'::character varying, 'unknown_outcome'::character varying, 'confirmed_not_sent'::character varying])::text[])))),
+    CONSTRAINT intercom_outbound_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (remote_part_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['sending'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (conversation_message_id IS NULL) AND (remote_part_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (failure_code IS NOT NULL)))))),
+    CONSTRAINT intercom_outbound_deliveries_status CHECK (((status)::text = ANY ((ARRAY['sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_outbound_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_outbound_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_outbound_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_outbound_deliveries_id_seq OWNED BY public.intercom_outbound_deliveries.id;
+
+
+--
 -- Name: intercom_part_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4368,6 +4487,20 @@ ALTER TABLE ONLY public.intercom_conversation_links ALTER COLUMN id SET DEFAULT 
 
 
 --
+-- Name: intercom_drafts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts ALTER COLUMN id SET DEFAULT nextval('public.intercom_drafts_id_seq'::regclass);
+
+
+--
+-- Name: intercom_outbound_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries ALTER COLUMN id SET DEFAULT nextval('public.intercom_outbound_deliveries_id_seq'::regclass);
+
+
+--
 -- Name: intercom_part_links id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4874,6 +5007,22 @@ ALTER TABLE ONLY public.intercom_connections
 
 ALTER TABLE ONLY public.intercom_conversation_links
     ADD CONSTRAINT intercom_conversation_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_drafts intercom_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts
+    ADD CONSTRAINT intercom_drafts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_outbound_deliveries intercom_outbound_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT intercom_outbound_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -6089,10 +6238,73 @@ CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_conversation ON publi
 
 
 --
+-- Name: index_intercom_conversations_on_tenant_conversation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_conversation_id ON public.intercom_conversation_links USING btree (workspace_id, id, conversation_id);
+
+
+--
 -- Name: index_intercom_conversations_on_tenant_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_id ON public.intercom_conversation_links USING btree (workspace_id, intercom_connection_id, id);
+
+
+--
+-- Name: index_intercom_drafts_on_tenant_link; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_drafts_on_tenant_link ON public.intercom_drafts USING btree (workspace_id, id, intercom_conversation_link_id, conversation_id);
+
+
+--
+-- Name: index_intercom_drafts_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_drafts_on_workspace_id ON public.intercom_drafts USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_drafts_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_drafts_on_workspace_id_and_id ON public.intercom_drafts USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_drafts_on_workspace_id_and_support_case_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_drafts_on_workspace_id_and_support_case_id ON public.intercom_drafts USING btree (workspace_id, support_case_id);
+
+
+--
+-- Name: index_intercom_outbound_deliveries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_outbound_deliveries_on_workspace_id ON public.intercom_outbound_deliveries USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_outbound_deliveries_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_outbound_deliveries_on_workspace_id_and_id ON public.intercom_outbound_deliveries USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_outbound_on_idempotency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_outbound_on_idempotency ON public.intercom_outbound_deliveries USING btree (workspace_id, idempotency_key);
+
+
+--
+-- Name: index_intercom_outbound_on_remote_part; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_outbound_on_remote_part ON public.intercom_outbound_deliveries USING btree (intercom_connection_id, remote_part_id) WHERE (remote_part_id IS NOT NULL);
 
 
 --
@@ -7363,6 +7575,20 @@ CREATE TRIGGER inbound_email_deliveries_protect_source BEFORE DELETE OR UPDATE O
 
 
 --
+-- Name: intercom_outbound_deliveries intercom_outbound_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_outbound_deliveries_no_truncate BEFORE TRUNCATE ON public.intercom_outbound_deliveries FOR EACH STATEMENT EXECUTE FUNCTION public.protect_intercom_outbound_delivery();
+
+
+--
+-- Name: intercom_outbound_deliveries intercom_outbound_deliveries_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_outbound_deliveries_protect_record BEFORE DELETE OR UPDATE ON public.intercom_outbound_deliveries FOR EACH ROW EXECUTE FUNCTION public.protect_intercom_outbound_delivery();
+
+
+--
 -- Name: intercom_sync_operations intercom_sync_operations_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7921,6 +8147,14 @@ ALTER TABLE ONLY public.agent_profile_versions
 
 
 --
+-- Name: intercom_outbound_deliveries fk_rails_09ceab4559; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_09ceab4559 FOREIGN KEY (workspace_id, actor_membership_id, actor_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: agent_profile_versions fk_rails_0a8ca6adb2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8033,6 +8267,14 @@ ALTER TABLE ONLY public.intercom_part_links
 
 
 --
+-- Name: intercom_outbound_deliveries fk_rails_21357be27b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_21357be27b FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
 -- Name: memory_proposals fk_rails_23d39be37f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8086,6 +8328,14 @@ ALTER TABLE ONLY public.runtime_installations
 
 ALTER TABLE ONLY public.intercom_conversation_links
     ADD CONSTRAINT fk_rails_2d83c7a76e FOREIGN KEY (workspace_id, conversation_id, support_case_id) REFERENCES public.support_cases(workspace_id, conversation_id, id);
+
+
+--
+-- Name: intercom_outbound_deliveries fk_rails_2ec48d6788; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_2ec48d6788 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
 
 
 --
@@ -8361,6 +8611,14 @@ ALTER TABLE ONLY public.intercom_sync_operations
 
 
 --
+-- Name: intercom_outbound_deliveries fk_rails_5b4607fe85; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_5b4607fe85 FOREIGN KEY (workspace_id, intercom_draft_id) REFERENCES public.intercom_drafts(workspace_id, id);
+
+
+--
 -- Name: memory_correction_proposals fk_rails_5d140239d8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8422,6 +8680,14 @@ ALTER TABLE ONLY public.source_identities
 
 ALTER TABLE ONLY public.email_drafts
     ADD CONSTRAINT fk_rails_6106ba6ad3 FOREIGN KEY (workspace_id, updated_by_id) REFERENCES public.memberships(workspace_id, user_id);
+
+
+--
+-- Name: intercom_outbound_deliveries fk_rails_622677a4e2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_622677a4e2 FOREIGN KEY (workspace_id, intercom_connection_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_conversation_links(workspace_id, intercom_connection_id, id, conversation_id);
 
 
 --
@@ -8825,6 +9091,14 @@ ALTER TABLE ONLY public.active_storage_variant_records
 
 
 --
+-- Name: intercom_drafts fk_rails_9b0efb02e5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts
+    ADD CONSTRAINT fk_rails_9b0efb02e5 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: execution_runs fk_rails_9e0c3380dc; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8881,6 +9155,14 @@ ALTER TABLE ONLY public.crew_artifacts
 
 
 --
+-- Name: intercom_drafts fk_rails_a5ce61f9cd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts
+    ADD CONSTRAINT fk_rails_a5ce61f9cd FOREIGN KEY (workspace_id, support_case_id, conversation_id) REFERENCES public.support_cases(workspace_id, id, conversation_id);
+
+
+--
 -- Name: email_draft_attachments fk_rails_a6b8203129; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8910,6 +9192,14 @@ ALTER TABLE ONLY public.workspace_invitations
 
 ALTER TABLE ONLY public.stored_attachments
     ADD CONSTRAINT fk_rails_ab39bdb694 FOREIGN KEY (uploaded_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: intercom_outbound_deliveries fk_rails_ac200f3793; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_ac200f3793 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -8998,6 +9288,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.email_message_links
     ADD CONSTRAINT fk_rails_b76245f589 FOREIGN KEY (workspace_id, shared_email_inbox_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, shared_email_inbox_id, id, conversation_id);
+
+
+--
+-- Name: intercom_drafts fk_rails_b8e2a27ef3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts
+    ADD CONSTRAINT fk_rails_b8e2a27ef3 FOREIGN KEY (workspace_id, updated_by_id) REFERENCES public.memberships(workspace_id, user_id);
 
 
 --
@@ -9225,6 +9523,14 @@ ALTER TABLE ONLY public.memory_proposals
 
 
 --
+-- Name: intercom_drafts fk_rails_d6dabca820; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_drafts
+    ADD CONSTRAINT fk_rails_d6dabca820 FOREIGN KEY (workspace_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_conversation_links(workspace_id, id, conversation_id);
+
+
+--
 -- Name: audit_events fk_rails_dd1f3a471a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9353,6 +9659,14 @@ ALTER TABLE ONLY public.intercom_part_links
 
 
 --
+-- Name: intercom_outbound_deliveries fk_rails_f98c838305; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_outbound_deliveries
+    ADD CONSTRAINT fk_rails_f98c838305 FOREIGN KEY (workspace_id, intercom_draft_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_drafts(workspace_id, id, intercom_conversation_link_id, conversation_id);
+
+
+--
 -- Name: outbound_email_delivery_attachments fk_rails_f9dc4462b2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9399,6 +9713,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824200000'),
 ('20260824190000'),
 ('20260824180000'),
 ('20260824170000'),

@@ -9,6 +9,7 @@ class IntercomConnection < ApplicationRecord
     foreign_key: :source_intercom_connection_id, dependent: :restrict_with_exception
   has_many :intercom_webhook_deliveries, dependent: :restrict_with_exception
   has_many :intercom_sync_operations, dependent: :restrict_with_exception
+  has_many :intercom_outbound_deliveries, dependent: :restrict_with_exception
 
   has_secure_token :webhook_key
 

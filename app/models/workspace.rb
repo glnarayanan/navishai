@@ -63,6 +63,8 @@ class Workspace < ApplicationRecord
   has_many :intercom_tag_links, dependent: :restrict_with_exception
   has_many :intercom_webhook_deliveries, dependent: :restrict_with_exception
   has_many :intercom_sync_operations, dependent: :restrict_with_exception
+  has_many :intercom_drafts, dependent: :restrict_with_exception
+  has_many :intercom_outbound_deliveries, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

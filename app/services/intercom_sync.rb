@@ -200,6 +200,7 @@ class IntercomSync
 
       IntercomConversationLink.transaction do
         if link
+          link.lock_remote_sync!
           link.lock!
           return link if updated_at < link.remote_updated_at
         else

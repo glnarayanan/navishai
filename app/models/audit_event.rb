@@ -59,6 +59,11 @@ class AuditEvent < ApplicationRecord
       "operation_kind" => IntercomSyncOperation::OPERATION_KINDS,
       "failure_code" => %w[configuration_error remote_rejected outcome_unknown]
     },
+    "intercom.draft_saved" => {},
+    "intercom.send_failed" => { "failure_code" => IntercomOutboundDelivery::FAILURE_CODES },
+    "intercom.send_reviewed" => { "outcome" => %w[accepted rejected] },
+    "intercom.send_started" => {},
+    "intercom.send_succeeded" => {},
     "intercom.webhook_failed" => { "failure_code" => IntercomWebhookDelivery::FAILURE_CODES },
     "intercom.webhook_processed" => {},
     "intercom.webhook_retried" => { "failure_code" => IntercomWebhookDelivery::FAILURE_CODES },
