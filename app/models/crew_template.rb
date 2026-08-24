@@ -3,6 +3,7 @@ class CrewTemplate < ApplicationRecord
 
   belongs_to :workspace
   has_many :agent_profiles, -> { order(:id) }, dependent: :restrict_with_exception
+  has_many :crew_tasks, dependent: :restrict_with_exception
 
   enum :crew_kind, CREW_KINDS.index_by(&:itself), validate: true
 

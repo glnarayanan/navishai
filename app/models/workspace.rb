@@ -39,6 +39,9 @@ class Workspace < ApplicationRecord
   has_many :crew_templates, dependent: :restrict_with_exception
   has_many :agent_profiles, dependent: :restrict_with_exception
   has_many :agent_profile_versions, dependent: :restrict_with_exception
+  has_many :crew_tasks, dependent: :restrict_with_exception
+  has_many :crew_task_events, dependent: :restrict_with_exception
+  has_many :crew_task_dependencies, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
