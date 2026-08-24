@@ -198,6 +198,47 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
     assert_equal "ATTACHMENT SECRET", attachment.file.download
   end
 
+  test "a single-part attachment is scanned and kept out of the customer message body" do
+    raw = raw_email(
+      message_id: "single-attachment@example.net",
+      content_type: "text/plain; charset=UTF-8\r\nContent-Disposition: attachment; filename=\"secret.txt\"",
+      body: "ATTACHMENT SECRET"
+    )
+
+    delivery = SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
+
+    assert delivery.processed?
+    assert_equal "Attachment received.", delivery.conversation_message.body
+    refute_includes delivery.conversation_message.body, "ATTACHMENT SECRET"
+    attachment = delivery.conversation_message.stored_attachments.sole
+    assert_equal "secret.txt", attachment.filename
+    assert attachment.quarantined?
+    assert_equal "ATTACHMENT SECRET", attachment.file.download.strip
+  end
+
+  test "an attachment decode error fails the canonical delivery without a duplicate row" do
+    boundary = "unknown-encoding-boundary"
+    raw = raw_email(
+      message_id: "unknown-encoding@example.net",
+      content_type: "multipart/mixed; boundary=#{boundary}",
+      body: [
+        "--#{boundary}", "Content-Type: text/plain; charset=UTF-8", "", "Visible request",
+        "--#{boundary}", "Content-Type: text/plain", "Content-Disposition: attachment; filename=\"note.txt\"",
+        "Content-Transfer-Encoding: x-unknown", "", "encoded attachment",
+        "--#{boundary}--", ""
+      ].join("\r\n")
+    )
+
+    assert_difference -> { InboundEmailDelivery.count }, 1 do
+      @delivery = SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
+    end
+
+    assert @delivery.failed?
+    assert_equal "unknown-encoding@example.net", @delivery.source_message_id
+    assert_equal "parse_error", @delivery.failure_code
+    refute @inbox.inbound_email_deliveries.exists?(source_message_id: "sha256:#{Digest::SHA256.hexdigest(raw)}")
+  end
+
   test "permanent failures cannot starve received reconciliation work" do
     100.times do |index|
       raw = raw_email(message_id: "permanent-#{index}@example.net").sub(/From:.*\r\n/, "")

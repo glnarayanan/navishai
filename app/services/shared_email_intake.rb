@@ -150,10 +150,11 @@ class SharedEmailIntake
       sender_email, sender_name = sender(mail)
       raise ProcessingError, "missing_sender" unless sender_email
 
-      body = plain_text_body(mail)
-      raise ProcessingError, "empty_body" if body.blank?
-      raise ProcessingError, "body_too_large" if body.bytesize > MAX_BODY_BYTES
       inputs = attachment_inputs(mail)
+      body = plain_text_body(mail)
+      raise ProcessingError, "empty_body" if body.blank? && inputs.empty?
+      raise ProcessingError, "body_too_large" if body.bytesize > MAX_BODY_BYTES
+      body = "Attachment received." if body.blank?
       prepared_attachments = AttachmentIntake.prepare!(inputs) if inputs.any?
 
       result = InboundEmailDelivery.transaction do
@@ -196,6 +197,8 @@ class SharedEmailIntake
       result
     rescue ProcessingError => error
       mark_failed!(delivery, error.code)
+    rescue Mail::Field::ParseError, Mail::UnknownEncodingType, EncodingError
+      mark_failed!(delivery, "parse_error")
     rescue AttachmentIntake::InvalidAttachment
       mark_failed!(delivery, "persistence_error")
     rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound, ActiveRecord::StatementInvalid
@@ -301,7 +304,9 @@ class SharedEmailIntake
     end
 
     def plain_text_body(mail)
-      text = if mail.multipart?
+      text = if attachment_part?(mail)
+        ""
+      elsif mail.multipart?
         plain = body_parts(mail, "text/plain").map(&:decoded).join("\n")
         html = body_parts(mail, "text/html").map(&:decoded).join("\n")
         plain.presence || html_to_text(html)
@@ -315,19 +320,24 @@ class SharedEmailIntake
 
     def body_parts(container, mime_type)
       container.parts.flat_map do |part|
-        next [] if part.filename.present? || part.content_disposition.to_s.match?(/\Aattachment(?:;|\z)/i) || part.mime_type == "message/rfc822"
+        next [] if attachment_part?(part)
 
         part.multipart? ? body_parts(part, mime_type) : (part.mime_type == mime_type ? [ part ] : [])
       end
     end
 
     def attachment_inputs(mail)
-      return [] unless mail.multipart?
-
-      leaf_parts(mail).filter_map.with_index do |part, index|
-        attachment = part.filename.present? || part.content_disposition.to_s.match?(/\Aattachment(?:;|\z)/i) || !%w[text/plain text/html].include?(part.mime_type)
-        { filename: part.filename.presence || "attachment-#{index + 1}", data: part.decoded } if attachment
+      parts = mail.multipart? ? leaf_parts(mail) : [ mail ]
+      parts.filter_map.with_index do |part, index|
+        { filename: part.filename.presence || "attachment-#{index + 1}", data: part.decoded } if attachment_part?(part)
       end
+    end
+
+    def attachment_part?(part)
+      part.filename.present? ||
+        part.content_disposition.to_s.match?(/\Aattachment(?:;|\z)/i) ||
+        part.mime_type == "message/rfc822" ||
+        (!part.multipart? && part.mime_type.present? && !%w[text/plain text/html].include?(part.mime_type))
     end
 
     def leaf_parts(container)
