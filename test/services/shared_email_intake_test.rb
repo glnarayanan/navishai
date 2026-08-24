@@ -155,8 +155,9 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
 
     assert_equal first.conversation.contact, second.conversation.contact
     assert_equal 2, first.conversation.contact.source_identities.count
-    assert_equal [ "shared_email:#{@inbox.id}", "shared_email:#{second_inbox.id}" ],
-      first.conversation.contact.source_identities.order(:source_namespace).pluck(:source_namespace)
+    expected_namespaces = [ "shared_email:#{@inbox.id}", "shared_email:#{second_inbox.id}" ]
+    assert_equal expected_namespaces.sort,
+      first.conversation.contact.source_identities.pluck(:source_namespace).sort
   end
 
   test "renders HTML as plain text and does not trust a future date" do
