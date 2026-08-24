@@ -66,6 +66,24 @@ func TestRunUsesOnlyScopedEnvironment(t *testing.T) {
 	}
 }
 
+func TestRunUsesOnlyExplicitlyApprovedHome(t *testing.T) {
+	working := t.TempDir()
+	home := t.TempDir()
+	value := testSupervisorWithHome(t, working, home)
+	result, err := value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"home"}, WorkingDir: working, HomeDir: home,
+	})
+	if err != nil || result.StandardOutput != home {
+		t.Fatalf("approved home result=%#v err=%v", result, err)
+	}
+	_, err = value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"home"}, WorkingDir: working, HomeDir: t.TempDir(),
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected unapproved home denial, got %v", err)
+	}
+}
+
 func TestInteractUsesBoundedBidirectionalStdio(t *testing.T) {
 	working := t.TempDir()
 	result, err := testSupervisor(t, working).Interact(context.Background(), Request{
@@ -410,11 +428,19 @@ func TestRunRejectsEscapesAndOversizedInput(t *testing.T) {
 }
 
 func testSupervisor(t *testing.T, working string) *Supervisor {
+	return testSupervisorWithHome(t, working, "")
+}
+
+func testSupervisorWithHome(t *testing.T, working, home string) *Supervisor {
 	t.Helper()
+	homeRoots := []string(nil)
+	if home != "" {
+		homeRoots = []string{home}
+	}
 	value, err := New(Config{
 		HelperPath: filepath.Join(testBinaries, "navishai-exec"), AllowedExecutableRoots: []string{testBinaries},
 		ApprovedExecutables: []string{targetPath()},
-		AllowedWorkingRoots: []string{working}, RuntimeReadRoots: []string{testBinaries},
+		AllowedWorkingRoots: []string{working}, AllowedHomeRoots: homeRoots, RuntimeReadRoots: []string{testBinaries},
 		Limits: testLimits(),
 	})
 	if err != nil {
@@ -444,6 +470,7 @@ import (
 func main() {
   switch os.Args[1] {
   case "environment": fmt.Print(os.Getenv("SCOPED_TOKEN") + "|" + os.Getenv("HOST_SECRET"))
+	case "home": fmt.Print(os.Getenv("HOME"))
 	case "echo": scanner := bufio.NewScanner(os.Stdin); if scanner.Scan() { fmt.Println("response:" + scanner.Text()) }
   case "read": _, err := os.ReadFile(os.Args[2]); fmt.Print(err)
   case "write": if err := os.WriteFile(os.Args[2], []byte("result"), 0600); err != nil { fmt.Print(err); os.Exit(1) }
