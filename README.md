@@ -13,6 +13,7 @@ The project is greenfield. The target is a secure, self-hostable, market-review-
 5. Use [documentation/DOMAIN.md](./documentation/DOMAIN.md) for canonical product terms.
 6. Use [documentation/DEPLOYMENT.md](./documentation/DEPLOYMENT.md) for Compose, native Linux, and experimental Helm deployment.
 7. Use [documentation/OPERATIONS.md](./documentation/OPERATIONS.md) for backup, restore tests, and upgrade preflight.
+8. Use [documentation/DEMO.md](./documentation/DEMO.md) to create the seeded review Workspace.
 
 The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 
