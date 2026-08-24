@@ -637,6 +637,58 @@ $$;
 
 
 --
+-- Name: protect_memory_record(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_memory_record() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  prior memory_records%ROWTYPE;
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.supersedes_memory_record_id IS NOT NULL THEN
+    SELECT * INTO prior
+    FROM memory_records
+    WHERE id = NEW.supersedes_memory_record_id AND workspace_id = NEW.workspace_id
+    FOR SHARE;
+
+    IF prior.id IS NULL OR
+       ROW(prior.memory_type, prior.scope_kind, prior.topic, prior.organization_id,
+           prior.account_id, prior.contact_id, prior.support_case_id, prior.crew_template_id,
+           prior.agent_profile_id, prior.user_id)
+       IS DISTINCT FROM
+       ROW(NEW.memory_type, NEW.scope_kind, NEW.topic, NEW.organization_id,
+           NEW.account_id, NEW.contact_id, NEW.support_case_id, NEW.crew_template_id,
+           NEW.agent_profile_id, NEW.user_id) THEN
+      RAISE EXCEPTION 'superseding memory must keep its workspace, type, topic, and scope';
+    END IF;
+
+    IF (CASE NEW.authority WHEN 'human_correction' THEN 3 WHEN 'source_record' THEN 2 ELSE 1 END) <
+       (CASE prior.authority WHEN 'human_correction' THEN 3 WHEN 'source_record' THEN 2 ELSE 1 END) THEN
+      RAISE EXCEPTION 'superseding memory cannot lower authority';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'INSERT' AND NEW.authority = 'human_correction' AND NOT EXISTS (
+    SELECT 1 FROM memberships
+    WHERE id = NEW.source_membership_id AND workspace_id = NEW.workspace_id AND
+          user_id = NEW.source_user_id AND role IN ('owner', 'admin', 'manager')
+  ) THEN
+    RAISE EXCEPTION 'human correction requires an authorized workspace member';
+  END IF;
+
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP <> 'INSERT' THEN
+    RAISE EXCEPTION 'memory records are append only';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_outbound_email_delivery(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2392,6 +2444,82 @@ ALTER SEQUENCE public.memberships_id_seq OWNED BY public.memberships.id;
 
 
 --
+-- Name: memory_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_records (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    organization_id bigint,
+    account_id bigint,
+    contact_id bigint,
+    support_case_id bigint,
+    crew_template_id bigint,
+    agent_profile_id bigint,
+    user_id bigint,
+    source_agent_profile_id bigint,
+    source_membership_id bigint,
+    source_user_id bigint,
+    supersedes_memory_record_id bigint,
+    memory_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    memory_type character varying NOT NULL,
+    scope_kind character varying NOT NULL,
+    topic character varying NOT NULL,
+    content text NOT NULL,
+    content_digest character varying NOT NULL,
+    authority character varying NOT NULL,
+    origin_kind character varying NOT NULL,
+    source_reference character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    valid_from timestamp(6) without time zone NOT NULL,
+    valid_until timestamp(6) without time zone,
+    confidence numeric(4,3) NOT NULL,
+    retention_policy character varying NOT NULL,
+    retention_until timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY ((ARRAY['inference'::character varying, 'source_record'::character varying, 'human_correction'::character varying])::text[]))),
+    CONSTRAINT memory_records_confidence CHECK (((confidence >= 0.000) AND (confidence <= 1.000))),
+    CONSTRAINT memory_records_content CHECK ((((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
+    CONSTRAINT memory_records_correction_authority CHECK ((((authority)::text <> 'human_correction'::text) OR ((origin_kind)::text = 'human'::text))),
+    CONSTRAINT memory_records_digests CHECK ((((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT memory_records_inference_authority CHECK ((((authority)::text <> 'inference'::text) OR ((origin_kind)::text = 'agent'::text))),
+    CONSTRAINT memory_records_no_self_supersession CHECK (((supersedes_memory_record_id IS NULL) OR (supersedes_memory_record_id <> id))),
+    CONSTRAINT memory_records_origin_kind CHECK (((origin_kind)::text = ANY ((ARRAY['system'::character varying, 'agent'::character varying, 'human'::character varying])::text[]))),
+    CONSTRAINT memory_records_origin_shape CHECK (((((origin_kind)::text = 'system'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'agent'::text) AND (source_agent_profile_id IS NOT NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'human'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NOT NULL) AND (source_user_id IS NOT NULL)))),
+    CONSTRAINT memory_records_procedural_authority CHECK ((((memory_type)::text <> 'procedural'::text) OR ((authority)::text = 'human_correction'::text))),
+    CONSTRAINT memory_records_retention_policy CHECK (((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying, 'source_lifetime'::character varying])::text[]))),
+    CONSTRAINT memory_records_retention_shape CHECK (((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL) AND (retention_until > observed_at)) OR (((retention_policy)::text <> 'time_bound'::text) AND (retention_until IS NULL)))),
+    CONSTRAINT memory_records_scope_kind CHECK (((scope_kind)::text = ANY ((ARRAY['organization'::character varying, 'workspace'::character varying, 'account'::character varying, 'contact'::character varying, 'support_case'::character varying, 'crew'::character varying, 'agent'::character varying, 'user'::character varying])::text[]))),
+    CONSTRAINT memory_records_scope_shape CHECK (((((scope_kind)::text = 'organization'::text) AND (organization_id IS NOT NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'workspace'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (organization_id IS NULL) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'crew'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NOT NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'agent'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NOT NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'user'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NOT NULL)))),
+    CONSTRAINT memory_records_source_authority CHECK ((((authority)::text <> 'source_record'::text) OR ((origin_kind)::text <> 'agent'::text))),
+    CONSTRAINT memory_records_source_reference CHECK (((octet_length((source_reference)::text) >= 1) AND (octet_length((source_reference)::text) <= 2048))),
+    CONSTRAINT memory_records_type CHECK (((memory_type)::text = ANY ((ARRAY['episodic'::character varying, 'semantic'::character varying, 'profile'::character varying, 'procedural'::character varying])::text[]))),
+    CONSTRAINT memory_records_valid_time CHECK (((valid_until IS NULL) OR (valid_until > valid_from)))
+);
+
+
+--
+-- Name: memory_records_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.memory_records_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: memory_records_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.memory_records_id_seq OWNED BY public.memory_records.id;
+
+
+--
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3545,6 +3673,13 @@ ALTER TABLE ONLY public.memberships ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: memory_records id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records ALTER COLUMN id SET DEFAULT nextval('public.memory_records_id_seq'::regclass);
+
+
+--
 -- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3970,6 +4105,14 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: memory_records memory_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT memory_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4201,6 +4344,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public
 --
 
 CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public.outbound_email_deliveries USING btree (shared_email_inbox_id, message_id);
+
+
+--
+-- Name: idx_on_workspace_id_source_agent_profile_id_94fb4dc643; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_source_agent_profile_id_94fb4dc643 ON public.memory_records USING btree (workspace_id, source_agent_profile_id) WHERE (source_agent_profile_id IS NOT NULL);
 
 
 --
@@ -5044,6 +5194,104 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_id_user_id ON public.membe
 
 
 --
+-- Name: index_memory_records_on_memory_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_records_on_memory_key ON public.memory_records USING btree (memory_key);
+
+
+--
+-- Name: index_memory_records_on_source_human; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_source_human ON public.memory_records USING btree (workspace_id, source_membership_id, source_user_id) WHERE (source_membership_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_supersedes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_supersedes ON public.memory_records USING btree (workspace_id, supersedes_memory_record_id) WHERE (supersedes_memory_record_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id ON public.memory_records USING btree (workspace_id);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_account_id ON public.memory_records USING btree (workspace_id, account_id) WHERE (account_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_agent_profile_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_agent_profile_id ON public.memory_records USING btree (workspace_id, agent_profile_id) WHERE (agent_profile_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_contact_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_contact_id ON public.memory_records USING btree (workspace_id, contact_id) WHERE (contact_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_crew_template_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_crew_template_id ON public.memory_records USING btree (workspace_id, crew_template_id) WHERE (crew_template_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_records_on_workspace_id_and_id ON public.memory_records USING btree (workspace_id, id);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_organization_id ON public.memory_records USING btree (workspace_id, organization_id) WHERE (organization_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_scope_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_scope_kind ON public.memory_records USING btree (workspace_id, scope_kind);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_support_case_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_support_case_id ON public.memory_records USING btree (workspace_id, support_case_id) WHERE (support_case_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_user_id ON public.memory_records USING btree (workspace_id, user_id) WHERE (user_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_type_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_type_topic ON public.memory_records USING btree (workspace_id, memory_type, topic);
+
+
+--
 -- Name: index_message_attachments_on_message_and_attachment; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5492,6 +5740,13 @@ CREATE INDEX index_workspace_invitations_on_workspace_id ON public.workspace_inv
 
 
 --
+-- Name: index_workspaces_on_id_and_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_workspaces_on_id_and_organization_id ON public.workspaces USING btree (id, organization_id);
+
+
+--
 -- Name: index_workspaces_on_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5870,6 +6125,20 @@ CREATE CONSTRAINT TRIGGER knowledge_sources_require_current_version AFTER INSERT
 
 
 --
+-- Name: memory_records memory_records_contract; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_records_contract BEFORE INSERT OR DELETE OR UPDATE ON public.memory_records FOR EACH ROW EXECUTE FUNCTION public.protect_memory_record();
+
+
+--
+-- Name: memory_records memory_records_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_records_no_truncate BEFORE TRUNCATE ON public.memory_records FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_record();
+
+
+--
 -- Name: outbound_email_deliveries outbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6176,6 +6445,54 @@ ALTER TABLE ONLY public.knowledge_sources
 
 
 --
+-- Name: memory_records fk_memory_records_organization_workspace; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_organization_workspace FOREIGN KEY (workspace_id, organization_id) REFERENCES public.workspaces(id, organization_id);
+
+
+--
+-- Name: memory_records fk_memory_records_scope_agent; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_scope_agent FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: memory_records fk_memory_records_scope_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_scope_user FOREIGN KEY (workspace_id, user_id) REFERENCES public.memberships(workspace_id, user_id);
+
+
+--
+-- Name: memory_records fk_memory_records_source_agent; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_source_agent FOREIGN KEY (workspace_id, source_agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: memory_records fk_memory_records_source_human; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_source_human FOREIGN KEY (workspace_id, source_membership_id, source_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: memory_records fk_memory_records_supersedes; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_memory_records_supersedes FOREIGN KEY (workspace_id, supersedes_memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
 -- Name: account_merges fk_rails_00215f0be3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6232,6 +6549,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: memory_records fk_rails_0e5940f0b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_rails_0e5940f0b0 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_1042d38a26; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6253,6 +6578,14 @@ ALTER TABLE ONLY public.contact_merges
 
 ALTER TABLE ONLY public.inbound_email_deliveries
     ADD CONSTRAINT fk_rails_10f7f74b91 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: memory_records fk_rails_11138da201; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_rails_11138da201 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -6317,6 +6650,14 @@ ALTER TABLE ONLY public.service_calendars
 
 ALTER TABLE ONLY public.runtime_installations
     ADD CONSTRAINT fk_rails_2d6bafe6cf FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: memory_records fk_rails_2ec94a5a6b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_rails_2ec94a5a6b FOREIGN KEY (workspace_id, crew_template_id) REFERENCES public.crew_templates(workspace_id, id);
 
 
 --
@@ -6485,6 +6826,14 @@ ALTER TABLE ONLY public.account_merges
 
 ALTER TABLE ONLY public.execution_events
     ADD CONSTRAINT fk_rails_4f443f1b0c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: memory_records fk_rails_522a4d29cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_rails_522a4d29cb FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
 
 
 --
@@ -6936,6 +7285,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: memory_records fk_rails_a45336e54c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_records
+    ADD CONSTRAINT fk_rails_a45336e54c FOREIGN KEY (workspace_id, contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
 -- Name: crew_artifacts fk_rails_a5798990c4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7358,6 +7715,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824140000'),
 ('20260824130000'),
 ('20260824120000'),
 ('20260824110000'),
