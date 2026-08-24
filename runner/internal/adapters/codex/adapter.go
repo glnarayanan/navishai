@@ -111,6 +111,9 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		}
 		return Result{Status: "failed", FailureCode: code}, emitEvent("run.failed", map[string]any{"code": code, "retryable": false})
 	}
+	if !adapters.WithinUnitBudget(invocation.Admission, normalized.InputUnits, normalized.OutputUnits) {
+		return Result{Status: "failed", FailureCode: "runtime_unit_budget_exceeded"}, emitEvent("run.failed", map[string]any{"code": "runtime_unit_budget_exceeded", "retryable": false})
+	}
 	for _, tool := range normalized.Tools {
 		if err := emitEvent("tool.completed", map[string]any{"tool": tool.Name, "result": tool.Result}); err != nil {
 			return Result{}, err

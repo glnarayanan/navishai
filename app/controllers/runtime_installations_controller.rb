@@ -52,8 +52,8 @@ class RuntimeInstallationsController < ApplicationController
 
     def installation_params
       params.expect(runtime_installation: [
-        :approved, :max_timeout_seconds, :max_steps, :max_tool_calls,
-        { allowed_role_keys: [], allowed_tools: [], allowed_data_classes: [] }
+        :approved, :max_timeout_seconds, :max_steps, :max_tool_calls, :max_input_units, :max_output_units,
+        { allowed_role_keys: [], allowed_tools: [], allowed_data_classes: [], profile_keys: [] }
       ])
     end
 end

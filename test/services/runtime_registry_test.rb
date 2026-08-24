@@ -3,6 +3,7 @@ require "test_helper"
 class RuntimeRegistryTest < ActiveSupport::TestCase
   setup do
     @workspace = workspaces(:acme_support)
+    RuntimeInstallation.where(workspace: @workspace).delete_all
     @owner = memberships(:owner_support)
     @client = Object.new
     @reports = [ runtime_report ]
@@ -31,7 +32,9 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
           approved: "1", allowed_role_keys: %w[support_investigator resolution_drafter],
           allowed_tools: %w[knowledge_search case_read],
           allowed_data_classes: %w[approved_knowledge case_content],
-          max_timeout_seconds: "420", max_steps: "12", max_tool_calls: "24"
+          profile_keys: %w[workspace_default fast],
+          max_timeout_seconds: "420", max_steps: "12", max_tool_calls: "24",
+          max_input_units: "120000", max_output_units: "30000"
         }
       )
     end
@@ -112,7 +115,9 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     def approval_attributes
       {
         approved: "1", allowed_role_keys: [ "support_investigator" ], allowed_tools: [ "case_read" ],
-        allowed_data_classes: [ "case_content" ], max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20"
+        allowed_data_classes: [ "case_content" ], profile_keys: [ "workspace_default" ],
+        max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20",
+        max_input_units: "100000", max_output_units: "25000"
       }
     end
 end

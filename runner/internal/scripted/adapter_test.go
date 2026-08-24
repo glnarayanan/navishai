@@ -32,6 +32,16 @@ func TestSuccessfulScriptProducesCanonicalEvents(t *testing.T) {
 	}
 }
 
+func TestUsageBudgetFailsBeforeOutput(t *testing.T) {
+	request := admissionRequest(t)
+	request.Routing.MaxInputUnits = 119
+	result, events, err := execute(t, context.Background(), request, "success.json")
+	if err != nil || result.Status != BudgetExceeded {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	assertEventTypes(t, events, []string{"run.started", "tool.completed", "tool.completed", "run.failed"})
+}
+
 func TestRetryFixtureFailsThenSucceeds(t *testing.T) {
 	request := admissionRequest(t)
 	first, firstEvents, err := execute(t, context.Background(), request, "retry.json")

@@ -21,5 +21,15 @@
     "max_steps": 10,
     "max_tool_calls": 20,
     "review_policy": "required"
+  },
+  "routing": {
+    "detection_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapter_key": "scripted",
+    "profile_key": "workspace_default",
+    "selection_reason": "primary",
+    "selection_detail": "Primary Workspace default profile selected.",
+    "data_classes": ["approved_knowledge", "case_content", "customer_identity"],
+    "max_input_units": 100000,
+    "max_output_units": 25000
   }
 }

@@ -3,6 +3,7 @@ require "test_helper"
 class Webhooks::RunnerEventsControllerTest < ActionDispatch::IntegrationTest
   setup do
     @workspace = workspaces(:acme_support)
+    approve_scripted_runtime(workspace: @workspace, membership: memberships(:owner_support))
     @secret = "runner-event-secret-that-is-at-least-32-bytes"
     @original_secret = ENV["NAVISHAI_RUNNER_SHARED_SECRET"]
     ENV["NAVISHAI_RUNNER_SHARED_SECRET"] = @secret

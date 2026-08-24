@@ -107,6 +107,19 @@ func TestExecuteNegotiatesCursorLoginAndEmitsCanonicalOutput(t *testing.T) {
 	}
 }
 
+func TestExecuteFailsBeforeOutputWhenObservedUsageExceedsBudget(t *testing.T) {
+	invocation := testInvocation()
+	invocation.Admission.Routing.MaxOutputUnits = 19
+	events := make([]protocol.CanonicalEvent, 0)
+	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), invocation, &fakeInteractiveRunner{}, func(event protocol.CanonicalEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil || result.FailureCode != "runtime_unit_budget_exceeded" || len(events) != 2 || events[1].EventType != "run.failed" {
+		t.Fatalf("result=%#v events=%#v err=%v", result, events, err)
+	}
+}
+
 func TestExecuteAllowsMissingDraftUsageWithoutInventingIt(t *testing.T) {
 	runner := &fakeInteractiveRunner{omitUsage: true}
 	events := make([]protocol.CanonicalEvent, 0)
@@ -134,8 +147,9 @@ func testInvocation() Invocation {
 	return Invocation{
 		Admission: protocol.AdmissionRequest{
 			ProtocolVersion: protocol.Version, RunID: "3d07f334-88ef-4fe4-a640-421e3ba79921", IdempotencyKey: "cursor-test", WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
-			Task:  protocol.Task{TaskKey: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", Attempt: 1, Title: "Investigate", InputContext: "Case facts", ExpectedOutput: "Cited answer"},
-			Agent: protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1, Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default", TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
+			Task:    protocol.Task{TaskKey: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", Attempt: 1, Title: "Investigate", InputContext: "Case facts", ExpectedOutput: "Cited answer"},
+			Agent:   protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1, Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default", TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
+			Routing: protocol.RuntimeRouting{MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000},
 		},
 		Executable: "/opt/cursor-agent", WorkingDir: "/work/run", CursorHome: "/runtime/cursor-home", Prompt: "Investigate the case.", EgressProfileKey: "model_api",
 	}

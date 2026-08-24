@@ -122,6 +122,10 @@
           <dl>
             <div><dt>Run ID</dt><dd><code><%= latest_run.run_key %></code></dd></div>
             <div><dt>Status</dt><dd><%= latest_run.status.humanize %></dd></div>
+            <div><dt>Runtime</dt><dd><%= latest_run.selected_adapter_key.humanize %> · <%= AgentPolicy::RUNTIME_PROFILES.fetch(latest_run.selected_runtime_profile_key) %></dd></div>
+            <div><dt>Selection</dt><dd><%= latest_run.runtime_selection_detail %></dd></div>
+            <div><dt>Data disclosed</dt><dd><%= latest_run.disclosed_data_classes.map { |key| RuntimeInstallation::DATA_CLASSES.fetch(key) }.to_sentence %></dd></div>
+            <div><dt>Unit budget</dt><dd><%= latest_run.max_input_units %> in · <%= latest_run.max_output_units %> out</dd></div>
             <div><dt>Event sequence</dt><dd><%= latest_run.current_sequence %></dd></div>
             <div><dt>Admission checks</dt><dd><%= latest_run.admission_attempt_count %></dd></div>
             <% if latest_run.last_admission_error %><div><dt>Last admission result</dt><dd><%= latest_run.last_admission_error.humanize %></dd></div><% end %>

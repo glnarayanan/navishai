@@ -48,9 +48,12 @@ class RuntimeRegistry
           allowed_role_keys: normalized_values(attributes[:allowed_role_keys]),
           allowed_tools: normalized_values(attributes[:allowed_tools]),
           allowed_data_classes: normalized_values(attributes[:allowed_data_classes]),
+          profile_keys: normalized_values(attributes[:profile_keys]),
           max_timeout_seconds: strict_integer(attributes[:max_timeout_seconds]),
           max_steps: strict_integer(attributes[:max_steps]),
-          max_tool_calls: strict_integer(attributes[:max_tool_calls])
+          max_tool_calls: strict_integer(attributes[:max_tool_calls]),
+          max_input_units: strict_integer(attributes[:max_input_units]),
+          max_output_units: strict_integer(attributes[:max_output_units])
         )
       else
         revoke!(record)
@@ -85,6 +88,7 @@ class RuntimeRegistry
       installation.allowed_role_keys = [] unless installation.persisted?
       installation.allowed_tools = [] unless installation.persisted?
       installation.allowed_data_classes = [] unless installation.persisted?
+      installation.profile_keys = [ "workspace_default" ] unless installation.persisted?
       installation.save!
     end
 

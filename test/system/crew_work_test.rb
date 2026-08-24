@@ -64,6 +64,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
   test "a writer sees interrupted admission recover into cited live output" do
     workspace = workspaces(:acme_support)
     owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace:, membership: owner)
     CrewConfiguration.install_defaults!(workspace: workspace)
     support_case = create_support_case
     message = add_inbound_message(support_case, body: "The reset link expired before I could use it.")

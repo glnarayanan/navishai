@@ -16,24 +16,38 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     assert_text "Runtime approvals"
     assert_text "Credentials stay on the runner"
     assert_text "/opt/navishai/fixture"
-    check "Allow this runtime"
-    check "Support Crew · Investigator", exact: true
-    check "Read cases"
-    check "Case content"
-    fill_in "Timeout cap (seconds)", with: "420"
-    click_button "Save runtime policy"
+    within "#runtime-#{installation.id}" do
+      check "Allow this runtime"
+      check "Thorough"
+      check "Support Crew · Investigator", exact: true
+      check "Read cases"
+      check "Case content"
+      fill_in "Timeout cap (seconds)", with: "420"
+      fill_in "Input-unit cap", with: "120000"
+      fill_in "Output-unit cap", with: "30000"
+      click_button "Save runtime policy"
+    end
 
     assert_text "Runtime policy approved."
     assert_text "Approved"
     assert installation.reload.runnable?
-    save_screenshot Rails.root.join(".amp/in/artifacts/runtime-approvals-desktop.png") if ENV["CAPTURE_RUNTIMES"]
+    assert_equal %w[thorough workspace_default], installation.profile_keys
+    assert_equal 120_000, installation.max_input_units
+    assert_equal 30_000, installation.max_output_units
+    if ENV["CAPTURE_RUNTIMES"]
+      page.execute_script("arguments[0].scrollIntoView()", find("#runtime-#{installation.id} .runtime-policy-groups"))
+      save_screenshot Rails.root.join(".amp/in/artifacts/runtime-approvals-desktop.png")
+    end
 
     page.current_window.resize_to(320, 844)
+    page.execute_script("arguments[0].scrollIntoView()", find("#runtime-#{installation.id} .runtime-budget-grid"))
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     runtimes_link = find_link("Runtimes", match: :first)
     assert_operator runtimes_link.rect.width, :>=, 48
     assert_operator runtimes_link.rect.height, :>=, 48
-    assert_operator find_button("Save runtime policy").rect.height, :>=, 48
+    within "#runtime-#{installation.id}" do
+      assert_operator find_button("Save runtime policy").rect.height, :>=, 48
+    end
     save_screenshot Rails.root.join(".amp/in/artifacts/runtime-approvals-mobile.png") if ENV["CAPTURE_RUNTIMES"]
   end
 

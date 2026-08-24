@@ -1,0 +1,52 @@
+acme_scripted:
+  workspace: acme_support
+  detection_key: <%= "b" * 64 %>
+  adapter_key: scripted
+  protocol_version: v1
+  executable_path: /opt/navishai/scripted
+  executable_version: scripted 1.0.0
+  account_metadata:
+    authentication: built_in
+  capabilities:
+    - structured_output
+    - tool_calling
+  minimum_version: 1.0.0
+  maximum_version: 1.0.0
+  compatibility_status: compatible
+  incompatibility_reason: ""
+  health_status: available
+  checked_at: <%= Time.current %>
+  approved: false
+  allowed_role_keys:
+    - account_analyst
+    - resolution_drafter
+    - risk_investigator
+    - success_reviewer
+    - success_strategist
+    - support_coordinator
+    - support_investigator
+    - support_reviewer
+  allowed_tools:
+    - account_read
+    - case_read
+    - conversation_read
+    - draft_propose
+    - knowledge_search
+    - note_propose
+    - public_web_search
+    - review_record
+  allowed_data_classes:
+    - account_context
+    - approved_knowledge
+    - case_content
+    - customer_identity
+    - public_web_query
+  profile_keys:
+    - fast
+    - thorough
+    - workspace_default
+  max_timeout_seconds: 900
+  max_steps: 20
+  max_tool_calls: 50
+  max_input_units: 100000
+  max_output_units: 25000

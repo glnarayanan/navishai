@@ -36,7 +36,14 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     )
 
     request = RunnerProtocol::AdmissionRequest.for_task(
-      task:, run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
+      task:, run: Data.define(
+        :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
+        :runtime_selection_reason, :runtime_selection_detail, :disclosed_data_classes,
+        :max_input_units, :max_output_units
+      ).new(
+        "b" * 64, "scripted", "workspace_default", "primary",
+        "Primary Workspace default profile selected.", %w[approved_knowledge case_content], 100_000, 25_000
+      ), run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
       idempotency_key: "admit:3d07f334-88ef-4fe4-a640-421e3ba79921", attempt: 1
     )
 

@@ -27,6 +27,8 @@ class RuntimeInstallation < ApplicationRecord
   validates :max_timeout_seconds, inclusion: { in: AgentProfileVersion::TIMEOUT_RANGE }
   validates :max_steps, inclusion: { in: AgentProfileVersion::STEP_RANGE }
   validates :max_tool_calls, inclusion: { in: AgentProfileVersion::TOOL_CALL_RANGE }
+  validates :max_input_units, :max_output_units,
+    numericality: { only_integer: true, in: 1..10_000_000 }
   validate :metadata_is_non_secret
   validate :policy_is_bounded
   validate :approval_is_complete
@@ -52,6 +54,7 @@ class RuntimeInstallation < ApplicationRecord
       validate_values(:allowed_role_keys, allowed_role_keys, 8, AgentPolicy::ROLE_DEFINITIONS.keys)
       validate_values(:allowed_tools, allowed_tools, 8, AgentPolicy::TOOLS.keys)
       validate_values(:allowed_data_classes, allowed_data_classes, 8, DATA_CLASSES.keys)
+      validate_values(:profile_keys, profile_keys, AgentPolicy::RUNTIME_PROFILES.size, AgentPolicy::RUNTIME_PROFILES.keys)
     end
 
     def validate_values(attribute, values, maximum, allowed)

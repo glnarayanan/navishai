@@ -417,6 +417,26 @@ $$;
 
 
 --
+-- Name: protect_execution_routing_snapshot(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_routing_snapshot() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF ROW(OLD.runtime_installation_id, OLD.selected_runtime_detection_key, OLD.selected_adapter_key, OLD.selected_runtime_profile_key,
+         OLD.runtime_selection_reason, OLD.runtime_selection_detail, OLD.disclosed_data_classes, OLD.max_input_units, OLD.max_output_units)
+     IS DISTINCT FROM
+     ROW(NEW.runtime_installation_id, NEW.selected_runtime_detection_key, NEW.selected_adapter_key, NEW.selected_runtime_profile_key,
+         NEW.runtime_selection_reason, NEW.runtime_selection_detail, NEW.disclosed_data_classes, NEW.max_input_units, NEW.max_output_units) THEN
+    RAISE EXCEPTION 'execution routing snapshot is durable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_execution_run(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -963,6 +983,25 @@ BEGIN
          NEW.account_metadata, NEW.capabilities, NEW.minimum_version, NEW.maximum_version,
          NEW.compatibility_status) THEN
     RAISE EXCEPTION 'runtime detection changed without revoking approval';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_runtime_routing_policy(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_runtime_routing_policy() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.profile_keys <> COALESCE((
+    SELECT jsonb_agg(value ORDER BY value)
+    FROM (SELECT DISTINCT value FROM jsonb_array_elements(NEW.profile_keys)) values
+  ), '[]'::jsonb) THEN
+    RAISE EXCEPTION 'runtime profile keys must be sorted and distinct';
   END IF;
   RETURN NEW;
 END;
@@ -1997,11 +2036,23 @@ CREATE TABLE public.execution_runs (
     updated_at timestamp(6) without time zone NOT NULL,
     input_context text NOT NULL,
     input_artifact_id bigint,
+    runtime_installation_id bigint,
+    selected_runtime_detection_key character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    selected_adapter_key character varying DEFAULT 'scripted'::character varying NOT NULL,
+    selected_runtime_profile_key character varying DEFAULT 'workspace_default'::character varying NOT NULL,
+    runtime_selection_reason character varying DEFAULT 'primary'::character varying NOT NULL,
+    runtime_selection_detail character varying DEFAULT 'Primary profile selected.'::character varying NOT NULL,
+    disclosed_data_classes jsonb DEFAULT '[]'::jsonb NOT NULL,
+    max_input_units bigint DEFAULT 100000 NOT NULL,
+    max_output_units bigint DEFAULT 25000 NOT NULL,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
+    CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
+    CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND ((runtime_selection_reason)::text = ANY ((ARRAY['primary'::character varying, 'fallback'::character varying])::text[])))),
+    CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
     CONSTRAINT execution_runs_status CHECK (((status)::text = ANY ((ARRAY['admitting'::character varying, 'admitted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'timed_out'::character varying, 'canceled'::character varying, 'policy_denied'::character varying])::text[])))
 );
 
@@ -2420,13 +2471,18 @@ CREATE TABLE public.runtime_installations (
     approved_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    profile_keys jsonb DEFAULT '["workspace_default"]'::jsonb NOT NULL,
+    max_input_units bigint DEFAULT 100000 NOT NULL,
+    max_output_units bigint DEFAULT 25000 NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
     CONSTRAINT runtime_installations_budgets CHECK ((((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
     CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
-    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[]))))
+    CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
+    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[])))),
+    CONSTRAINT runtime_installations_unit_budgets CHECK ((((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
 
@@ -4527,6 +4583,13 @@ CREATE UNIQUE INDEX index_execution_runs_on_run_key ON public.execution_runs USI
 
 
 --
+-- Name: index_execution_runs_on_runtime_installation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_runtime_installation_id ON public.execution_runs USING btree (runtime_installation_id);
+
+
+--
 -- Name: index_execution_runs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5402,6 +5465,13 @@ CREATE TRIGGER execution_runs_protect_record BEFORE DELETE OR UPDATE ON public.e
 
 
 --
+-- Name: execution_runs execution_runs_protect_routing; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_protect_routing BEFORE UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_routing_snapshot();
+
+
+--
 -- Name: inbound_email_deliveries inbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5504,6 +5574,13 @@ CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON publi
 --
 
 CREATE TRIGGER runtime_installations_validate_policy BEFORE INSERT OR UPDATE ON public.runtime_installations FOR EACH ROW EXECUTE FUNCTION public.validate_runtime_installation();
+
+
+--
+-- Name: runtime_installations runtime_installations_validate_routing; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER runtime_installations_validate_routing BEFORE INSERT OR UPDATE ON public.runtime_installations FOR EACH ROW EXECUTE FUNCTION public.validate_runtime_routing_policy();
 
 
 --
@@ -5696,6 +5773,14 @@ ALTER TABLE ONLY public.execution_runs
 
 ALTER TABLE ONLY public.execution_runs
     ADD CONSTRAINT fk_execution_runs_input_artifact FOREIGN KEY (workspace_id, input_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: execution_runs fk_execution_runs_workspace_runtime; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_workspace_runtime FOREIGN KEY (workspace_id, runtime_installation_id) REFERENCES public.runtime_installations(workspace_id, id);
 
 
 --
@@ -6809,6 +6894,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824110000'),
 ('20260824090000'),
 ('20260824081944'),
 ('20260824040011'),

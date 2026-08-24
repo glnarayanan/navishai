@@ -75,6 +75,12 @@
 
               <div class="runtime-policy-groups">
                 <fieldset>
+                  <legend>Routing profiles</legend>
+                  <% AgentPolicy::RUNTIME_PROFILES.each do |key, label| %>
+                    <label><%= check_box_tag "runtime_installation[profile_keys][]", key, installation.profile_keys.include?(key), id: "runtime_#{installation.id}_profile_#{key}" %><span><%= label %></span></label>
+                  <% end %>
+                </fieldset>
+                <fieldset>
                   <legend>Roles</legend>
                   <% AgentPolicy::ROLE_DEFINITIONS.each do |key, definition| %>
                     <label><%= check_box_tag "runtime_installation[allowed_role_keys][]", key, installation.allowed_role_keys.include?(key), id: "runtime_#{installation.id}_role_#{key}" %><span><%= CrewConfiguration::CREWS.fetch(definition.fetch(:crew_kind)) %> · <%= definition.fetch(:name) %></span></label>
@@ -98,6 +104,8 @@
                 <div class="field"><%= form.label :max_timeout_seconds, "Timeout cap (seconds)" %><%= form.number_field :max_timeout_seconds, min: 30, max: 900, required: true %></div>
                 <div class="field"><%= form.label :max_steps, "Step cap" %><%= form.number_field :max_steps, min: 1, max: 20, required: true %></div>
                 <div class="field"><%= form.label :max_tool_calls, "Tool-call cap" %><%= form.number_field :max_tool_calls, min: 0, max: 50, required: true %></div>
+                <div class="field"><%= form.label :max_input_units, "Input-unit cap" %><%= form.number_field :max_input_units, min: 1, max: 10_000_000, required: true %></div>
+                <div class="field"><%= form.label :max_output_units, "Output-unit cap" %><%= form.number_field :max_output_units, min: 1, max: 10_000_000, required: true %></div>
               </div>
               <%= form.submit "Save runtime policy", class: "button button-primary" %>
             <% end %>
