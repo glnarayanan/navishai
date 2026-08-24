@@ -1,10 +1,16 @@
 class MemoryContext
-  class Unavailable < StandardError; end
-
   Item = Data.define(:record, :rank, :score)
-  Result = Data.define(:text, :items) do
+  Result = Data.define(:text, :items, :status, :detail) do
+    def initialize(text:, items:, status: items.any? ? "available" : "not_applicable", detail: nil)
+      super
+    end
+
     def present?
       items.any?
+    end
+
+    def degraded?
+      status == "degraded"
     end
   end
 
@@ -40,9 +46,9 @@ class MemoryContext
       .sort_by { |record, score| [ -score, record.memory_key ] }.first(MAX_RECORDS)
       .each_with_index.map { |(record, score), index| Item.new(record:, rank: index + 1, score:) }
     items = within_budget(candidates)
-    Result.new(text: render(items), items:)
+    Result.new(text: render(items), items:, status: "available")
   rescue SupermemoryEngine::Error, SystemCallError, Timeout::Error => error
-    raise Unavailable, "Memory retrieval is unavailable: #{error.class.name.demodulize}."
+    Result.new(text: "", items: [], status: "degraded", detail: error.class.name.demodulize.underscore.first(100))
   end
 
   private

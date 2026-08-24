@@ -30,7 +30,7 @@ class AgentProfilesController < ApplicationController
     def profile_params
       params.expect(agent_profile: [
         :expected_version_number, :instructions, :runtime_profile_key, :timeout_seconds, :max_steps,
-        :max_tool_calls, :review_policy,
+        :max_tool_calls, :review_policy, :memory_required,
         { allowed_tools: [], fallback_profile_keys: [] }
       ])
     end

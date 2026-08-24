@@ -119,6 +119,47 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-mobile.png") if ENV["CAPTURE_EXECUTION"]
   end
 
+  test "a writer sees a specialist continue explicitly without memory during an outage" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace:, membership: owner)
+    CrewConfiguration.install_defaults!(workspace: workspace)
+    support_case = create_support_case
+    profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    task = CrewWork.create!(
+      workspace:, membership: owner, scope: support_case, profile:,
+      title: "Investigate without memory", input_context: "Use current case data.",
+      expected_output: "Return current findings."
+    )
+    CrewWork.apply!(workspace:, membership: owner, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number)
+    memory = workspace.memory_records.create!(
+      memory_type: :semantic, scope_kind: :workspace, topic: "offline-memory",
+      content: "This record must not be recalled during the outage.", authority: :source_record,
+      origin_kind: :system, source_reference: "test://offline-memory",
+      source_digest: Digest::SHA256.hexdigest("offline-memory"), observed_at: 1.day.ago,
+      valid_from: 1.day.ago, confidence: 1, retention_policy: :indefinite
+    )
+    workspace.memory_index_entries.create!(
+      memory_record: memory, status: :indexed, attempt_count: 1, external_document_id: "offline-document",
+      external_status: "done", last_attempted_at: Time.current, indexed_at: Time.current
+    )
+    unavailable = Object.new
+    unavailable.define_singleton_method(:search) { |query:| raise SupermemoryEngine::Unavailable, query.text }
+    run = ExecutionLedger.new(workspace:, memory_engine: unavailable)
+      .prepare!(task:, request_key: "web:memory-offline-system")
+
+    sign_in(users(:owner))
+    visit workspace_support_case_crew_task_path(workspace, support_case, task)
+    assert_text "Memory unavailable for this attempt"
+    assert_text "no managed fallback was used"
+    find("summary", text: "Operator details").click
+    assert_text "Memory context"
+    assert_text "Degraded · Unavailable"
+    assert run.memory_degraded?
+    assert_empty run.execution_memory_selections
+  end
+
   test "a writer reviews redacted public-web evidence on desktop and mobile" do
     workspace = workspaces(:acme_support)
     owner = memberships(:owner_support)

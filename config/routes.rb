@@ -12,6 +12,9 @@ Rails.application.routes.draw do
     resources :attachments, only: :show, controller: "attachment_downloads"
     resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ]
     resources :memory_records, path: "memory", only: %i[ index show destroy ] do
+      get :export, on: :collection
+      post :import, on: :collection
+      post :reconstruct, on: :collection
       post :corrections, controller: "memory_corrections", action: :create
       post "corrections/:correction_id/review", controller: "memory_corrections", action: :review,
         as: :correction_review

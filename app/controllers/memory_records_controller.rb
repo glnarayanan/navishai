@@ -15,6 +15,7 @@ class MemoryRecordsController < ApplicationController
     @records = relation.includes(:memory_tombstone, :revisions, :memory_index_entry).order(observed_at: :desc, id: :desc).limit(100)
     @access_scope = @membership.can_manage_work? ? "all" : "used"
     @can_manage = @membership.can_manage_work?
+    @degraded_index_count = @can_manage ? @workspace.memory_index_entries.where(status: %w[failed unknown]).count : 0
     @pending_corrections = if @membership.can_manage_work?
       @workspace.memory_correction_proposals.proposed.includes(:memory_record, :proposed_by_user).order(created_at: :asc, id: :asc)
     else
@@ -62,6 +63,27 @@ class MemoryRecordsController < ApplicationController
     redirect_to workspace_memory_record_path(@workspace, memory), notice: "Index removal queued again."
   rescue MemoryGovernance::Conflict => error
     redirect_to workspace_memory_record_path(@workspace, params[:id]), alert: error.message
+  end
+
+  def export
+    archive = MemoryPortability.export(workspace: @workspace, membership: @membership)
+    send_data archive, filename: "navishai-memory-#{@workspace.slug}-#{Date.current.iso8601}.json",
+      type: "application/json", disposition: "attachment"
+  end
+
+  def import
+    upload = params.require(:archive)
+    raise MemoryPortability::InvalidArchive, "memory archive is too large" if upload.size > MemoryPortability::MAX_BYTES
+
+    count = MemoryPortability.import!(workspace: @workspace, membership: @membership, json: upload.read)
+    redirect_to workspace_memory_records_path(@workspace), notice: "Imported #{count} memory records."
+  rescue MemoryPortability::InvalidArchive, ActionController::ParameterMissing => error
+    redirect_to workspace_memory_records_path(@workspace), alert: error.message
+  end
+
+  def reconstruct
+    count = MemoryPortability.reconstruct_index!(workspace: @workspace, membership: @membership)
+    redirect_to workspace_memory_records_path(@workspace), notice: "Queued #{count} memory records for indexing."
   end
 
   private

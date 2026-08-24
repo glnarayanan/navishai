@@ -936,10 +936,18 @@ textarea {
 
 .memory-correction-form,
 .memory-delete,
-.memory-deletion-state {
+.memory-deletion-state,
+.memory-operations,
+.memory-import-form {
   display: grid;
   justify-items: start;
   gap: 1rem;
+}
+
+.memory-operation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
 }
 
 .memory-correction-form textarea {

@@ -112,19 +112,47 @@ class MemoryContextTest < ActiveSupport::TestCase
     assert_includes error.message, "No compatible runtime"
   end
 
-  test "reports retrieval failure before creating a run" do
+  test "continues without false recall when retrieval is unavailable" do
     memory = create_memory(topic: "unavailable")
     index!(memory)
     unavailable = Object.new
     unavailable.define_singleton_method(:search) { |query:| raise SupermemoryEngine::Unavailable, query.text }
 
-    assert_no_difference -> { @workspace.execution_runs.count } do
-      error = assert_raises(ExecutionLedger::InvalidRun) do
-        ExecutionLedger.new(workspace: @workspace, memory_engine: unavailable)
-          .prepare!(task: @task, request_key: "memory-context:unavailable")
-      end
-      assert_includes error.message, "Memory retrieval is unavailable"
+    run = nil
+    assert_difference -> { @workspace.execution_runs.count }, 1 do
+      run = ExecutionLedger.new(workspace: @workspace, memory_engine: unavailable)
+        .prepare!(task: @task, request_key: "memory-context:unavailable")
     end
+    assert run.memory_degraded?
+    assert_equal "unavailable", run.memory_context_detail
+    assert_empty run.execution_memory_selections
+    assert_not_includes run.disclosed_data_classes, "retrieved_memory"
+  end
+
+  test "blocks an explicitly memory-critical profile during an outage" do
+    memory = create_memory(topic: "critical-unavailable")
+    index!(memory)
+    profile = @task.assigned_agent_profile
+    version = profile.current_version
+    critical = profile.versions.create!(
+      version.attributes.except("id", "created_at", "updated_at", "version_number").merge(
+        version_number: version.version_number + 1, memory_required: true
+      )
+    )
+    profile.update!(current_version: critical)
+    task = CrewWork.create!(
+      workspace: @workspace, membership: @owner, scope: @support_case, profile:,
+      title: "Memory-critical investigation", input_context: "Use required memory.",
+      expected_output: "Return cited findings."
+    )
+    unavailable = Object.new
+    unavailable.define_singleton_method(:search) { |query:| raise SupermemoryEngine::Unavailable, query.text }
+
+    error = assert_raises(ExecutionLedger::InvalidRun) do
+      ExecutionLedger.new(workspace: @workspace, memory_engine: unavailable)
+        .prepare!(task:, request_key: "memory-context:critical-unavailable")
+    end
+    assert_includes error.message, "Memory is required"
   end
 
   test "run preparation rejects memory deleted after retrieval" do
