@@ -222,6 +222,7 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
       JSON.generate(
         schema_version: 1, kind: "investigation", body: "The reset link expired.",
         uncertainty: "The opening time is unknown.", conflicts: [], change_requests: [], review_outcome: nil,
+        memory_proposals: [],
         citations: [ {
           kind: "conversation", locator: "conversation://#{@support_case.conversation_id}/messages/#{@message.id}",
           label: "Customer report"

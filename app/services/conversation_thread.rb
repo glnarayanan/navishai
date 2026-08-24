@@ -59,6 +59,7 @@ class ConversationThread
         subject: message,
         metadata: { direction: "inbound", author_kind: "contact" }
       )
+      MemoryCapture.message!(workspace: workspace, message: message)
       message
     end
   end
@@ -104,6 +105,7 @@ class ConversationThread
         action: "conversation.message_added", source: source, workspace: workspace,
         actor_kind: :system, subject: message, metadata: { direction: "inbound", author_kind: "contact" }
       )
+      MemoryCapture.message!(workspace: workspace, message: message)
       message
     end
   end
@@ -151,6 +153,7 @@ class ConversationThread
       action: "conversation.message_added", source: source, workspace: workspace,
       actor: actor.user, subject: message, metadata: { direction: "outbound", author_kind: "user" }
     )
+    MemoryCapture.message!(workspace: workspace, message: message)
     message
   end
   private_class_method :persist_outbound!

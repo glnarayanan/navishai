@@ -15,6 +15,8 @@ class CrewArtifact < ApplicationRecord
     dependent: :restrict_with_exception, inverse_of: :target_artifact
   has_many :input_runs, class_name: "ExecutionRun", foreign_key: :input_artifact_id,
     dependent: :restrict_with_exception, inverse_of: :input_artifact
+  has_many :memory_proposals, foreign_key: :source_crew_artifact_id, dependent: :restrict_with_exception,
+    inverse_of: :source_crew_artifact
 
   enum :artifact_kind, KINDS.index_by(&:itself), validate: true
 
