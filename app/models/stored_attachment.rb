@@ -13,6 +13,7 @@ class StoredAttachment < ApplicationRecord
   has_many :email_drafts, through: :email_draft_attachments
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
   has_many :outbound_email_deliveries, through: :outbound_email_delivery_attachments
+  has_many :knowledge_source_versions, dependent: :restrict_with_exception
 
   enum :source, SOURCES.index_by(&:itself), validate: true
   enum :scan_status, SCAN_STATUSES.index_by(&:itself), validate: true

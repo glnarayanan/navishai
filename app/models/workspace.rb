@@ -34,6 +34,8 @@ class Workspace < ApplicationRecord
   has_many :conversation_message_attachments, dependent: :restrict_with_exception
   has_many :email_draft_attachments, dependent: :restrict_with_exception
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
+  has_many :knowledge_sources, dependent: :restrict_with_exception
+  has_many :knowledge_source_versions, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

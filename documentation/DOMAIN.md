@@ -33,3 +33,6 @@ Use these terms in product copy, code, tests, and design notes.
 - **Email thread:** an immutable mapping from email threading identifiers to one Conversation inside one Shared email inbox.
 - **Email draft:** the latest plain-text reply that a workspace writer can edit before sending. A new inbound message lets the writer start the next reply. A draft never grants later send authority.
 - **Outbound email delivery:** the frozen recipient, content, threading headers, human actor, and SMTP result for one fresh Send command. An unknown result blocks resend until a signed-in writer checks SMTP or the shared mailbox and records whether it was accepted.
+- **Knowledge source:** one Workspace-owned body of approved support knowledge from maintained text, an HTTPS URL snapshot, an uploaded text file, or an Intercom Help Center article. Deletion removes it from current use without erasing cited history.
+- **Knowledge source version:** one immutable content snapshot with its digest, retrieval time, source update time, expiry, author, and optional retained upload. Only a source’s current active version appears in search.
+- **Knowledge citation:** a stable link to one Knowledge source version. It keeps stale and deleted warnings even after a source changes or leaves current search.

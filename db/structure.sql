@@ -24,6 +24,27 @@ COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access met
 
 
 --
+-- Name: enforce_active_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_active_knowledge_source() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM 1 FROM knowledge_sources
+  WHERE id = NEW.knowledge_source_id
+    AND workspace_id = NEW.workspace_id
+    AND deleted_at IS NULL
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'knowledge source must be active';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: enforce_clean_outbound_attachment(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -181,6 +202,57 @@ $$;
 
 
 --
+-- Name: protect_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_knowledge_source() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  old_number integer;
+  new_number integer;
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.source_kind, OLD.source_key, OLD.title,
+         OLD.canonical_url, OLD.external_id, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.source_kind, NEW.source_key, NEW.title,
+         NEW.canonical_url, NEW.external_id, NEW.created_at) THEN
+    IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NULL AND
+       ROW(OLD.deleted_by_membership_id, OLD.deleted_by_user_id)
+       IS NOT DISTINCT FROM
+       ROW(NEW.deleted_by_membership_id, NEW.deleted_by_user_id) AND
+       OLD.current_version_id IS DISTINCT FROM NEW.current_version_id THEN
+      SELECT version_number INTO old_number FROM knowledge_source_versions WHERE id = OLD.current_version_id;
+      SELECT version_number INTO new_number FROM knowledge_source_versions WHERE id = NEW.current_version_id;
+      IF NEW.current_version_id IS NOT NULL AND (OLD.current_version_id IS NULL OR new_number > old_number) THEN
+        RETURN NEW;
+      END IF;
+    ELSIF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL AND
+          NEW.deleted_by_membership_id IS NOT NULL AND NEW.deleted_by_user_id IS NOT NULL AND
+          OLD.current_version_id IS NOT DISTINCT FROM NEW.current_version_id THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+  RAISE EXCEPTION 'knowledge source identity and history are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_knowledge_source_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_knowledge_source_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'knowledge source versions are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_outbound_email_delivery(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -275,6 +347,27 @@ BEGIN
     RAISE EXCEPTION 'stored attachment files are durable';
   END IF;
   RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+
+--
+-- Name: require_current_knowledge_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.require_current_knowledge_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM knowledge_sources
+    WHERE id = NEW.id
+      AND workspace_id = NEW.workspace_id
+      AND current_version_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'knowledge source must have a current version';
+  END IF;
+  RETURN NULL;
 END;
 $$;
 
@@ -1041,6 +1134,99 @@ ALTER SEQUENCE public.installation_states_id_seq OWNED BY public.installation_st
 
 
 --
+-- Name: knowledge_source_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_source_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    knowledge_source_id bigint NOT NULL,
+    stored_attachment_id bigint,
+    version_number integer NOT NULL,
+    content text NOT NULL,
+    content_sha256 character varying NOT NULL,
+    retrieved_from_url character varying,
+    retrieved_at timestamp(6) without time zone NOT NULL,
+    source_updated_at timestamp(6) without time zone,
+    expires_at timestamp(6) without time zone,
+    created_by_membership_id bigint,
+    created_by_user_id bigint,
+    search_document tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, COALESCE(content, ''::text))) STORED,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_source_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
+    CONSTRAINT knowledge_source_versions_content_size CHECK (((octet_length(content) >= 1) AND (octet_length(content) <= 1048576))),
+    CONSTRAINT knowledge_source_versions_number CHECK ((version_number > 0)),
+    CONSTRAINT knowledge_source_versions_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT knowledge_source_versions_url_length CHECK (((retrieved_from_url IS NULL) OR (((retrieved_from_url)::text ~ '^https://'::text) AND (length((retrieved_from_url)::text) <= 2048))))
+);
+
+
+--
+-- Name: knowledge_source_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_source_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_source_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_source_versions_id_seq OWNED BY public.knowledge_source_versions.id;
+
+
+--
+-- Name: knowledge_sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_sources (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    source_kind character varying NOT NULL,
+    source_key character varying NOT NULL,
+    title character varying NOT NULL,
+    canonical_url character varying,
+    external_id character varying,
+    current_version_id bigint,
+    deleted_at timestamp(6) without time zone,
+    deleted_by_membership_id bigint,
+    deleted_by_user_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
+    CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
+    CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
+    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'url'::character varying, 'upload'::character varying, 'intercom_help_center'::character varying])::text[]))),
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'upload'::character varying])::text[])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
+);
+
+
+--
+-- Name: knowledge_sources_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_sources_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_sources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_sources_id_seq OWNED BY public.knowledge_sources.id;
+
+
+--
 -- Name: memberships; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1523,11 +1709,11 @@ CREATE TABLE public.stored_attachments (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT stored_attachments_actor CHECK (((((source)::text = 'inbound_email'::text) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
-    CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY ((ARRAY['available'::character varying, 'rejected'::character varying])::text[])) AND (scanned_at IS NOT NULL))))),
-    CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY ((ARRAY['quarantined'::character varying, 'available'::character varying, 'rejected'::character varying])::text[]))),
+    CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY (ARRAY[('available'::character varying)::text, ('rejected'::character varying)::text])) AND (scanned_at IS NOT NULL))))),
+    CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY (ARRAY[('quarantined'::character varying)::text, ('available'::character varying)::text, ('rejected'::character varying)::text]))),
     CONSTRAINT stored_attachments_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT stored_attachments_size CHECK (((byte_size >= 1) AND (byte_size <= 5242880))),
-    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'user_upload'::character varying])::text[])))
+    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY (ARRAY[('inbound_email'::character varying)::text, ('user_upload'::character varying)::text])))
 );
 
 
@@ -1947,6 +2133,20 @@ ALTER TABLE ONLY public.installation_states ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: knowledge_source_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions ALTER COLUMN id SET DEFAULT nextval('public.knowledge_source_versions_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_sources id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources ALTER COLUMN id SET DEFAULT nextval('public.knowledge_sources_id_seq'::regclass);
+
+
+--
 -- Name: memberships id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2252,6 +2452,22 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.installation_states
     ADD CONSTRAINT installation_states_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_source_versions knowledge_source_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT knowledge_source_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_sources knowledge_sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT knowledge_sources_pkey PRIMARY KEY (id);
 
 
 --
@@ -2913,6 +3129,76 @@ CREATE UNIQUE INDEX index_installation_states_on_singleton ON public.installatio
 
 
 --
+-- Name: index_knowledge_source_versions_on_search_document; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_source_versions_on_search_document ON public.knowledge_source_versions USING gin (search_document);
+
+
+--
+-- Name: index_knowledge_source_versions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_source_versions_on_workspace_id ON public.knowledge_source_versions USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_source_versions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_source_versions_on_workspace_id_and_id ON public.knowledge_source_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_sources_on_source_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_source_key ON public.knowledge_sources USING btree (source_key);
+
+
+--
+-- Name: index_knowledge_sources_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_sources_on_workspace_id ON public.knowledge_sources USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_sources_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_id_and_id ON public.knowledge_sources USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_sources_on_workspace_kind_external; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public.knowledge_sources USING btree (workspace_id, source_kind, external_id) WHERE (external_id IS NOT NULL);
+
+
+--
+-- Name: index_knowledge_sources_on_workspace_kind_url; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_url ON public.knowledge_sources USING btree (workspace_id, source_kind, canonical_url) WHERE (canonical_url IS NOT NULL);
+
+
+--
+-- Name: index_knowledge_versions_on_source_and_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_versions_on_source_and_number ON public.knowledge_source_versions USING btree (knowledge_source_id, version_number);
+
+
+--
+-- Name: index_knowledge_versions_on_workspace_source_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_versions_on_workspace_source_id ON public.knowledge_source_versions USING btree (workspace_id, knowledge_source_id, id);
+
+
+--
 -- Name: index_memberships_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3438,6 +3724,48 @@ CREATE TRIGGER inbound_email_deliveries_protect_source BEFORE DELETE OR UPDATE O
 
 
 --
+-- Name: knowledge_source_versions knowledge_source_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_source_versions_append_only BEFORE DELETE OR UPDATE ON public.knowledge_source_versions FOR EACH ROW EXECUTE FUNCTION public.protect_knowledge_source_version();
+
+
+--
+-- Name: knowledge_source_versions knowledge_source_versions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_source_versions_no_truncate BEFORE TRUNCATE ON public.knowledge_source_versions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_knowledge_source_version();
+
+
+--
+-- Name: knowledge_source_versions knowledge_source_versions_require_active_source; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_source_versions_require_active_source BEFORE INSERT ON public.knowledge_source_versions FOR EACH ROW EXECUTE FUNCTION public.enforce_active_knowledge_source();
+
+
+--
+-- Name: knowledge_sources knowledge_sources_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_sources_no_truncate BEFORE TRUNCATE ON public.knowledge_sources FOR EACH STATEMENT EXECUTE FUNCTION public.protect_knowledge_source();
+
+
+--
+-- Name: knowledge_sources knowledge_sources_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_sources_protect_record BEFORE DELETE OR UPDATE ON public.knowledge_sources FOR EACH ROW EXECUTE FUNCTION public.protect_knowledge_source();
+
+
+--
+-- Name: knowledge_sources knowledge_sources_require_current_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER knowledge_sources_require_current_version AFTER INSERT OR UPDATE ON public.knowledge_sources DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_current_knowledge_version();
+
+
+--
 -- Name: outbound_email_deliveries outbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3569,6 +3897,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: knowledge_sources fk_knowledge_sources_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_knowledge_sources_current_version FOREIGN KEY (workspace_id, id, current_version_id) REFERENCES public.knowledge_source_versions(workspace_id, knowledge_source_id, id);
+
+
+--
 -- Name: account_merges fk_rails_00215f0be3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3622,6 +3958,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.support_case_taggings
     ADD CONSTRAINT fk_rails_1557a3d783 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: knowledge_source_versions fk_rails_17c1555b4f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT fk_rails_17c1555b4f FOREIGN KEY (workspace_id, knowledge_source_id) REFERENCES public.knowledge_sources(workspace_id, id);
 
 
 --
@@ -3697,6 +4041,14 @@ ALTER TABLE ONLY public.service_calendar_holidays
 
 
 --
+-- Name: knowledge_source_versions fk_rails_4502cdedde; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT fk_rails_4502cdedde FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: case_slas fk_rails_480547c7a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3745,6 +4097,14 @@ ALTER TABLE ONLY public.conversation_message_attachments
 
 
 --
+-- Name: knowledge_sources fk_rails_5d7fc285cc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_rails_5d7fc285cc FOREIGN KEY (workspace_id, deleted_by_membership_id, deleted_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: source_identity_keys fk_rails_5d83b90732; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3766,6 +4126,14 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 ALTER TABLE ONLY public.case_notes
     ADD CONSTRAINT fk_rails_5e366734ed FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: knowledge_sources fk_rails_5ff9ba625d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_rails_5ff9ba625d FOREIGN KEY (deleted_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -4097,6 +4465,14 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 
 --
+-- Name: knowledge_sources fk_rails_ad55aa375e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_rails_ad55aa375e FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: source_identities fk_rails_b04720ccd3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4209,6 +4585,22 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: knowledge_source_versions fk_rails_ca0065d632; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT fk_rails_ca0065d632 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: knowledge_source_versions fk_rails_ca93bc035d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT fk_rails_ca93bc035d FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: conversation_messages fk_rails_cd0fa9de6c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4238,6 +4630,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.inbound_email_deliveries
     ADD CONSTRAINT fk_rails_d25c9cc250 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: knowledge_source_versions fk_rails_d40427c568; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_source_versions
+    ADD CONSTRAINT fk_rails_d40427c568 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
 
 
 --
@@ -4351,6 +4751,7 @@ ALTER TABLE ONLY public.email_draft_attachments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040007'),
 ('20260824040006'),
 ('20260824040005'),
 ('20260823200308'),
