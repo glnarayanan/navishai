@@ -33,6 +33,7 @@ class SupportCasesController < ApplicationController
       @available_tags = @workspace.tags.where.not(id: @support_case.tag_ids).order(:name)
       @assignable_memberships = @workspace.memberships.where.not(role: :viewer).includes(:user).order("users.email_address")
       @activity_items = case_activity
+      @crew_tasks = @support_case.crew_tasks.includes(:assigned_agent_profile).order(created_at: :desc, id: :desc)
       contact = @support_case.conversation.contact.canonical
       account = contact.account&.canonical
       @contact_emails = identity_values(contact, :email)

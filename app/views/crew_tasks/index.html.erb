@@ -1,0 +1,73 @@
+<% content_for :title, "Crew work · #{@support_case.conversation.subject.presence || "Case"} — NavishAI" %>
+
+<main class="crew-work-page">
+  <header class="crew-work-header">
+    <%= link_to "Back to case", workspace_support_case_path(@workspace, @support_case), class: "back-link" %>
+    <div>
+      <h1>Crew work</h1>
+      <p>Tasks, handoffs, evidence, review decisions, and outcomes stay on the case record.</p>
+    </div>
+    <dl class="crew-progress" aria-label="Crew progress">
+      <div><dt>Open</dt><dd><%= @tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
+      <div><dt>Review</dt><dd><%= @tasks.count(&:review_requested?) %></dd></div>
+      <div><dt>Done</dt><dd><%= @tasks.count(&:completed?) %></dd></div>
+    </dl>
+  </header>
+
+  <% if @command_error %>
+    <div class="inline-error" role="alert"><strong>Task not created</strong><p><%= @command_error %></p></div>
+  <% end %>
+
+  <div class="crew-work-index-grid">
+    <section class="crew-work-panel" aria-labelledby="task-list-title">
+      <div class="crew-work-panel-heading">
+        <h2 id="task-list-title">Case plan</h2>
+        <span><%= pluralize(@tasks.size, "task") %></span>
+      </div>
+      <%= render "task_list", tasks: @tasks %>
+    </section>
+
+    <section class="crew-work-panel crew-task-create" aria-labelledby="new-task-title">
+      <h2 id="new-task-title">Add a task</h2>
+      <p>Set one clear goal and choose the specialist accountable for the first step.</p>
+      <% if @membership.can_write? %>
+        <%= form_with url: workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "crew-task-form" do |form| %>
+          <div class="field">
+            <%= form.label :title, "Task title" %>
+            <%= form.text_field :title, value: params[:title], required: true, maxlength: 200, autocomplete: "off" %>
+          </div>
+          <div class="field">
+            <%= form.label :input_context, "Input and scope" %>
+            <%= form.text_area :input_context, value: params[:input_context], required: true, rows: 4, maxlength: 8_000 %>
+            <span class="field-hint">Name the case facts, sources, and limits this specialist may use.</span>
+          </div>
+          <div class="field">
+            <%= form.label :expected_output, "Expected output" %>
+            <%= form.text_area :expected_output, value: params[:expected_output], required: true, rows: 4, maxlength: 8_000 %>
+            <span class="field-hint">Name the deliverable, evidence standard, and review boundary.</span>
+          </div>
+          <div class="field">
+            <%= form.label :agent_profile_id, "Specialist" %>
+            <%= form.select :agent_profile_id,
+              @profiles.map { |profile| [ profile.name, profile.id ] },
+              { selected: params[:agent_profile_id] }, required: true %>
+          </div>
+          <% if @tasks.any? %>
+            <fieldset class="crew-dependencies">
+              <legend>Wait for these tasks <span>(optional)</span></legend>
+              <% @tasks.each do |task| %>
+                <label>
+                  <%= check_box_tag "dependency_ids[]", task.id, Array(params[:dependency_ids]).include?(task.id.to_s) %>
+                  <span><%= task.title %> <small><%= task.status.humanize %></small></span>
+                </label>
+              <% end %>
+            </fieldset>
+          <% end %>
+          <%= form.submit "Create task", class: "button button-primary" %>
+        <% end %>
+      <% else %>
+        <p class="read-only-notice">Read-only access. You can inspect the work record but cannot add tasks.</p>
+      <% end %>
+    </section>
+  </div>
+</main>
