@@ -75,6 +75,25 @@ $$;
 
 
 --
+-- Name: enforce_notification_event_workspace(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_notification_event_workspace() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM audit_events
+    WHERE id = NEW.source_audit_event_id AND workspace_id = NEW.workspace_id
+  ) THEN
+    RAISE EXCEPTION 'notification audit event belongs to another workspace';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3697,6 +3716,48 @@ ALTER SEQUENCE public.memory_tombstones_id_seq OWNED BY public.memory_tombstones
 
 
 --
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    recipient_membership_id bigint NOT NULL,
+    source_audit_event_id bigint NOT NULL,
+    category character varying NOT NULL,
+    title character varying NOT NULL,
+    path character varying NOT NULL,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    read_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT notifications_category CHECK (((category)::text = ANY ((ARRAY['assignment'::character varying, 'review'::character varying, 'sla'::character varying, 'failure'::character varying, 'blocked'::character varying, 'completion'::character varying])::text[]))),
+    CONSTRAINT notifications_path CHECK ((((path)::text ~ '^/[^/]'::text) AND (octet_length((path)::text) <= 1000))),
+    CONSTRAINT notifications_read_time CHECK (((read_at IS NULL) OR (read_at >= occurred_at))),
+    CONSTRAINT notifications_title CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)))
+);
+
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.notifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+
+
+--
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5041,6 +5102,13 @@ ALTER TABLE ONLY public.memory_tombstones ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: notifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
+
+
+--
 -- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5646,6 +5714,14 @@ ALTER TABLE ONLY public.memory_records
 
 ALTER TABLE ONLY public.memory_tombstones
     ADD CONSTRAINT memory_tombstones_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
 
 
 --
@@ -7487,6 +7563,41 @@ CREATE UNIQUE INDEX index_message_attachments_on_message_and_attachment ON publi
 
 
 --
+-- Name: index_notifications_inbox; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_inbox ON public.notifications USING btree (recipient_membership_id, read_at, occurred_at);
+
+
+--
+-- Name: index_notifications_on_recipient_and_event; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notifications_on_recipient_and_event ON public.notifications USING btree (recipient_membership_id, source_audit_event_id);
+
+
+--
+-- Name: index_notifications_on_recipient_membership_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_recipient_membership_id ON public.notifications USING btree (recipient_membership_id);
+
+
+--
+-- Name: index_notifications_on_source_audit_event_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_source_audit_event_id ON public.notifications USING btree (source_audit_event_id);
+
+
+--
+-- Name: index_notifications_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_workspace_id ON public.notifications USING btree (workspace_id);
+
+
+--
 -- Name: index_organizations_on_slug; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8551,6 +8662,13 @@ CREATE TRIGGER memory_tombstones_protect BEFORE DELETE OR UPDATE ON public.memor
 
 
 --
+-- Name: notifications notifications_require_workspace_event; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER notifications_require_workspace_event BEFORE INSERT OR UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.enforce_notification_event_workspace();
+
+
+--
 -- Name: outbound_email_deliveries outbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8982,6 +9100,14 @@ ALTER TABLE ONLY public.memory_records
 
 ALTER TABLE ONLY public.memory_tombstones
     ADD CONSTRAINT fk_memory_tombstones_actor FOREIGN KEY (workspace_id, deleted_by_membership_id, deleted_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: notifications fk_notifications_workspace_recipient; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_notifications_workspace_recipient FOREIGN KEY (workspace_id, recipient_membership_id) REFERENCES public.memberships(workspace_id, id);
 
 
 --
@@ -9825,6 +9951,14 @@ ALTER TABLE ONLY public.crew_task_events
 
 
 --
+-- Name: notifications fk_rails_7574b4405f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_rails_7574b4405f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: sessions fk_rails_758836b4f0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10577,6 +10711,14 @@ ALTER TABLE ONLY public.health_scorecard_backtests
 
 
 --
+-- Name: notifications fk_rails_e14bd42d63; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_rails_e14bd42d63 FOREIGN KEY (recipient_membership_id) REFERENCES public.memberships(id);
+
+
+--
 -- Name: crew_tasks fk_rails_e3cb7df8ab; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10775,6 +10917,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824230100'),
 ('20260824230000'),
 ('20260824220000'),
 ('20260824210000'),

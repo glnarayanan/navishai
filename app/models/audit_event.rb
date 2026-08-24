@@ -125,6 +125,10 @@ class AuditEvent < ApplicationRecord
 
   belongs_to :workspace, optional: true
   belongs_to :actor, class_name: "User", optional: true
+  has_many :notifications, foreign_key: :source_audit_event_id, dependent: :restrict_with_exception
+
+  after_create_commit -> { NotificationFanoutJob.enqueue_after_commit(self) },
+    if: -> { workspace_id && NotificationFanout.notifiable_action?(action) }
 
   enum :actor_kind, ACTOR_KINDS.index_by(&:itself), validate: true
   enum :source, SOURCES.index_by(&:itself), prefix: true, validate: true

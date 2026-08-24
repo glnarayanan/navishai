@@ -1,0 +1,33 @@
+<% content_for :title, "Notifications · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell notifications-page">
+  <div class="page-heading notifications-heading">
+    <div>
+      <h1>Notifications</h1>
+      <p>Assignments, reviews, SLA alerts, failures, blocked work, and completions for you.</p>
+    </div>
+    <% if @notifications.any? { |notification| !notification.read_at? } %>
+      <%= button_to "Mark all read", read_all_workspace_notifications_path(Current.workspace), class: "button button-quiet" %>
+    <% end %>
+  </div>
+
+  <% if @notifications.any? %>
+    <ol class="notification-list" aria-label="Notifications">
+      <% @notifications.each do |notification| %>
+        <li class="notification-item <%= "is-unread" unless notification.read_at? %>">
+          <%= button_to workspace_notification_path(Current.workspace, notification), method: :patch,
+            class: "notification-link" do %>
+            <span class="notification-category"><%= notification.category.humanize %></span>
+            <strong><%= notification.title %></strong>
+            <time datetime="<%= notification.occurred_at.iso8601 %>"><%= time_ago_in_words(notification.occurred_at) %> ago</time>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  <% else %>
+    <section class="empty-state">
+      <h2>No notifications</h2>
+      <p>New work that needs your attention will appear here.</p>
+    </section>
+  <% end %>
+</main>
