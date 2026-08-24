@@ -45,15 +45,25 @@
                   <span class="status-badge"><%= shared_email_inbox_status_label(inbox) %></span>
                 </td>
                 <td data-label="Intake">
-                  <% if inbox.outstanding_delivery_count.to_i.positive? %>
-                    <strong><%= pluralize(inbox.outstanding_delivery_count, "delivery") %> need retry</strong>
+                  <% retry_count = @retry_counts.fetch(inbox.id, 0) %>
+                  <% terminal_counts = @terminal_failure_counts.select { |(inbox_id, _), _| inbox_id == inbox.id } %>
+                  <% if retry_count.positive? %>
+                    <strong><%= pluralize(retry_count, "delivery") %> need retry</strong>
                     <ul class="integration-failures">
-                      <% @failure_counts.each do |(inbox_id, failure_code), count| %>
+                      <% @retry_failure_counts.each do |(inbox_id, failure_code), count| %>
                         <% next unless inbox_id == inbox.id %>
                         <li><%= failure_code ? failure_code.humanize : "Processing interrupted" %>: <%= count %></li>
                       <% end %>
                     </ul>
-                  <% else %>
+                  <% end %>
+                  <% if terminal_counts.any? %>
+                    <strong><%= pluralize(terminal_counts.values.sum, "delivery") %> need review</strong>
+                    <ul class="integration-failures">
+                      <% terminal_counts.each do |(_, failure_code), count| %>
+                        <li><%= failure_code ? failure_code.humanize : "Retry limit reached" %>: <%= count %></li>
+                      <% end %>
+                    </ul>
+                  <% elsif retry_count.zero? %>
                     <span class="muted-copy">No failures</span>
                   <% end %>
                 </td>
@@ -62,9 +72,9 @@
                     <%= form.hidden_field :active, value: !inbox.active? %>
                     <%= form.submit inbox.active? ? "Pause" : "Activate", class: "button button-quiet" %>
                   <% end %>
-                  <% if inbox.outstanding_delivery_count.to_i.positive? && inbox.active? %>
+                  <% if retry_count.positive? && inbox.active? %>
                     <%= button_to "Retry", reconcile_workspace_shared_email_inbox_path(Current.workspace, inbox), class: "button button-quiet" %>
-                  <% elsif inbox.outstanding_delivery_count.to_i.positive? %>
+                  <% elsif retry_count.positive? %>
                     <span class="field-hint">Activate to retry</span>
                   <% end %>
                 </td>

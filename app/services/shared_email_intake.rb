@@ -226,10 +226,13 @@ class SharedEmailIntake
     end
 
     def append_message!(thread, mail, contact, body)
+      conversation_contact = thread.conversation.contact
+      raise ActiveRecord::RecordNotFound unless conversation_contact.canonical == contact.canonical
+
       ConversationThread.append_inbound!(
         workspace: @workspace,
         conversation: thread.conversation,
-        author: contact,
+        author: conversation_contact,
         body: body,
         occurred_at: @received_at,
         source: :integration

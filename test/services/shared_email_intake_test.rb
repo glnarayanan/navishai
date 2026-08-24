@@ -96,6 +96,30 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
     assert_equal 2, @inbox.email_threads.count
   end
 
+  test "a reply stays on its conversation after the stored contact is merged" do
+    root = SharedEmailIntake.receive!(
+      inbox: @inbox, raw_email: raw_email(message_id: "merged-root@example.net"),
+      received_at: @received_at
+    )
+    original_contact = root.conversation.contact
+    canonical_contact = @workspace.contacts.create!(name: "Canonical customer")
+    CustomerRecordMerger.merge!(
+      workspace: @workspace, source: original_contact, target: canonical_contact,
+      membership: memberships(:owner_support)
+    )
+
+    reply = SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(message_id: "merged-reply@example.net", references: "<merged-root@example.net>"),
+      received_at: @received_at + 1.minute
+    )
+
+    assert reply.processed?
+    assert_equal root.conversation, reply.conversation
+    assert_equal original_contact, reply.conversation_message.author_contact
+    assert_equal canonical_contact, reply.conversation_message.author_contact.canonical
+  end
+
   test "receipt time controls case and message ordering instead of sender date" do
     delivery = SharedEmailIntake.receive!(
       inbox: @inbox, raw_email: raw_email(message_id: "old-date@example.net", date: 10.years.ago),

@@ -106,6 +106,30 @@ class SharedEmailInboxesControllerTest < ActionDispatch::IntegrationTest
     assert retry_audit.source_web?
   end
 
+  test "terminal failures stay visible without offering a retry" do
+    inbox = @workspace.shared_email_inboxes.create!(
+      name: "Support", email_address: "support@example.com", credential_key: "support"
+    )
+    inbox.inbound_email_deliveries.create!(
+      workspace: @workspace,
+      source_message_id: "terminal@example.net",
+      content_sha256: Digest::SHA256.hexdigest("terminal"),
+      raw_email: "terminal",
+      status: :failed,
+      failure_code: "missing_sender",
+      received_at: Time.current,
+      processed_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    get workspace_shared_email_inboxes_path(@workspace)
+
+    assert_response :success
+    assert_select "td", text: /1 delivery need review/
+    assert_select ".integration-failures", text: /Missing sender: 1/
+    assert_select "form[action='#{reconcile_workspace_shared_email_inbox_path(@workspace, inbox)}']", count: 0
+  end
+
   test "manager cannot see or invoke inbox configuration" do
     membership = @workspace.memberships.create!(user: users(:teammate), role: :manager)
     inbox = @workspace.shared_email_inboxes.create!(

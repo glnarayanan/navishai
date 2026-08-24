@@ -47,12 +47,14 @@ class SharedEmailInboxesController < ApplicationController
 
     def load_index(inbox: SharedEmailInbox.new)
       workspace = Current.require_workspace!
-      @inboxes = workspace.shared_email_inboxes
-        .left_joins(:inbound_email_deliveries)
-        .select("shared_email_inboxes.*, COUNT(inbound_email_deliveries.id) FILTER (WHERE inbound_email_deliveries.status IN ('received', 'failed')) AS outstanding_delivery_count")
-        .group(:id)
-        .order(:name, :id)
-      @failure_counts = workspace.inbound_email_deliveries.outstanding
+      @inboxes = workspace.shared_email_inboxes.order(:name, :id)
+      retryable = workspace.inbound_email_deliveries.outstanding
+      terminal = workspace.inbound_email_deliveries.where(status: %w[received failed]).where.not(id: retryable.select(:id))
+      @retry_counts = retryable.group(:shared_email_inbox_id).count
+      @retry_failure_counts = retryable
+        .group(:shared_email_inbox_id, :failure_code)
+        .count
+      @terminal_failure_counts = terminal
         .group(:shared_email_inbox_id, :failure_code)
         .count
       @inbox = inbox
