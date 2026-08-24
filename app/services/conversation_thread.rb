@@ -63,6 +63,51 @@ class ConversationThread
     end
   end
 
+  def self.start_inbound!(workspace:, contact:, subject:, body:, occurred_at:, source:)
+    raise ArgumentError, "unsupported source" unless AuditEvent::SOURCES.include?(source.to_s)
+
+    Conversation.transaction do
+      current_contact = workspace.contacts.find(contact.id)
+      conversation = workspace.conversations.create!(
+        contact: current_contact,
+        subject: subject,
+        started_at: occurred_at,
+        last_message_at: occurred_at
+      )
+      support_case = workspace.support_cases.create!(
+        conversation: conversation,
+        status: :new,
+        priority: :normal,
+        status_changed_at: occurred_at
+      )
+      workspace.support_case_status_changes.create!(
+        support_case: support_case,
+        from_status: nil,
+        to_status: :new,
+        actor_kind: :system,
+        source: source,
+        reason: "case created from inbound message",
+        occurred_at: occurred_at
+      )
+      message = workspace.conversation_messages.create!(
+        conversation: conversation,
+        direction: :inbound,
+        author_kind: :contact,
+        author_contact: current_contact,
+        body: body,
+        occurred_at: occurred_at
+      )
+      SlaEngine.start!(workspace: workspace, support_case: support_case, at: occurred_at)
+      AuditEvent.record!(action: "conversation.created", source: source, workspace: workspace, actor_kind: :system, subject: conversation)
+      AuditEvent.record!(action: "case.created", source: source, workspace: workspace, actor_kind: :system, subject: support_case)
+      AuditEvent.record!(
+        action: "conversation.message_added", source: source, workspace: workspace,
+        actor_kind: :system, subject: message, metadata: { direction: "inbound", author_kind: "contact" }
+      )
+      message
+    end
+  end
+
   def self.authorized_membership!(workspace, membership)
     workspace.memberships.lock.find(membership.id).tap do |current_membership|
       raise Current::RoleAccessDenied unless current_membership.can_write?

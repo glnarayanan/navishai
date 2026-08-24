@@ -50,6 +50,31 @@ $$;
 
 
 --
+-- Name: prevent_inbound_email_source_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_inbound_email_source_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     OLD.workspace_id IS NOT DISTINCT FROM NEW.workspace_id AND
+     OLD.shared_email_inbox_id IS NOT DISTINCT FROM NEW.shared_email_inbox_id AND
+     OLD.source_message_id IS NOT DISTINCT FROM NEW.source_message_id AND
+     OLD.content_sha256 IS NOT DISTINCT FROM NEW.content_sha256 AND
+     OLD.raw_email IS NOT DISTINCT FROM NEW.raw_email AND
+     OLD.received_at IS NOT DISTINCT FROM NEW.received_at AND
+     OLD.created_at IS NOT DISTINCT FROM NEW.created_at AND
+     ((OLD.status = 'received' AND NEW.status IN ('received', 'processed', 'failed')) OR
+      (OLD.status = 'failed' AND NEW.status IN ('received', 'failed'))) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'inbound email source records are durable';
+END;
+$$;
+
+
+--
 -- Name: prevent_used_sla_configuration_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -288,10 +313,10 @@ CREATE TABLE public.case_slas (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT case_slas_first_response_completion CHECK (((((first_response_status)::text <> 'met'::text) OR (first_responded_at IS NOT NULL)) AND ((first_responded_at IS NULL) OR ((first_response_status)::text <> 'pending'::text)))),
-    CONSTRAINT case_slas_first_response_status CHECK (((first_response_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
+    CONSTRAINT case_slas_first_response_status CHECK (((first_response_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('met'::character varying)::text, ('breached'::character varying)::text]))),
     CONSTRAINT case_slas_paused_seconds CHECK ((paused_business_seconds >= 0)),
     CONSTRAINT case_slas_resolution_completion CHECK (((((resolution_status)::text <> 'met'::text) OR (resolved_at IS NOT NULL)) AND ((resolved_at IS NULL) OR ((resolution_status)::text <> 'pending'::text)))),
-    CONSTRAINT case_slas_resolution_status CHECK (((resolution_status)::text = ANY ((ARRAY['pending'::character varying, 'met'::character varying, 'breached'::character varying])::text[]))),
+    CONSTRAINT case_slas_resolution_status CHECK (((resolution_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('met'::character varying)::text, ('breached'::character varying)::text]))),
     CONSTRAINT case_slas_warning_before_due CHECK (((first_response_warning_at < first_response_due_at) AND (resolution_warning_at < resolution_due_at)))
 );
 
@@ -465,6 +490,76 @@ ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
+-- Name: email_message_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_message_links (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    shared_email_inbox_id bigint NOT NULL,
+    email_thread_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    conversation_message_id bigint NOT NULL,
+    message_id character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: email_message_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_message_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_message_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_message_links_id_seq OWNED BY public.email_message_links.id;
+
+
+--
+-- Name: email_threads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_threads (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    shared_email_inbox_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    thread_key character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: email_threads_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_threads_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_threads_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_threads_id_seq OWNED BY public.email_threads.id;
+
+
+--
 -- Name: identity_match_candidates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -499,6 +594,52 @@ CREATE SEQUENCE public.identity_match_candidates_id_seq
 --
 
 ALTER SEQUENCE public.identity_match_candidates_id_seq OWNED BY public.identity_match_candidates.id;
+
+
+--
+-- Name: inbound_email_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inbound_email_deliveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    shared_email_inbox_id bigint NOT NULL,
+    source_message_id character varying NOT NULL,
+    content_sha256 character varying NOT NULL,
+    raw_email bytea NOT NULL,
+    status character varying DEFAULT 'received'::character varying NOT NULL,
+    failure_code character varying,
+    conversation_id bigint,
+    conversation_message_id bigint,
+    received_at timestamp(6) without time zone NOT NULL,
+    processed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT inbound_email_deliveries_digest CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT inbound_email_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['parse_error'::character varying, 'missing_sender'::character varying, 'missing_message_id'::character varying, 'empty_body'::character varying, 'body_too_large'::character varying, 'identity_ambiguous'::character varying, 'identity_error'::character varying, 'persistence_error'::character varying])::text[])))),
+    CONSTRAINT inbound_email_deliveries_size CHECK ((octet_length(raw_email) <= 10485760)),
+    CONSTRAINT inbound_email_deliveries_state CHECK (((((status)::text = 'received'::text) AND (failure_code IS NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NULL)) OR (((status)::text = 'processed'::text) AND (failure_code IS NULL) AND (conversation_id IS NOT NULL) AND (conversation_message_id IS NOT NULL) AND (processed_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NOT NULL)))),
+    CONSTRAINT inbound_email_deliveries_status CHECK (((status)::text = ANY ((ARRAY['received'::character varying, 'processed'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: inbound_email_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.inbound_email_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: inbound_email_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.inbound_email_deliveries_id_seq OWNED BY public.inbound_email_deliveries.id;
 
 
 --
@@ -715,6 +856,42 @@ ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
 
 
 --
+-- Name: shared_email_inboxes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shared_email_inboxes (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    email_address character varying NOT NULL,
+    webhook_key character varying NOT NULL,
+    credential_key character varying NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: shared_email_inboxes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.shared_email_inboxes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: shared_email_inboxes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.shared_email_inboxes_id_seq OWNED BY public.shared_email_inboxes.id;
+
+
+--
 -- Name: sla_escalation_tasks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -728,9 +905,9 @@ CREATE TABLE public.sla_escalation_tasks (
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT sla_escalation_tasks_kind CHECK (((kind)::text = ANY ((ARRAY['warning'::character varying, 'breach'::character varying])::text[]))),
-    CONSTRAINT sla_escalation_tasks_objective CHECK (((objective)::text = ANY ((ARRAY['first_response'::character varying, 'resolution'::character varying])::text[]))),
-    CONSTRAINT sla_escalation_tasks_status CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'completed'::character varying])::text[])))
+    CONSTRAINT sla_escalation_tasks_kind CHECK (((kind)::text = ANY (ARRAY[('warning'::character varying)::text, ('breach'::character varying)::text]))),
+    CONSTRAINT sla_escalation_tasks_objective CHECK (((objective)::text = ANY (ARRAY[('first_response'::character varying)::text, ('resolution'::character varying)::text]))),
+    CONSTRAINT sla_escalation_tasks_status CHECK (((status)::text = ANY (ARRAY[('open'::character varying)::text, ('completed'::character varying)::text])))
 );
 
 
@@ -770,7 +947,7 @@ CREATE TABLE public.sla_policies (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT sla_policies_positive_targets CHECK (((first_response_minutes > 0) AND (resolution_minutes > 0))),
-    CONSTRAINT sla_policies_priority CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'urgent'::character varying])::text[]))),
+    CONSTRAINT sla_policies_priority CHECK (((priority)::text = ANY (ARRAY[('low'::character varying)::text, ('normal'::character varying)::text, ('high'::character varying)::text, ('urgent'::character varying)::text]))),
     CONSTRAINT sla_policies_warning_percent CHECK (((warning_percent >= 1) AND (warning_percent <= 99)))
 );
 
@@ -1196,10 +1373,31 @@ ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: email_message_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links ALTER COLUMN id SET DEFAULT nextval('public.email_message_links_id_seq'::regclass);
+
+
+--
+-- Name: email_threads id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_threads ALTER COLUMN id SET DEFAULT nextval('public.email_threads_id_seq'::regclass);
+
+
+--
 -- Name: identity_match_candidates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.identity_match_candidates ALTER COLUMN id SET DEFAULT nextval('public.identity_match_candidates_id_seq'::regclass);
+
+
+--
+-- Name: inbound_email_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries ALTER COLUMN id SET DEFAULT nextval('public.inbound_email_deliveries_id_seq'::regclass);
 
 
 --
@@ -1242,6 +1440,13 @@ ALTER TABLE ONLY public.service_calendars ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
+
+
+--
+-- Name: shared_email_inboxes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shared_email_inboxes ALTER COLUMN id SET DEFAULT nextval('public.shared_email_inboxes_id_seq'::regclass);
 
 
 --
@@ -1402,11 +1607,35 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: email_message_links email_message_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links
+    ADD CONSTRAINT email_message_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_threads email_threads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_threads
+    ADD CONSTRAINT email_threads_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: identity_match_candidates identity_match_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.identity_match_candidates
     ADD CONSTRAINT identity_match_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inbound_email_deliveries inbound_email_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries
+    ADD CONSTRAINT inbound_email_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -1463,6 +1692,14 @@ ALTER TABLE ONLY public.service_calendars
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shared_email_inboxes shared_email_inboxes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shared_email_inboxes
+    ADD CONSTRAINT shared_email_inboxes_pkey PRIMARY KEY (id);
 
 
 --
@@ -1558,6 +1795,13 @@ ALTER TABLE ONLY public.workspaces
 --
 
 CREATE UNIQUE INDEX idx_on_service_calendar_id_date_e0bbb87882 ON public.service_calendar_holidays USING btree (service_calendar_id, date);
+
+
+--
+-- Name: idx_on_shared_email_inbox_id_message_id_2a2dabc074; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public.email_message_links USING btree (shared_email_inbox_id, message_id);
 
 
 --
@@ -1813,6 +2057,48 @@ CREATE UNIQUE INDEX index_current_source_identity_keys ON public.source_identity
 
 
 --
+-- Name: index_email_message_links_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_email_message_links_on_workspace_id ON public.email_message_links USING btree (workspace_id);
+
+
+--
+-- Name: index_email_message_links_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_message_links_on_workspace_id_and_id ON public.email_message_links USING btree (workspace_id, id);
+
+
+--
+-- Name: index_email_threads_on_shared_email_inbox_id_and_thread_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_threads_on_shared_email_inbox_id_and_thread_key ON public.email_threads USING btree (shared_email_inbox_id, thread_key);
+
+
+--
+-- Name: index_email_threads_on_tenant_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_threads_on_tenant_conversation ON public.email_threads USING btree (workspace_id, shared_email_inbox_id, id, conversation_id);
+
+
+--
+-- Name: index_email_threads_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_email_threads_on_workspace_id ON public.email_threads USING btree (workspace_id);
+
+
+--
+-- Name: index_email_threads_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_threads_on_workspace_id_and_id ON public.email_threads USING btree (workspace_id, id);
+
+
+--
 -- Name: index_identity_candidates_on_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1831,6 +2117,34 @@ CREATE UNIQUE INDEX index_identity_candidates_on_contact ON public.identity_matc
 --
 
 CREATE INDEX index_identity_match_candidates_on_workspace_id ON public.identity_match_candidates USING btree (workspace_id);
+
+
+--
+-- Name: index_inbound_email_deliveries_on_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inbound_email_deliveries_on_source ON public.inbound_email_deliveries USING btree (shared_email_inbox_id, source_message_id);
+
+
+--
+-- Name: index_inbound_email_deliveries_on_visibility; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_inbound_email_deliveries_on_visibility ON public.inbound_email_deliveries USING btree (workspace_id, status, received_at);
+
+
+--
+-- Name: index_inbound_email_deliveries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_inbound_email_deliveries_on_workspace_id ON public.inbound_email_deliveries USING btree (workspace_id);
+
+
+--
+-- Name: index_inbound_email_deliveries_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inbound_email_deliveries_on_workspace_id_and_id ON public.inbound_email_deliveries USING btree (workspace_id, id);
 
 
 --
@@ -1936,6 +2250,34 @@ CREATE INDEX index_sessions_on_expires_at ON public.sessions USING btree (expire
 --
 
 CREATE INDEX index_sessions_on_user_id ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: index_shared_email_inboxes_on_webhook_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shared_email_inboxes_on_webhook_key ON public.shared_email_inboxes USING btree (webhook_key);
+
+
+--
+-- Name: index_shared_email_inboxes_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_shared_email_inboxes_on_workspace_id ON public.shared_email_inboxes USING btree (workspace_id);
+
+
+--
+-- Name: index_shared_email_inboxes_on_workspace_id_and_email_address; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shared_email_inboxes_on_workspace_id_and_email_address ON public.shared_email_inboxes USING btree (workspace_id, email_address);
+
+
+--
+-- Name: index_shared_email_inboxes_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shared_email_inboxes_on_workspace_id_and_id ON public.shared_email_inboxes USING btree (workspace_id, id);
 
 
 --
@@ -2191,6 +2533,48 @@ CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conve
 
 
 --
+-- Name: email_message_links email_message_links_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER email_message_links_append_only BEFORE DELETE OR UPDATE ON public.email_message_links FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: email_message_links email_message_links_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER email_message_links_no_truncate BEFORE TRUNCATE ON public.email_message_links FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: email_threads email_threads_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER email_threads_append_only BEFORE DELETE OR UPDATE ON public.email_threads FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: email_threads email_threads_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER email_threads_no_truncate BEFORE TRUNCATE ON public.email_threads FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: inbound_email_deliveries inbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER inbound_email_deliveries_no_truncate BEFORE TRUNCATE ON public.inbound_email_deliveries FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_inbound_email_source_mutation();
+
+
+--
+-- Name: inbound_email_deliveries inbound_email_deliveries_protect_source; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER inbound_email_deliveries_protect_source BEFORE DELETE OR UPDATE ON public.inbound_email_deliveries FOR EACH ROW EXECUTE FUNCTION public.prevent_inbound_email_source_mutation();
+
+
+--
 -- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2287,6 +2671,14 @@ ALTER TABLE ONLY public.case_slas
 
 ALTER TABLE ONLY public.contact_merges
     ADD CONSTRAINT fk_rails_105e45e7a0 FOREIGN KEY (merged_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: inbound_email_deliveries fk_rails_10f7f74b91; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries
+    ADD CONSTRAINT fk_rails_10f7f74b91 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -2514,6 +2906,14 @@ ALTER TABLE ONLY public.workspace_invitations
 
 
 --
+-- Name: inbound_email_deliveries fk_rails_7716af08ad; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries
+    ADD CONSTRAINT fk_rails_7716af08ad FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
 -- Name: conversation_messages fk_rails_7c459f2c0a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2543,6 +2943,22 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.source_identity_keys
     ADD CONSTRAINT fk_rails_8aa9bbdb8d FOREIGN KEY (workspace_id, source_identity_id) REFERENCES public.source_identities(workspace_id, id);
+
+
+--
+-- Name: email_threads fk_rails_8b36ff71d2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_threads
+    ADD CONSTRAINT fk_rails_8b36ff71d2 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: email_threads fk_rails_8d9401648e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_threads
+    ADD CONSTRAINT fk_rails_8d9401648e FOREIGN KEY (workspace_id, shared_email_inbox_id) REFERENCES public.shared_email_inboxes(workspace_id, id);
 
 
 --
@@ -2650,6 +3066,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: email_message_links fk_rails_b76245f589; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links
+    ADD CONSTRAINT fk_rails_b76245f589 FOREIGN KEY (workspace_id, shared_email_inbox_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, shared_email_inbox_id, id, conversation_id);
+
+
+--
 -- Name: accounts fk_rails_bac5365c2c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2674,6 +3098,14 @@ ALTER TABLE ONLY public.support_case_status_changes
 
 
 --
+-- Name: shared_email_inboxes fk_rails_c70ce652a0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shared_email_inboxes
+    ADD CONSTRAINT fk_rails_c70ce652a0 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: conversation_messages fk_rails_cd0fa9de6c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2690,11 +3122,35 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: inbound_email_deliveries fk_rails_d22cd212fa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries
+    ADD CONSTRAINT fk_rails_d22cd212fa FOREIGN KEY (workspace_id, shared_email_inbox_id) REFERENCES public.shared_email_inboxes(workspace_id, id);
+
+
+--
+-- Name: inbound_email_deliveries fk_rails_d25c9cc250; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_email_deliveries
+    ADD CONSTRAINT fk_rails_d25c9cc250 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
 -- Name: audit_events fk_rails_dd1f3a471a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT fk_rails_dd1f3a471a FOREIGN KEY (actor_id) REFERENCES public.users(id);
+
+
+--
+-- Name: email_message_links fk_rails_de7eae5c16; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links
+    ADD CONSTRAINT fk_rails_de7eae5c16 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -2714,6 +3170,30 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: email_threads fk_rails_ea636c8d06; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_threads
+    ADD CONSTRAINT fk_rails_ea636c8d06 FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
+-- Name: email_message_links fk_rails_edb13a72d9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links
+    ADD CONSTRAINT fk_rails_edb13a72d9 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: email_message_links fk_rails_fad997ec9c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_message_links
+    ADD CONSTRAINT fk_rails_fad997ec9c FOREIGN KEY (workspace_id, shared_email_inbox_id) REFERENCES public.shared_email_inboxes(workspace_id, id);
+
+
+--
 -- Name: contact_merges fk_rails_fd7d089b62; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2728,6 +3208,7 @@ ALTER TABLE ONLY public.contact_merges
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260823200307'),
 ('20260823200306'),
 ('20260823200305'),
 ('20260823200304'),

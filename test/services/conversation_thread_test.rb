@@ -140,6 +140,22 @@ class ConversationThreadTest < ActiveSupport::TestCase
     AuditEvent.singleton_class.define_method(:record!, original_record) if original_record
   end
 
+  test "inbound start rolls back conversation case message and SLA when audit fails" do
+    original_record = AuditEvent.method(:record!)
+    AuditEvent.singleton_class.define_method(:record!) { |**| raise ActiveRecord::RecordInvalid, AuditEvent.new }
+
+    assert_no_difference [ "Conversation.count", "SupportCase.count", "ConversationMessage.count", "CaseSla.count" ] do
+      assert_raises(ActiveRecord::RecordInvalid) do
+        ConversationThread.start_inbound!(
+          workspace: workspaces(:acme_support), contact: contacts(:alice), subject: "Inbound",
+          body: "Please help", occurred_at: Time.current, source: :integration
+        )
+      end
+    end
+  ensure
+    AuditEvent.singleton_class.define_method(:record!, original_record) if original_record
+  end
+
   private
     def start_conversation
       ConversationThread.start!(

@@ -1,7 +1,13 @@
 Rails.application.routes.draw do
+  namespace :webhooks do
+    post "shared-email/:webhook_key", to: "shared_email#create", as: :shared_email
+  end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
     resources :workspace_invitations, only: %i[ index create destroy ]
+    resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
+      post :reconcile, on: :member
+    end
     resources :support_cases, path: "cases", only: %i[ index show ] do
       member do
         patch :transition, controller: "support_case_commands"

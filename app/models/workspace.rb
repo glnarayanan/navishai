@@ -24,6 +24,10 @@ class Workspace < ApplicationRecord
   has_many :sla_policies, dependent: :restrict_with_exception
   has_many :case_slas, dependent: :restrict_with_exception
   has_many :sla_escalation_tasks, dependent: :restrict_with_exception
+  has_many :shared_email_inboxes, dependent: :restrict_with_exception
+  has_many :email_threads, dependent: :restrict_with_exception
+  has_many :inbound_email_deliveries, dependent: :restrict_with_exception
+  has_many :email_message_links, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
