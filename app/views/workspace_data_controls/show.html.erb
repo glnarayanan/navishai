@@ -1,0 +1,49 @@
+<% content_for :title, "Data controls · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell data-controls-shell">
+  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading">
+    <h1>Data controls</h1>
+    <p>Set how long this workspace keeps customer content and its separate audit record.</p>
+  </div>
+
+  <section class="data-policy-summary" aria-labelledby="retention-boundary-title">
+    <div>
+      <h2 id="retention-boundary-title">Two retention boundaries</h2>
+      <p>Customer content includes conversations, source mail, attachments, knowledge, execution evidence, and Memory. Audit events hold action, actor, time, and safe metadata—not copied customer content.</p>
+    </div>
+    <dl>
+      <div><dt>Content</dt><dd><%= @policy.content_retention_days ? pluralize(@policy.content_retention_days, "day") : "No automatic expiry" %></dd></div>
+      <div><dt>Audit</dt><dd><%= @policy.audit_retention_days ? pluralize(@policy.audit_retention_days, "day") : "No automatic expiry" %></dd></div>
+    </dl>
+  </section>
+
+  <section class="section-block data-policy-form-section" aria-labelledby="retention-policy-title">
+    <div>
+      <h2 id="retention-policy-title">Retention policy</h2>
+      <p>Saving records the boundary but does not delete data. Deletion runs only through the separate audited expiry operation.</p>
+    </div>
+
+    <%= render "shared/form_errors", record: @policy %>
+    <%= form_with model: @policy, url: workspace_data_controls_path(Current.workspace), method: :patch,
+      class: "data-policy-form" do |form| %>
+      <div class="field">
+        <%= form.label :content_retention_days, "Customer content" %>
+        <%= form.select :content_retention_days,
+          options_for_select([[ "No automatic expiry", "" ]] + WorkspaceDataPolicy::CONTENT_RETENTION_OPTIONS.map { |days| [distance_of_time_in_words(days.days), days] }, @policy.content_retention_days),
+          {}, aria: { describedby: "content-retention-hint" } %>
+        <span class="field-hint" id="content-retention-hint">The clock starts from each source record's trusted receipt or creation time.</span>
+      </div>
+
+      <div class="field">
+        <%= form.label :audit_retention_days, "Security and approval audit" %>
+        <%= form.select :audit_retention_days,
+          options_for_select([[ "No automatic expiry", "" ]] + WorkspaceDataPolicy::AUDIT_RETENTION_OPTIONS.map { |days| [distance_of_time_in_words(days.days), days] }, @policy.audit_retention_days),
+          {}, aria: { describedby: "audit-retention-hint" } %>
+        <span class="field-hint" id="audit-retention-hint">Audit retention cannot be shorter than content retention.</span>
+      </div>
+
+      <%= form.submit "Save retention policy", class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>

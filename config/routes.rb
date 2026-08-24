@@ -6,6 +6,7 @@ Rails.application.routes.draw do
   end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
+    resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls"
     resources :workspace_invitations, only: %i[ index create destroy ]
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
       post :reconcile, on: :member

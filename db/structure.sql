@@ -1276,20 +1276,17 @@ $$;
 CREATE FUNCTION public.validate_agent_profile_version() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-DECLARE
-  role text;
-  maximum_tools jsonb;
+DECLARE role text; maximum_tools jsonb;
 BEGIN
   SELECT role_key INTO role FROM agent_profiles
-  WHERE id = NEW.agent_profile_id AND workspace_id = NEW.workspace_id
-  FOR UPDATE;
+  WHERE id = NEW.agent_profile_id AND workspace_id = NEW.workspace_id FOR UPDATE;
   maximum_tools := CASE role
     WHEN 'support_coordinator' THEN '["conversation_read", "case_read"]'::jsonb
-    WHEN 'support_investigator' THEN '["conversation_read", "case_read", "knowledge_search", "public_web_search", "web_extract"]'::jsonb
+    WHEN 'support_investigator' THEN '["conversation_read","case_read","knowledge_search","public_web_search","web_extract"]'::jsonb
     WHEN 'resolution_drafter' THEN '["conversation_read", "case_read", "knowledge_search", "draft_propose"]'::jsonb
     WHEN 'support_reviewer' THEN '["conversation_read", "case_read", "knowledge_search", "review_record"]'::jsonb
     WHEN 'account_analyst' THEN '["account_read", "conversation_read"]'::jsonb
-    WHEN 'risk_investigator' THEN '["account_read", "conversation_read", "knowledge_search", "public_web_search", "web_extract"]'::jsonb
+    WHEN 'risk_investigator' THEN '["account_read","conversation_read","knowledge_search","public_web_search","web_extract"]'::jsonb
     WHEN 'success_strategist' THEN '["account_read", "knowledge_search", "note_propose"]'::jsonb
     WHEN 'success_reviewer' THEN '["account_read", "knowledge_search", "review_record"]'::jsonb
   END;
@@ -1777,11 +1774,11 @@ CREATE TABLE public.agent_profile_versions (
     updated_at timestamp(6) without time zone NOT NULL,
     memory_required boolean DEFAULT false NOT NULL,
     CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
-    CONSTRAINT agent_profile_versions_budget CHECK (((timeout_seconds >= 30) AND (timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT agent_profile_versions_budget CHECK ((((timeout_seconds >= 30) AND (timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
     CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
-    CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY (ARRAY[('required'::character varying)::text, ('on_policy_flag'::character varying)::text]))),
-    CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
+    CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY ((ARRAY['required'::character varying, 'on_policy_flag'::character varying])::text[]))),
+    CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
     CONSTRAINT agent_profile_versions_tools CHECK (((jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record", "web_extract"]'::jsonb)))
 );
 
@@ -1819,7 +1816,7 @@ CREATE TABLE public.agent_profiles (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT agent_profiles_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100))),
-    CONSTRAINT agent_profiles_role CHECK (((role_key)::text = ANY (ARRAY[('support_coordinator'::character varying)::text, ('support_investigator'::character varying)::text, ('resolution_drafter'::character varying)::text, ('support_reviewer'::character varying)::text, ('account_analyst'::character varying)::text, ('risk_investigator'::character varying)::text, ('success_strategist'::character varying)::text, ('success_reviewer'::character varying)::text])))
+    CONSTRAINT agent_profiles_role CHECK (((role_key)::text = ANY ((ARRAY['support_coordinator'::character varying, 'support_investigator'::character varying, 'resolution_drafter'::character varying, 'support_reviewer'::character varying, 'account_analyst'::character varying, 'risk_investigator'::character varying, 'success_strategist'::character varying, 'success_reviewer'::character varying])::text[])))
 );
 
 
@@ -2189,11 +2186,11 @@ CREATE TABLE public.crew_artifacts (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
-    CONSTRAINT crew_artifacts_content CHECK (((octet_length(body) >= 1) AND (octet_length(body) <= 51200) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
+    CONSTRAINT crew_artifacts_content CHECK ((((octet_length(body) >= 1) AND (octet_length(body) <= 51200)) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
     CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY (ARRAY[('investigation'::character varying)::text, ('draft'::character varying)::text, ('quality_review'::character varying)::text, ('account_analysis'::character varying)::text, ('risk_investigation'::character varying)::text, ('intervention_plan'::character varying)::text, ('success_review'::character varying)::text]))),
-    CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
-    CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = ANY (ARRAY[('quality_review'::character varying)::text, ('success_review'::character varying)::text])) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> ALL (ARRAY[('quality_review'::character varying)::text, ('success_review'::character varying)::text])) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
+    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY ((ARRAY['investigation'::character varying, 'draft'::character varying, 'quality_review'::character varying, 'account_analysis'::character varying, 'risk_investigation'::character varying, 'intervention_plan'::character varying, 'success_review'::character varying])::text[]))),
+    CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
+    CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = ANY ((ARRAY['quality_review'::character varying, 'success_review'::character varying])::text[])) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> ALL ((ARRAY['quality_review'::character varying, 'success_review'::character varying])::text[])) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
     CONSTRAINT crew_artifacts_version CHECK ((version_number > 0))
 );
 
@@ -2279,13 +2276,13 @@ CREATE TABLE public.crew_task_events (
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT crew_task_events_actor CHECK ((((actor_membership_id IS NULL) AND (actor_user_id IS NULL)) OR ((actor_membership_id IS NOT NULL) AND (actor_user_id IS NOT NULL)))),
     CONSTRAINT crew_task_events_body CHECK (((body IS NULL) OR ((octet_length(body) >= 1) AND (octet_length(body) <= 20000)))),
-    CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY (ARRAY[('conversation'::character varying)::text, ('case'::character varying)::text, ('account'::character varying)::text, ('knowledge'::character varying)::text, ('public_web'::character varying)::text, ('other'::character varying)::text])))),
+    CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY ((ARRAY['conversation'::character varying, 'case'::character varying, 'account'::character varying, 'knowledge'::character varying, 'public_web'::character varying, 'other'::character varying])::text[])))),
     CONSTRAINT crew_task_events_evidence_locator CHECK (((evidence_locator IS NULL) OR ((octet_length((evidence_locator)::text) >= 1) AND (octet_length((evidence_locator)::text) <= 2000)))),
-    CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY (ARRAY[('created'::character varying)::text, ('status_changed'::character varying)::text, ('handoff'::character varying)::text, ('comment'::character varying)::text, ('evidence_added'::character varying)::text, ('review_requested'::character varying)::text, ('review_resolved'::character varying)::text, ('outcome_recorded'::character varying)::text]))),
-    CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY (ARRAY[('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))),
-    CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
+    CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY ((ARRAY['created'::character varying, 'status_changed'::character varying, 'handoff'::character varying, 'comment'::character varying, 'evidence_added'::character varying, 'review_requested'::character varying, 'review_resolved'::character varying, 'outcome_recorded'::character varying])::text[]))),
+    CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
     CONSTRAINT crew_task_events_sequence CHECK ((sequence_number > 0)),
-    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('system'::character varying)::text])))
+    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'task'::character varying, 'runner'::character varying, 'system'::character varying])::text[])))
 );
 
 
@@ -2331,9 +2328,9 @@ CREATE TABLE public.crew_tasks (
     current_event_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT crew_tasks_content CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
+    CONSTRAINT crew_tasks_content CHECK ((((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
     CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
-    CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('in_progress'::character varying)::text, ('blocked'::character varying)::text, ('review_requested'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))
+    CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'in_progress'::character varying, 'blocked'::character varying, 'review_requested'::character varying, 'completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))
 );
 
 
@@ -2367,7 +2364,7 @@ CREATE TABLE public.crew_templates (
     name character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT crew_templates_kind CHECK (((crew_kind)::text = ANY (ARRAY[('support'::character varying)::text, ('customer_success'::character varying)::text]))),
+    CONSTRAINT crew_templates_kind CHECK (((crew_kind)::text = ANY ((ARRAY['support'::character varying, 'customer_success'::character varying])::text[]))),
     CONSTRAINT crew_templates_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100)))
 );
 
@@ -2554,7 +2551,7 @@ CREATE TABLE public.execution_events (
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT execution_events_payload CHECK (((octet_length((data)::text) <= 131072) AND ((payload_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT execution_events_sequence CHECK ((sequence_number > 0)),
-    CONSTRAINT execution_events_type CHECK (((event_type)::text = ANY (ARRAY[('run.admitted'::character varying)::text, ('run.started'::character varying)::text, ('tool.completed'::character varying)::text, ('output.produced'::character varying)::text, ('usage.observed'::character varying)::text, ('run.completed'::character varying)::text, ('run.failed'::character varying)::text, ('run.timed_out'::character varying)::text, ('run.canceled'::character varying)::text, ('run.policy_denied'::character varying)::text])))
+    CONSTRAINT execution_events_type CHECK (((event_type)::text = ANY ((ARRAY['run.admitted'::character varying, 'run.started'::character varying, 'tool.completed'::character varying, 'output.produced'::character varying, 'usage.observed'::character varying, 'run.completed'::character varying, 'run.failed'::character varying, 'run.timed_out'::character varying, 'run.canceled'::character varying, 'run.policy_denied'::character varying])::text[])))
 );
 
 
@@ -2590,7 +2587,7 @@ CREATE TABLE public.execution_memory_selections (
     relevance_score numeric(6,5) NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT execution_memory_selections_bounds CHECK (((rank >= 1) AND (rank <= 8) AND ((relevance_score >= 0.00000) AND (relevance_score <= 1.00000))))
+    CONSTRAINT execution_memory_selections_bounds CHECK ((((rank >= 1) AND (rank <= 8)) AND ((relevance_score >= 0.00000) AND (relevance_score <= 1.00000))))
 );
 
 
@@ -2657,16 +2654,16 @@ CREATE TABLE public.execution_runs (
     memory_context_status character varying DEFAULT 'not_applicable'::character varying NOT NULL,
     memory_context_detail character varying,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
-    CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
+    CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
-    CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
+    CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY ((ARRAY['not_applicable'::character varying, 'available'::character varying, 'degraded'::character varying])::text[])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
-    CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND ((runtime_selection_reason)::text = ANY (ARRAY[('primary'::character varying)::text, ('fallback'::character varying)::text])))),
+    CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND ((runtime_selection_reason)::text = ANY ((ARRAY['primary'::character varying, 'fallback'::character varying])::text[])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
-    CONSTRAINT execution_runs_status CHECK (((status)::text = ANY (ARRAY[('admitting'::character varying)::text, ('admitted'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('timed_out'::character varying)::text, ('canceled'::character varying)::text, ('policy_denied'::character varying)::text])))
+    CONSTRAINT execution_runs_status CHECK (((status)::text = ANY ((ARRAY['admitting'::character varying, 'admitted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'timed_out'::character varying, 'canceled'::character varying, 'policy_denied'::character varying])::text[])))
 );
 
 
@@ -3378,8 +3375,8 @@ CREATE TABLE public.knowledge_sources (
     CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
     CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
-    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('url'::character varying)::text, ('upload'::character varying)::text, ('intercom_help_center'::character varying)::text]))),
-    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
+    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'url'::character varying, 'upload'::character varying, 'intercom_help_center'::character varying])::text[]))),
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'upload'::character varying])::text[])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
 );
 
 
@@ -3459,8 +3456,8 @@ CREATE TABLE public.memory_correction_proposals (
     reviewed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT memory_corrections_content CHECK (((octet_length(content) >= 1) AND (octet_length(content) <= 32768) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
-    CONSTRAINT memory_corrections_retention CHECK ((((retention_policy)::text = ANY (ARRAY[('indefinite'::character varying)::text, ('time_bound'::character varying)::text])) AND ((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL)) OR (((retention_policy)::text = 'indefinite'::text) AND (retention_until IS NULL))))),
+    CONSTRAINT memory_corrections_content CHECK ((((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_corrections_retention CHECK ((((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying])::text[])) AND ((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL)) OR (((retention_policy)::text = 'indefinite'::text) AND (retention_until IS NULL))))),
     CONSTRAINT memory_corrections_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL))))
 );
 
@@ -3502,10 +3499,10 @@ CREATE TABLE public.memory_index_entries (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT memory_index_entries_document CHECK (((external_document_id IS NULL) OR ((octet_length((external_document_id)::text) >= 1) AND (octet_length((external_document_id)::text) <= 200)))),
-    CONSTRAINT memory_index_entries_external_status CHECK (((external_status IS NULL) OR ((external_status)::text = ANY (ARRAY[('queued'::character varying)::text, ('extracting'::character varying)::text, ('chunking'::character varying)::text, ('embedding'::character varying)::text, ('done'::character varying)::text, ('failed'::character varying)::text])))),
+    CONSTRAINT memory_index_entries_external_status CHECK (((external_status IS NULL) OR ((external_status)::text = ANY ((ARRAY['queued'::character varying, 'extracting'::character varying, 'chunking'::character varying, 'embedding'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))),
     CONSTRAINT memory_index_entries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))),
-    CONSTRAINT memory_index_entries_result CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (external_document_id IS NULL) AND (external_status IS NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexing'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'queued'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND (external_status IS NOT NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexed'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND ((external_status)::text = 'done'::text) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NOT NULL)) OR (((status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)))),
-    CONSTRAINT memory_index_entries_state CHECK ((((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('indexing'::character varying)::text, ('queued'::character varying)::text, ('indexed'::character varying)::text, ('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count >= 0)))
+    CONSTRAINT memory_index_entries_result CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (external_document_id IS NULL) AND (external_status IS NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexing'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'queued'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND (external_status IS NOT NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexed'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND ((external_status)::text = 'done'::text) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)))),
+    CONSTRAINT memory_index_entries_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'indexing'::character varying, 'queued'::character varying, 'indexed'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count >= 0)))
 );
 
 
@@ -3554,7 +3551,7 @@ CREATE TABLE public.memory_proposals (
     reviewed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT memory_proposals_content CHECK ((((memory_type)::text = ANY (ARRAY[('semantic'::character varying)::text, ('profile'::character varying)::text])) AND ((scope_kind)::text = ANY (ARRAY[('account'::character varying)::text, ('contact'::character varying)::text, ('support_case'::character varying)::text])) AND ((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_proposals_content CHECK ((((memory_type)::text = ANY ((ARRAY['semantic'::character varying, 'profile'::character varying])::text[])) AND ((scope_kind)::text = ANY ((ARRAY['account'::character varying, 'contact'::character varying, 'support_case'::character varying])::text[])) AND ((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
     CONSTRAINT memory_proposals_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL)))),
     CONSTRAINT memory_proposals_scope CHECK (((((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL))))
 );
@@ -3616,24 +3613,24 @@ CREATE TABLE public.memory_records (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     capture_key character varying,
-    CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY (ARRAY[('inference'::character varying)::text, ('source_record'::character varying)::text, ('human_correction'::character varying)::text]))),
+    CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY ((ARRAY['inference'::character varying, 'source_record'::character varying, 'human_correction'::character varying])::text[]))),
     CONSTRAINT memory_records_capture_key CHECK (((capture_key IS NULL) OR ((octet_length((capture_key)::text) >= 1) AND (octet_length((capture_key)::text) <= 200)))),
     CONSTRAINT memory_records_confidence CHECK (((confidence >= 0.000) AND (confidence <= 1.000))),
-    CONSTRAINT memory_records_content CHECK (((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
+    CONSTRAINT memory_records_content CHECK ((((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
     CONSTRAINT memory_records_correction_authority CHECK ((((authority)::text <> 'human_correction'::text) OR ((origin_kind)::text = 'human'::text))),
     CONSTRAINT memory_records_digests CHECK ((((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT memory_records_inference_authority CHECK ((((authority)::text <> 'inference'::text) OR ((origin_kind)::text = 'agent'::text))),
     CONSTRAINT memory_records_no_self_supersession CHECK (((supersedes_memory_record_id IS NULL) OR (supersedes_memory_record_id <> id))),
-    CONSTRAINT memory_records_origin_kind CHECK (((origin_kind)::text = ANY (ARRAY[('system'::character varying)::text, ('agent'::character varying)::text, ('human'::character varying)::text]))),
+    CONSTRAINT memory_records_origin_kind CHECK (((origin_kind)::text = ANY ((ARRAY['system'::character varying, 'agent'::character varying, 'human'::character varying])::text[]))),
     CONSTRAINT memory_records_origin_shape CHECK (((((origin_kind)::text = 'system'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'agent'::text) AND (source_agent_profile_id IS NOT NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'human'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NOT NULL) AND (source_user_id IS NOT NULL)))),
     CONSTRAINT memory_records_procedural_authority CHECK ((((memory_type)::text <> 'procedural'::text) OR ((authority)::text = 'human_correction'::text))),
-    CONSTRAINT memory_records_retention_policy CHECK (((retention_policy)::text = ANY (ARRAY[('indefinite'::character varying)::text, ('time_bound'::character varying)::text, ('source_lifetime'::character varying)::text]))),
+    CONSTRAINT memory_records_retention_policy CHECK (((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying, 'source_lifetime'::character varying])::text[]))),
     CONSTRAINT memory_records_retention_shape CHECK (((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL) AND (retention_until > observed_at)) OR (((retention_policy)::text <> 'time_bound'::text) AND (retention_until IS NULL)))),
-    CONSTRAINT memory_records_scope_kind CHECK (((scope_kind)::text = ANY (ARRAY[('organization'::character varying)::text, ('workspace'::character varying)::text, ('account'::character varying)::text, ('contact'::character varying)::text, ('support_case'::character varying)::text, ('crew'::character varying)::text, ('agent'::character varying)::text, ('user'::character varying)::text]))),
+    CONSTRAINT memory_records_scope_kind CHECK (((scope_kind)::text = ANY ((ARRAY['organization'::character varying, 'workspace'::character varying, 'account'::character varying, 'contact'::character varying, 'support_case'::character varying, 'crew'::character varying, 'agent'::character varying, 'user'::character varying])::text[]))),
     CONSTRAINT memory_records_scope_shape CHECK (((((scope_kind)::text = 'organization'::text) AND (organization_id IS NOT NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'workspace'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (organization_id IS NULL) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'crew'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NOT NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'agent'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NOT NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'user'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NOT NULL)))),
     CONSTRAINT memory_records_source_authority CHECK ((((authority)::text <> 'source_record'::text) OR ((origin_kind)::text <> 'agent'::text))),
     CONSTRAINT memory_records_source_reference CHECK (((octet_length((source_reference)::text) >= 1) AND (octet_length((source_reference)::text) <= 2048))),
-    CONSTRAINT memory_records_type CHECK (((memory_type)::text = ANY (ARRAY[('episodic'::character varying)::text, ('semantic'::character varying)::text, ('profile'::character varying)::text, ('procedural'::character varying)::text]))),
+    CONSTRAINT memory_records_type CHECK (((memory_type)::text = ANY ((ARRAY['episodic'::character varying, 'semantic'::character varying, 'profile'::character varying, 'procedural'::character varying])::text[]))),
     CONSTRAINT memory_records_valid_time CHECK (((valid_until IS NULL) OR (valid_until > valid_from)))
 );
 
@@ -3676,7 +3673,7 @@ CREATE TABLE public.memory_tombstones (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT memory_tombstones_reason CHECK (((octet_length((reason)::text) >= 1) AND (octet_length((reason)::text) <= 500))),
-    CONSTRAINT memory_tombstones_state CHECK (((((index_status)::text = 'pending'::text) AND (attempt_count = 0) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removing'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removed'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NOT NULL)) OR (((index_status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL))))
+    CONSTRAINT memory_tombstones_state CHECK (((((index_status)::text = 'pending'::text) AND (attempt_count = 0) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removing'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removed'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NOT NULL)) OR (((index_status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL))))
 );
 
 
@@ -3837,7 +3834,7 @@ CREATE TABLE public.public_web_extractions (
     source_updated_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT public_web_extractions_identity CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((status)::text = ANY (ARRAY[('extracting'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((octet_length(source_url) >= 9) AND (octet_length(source_url) <= 2048)) AND (source_url ~ '^https://'::text))),
+    CONSTRAINT public_web_extractions_identity CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((status)::text = ANY ((ARRAY['extracting'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((octet_length(source_url) >= 9) AND (octet_length(source_url) <= 2048)) AND (source_url ~ '^https://'::text))),
     CONSTRAINT public_web_extractions_result CHECK (((((status)::text = 'extracting'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((octet_length(final_url) >= 9) AND (octet_length(final_url) <= 2048)) AND (final_url ~ '^https://'::text) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 1048576)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL))))
 );
 
@@ -3879,7 +3876,7 @@ CREATE TABLE public.public_web_search_results (
     content_digest character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT public_web_search_results_content CHECK (((rank >= 1) AND (rank <= 10) AND ((citation_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text) AND ((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 500)) AND ((octet_length(url) >= 9) AND (octet_length(url) <= 2048)) AND (url ~ '^https://'::text) AND (octet_length(excerpt) <= 4000) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+    CONSTRAINT public_web_search_results_content CHECK ((((rank >= 1) AND (rank <= 10)) AND ((citation_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text) AND ((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 500)) AND ((octet_length(url) >= 9) AND (octet_length(url) <= 2048)) AND (url ~ '^https://'::text) AND (octet_length(excerpt) <= 4000) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text)))
 );
 
 
@@ -3923,7 +3920,7 @@ CREATE TABLE public.public_web_searches (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT public_web_searches_result CHECK (((((status)::text = 'searching'::text) AND (provider_key IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (provider_key IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL)))),
-    CONSTRAINT public_web_searches_state CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY (ARRAY[('searching'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((policy_decision)::text = ANY (ARRAY[('allowed'::character varying)::text, ('redacted'::character varying)::text])) AND (cost_units >= 0)))
+    CONSTRAINT public_web_searches_state CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY ((ARRAY['searching'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((policy_decision)::text = ANY ((ARRAY['allowed'::character varying, 'redacted'::character varying])::text[])) AND (cost_units >= 0)))
 );
 
 
@@ -3982,14 +3979,14 @@ CREATE TABLE public.runtime_installations (
     max_input_units bigint DEFAULT 100000 NOT NULL,
     max_output_units bigint DEFAULT 25000 NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
-    CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT runtime_installations_budgets CHECK ((((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
     CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 9) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
     CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
-    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
-    CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
+    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[])))),
+    CONSTRAINT runtime_installations_unit_budgets CHECK ((((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
 
@@ -4344,11 +4341,11 @@ CREATE TABLE public.stored_attachments (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT stored_attachments_actor CHECK (((((source)::text = 'inbound_email'::text) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
-    CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY (ARRAY[('available'::character varying)::text, ('rejected'::character varying)::text])) AND (scanned_at IS NOT NULL))))),
-    CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY (ARRAY[('quarantined'::character varying)::text, ('available'::character varying)::text, ('rejected'::character varying)::text]))),
+    CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY ((ARRAY['available'::character varying, 'rejected'::character varying])::text[])) AND (scanned_at IS NOT NULL))))),
+    CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY ((ARRAY['quarantined'::character varying, 'available'::character varying, 'rejected'::character varying])::text[]))),
     CONSTRAINT stored_attachments_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT stored_attachments_size CHECK (((byte_size >= 1) AND (byte_size <= 5242880))),
-    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY (ARRAY[('inbound_email'::character varying)::text, ('user_upload'::character varying)::text])))
+    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'user_upload'::character varying])::text[])))
 );
 
 
@@ -4552,6 +4549,42 @@ CREATE SEQUENCE public.users_id_seq
 --
 
 ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
+
+
+--
+-- Name: workspace_data_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_data_policies (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    content_retention_days integer,
+    audit_retention_days integer,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT workspace_data_policies_audit_covers_content CHECK (((audit_retention_days IS NULL) OR (content_retention_days IS NULL) OR (audit_retention_days >= content_retention_days))),
+    CONSTRAINT workspace_data_policies_audit_retention CHECK (((audit_retention_days IS NULL) OR (audit_retention_days = ANY (ARRAY[365, 730, 1825, 2555, 3650])))),
+    CONSTRAINT workspace_data_policies_content_retention CHECK (((content_retention_days IS NULL) OR (content_retention_days = ANY (ARRAY[30, 90, 180, 365, 730, 1825]))))
+);
+
+
+--
+-- Name: workspace_data_policies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_data_policies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workspace_data_policies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workspace_data_policies_id_seq OWNED BY public.workspace_data_policies.id;
 
 
 --
@@ -5152,6 +5185,13 @@ ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: workspace_data_policies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_data_policies ALTER COLUMN id SET DEFAULT nextval('public.workspace_data_policies_id_seq'::regclass);
 
 
 --
@@ -5782,6 +5822,14 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_data_policies workspace_data_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_data_policies
+    ADD CONSTRAINT workspace_data_policies_pkey PRIMARY KEY (id);
 
 
 --
@@ -7859,6 +7907,13 @@ CREATE UNIQUE INDEX index_users_on_unique_break_glass ON public.users USING btre
 
 
 --
+-- Name: index_workspace_data_policies_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_workspace_data_policies_on_workspace_id ON public.workspace_data_policies USING btree (workspace_id);
+
+
+--
 -- Name: index_workspace_invitations_on_accepted_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9330,6 +9385,14 @@ ALTER TABLE ONLY public.support_case_taggings
 
 
 --
+-- Name: workspace_data_policies fk_rails_419333edb5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_data_policies
+    ADD CONSTRAINT fk_rails_419333edb5 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: health_scorecards fk_rails_422df8aa02; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10712,6 +10775,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824230000'),
 ('20260824220000'),
 ('20260824210000'),
 ('20260824200000'),

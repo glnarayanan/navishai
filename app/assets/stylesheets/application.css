@@ -3600,6 +3600,7 @@ td {
 .scorecard-form { display: grid; gap: 1.5rem; }
 .scorecard-goal textarea { width: 100%; resize: vertical; }
 .scorecard-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+
 .scorecard-form legend { margin-bottom: 0.75rem; font-weight: 700; }
 
 .scorecard-signal-map { display: grid; border-top: 1px solid var(--line) !important; }
@@ -3697,4 +3698,74 @@ td {
   .scorecard-preview-stats div:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); }
   .scorecard-preview-stats div:last-child { border-bottom: 0; }
   .scorecard-history a { align-items: flex-start; flex-direction: column; }
+}
+
+.data-controls-shell {
+  max-width: 56rem;
+}
+
+.data-policy-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 0.8fr);
+  gap: 2rem;
+  align-items: start;
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.data-policy-summary > div,
+.data-policy-form-section > div {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.data-policy-summary dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.data-policy-summary dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(18, 99, 79, 0.22);
+}
+
+.data-policy-summary dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.data-policy-summary dd {
+  margin: 0;
+  font-weight: 650;
+  text-align: right;
+}
+
+.data-policy-form-section {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(18rem, 1.2fr);
+  gap: 2rem;
+}
+
+.data-policy-form {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.data-policy-form .button {
+  justify-self: start;
+}
+
+@media (max-width: 44rem) {
+  .data-policy-summary,
+  .data-policy-form-section {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
 }
