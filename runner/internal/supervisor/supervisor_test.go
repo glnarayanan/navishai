@@ -3,8 +3,11 @@
 package supervisor
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +63,48 @@ func TestRunUsesOnlyScopedEnvironment(t *testing.T) {
 	}
 	if result.StandardOutput != "present|" {
 		t.Fatalf("unexpected environment %q", result.StandardOutput)
+	}
+}
+
+func TestInteractUsesBoundedBidirectionalStdio(t *testing.T) {
+	working := t.TempDir()
+	result, err := testSupervisor(t, working).Interact(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"echo"}, WorkingDir: working,
+	}, func(_ context.Context, stream io.ReadWriter) error {
+		if _, err := io.WriteString(stream, "request\n"); err != nil {
+			return err
+		}
+		line, err := bufio.NewReader(stream).ReadString('\n')
+		if err != nil || line != "response:request\n" {
+			return fmt.Errorf("unexpected response %q: %w", line, err)
+		}
+		return nil
+	})
+	if err != nil || result.ExitCode != 0 || result.StandardOutput != "response:request\n" {
+		t.Fatalf("interaction result=%#v err=%v", result, err)
+	}
+}
+
+func TestInteractEnforcesInputAndOutputBounds(t *testing.T) {
+	working := t.TempDir()
+	value := testSupervisor(t, working)
+	result, err := value.Interact(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"echo"}, WorkingDir: working,
+	}, func(_ context.Context, stream io.ReadWriter) error {
+		_, writeErr := stream.Write(make([]byte, maxInputBytes+1))
+		return writeErr
+	})
+	if !errors.Is(err, ErrInvalidRequest) || result.OutputExceeded {
+		t.Fatalf("input limit result=%#v err=%v", result, err)
+	}
+	result, err = value.Interact(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"output"}, WorkingDir: working,
+	}, func(_ context.Context, stream io.ReadWriter) error {
+		_, readErr := io.Copy(io.Discard, stream)
+		return readErr
+	})
+	if !errors.Is(err, ErrOutputLimit) || !result.OutputExceeded {
+		t.Fatalf("output limit result=%#v err=%v", result, err)
 	}
 }
 
@@ -387,6 +432,7 @@ func targetPath() string { return filepath.Join(testBinaries, "target") }
 
 const testTarget = `package main
 import (
+	"bufio"
   "fmt"
   "os"
   "os/exec"
@@ -398,6 +444,7 @@ import (
 func main() {
   switch os.Args[1] {
   case "environment": fmt.Print(os.Getenv("SCOPED_TOKEN") + "|" + os.Getenv("HOST_SECRET"))
+	case "echo": scanner := bufio.NewScanner(os.Stdin); if scanner.Scan() { fmt.Println("response:" + scanner.Text()) }
   case "read": _, err := os.ReadFile(os.Args[2]); fmt.Print(err)
   case "write": if err := os.WriteFile(os.Args[2], []byte("result"), 0600); err != nil { fmt.Print(err); os.Exit(1) }
   case "socket": _, _, errno := syscall.Syscall(syscall.SYS_SOCKET, syscall.AF_INET, syscall.SOCK_STREAM, 0); fmt.Print(errno)
