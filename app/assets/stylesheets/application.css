@@ -771,6 +771,195 @@ textarea {
   gap: 0.625rem;
 }
 
+.crew-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.crew-safety-note {
+  display: grid;
+  gap: 0.2rem;
+  max-width: 24rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.crew-safety-note span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.crew-section-heading > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.crew-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+}
+
+.agent-profile-list {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.agent-profile {
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-profile > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.75rem 0.25rem;
+  cursor: pointer;
+}
+
+.agent-profile > summary::marker {
+  color: var(--accent);
+}
+
+.agent-profile[open] > summary {
+  color: var(--accent);
+  background: rgba(228, 241, 236, 0.55);
+}
+
+.agent-profile-title {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.agent-profile-title > span,
+.agent-profile-budget,
+.agent-policy-overview > div > span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.agent-profile-budget {
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-profile-body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 2rem;
+  padding: 0.5rem 0.25rem 1.5rem;
+}
+
+.agent-policy-overview,
+.agent-policy-editor,
+.agent-policy-form {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.agent-policy-overview > div {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.agent-policy-overview dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+}
+
+.agent-policy-overview dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.agent-policy-overview dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+.agent-tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-tool-list li {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.agent-policy-editor {
+  padding-left: 2rem;
+  border-left: 1px solid var(--line);
+}
+
+.agent-policy-editor h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.agent-policy-form textarea {
+  resize: vertical;
+}
+
+.agent-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.agent-tool-fieldset {
+  padding: 0;
+  border: 0;
+}
+
+.agent-tool-fieldset legend {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.agent-tool-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.agent-tool-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.agent-tool-options input {
+  width: 1.125rem;
+  height: 1.125rem;
+  accent-color: var(--accent);
+}
+
+.agent-policy-form > .button {
+  justify-self: start;
+}
+
 .invite-form .button {
   margin-bottom: 0.0625rem;
 }
@@ -1585,16 +1774,22 @@ td {
 
 @media (max-width: 42rem) {
   .app-header {
+    display: grid;
     min-height: 4rem;
     padding-block: 0.5rem;
   }
 
   .app-header nav {
-    flex: 1;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.5rem;
+    width: 100%;
     min-width: 0;
+  }
+
+  .app-header nav form,
+  .app-header nav .button {
+    width: 100%;
   }
 
   .app-header nav a,
@@ -1611,10 +1806,6 @@ td {
     min-width: 3rem;
     padding-inline: 0.5rem;
     font-size: 0.875rem;
-  }
-
-  .wordmark > span:last-child {
-    display: none;
   }
 
   .current-workspace {
@@ -1647,6 +1838,24 @@ td {
 
   .knowledge-heading {
     display: grid;
+  }
+
+  .crew-heading,
+  .agent-profile-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agent-policy-editor {
+    padding-top: 1.5rem;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .agent-policy-grid,
+  .agent-tool-options {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .knowledge-search {

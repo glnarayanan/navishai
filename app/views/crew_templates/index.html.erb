@@ -1,0 +1,131 @@
+<% content_for :title, "Crews · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell crew-shell">
+  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading crew-heading">
+    <div>
+      <h1>Specialist crews</h1>
+      <p>Set narrow instructions, tools, runtime preferences, and budgets for each accountable role.</p>
+    </div>
+    <div class="crew-safety-note">
+      <strong>Human send stays separate</strong>
+      <span>No crew role can send or schedule a customer message.</span>
+    </div>
+  </div>
+
+  <% @crews.each do |crew| %>
+    <section class="section-block crew-section" aria-labelledby="crew-<%= crew.id %>-title">
+      <div class="section-heading-row crew-section-heading">
+        <div>
+          <h2 id="crew-<%= crew.id %>-title"><%= crew.name %></h2>
+          <p><%= pluralize(crew.agent_profiles.size, "bounded role") %></p>
+        </div>
+        <span class="status-badge status-success">Configured</span>
+      </div>
+
+      <div class="agent-profile-list">
+        <% crew.agent_profiles.each do |profile| %>
+          <% version = profile.current_version %>
+          <% submitted = @editing_profile_id == profile.id ? @submitted_profile_attributes : nil %>
+          <% form_tools = submitted ? Array(submitted["allowed_tools"]) : version.allowed_tools %>
+          <% form_fallbacks = submitted ? Array(submitted["fallback_profile_keys"]).compact_blank : version.fallback_profile_keys %>
+          <details class="agent-profile" id="profile-<%= profile.id %>" <%= "open" if @editing_profile_id == profile.id %>>
+            <summary>
+              <span class="agent-profile-title">
+                <strong><%= profile.name %></strong>
+                <span>Version <%= version.version_number %> · <%= pluralize(version.allowed_tools.size, "tool") %></span>
+              </span>
+              <span class="agent-profile-budget"><%= version.timeout_seconds %>s · <%= version.max_steps %> steps</span>
+            </summary>
+
+            <div class="agent-profile-body">
+              <div class="agent-policy-overview">
+                <div>
+                  <span>Instructions</span>
+                  <p><%= version.instructions %></p>
+                </div>
+                <dl>
+                  <div><dt>Runtime</dt><dd><%= AgentPolicy::RUNTIME_PROFILES.fetch(version.runtime_profile_key) %></dd></div>
+                  <div><dt>Fallback</dt><dd><%= version.fallback_profile_keys.map { |key| AgentPolicy::RUNTIME_PROFILES.fetch(key) }.presence&.join(" → ") || "None" %></dd></div>
+                  <div><dt>Review</dt><dd><%= AgentPolicy::REVIEW_POLICIES.fetch(version.review_policy) %></dd></div>
+                  <div><dt>Tool calls</dt><dd>Up to <%= version.max_tool_calls %></dd></div>
+                </dl>
+                <ul class="agent-tool-list" aria-label="Allowed tools">
+                  <% version.allowed_tools.each do |tool| %><li><%= AgentPolicy::TOOLS.fetch(tool) %></li><% end %>
+                </ul>
+              </div>
+
+              <% if @can_configure %>
+                <div class="agent-policy-editor">
+                  <h3>Edit within this role’s limits</h3>
+                  <% if @editing_profile_id == profile.id && @profile_error %>
+                    <p class="inline-error" role="alert"><%= @profile_error %></p>
+                  <% end %>
+                  <%= form_with url: workspace_crew_template_agent_profile_path(Current.workspace, crew, profile),
+                    method: :patch, scope: :agent_profile, class: "agent-policy-form" do |form| %>
+                    <%= form.hidden_field :expected_version_number, value: version.version_number %>
+                    <div class="field">
+                      <%= form.label :instructions, "Role instructions" %>
+                      <%= form.text_area :instructions, value: submitted&.fetch("instructions", nil) || version.instructions, rows: 5,
+                        required: true, maxlength: AgentProfileVersion::MAX_INSTRUCTION_BYTES %>
+                      <span class="field-hint">Describe the role’s work. Do not add secrets, commands, or customer-send authority.</span>
+                    </div>
+
+                    <fieldset class="agent-tool-fieldset">
+                      <legend>Allowed tools</legend>
+                      <div class="agent-tool-options">
+                        <% AgentPolicy.tools_for(profile.role_key).each do |tool| %>
+                          <label>
+                            <%= check_box_tag "agent_profile[allowed_tools][]", tool, form_tools.include?(tool), id: "profile_#{profile.id}_tool_#{tool}" %>
+                            <span><%= AgentPolicy::TOOLS.fetch(tool) %></span>
+                          </label>
+                        <% end %>
+                      </div>
+                    </fieldset>
+
+                    <div class="agent-policy-grid">
+                      <div class="field">
+                        <%= form.label :runtime_profile_key, "Primary runtime profile" %>
+                        <%= form.select :runtime_profile_key, AgentPolicy::RUNTIME_PROFILES.map { |key, label| [ label, key ] },
+                          { selected: submitted&.fetch("runtime_profile_key", nil) || version.runtime_profile_key }, required: true %>
+                      </div>
+                      <% 2.times do |index| %>
+                        <div class="field">
+                          <%= label_tag "profile_#{profile.id}_fallback_#{index}", "Fallback #{index + 1}" %>
+                          <%= select_tag "agent_profile[fallback_profile_keys][]",
+                            options_for_select([ [ "None", "" ] ] + AgentPolicy::RUNTIME_PROFILES.map { |key, label| [ label, key ] }, form_fallbacks[index]),
+                            id: "profile_#{profile.id}_fallback_#{index}" %>
+                        </div>
+                      <% end %>
+                      <div class="field">
+                        <%= form.label :timeout_seconds, "Timeout (seconds)" %>
+                        <%= form.number_field :timeout_seconds, value: submitted&.fetch("timeout_seconds", nil) || version.timeout_seconds,
+                          min: AgentProfileVersion::TIMEOUT_RANGE.begin, max: AgentProfileVersion::TIMEOUT_RANGE.end, required: true %>
+                      </div>
+                      <div class="field">
+                        <%= form.label :max_steps, "Maximum steps" %>
+                        <%= form.number_field :max_steps, value: submitted&.fetch("max_steps", nil) || version.max_steps,
+                          min: AgentProfileVersion::STEP_RANGE.begin, max: AgentProfileVersion::STEP_RANGE.end, required: true %>
+                      </div>
+                      <div class="field">
+                        <%= form.label :max_tool_calls, "Maximum tool calls" %>
+                        <%= form.number_field :max_tool_calls, value: submitted&.fetch("max_tool_calls", nil) || version.max_tool_calls,
+                          min: AgentProfileVersion::TOOL_CALL_RANGE.begin, max: AgentProfileVersion::TOOL_CALL_RANGE.end, required: true %>
+                      </div>
+                      <div class="field">
+                        <%= form.label :review_policy, "Review policy" %>
+                        <%= form.select :review_policy, AgentPolicy::REVIEW_POLICIES.map { |key, label| [ label, key ] },
+                          { selected: submitted&.fetch("review_policy", nil) || version.review_policy }, required: true %>
+                      </div>
+                    </div>
+                    <%= form.submit "Save new policy version", class: "button button-primary" %>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          </details>
+        <% end %>
+      </div>
+    </section>
+  <% end %>
+</main>
