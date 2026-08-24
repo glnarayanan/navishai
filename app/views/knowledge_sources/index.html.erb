@@ -1,0 +1,118 @@
+<% content_for :title, "Knowledge · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell knowledge-shell">
+  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading knowledge-heading">
+    <div>
+      <h1>Knowledge sources</h1>
+      <p>Keep approved support guidance current, searchable, and tied to the exact version used.</p>
+    </div>
+    <%= form_with url: workspace_knowledge_sources_path(Current.workspace), method: :get, class: "knowledge-search" do |form| %>
+      <%= form.label :q, "Search current knowledge", class: "visually-hidden" %>
+      <%= form.search_field :q, value: @query, placeholder: "Search current knowledge", maxlength: 200 %>
+      <%= form.submit "Search", class: "button button-secondary" %>
+    <% end %>
+  </div>
+
+  <% if @query.present? %>
+    <section class="section-block" aria-labelledby="search-results-title">
+      <div class="section-heading-row">
+        <h2 id="search-results-title">Search results</h2>
+        <p><%= pluralize(@results.size, "current version") %> found</p>
+      </div>
+      <% if @results.any? %>
+        <ul class="knowledge-results" role="list">
+          <% @results.each do |result| %>
+            <li>
+              <div class="knowledge-result-heading">
+                <%= link_to result.source.title, workspace_knowledge_source_path(Current.workspace, result.source) %>
+                <% if result.stale? %><span class="status-badge status-warning">Stale</span><% end %>
+              </div>
+              <p><%= result.excerpt %></p>
+              <code class="citation-uri"><%= result.citation_uri %></code>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No current source matches",
+          description: "Try fewer terms. Deleted sources and older versions do not appear in current search." %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <% if @can_manage %>
+    <section class="section-block" aria-labelledby="add-source-title">
+      <h2 id="add-source-title">Add approved knowledge</h2>
+      <p class="section-intro">URL sources fetch bounded public HTTPS text when the text box is blank. Paste reviewed text to store a snapshot without fetching.</p>
+      <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
+      <%= form_with url: workspace_knowledge_sources_path(Current.workspace), scope: :knowledge_source,
+        class: "knowledge-form", multipart: true do |form| %>
+        <div class="knowledge-form-grid">
+          <div class="field">
+            <%= form.label :source_kind, "Source type" %>
+            <%= form.select :source_kind, KnowledgeSource::SOURCE_KINDS.map { |kind| [ knowledge_source_kind_label(kind), kind ] }, {}, required: true %>
+          </div>
+          <div class="field knowledge-title-field">
+            <%= form.label :title %>
+            <%= form.text_field :title, required: true, maxlength: 200, autocomplete: "off" %>
+          </div>
+          <div class="field">
+            <%= form.label :expires_at, "Expires at" %>
+            <%= form.datetime_local_field :expires_at, aria: { describedby: "expiry-hint" } %>
+            <span class="field-hint" id="expiry-hint">Optional. Expired versions stay visible with a stale warning.</span>
+          </div>
+          <div class="field">
+            <%= form.label :url, "HTTPS source URL" %>
+            <%= form.url_field :url, maxlength: 2048, placeholder: "https://docs.example.com/article" %>
+            <span class="field-hint">Required only for a URL snapshot.</span>
+          </div>
+          <div class="field">
+            <%= form.label :external_id, "Intercom article ID" %>
+            <%= form.text_field :external_id, maxlength: 500, autocomplete: "off" %>
+            <span class="field-hint">Required only for Intercom Help Center.</span>
+          </div>
+          <div class="field">
+            <%= form.label :upload, "Plain-text upload" %>
+            <%= form.file_field :upload, accept: "text/plain,.txt", aria: { describedby: "knowledge-upload-hint" } %>
+            <span class="field-hint" id="knowledge-upload-hint">Required only for Upload. The file must pass the configured scanner.</span>
+          </div>
+        </div>
+        <div class="field">
+          <%= form.label :content, "Approved source text" %>
+          <%= form.text_area :content, rows: 9, maxlength: KnowledgeSourceVersion::MAX_CONTENT_BYTES,
+            aria: { describedby: "knowledge-content-hint" } %>
+          <span class="field-hint" id="knowledge-content-hint">Required for maintained text and Intercom Help Center. Optional for URL fetches. Maximum 1 MiB.</span>
+        </div>
+        <%= form.submit "Add knowledge source", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="section-block" aria-labelledby="source-library-title">
+    <div class="section-heading-row">
+      <h2 id="source-library-title">Source library</h2>
+      <p><%= pluralize(@sources.size, "source") %></p>
+    </div>
+    <% if @sources.any? %>
+      <ul class="knowledge-source-list" role="list">
+        <% @sources.each do |source| %>
+          <% status, status_class = knowledge_source_status(source) %>
+          <li>
+            <%= link_to workspace_knowledge_source_path(Current.workspace, source), class: "knowledge-source-link" do %>
+              <span class="knowledge-source-main">
+                <strong><%= source.title %></strong>
+                <span><%= knowledge_source_kind_label(source.source_kind) %> · Version <%= source.current_version&.version_number || 0 %></span>
+              </span>
+              <span class="status-badge <%= status_class %>"><%= status %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <%= render "shared/empty_state",
+        title: "No approved knowledge yet",
+        description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source." %>
+    <% end %>
+  </section>
+</main>

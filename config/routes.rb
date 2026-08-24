@@ -9,6 +9,7 @@ Rails.application.routes.draw do
       post :reconcile, on: :member
     end
     resources :attachments, only: :show, controller: "attachment_downloads"
+    resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ]
     resources :support_cases, path: "cases", only: %i[ index show ] do
       member do
         patch :transition, controller: "support_case_commands"

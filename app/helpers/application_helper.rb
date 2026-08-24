@@ -20,4 +20,18 @@ module ApplicationHelper
 
     inbox.webhook_ready? ? "Ready" : "Needs secret"
   end
+
+  def knowledge_source_kind_label(kind)
+    {
+      "url" => "URL snapshot",
+      "intercom_help_center" => "Intercom Help Center"
+    }.fetch(kind.to_s, kind.to_s.humanize)
+  end
+
+  def knowledge_source_status(source)
+    return [ "Deleted", "status-danger" ] if source.deleted?
+    return [ "Stale", "status-warning" ] if source.stale?
+
+    [ "Current", "status-success" ]
+  end
 end
