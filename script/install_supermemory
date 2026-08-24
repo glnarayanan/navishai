@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.0.8"
+RELEASE="server-v${VERSION}"
+BASE_URL="https://github.com/supermemoryai/supermemory/releases/download/${RELEASE}"
+DESTINATION="${1:-tmp/supermemory/bin/supermemory-server}"
+
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) asset="supermemory-server-linux-x64"; checksum="87f32433d0179be80bb9d8a1bafbac65af4128324342a27ecb8bd1a77b5506f3" ;;
+  Linux-aarch64 | Linux-arm64) asset="supermemory-server-linux-arm64"; checksum="eeb9e62a8bf59646bd799a05d1a2981b945413a03640c3a39f4f267ad2d2bf37" ;;
+  Darwin-x86_64) asset="supermemory-server-darwin-x64"; checksum="2b50821fc2b0a952d1431fa5daf5af19a350748a82e1242a65c4a1e5cb453beb" ;;
+  Darwin-arm64) asset="supermemory-server-darwin-arm64"; checksum="12b7817a105ed0a9e70f96c461fb6f8dded5d70eaeb6034e774778c257bed78a" ;;
+  *) printf 'Unsupported Supermemory platform: %s-%s\n' "$(uname -s)" "$(uname -m)" >&2; exit 1 ;;
+esac
+
+mkdir -p "$(dirname "$DESTINATION")"
+temporary="${DESTINATION}.download"
+trap 'rm -f "$temporary"' EXIT
+curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 "${BASE_URL}/${asset}" --output "$temporary"
+if command -v sha256sum >/dev/null 2>&1; then
+  printf '%s  %s\n' "$checksum" "$temporary" | sha256sum --check --status
+elif command -v shasum >/dev/null 2>&1; then
+  printf '%s  %s\n' "$checksum" "$temporary" | shasum --algorithm 256 --check --status
+else
+  printf 'A SHA-256 checker is required.\n' >&2
+  exit 1
+fi
+chmod 0755 "$temporary"
+mv "$temporary" "$DESTINATION"
+printf 'Installed Supermemory %s at %s\n' "$VERSION" "$DESTINATION"

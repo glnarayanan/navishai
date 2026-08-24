@@ -60,6 +60,17 @@ The signed `POST /v1/tools/web-search` endpoint accepts only minimized queries f
 
 A writer may extract text only from an immutable result URL on that task. Rails resolves every DNS answer, rejects local and reserved networks, pins the checked address while keeping TLS host checks, and repeats those checks after each redirect. It accepts at most 1 MiB of plain text or HTML, strips active HTML, and stores the final URL, dates, SHA-256 digest, and text as an immutable snapshot. The review page and run context mark the snapshot as untrusted and bound its preview. Extraction does not add the page to durable memory.
 
+## Self-hosted memory
+
+NavishAI supports only a customer-run Supermemory Local server. Install the pinned 0.0.8 binary and verify its release checksum with `script/install_supermemory`. The supported upstream local build is one binary rather than a Docker image. Keep its data directory on persistent storage and disable telemetry:
+
+```sh
+script/install_supermemory
+SUPERMEMORY_DATA_DIR=storage/supermemory SUPERMEMORY_DISABLE_TELEMETRY=1 tmp/supermemory/bin/supermemory-server
+```
+
+Complete Supermemory's first-boot local model setup, then put its generated `sm_...` key in Rails credentials at `memory.supermemory_api_key` or set `NAVISHAI_SUPERMEMORY_API_KEY`. `NAVISHAI_SUPERMEMORY_ADDRESS` defaults to `http://127.0.0.1:6767`; non-loopback servers require HTTPS. NavishAI rejects the managed Supermemory host, uses `superrag` indexing so PostgreSQL stays authoritative, and binds every index and search call to Organisation and Workspace metadata plus the Workspace container tag. The current Supermemory Lite binary enforces a 10,000-document licence cap; do not operate it as an uncapped index. Back up `SUPERMEMORY_DATA_DIR` before an upgrade. Version 0.0.8 repairs a vector-loss bug in the prior 0.0.7 upgrade path; do not downgrade a populated store.
+
 The deterministic scripted adapter under `runner/internal/scripted` proves success, retry, timeout, cancellation, malformed-output, and policy-denial behavior without a model or network access. Its bounded JSON fixtures are test and demo inputs, not a live runtime.
 
 Build `runner/cmd/navishai-exec` beside the runner before enabling process execution. The supervisor accepts only exact approved executables inside configured executable roots, resolves symlinks before launch, and passes only named run credentials into the child. An executable inside an allowed directory still cannot run until it appears in the approval set. The helper applies CPU, memory, file-descriptor, and process limits; bounds output; enforces the wall deadline and cancellation; terminates the process group; and waits for the child. Linux Landlock limits reads to configured runtime and executable roots and limits writes to the run's working root. Seccomp blocks socket calls by default.
