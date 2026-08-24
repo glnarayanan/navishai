@@ -17,6 +17,8 @@ Rails.application.routes.draw do
         delete "tags/:tag_id", action: :untag, as: :tagging, controller: "support_case_commands"
         post :notes, action: :add_note, controller: "support_case_commands"
         post "tag-definitions", action: :create_tag, as: :create_tag, controller: "support_case_commands"
+        post :email_draft, controller: "email_replies", action: :save_draft
+        post :email_send, controller: "email_replies", action: :send_email
       end
     end
   end

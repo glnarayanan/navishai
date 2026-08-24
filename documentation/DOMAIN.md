@@ -31,3 +31,5 @@ Use these terms in product copy, code, tests, and design notes.
 - **Shared email inbox:** one Workspace-owned inbound address and signed webhook endpoint. Its credential key points to deployment-managed secrets; secret values never enter business or audit rows.
 - **Inbound email delivery:** the durable original RFC 5322 source, digest, provider Message-ID, receipt state, and safe failure status for one webhook delivery.
 - **Email thread:** an immutable mapping from email threading identifiers to one Conversation inside one Shared email inbox.
+- **Email draft:** the latest plain-text reply that a workspace writer can edit before sending. A draft never grants later send authority.
+- **Outbound email delivery:** the frozen recipient, content, threading headers, human actor, and SMTP result for one fresh Send command. An unknown result blocks resend.

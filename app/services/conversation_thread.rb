@@ -108,6 +108,34 @@ class ConversationThread
     end
   end
 
+  def self.append_outbound!(workspace:, conversation:, membership:, body:, occurred_at:, source:)
+    raise ArgumentError, "unsupported source" unless AuditEvent::SOURCES.include?(source.to_s)
+
+    Conversation.transaction do
+      actor = authorized_membership!(workspace, membership)
+      current_conversation = workspace.conversations.lock.find(conversation.id)
+      message = workspace.conversation_messages.create!(
+        conversation: current_conversation,
+        direction: :outbound,
+        author_kind: :user,
+        author_user: actor.user,
+        body: body,
+        occurred_at: occurred_at
+      )
+      current_conversation.update!(last_message_at: [ current_conversation.last_message_at, occurred_at ].compact.max)
+      SlaEngine.record_first_response!(
+        workspace: workspace,
+        support_case: current_conversation.support_case,
+        message: message
+      ) if current_conversation.support_case.case_sla
+      AuditEvent.record!(
+        action: "conversation.message_added", source: source, workspace: workspace,
+        actor: actor.user, subject: message, metadata: { direction: "outbound", author_kind: "user" }
+      )
+      message
+    end
+  end
+
   def self.authorized_membership!(workspace, membership)
     workspace.memberships.lock.find(membership.id).tap do |current_membership|
       raise Current::RoleAccessDenied unless current_membership.can_write?

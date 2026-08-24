@@ -137,6 +137,34 @@ END;
 $$;
 
 
+--
+-- Name: protect_outbound_email_delivery(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_outbound_email_delivery() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.workspace_id, OLD.email_draft_id, OLD.shared_email_inbox_id,
+         OLD.email_thread_id, OLD.conversation_id, OLD.actor_membership_id,
+         OLD.actor_user_id, OLD.idempotency_key, OLD.message_id,
+         OLD.in_reply_to_message_id, OLD.from_address, OLD.to_address,
+         OLD.subject, OLD.body, OLD.started_at, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.workspace_id, NEW.email_draft_id, NEW.shared_email_inbox_id,
+         NEW.email_thread_id, NEW.conversation_id, NEW.actor_membership_id,
+         NEW.actor_user_id, NEW.idempotency_key, NEW.message_id,
+         NEW.in_reply_to_message_id, NEW.from_address, NEW.to_address,
+         NEW.subject, NEW.body, NEW.started_at, NEW.created_at) AND
+     OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown') THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'outbound email delivery records are durable';
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -502,6 +530,46 @@ ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
+-- Name: email_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_drafts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    email_thread_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    updated_by_id bigint NOT NULL,
+    body text NOT NULL,
+    status character varying DEFAULT 'ready'::character varying NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT email_drafts_body_size CHECK ((octet_length(body) <= 1048576)),
+    CONSTRAINT email_drafts_status CHECK (((status)::text = ANY ((ARRAY['ready'::character varying, 'sending'::character varying, 'sent'::character varying])::text[])))
+);
+
+
+--
+-- Name: email_drafts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.email_drafts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: email_drafts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.email_drafts_id_seq OWNED BY public.email_drafts.id;
+
+
+--
 -- Name: email_message_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -631,10 +699,10 @@ CREATE TABLE public.inbound_email_deliveries (
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT inbound_email_deliveries_attempts CHECK ((((attempt_count = 0) AND (last_attempted_at IS NULL)) OR ((attempt_count > 0) AND (last_attempted_at IS NOT NULL)))),
     CONSTRAINT inbound_email_deliveries_digest CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT inbound_email_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['parse_error'::character varying, 'missing_sender'::character varying, 'missing_message_id'::character varying, 'message_id_conflict'::character varying, 'empty_body'::character varying, 'body_too_large'::character varying, 'identity_ambiguous'::character varying, 'identity_error'::character varying, 'persistence_error'::character varying])::text[])))),
+    CONSTRAINT inbound_email_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY (ARRAY[('parse_error'::character varying)::text, ('missing_sender'::character varying)::text, ('missing_message_id'::character varying)::text, ('message_id_conflict'::character varying)::text, ('empty_body'::character varying)::text, ('body_too_large'::character varying)::text, ('identity_ambiguous'::character varying)::text, ('identity_error'::character varying)::text, ('persistence_error'::character varying)::text])))),
     CONSTRAINT inbound_email_deliveries_size CHECK ((octet_length(raw_email) <= 10485760)),
     CONSTRAINT inbound_email_deliveries_state CHECK (((((status)::text = 'received'::text) AND (failure_code IS NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NULL)) OR (((status)::text = 'processed'::text) AND (failure_code IS NULL) AND (conversation_id IS NOT NULL) AND (conversation_message_id IS NOT NULL) AND (processed_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NOT NULL)))),
-    CONSTRAINT inbound_email_deliveries_status CHECK (((status)::text = ANY ((ARRAY['received'::character varying, 'processed'::character varying, 'failed'::character varying])::text[])))
+    CONSTRAINT inbound_email_deliveries_status CHECK (((status)::text = ANY (ARRAY[('received'::character varying)::text, ('processed'::character varying)::text, ('failed'::character varying)::text])))
 );
 
 
@@ -754,6 +822,58 @@ CREATE SEQUENCE public.organizations_id_seq
 --
 
 ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
+
+
+--
+-- Name: outbound_email_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_email_deliveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    email_draft_id bigint NOT NULL,
+    shared_email_inbox_id bigint NOT NULL,
+    email_thread_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    conversation_message_id bigint,
+    actor_membership_id bigint NOT NULL,
+    actor_user_id bigint NOT NULL,
+    idempotency_key character varying NOT NULL,
+    message_id character varying NOT NULL,
+    in_reply_to_message_id character varying,
+    from_address character varying NOT NULL,
+    to_address character varying NOT NULL,
+    subject character varying NOT NULL,
+    body text NOT NULL,
+    status character varying DEFAULT 'sending'::character varying NOT NULL,
+    failure_code character varying,
+    started_at timestamp(6) without time zone NOT NULL,
+    sent_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT outbound_email_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
+    CONSTRAINT outbound_email_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['sending'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (conversation_message_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (failure_code IS NOT NULL)))))),
+    CONSTRAINT outbound_email_deliveries_status CHECK (((status)::text = ANY ((ARRAY['sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])))
+);
+
+
+--
+-- Name: outbound_email_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.outbound_email_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: outbound_email_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.outbound_email_deliveries_id_seq OWNED BY public.outbound_email_deliveries.id;
 
 
 --
@@ -1388,6 +1508,13 @@ ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: email_drafts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts ALTER COLUMN id SET DEFAULT nextval('public.email_drafts_id_seq'::regclass);
+
+
+--
 -- Name: email_message_links id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1434,6 +1561,13 @@ ALTER TABLE ONLY public.memberships ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('public.organizations_id_seq'::regclass);
+
+
+--
+-- Name: outbound_email_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries ALTER COLUMN id SET DEFAULT nextval('public.outbound_email_deliveries_id_seq'::regclass);
 
 
 --
@@ -1622,6 +1756,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: email_drafts email_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT email_drafts_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: email_message_links email_message_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1675,6 +1817,14 @@ ALTER TABLE ONLY public.memberships
 
 ALTER TABLE ONLY public.organizations
     ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: outbound_email_deliveries outbound_email_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT outbound_email_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -1817,6 +1967,13 @@ CREATE UNIQUE INDEX idx_on_service_calendar_id_date_e0bbb87882 ON public.service
 --
 
 CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public.email_message_links USING btree (shared_email_inbox_id, message_id);
+
+
+--
+-- Name: idx_on_shared_email_inbox_id_message_id_746c45d92b; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public.outbound_email_deliveries USING btree (shared_email_inbox_id, message_id);
 
 
 --
@@ -2072,6 +2229,34 @@ CREATE UNIQUE INDEX index_current_source_identity_keys ON public.source_identity
 
 
 --
+-- Name: index_email_drafts_on_tenant_thread; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_drafts_on_tenant_thread ON public.email_drafts USING btree (workspace_id, id, email_thread_id, conversation_id);
+
+
+--
+-- Name: index_email_drafts_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_email_drafts_on_workspace_id ON public.email_drafts USING btree (workspace_id);
+
+
+--
+-- Name: index_email_drafts_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_drafts_on_workspace_id_and_id ON public.email_drafts USING btree (workspace_id, id);
+
+
+--
+-- Name: index_email_drafts_on_workspace_id_and_support_case_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_drafts_on_workspace_id_and_support_case_id ON public.email_drafts USING btree (workspace_id, support_case_id);
+
+
+--
 -- Name: index_email_message_links_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2111,6 +2296,13 @@ CREATE INDEX index_email_threads_on_workspace_id ON public.email_threads USING b
 --
 
 CREATE UNIQUE INDEX index_email_threads_on_workspace_id_and_id ON public.email_threads USING btree (workspace_id, id);
+
+
+--
+-- Name: index_email_threads_on_workspace_thread_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_threads_on_workspace_thread_conversation ON public.email_threads USING btree (workspace_id, id, conversation_id);
 
 
 --
@@ -2205,10 +2397,38 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_and_user_id ON public.memb
 
 
 --
+-- Name: index_memberships_on_workspace_id_id_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memberships_on_workspace_id_id_user_id ON public.memberships USING btree (workspace_id, id, user_id);
+
+
+--
 -- Name: index_organizations_on_slug; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_organizations_on_slug ON public.organizations USING btree (slug);
+
+
+--
+-- Name: index_outbound_email_deliveries_on_idempotency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_email_deliveries_on_idempotency ON public.outbound_email_deliveries USING btree (workspace_id, idempotency_key);
+
+
+--
+-- Name: index_outbound_email_deliveries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbound_email_deliveries_on_workspace_id ON public.outbound_email_deliveries USING btree (workspace_id);
+
+
+--
+-- Name: index_outbound_email_deliveries_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_email_deliveries_on_workspace_id_and_id ON public.outbound_email_deliveries USING btree (workspace_id, id);
 
 
 --
@@ -2408,6 +2628,13 @@ CREATE INDEX index_support_cases_on_assignment_queue ON public.support_cases USI
 
 
 --
+-- Name: index_support_cases_on_tenant_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_cases_on_tenant_conversation ON public.support_cases USING btree (workspace_id, id, conversation_id);
+
+
+--
 -- Name: index_support_cases_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2590,6 +2817,20 @@ CREATE TRIGGER inbound_email_deliveries_protect_source BEFORE DELETE OR UPDATE O
 
 
 --
+-- Name: outbound_email_deliveries outbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_email_deliveries_no_truncate BEFORE TRUNCATE ON public.outbound_email_deliveries FOR EACH STATEMENT EXECUTE FUNCTION public.protect_outbound_email_delivery();
+
+
+--
+-- Name: outbound_email_deliveries outbound_email_deliveries_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_email_deliveries_protect_record BEFORE DELETE OR UPDATE ON public.outbound_email_deliveries FOR EACH ROW EXECUTE FUNCTION public.protect_outbound_email_delivery();
+
+
+--
 -- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2681,6 +2922,22 @@ ALTER TABLE ONLY public.case_slas
 
 
 --
+-- Name: outbound_email_deliveries fk_rails_0e3170a70d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_0e3170a70d FOREIGN KEY (workspace_id, actor_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: outbound_email_deliveries fk_rails_1042d38a26; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_1042d38a26 FOREIGN KEY (workspace_id, shared_email_inbox_id) REFERENCES public.shared_email_inboxes(workspace_id, id);
+
+
+--
 -- Name: contact_merges fk_rails_105e45e7a0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2702,6 +2959,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.support_case_taggings
     ADD CONSTRAINT fk_rails_1557a3d783 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: email_drafts fk_rails_1aceaa280f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_rails_1aceaa280f FOREIGN KEY (workspace_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, id, conversation_id);
 
 
 --
@@ -2825,6 +3090,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: email_drafts fk_rails_6106ba6ad3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_rails_6106ba6ad3 FOREIGN KEY (workspace_id, updated_by_id) REFERENCES public.memberships(workspace_id, user_id);
+
+
+--
 -- Name: sla_policies fk_rails_62486d6140; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2873,6 +3146,14 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 
 --
+-- Name: outbound_email_deliveries fk_rails_691805fa36; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_691805fa36 FOREIGN KEY (workspace_id, email_draft_id) REFERENCES public.email_drafts(workspace_id, id);
+
+
+--
 -- Name: conversation_messages fk_rails_69e4535daa; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2894,6 +3175,14 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.support_cases
     ADD CONSTRAINT fk_rails_6f0c83db70 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: outbound_email_deliveries fk_rails_70d4e66122; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_70d4e66122 FOREIGN KEY (workspace_id, shared_email_inbox_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, shared_email_inbox_id, id, conversation_id);
 
 
 --
@@ -2929,11 +3218,27 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 
 --
+-- Name: email_drafts fk_rails_77812b41a4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_rails_77812b41a4 FOREIGN KEY (workspace_id, support_case_id, conversation_id) REFERENCES public.support_cases(workspace_id, id, conversation_id);
+
+
+--
 -- Name: conversation_messages fk_rails_7c459f2c0a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.conversation_messages
     ADD CONSTRAINT fk_rails_7c459f2c0a FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: outbound_email_deliveries fk_rails_7da4fe3f02; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_7da4fe3f02 FOREIGN KEY (workspace_id, email_draft_id, email_thread_id, conversation_id) REFERENCES public.email_drafts(workspace_id, id, email_thread_id, conversation_id);
 
 
 --
@@ -3033,6 +3338,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: outbound_email_deliveries fk_rails_a79332c57f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_a79332c57f FOREIGN KEY (actor_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: workspace_invitations fk_rails_aa0ff4982f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3081,11 +3394,27 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: outbound_email_deliveries fk_rails_b701b64a91; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_b701b64a91 FOREIGN KEY (workspace_id, actor_membership_id, actor_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: email_message_links fk_rails_b76245f589; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.email_message_links
     ADD CONSTRAINT fk_rails_b76245f589 FOREIGN KEY (workspace_id, shared_email_inbox_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, shared_email_inbox_id, id, conversation_id);
+
+
+--
+-- Name: email_drafts fk_rails_b945d268da; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_rails_b945d268da FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -3118,6 +3447,22 @@ ALTER TABLE ONLY public.support_case_status_changes
 
 ALTER TABLE ONLY public.shared_email_inboxes
     ADD CONSTRAINT fk_rails_c70ce652a0 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: email_drafts fk_rails_c7a7ee21ef; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_rails_c7a7ee21ef FOREIGN KEY (updated_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: outbound_email_deliveries fk_rails_c98bb924c2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_c98bb924c2 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -3201,6 +3546,14 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: outbound_email_deliveries fk_rails_f29673b049; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_email_deliveries
+    ADD CONSTRAINT fk_rails_f29673b049 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
 -- Name: email_message_links fk_rails_fad997ec9c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3223,6 +3576,7 @@ ALTER TABLE ONLY public.contact_merges
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260823200308'),
 ('20260823200307'),
 ('20260823200306'),
 ('20260823200305'),

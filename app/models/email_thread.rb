@@ -3,6 +3,8 @@ class EmailThread < ApplicationRecord
   belongs_to :shared_email_inbox
   belongs_to :conversation
   has_many :email_message_links, dependent: :restrict_with_exception
+  has_many :email_drafts, dependent: :restrict_with_exception
+  has_many :outbound_email_deliveries, dependent: :restrict_with_exception
 
   validates :thread_key, presence: true, length: { maximum: 998 },
     uniqueness: { scope: :shared_email_inbox_id }

@@ -62,6 +62,39 @@
           title: "No messages yet",
           description: "This case has no customer messages. Sending is not available from this workspace." %>
       <% end %>
+
+      <% if @email_thread %>
+        <section class="email-reply" id="email-reply" aria-labelledby="email-reply-title">
+          <div>
+            <h2 id="email-reply-title">Email reply</h2>
+            <p>Review the exact message, then press Send. Agents and jobs cannot send it.</p>
+          </div>
+          <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
+            <div class="inline-error" role="status">
+              <strong>Delivery outcome needs review</strong>
+              <p>Do not resend this message until an operator confirms whether SMTP accepted it.</p>
+            </div>
+          <% elsif @email_draft.sent? %>
+            <p class="muted-copy">This draft was sent by <%= @email_delivery.actor_user.email_address %> at <%= @email_delivery.sent_at.to_fs(:short) %>.</p>
+          <% elsif @membership.can_write? %>
+            <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
+              <%= form.hidden_field :idempotency_key, value: @send_token %>
+              <%= form.hidden_field :draft_version, value: @email_draft.persisted? ? @email_draft.lock_version : "new" %>
+              <div class="field">
+                <%= form.label :body, "Message" %>
+                <%= form.text_area :body, value: @submitted_email_body || @email_draft.body, required: true, rows: 8, maxlength: EmailDraft::MAX_BODY_BYTES %>
+                <span class="field-hint">Plain text only. Attachments are not available yet.</span>
+              </div>
+              <div class="reply-actions">
+                <%= form.submit "Save draft", formaction: email_draft_workspace_support_case_path(@workspace, @support_case), class: "button button-secondary" %>
+                <%= form.submit "Send email", class: "button button-primary", data: { turbo_confirm: "Send this exact message to the customer now?" } %>
+              </div>
+            <% end %>
+          <% else %>
+            <p class="muted-copy">Read-only access. You cannot draft or send customer email.</p>
+          <% end %>
+        </section>
+      <% end %>
     </section>
 
     <aside class="case-context" aria-label="Case context">
