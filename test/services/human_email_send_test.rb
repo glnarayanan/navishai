@@ -141,7 +141,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         message_id: "follow-up@example.net", references: first.message_id,
         body: "Customer follow-up"
       ),
-      received_at: Time.zone.parse("2026-08-24 12:20:00 UTC")
+      received_at: first.sent_at + 5.minutes
     )
     transport = RecordingTransport.new
 
@@ -188,7 +188,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         message_id: "attachment-follow-up@example.net", references: delivery.message_id,
         body: "Follow-up without the old file"
       ),
-      received_at: Time.zone.parse("2026-08-24 12:30:00 UTC")
+      received_at: delivery.sent_at + 5.minutes
     )
     EmailDraftWorkflow.save!(
       workspace: @workspace, support_case: @support_case, membership: @membership,
