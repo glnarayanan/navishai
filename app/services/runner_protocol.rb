@@ -213,4 +213,112 @@ module RunnerProtocol
       raise MalformedMessage, "#{name} is invalid"
     end
   end
+
+  class CanonicalEvent
+    KEYS = %w[protocol_version event_id run_id sequence event_type occurred_at data].freeze
+    DATA_KEYS = {
+      "run.admitted" => %w[workspace_key task_key attempt],
+      "run.started" => %w[adapter scenario attempt],
+      "tool.completed" => %w[tool result],
+      "output.produced" => %w[text],
+      "usage.observed" => %w[input_units output_units],
+      "run.completed" => %w[outcome],
+      "run.failed" => %w[code retryable],
+      "run.timed_out" => %w[reason],
+      "run.canceled" => %w[reason],
+      "run.policy_denied" => %w[code tool]
+    }.freeze
+
+    attr_reader :attributes, :occurred_at
+
+    def self.parse(body)
+      raise MalformedMessage, "event body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body))
+    rescue JSON::ParserError
+      raise MalformedMessage, "event body is not valid JSON"
+    end
+
+    def initialize(attributes)
+      object!(attributes, KEYS, "event")
+      equal!(attributes["protocol_version"], VERSION, "event.protocol_version")
+      uuid!(attributes["event_id"], "event.event_id")
+      uuid!(attributes["run_id"], "event.run_id")
+      integer!(attributes["sequence"], 1, "event.sequence")
+      event_type = attributes["event_type"]
+      data_keys = DATA_KEYS[event_type] || raise(MalformedMessage, "event.event_type is invalid")
+      @occurred_at = parse_time(attributes["occurred_at"])
+      data = attributes["data"]
+      object!(data, data_keys, "event.data")
+      validate_data!(event_type, data)
+      raise MalformedMessage, "event.data is too large" if JSON.generate(data).bytesize > 128.kilobytes
+
+      @attributes = attributes.deep_dup.freeze
+    end
+
+    private
+      def validate_data!(event_type, data)
+        case event_type
+        when "run.admitted"
+          uuid!(data["workspace_key"], "event.data.workspace_key")
+          uuid!(data["task_key"], "event.data.task_key")
+          integer!(data["attempt"], 1, "event.data.attempt")
+        when "run.started"
+          string!(data["adapter"], 64, "event.data.adapter")
+          string!(data["scenario"], 100, "event.data.scenario")
+          integer!(data["attempt"], 1, "event.data.attempt")
+        when "tool.completed"
+          string!(data["tool"], 64, "event.data.tool")
+          string!(data["result"], 100, "event.data.result")
+        when "output.produced"
+          string!(data["text"], 100.kilobytes, "event.data.text")
+        when "usage.observed"
+          integer!(data["input_units"], 0, "event.data.input_units")
+          integer!(data["output_units"], 0, "event.data.output_units")
+        when "run.completed"
+          equal!(data["outcome"], "completed", "event.data.outcome")
+        when "run.failed"
+          string!(data["code"], 100, "event.data.code")
+          boolean!(data["retryable"], "event.data.retryable")
+        when "run.timed_out", "run.canceled"
+          string!(data["reason"], 500, "event.data.reason")
+        when "run.policy_denied"
+          string!(data["code"], 100, "event.data.code")
+          string!(data["tool"], 64, "event.data.tool")
+        end
+      end
+
+      def object!(value, keys, name)
+        raise MalformedMessage, "#{name} must be an object" unless value.is_a?(Hash)
+        raise MalformedMessage, "#{name} has unexpected fields" unless value.keys.sort == keys.sort
+      end
+
+      def equal!(value, expected, name)
+        raise MalformedMessage, "#{name} does not match" unless value == expected
+      end
+
+      def uuid!(value, name)
+        raise MalformedMessage, "#{name} is invalid" unless value.is_a?(String) && value.match?(UUID_PATTERN)
+      end
+
+      def integer!(value, minimum, name)
+        raise MalformedMessage, "#{name} is invalid" unless value.is_a?(Integer) && value >= minimum
+      end
+
+      def string!(value, maximum, name)
+        raise MalformedMessage, "#{name} is invalid" unless value.is_a?(String) && value.present? && value.bytesize <= maximum
+      end
+
+      def boolean!(value, name)
+        raise MalformedMessage, "#{name} is invalid" unless value == true || value == false
+      end
+
+      def parse_time(value)
+        raise MalformedMessage, "event.occurred_at is invalid" unless value.is_a?(String)
+
+        Time.iso8601(value)
+      rescue ArgumentError
+        raise MalformedMessage, "event.occurred_at is invalid"
+      end
+  end
 end
