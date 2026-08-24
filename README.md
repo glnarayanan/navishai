@@ -12,6 +12,7 @@ The project is greenfield. The target is a secure, self-hostable, market-review-
 4. Follow [documentation/DESIGN.md](./documentation/DESIGN.md) when building or reviewing product UI.
 5. Use [documentation/DOMAIN.md](./documentation/DOMAIN.md) for canonical product terms.
 6. Use [documentation/DEPLOYMENT.md](./documentation/DEPLOYMENT.md) for Compose, native Linux, and experimental Helm deployment.
+7. Use [documentation/OPERATIONS.md](./documentation/OPERATIONS.md) for backup, restore tests, and upgrade preflight.
 
 The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 
