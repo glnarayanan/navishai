@@ -7,6 +7,7 @@ class User < ApplicationRecord
   has_many :authored_conversation_messages, class_name: "ConversationMessage", foreign_key: :author_user_id, dependent: :restrict_with_exception
   has_many :support_case_status_changes, foreign_key: :actor_id, dependent: :restrict_with_exception, inverse_of: :actor
   has_many :case_notes, foreign_key: :author_id, dependent: :restrict_with_exception, inverse_of: :author
+  has_many :intercom_sync_operations, dependent: :restrict_with_exception
 
   has_secure_password
 

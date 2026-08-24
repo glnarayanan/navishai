@@ -52,7 +52,13 @@
                   <span class="message-direction"><%= message.direction.titleize %></span>
                   <time datetime="<%= message.occurred_at.iso8601 %>"><%= message.occurred_at.to_fs(:short) %></time>
                 </header>
-                <div class="message-body"><%= simple_format(message.body) %></div>
+                <div class="message-body">
+                  <% if message.intercom_part_link&.redacted_at? %>
+                    <p class="muted-copy">This message was redacted in Intercom.</p>
+                  <% else %>
+                    <%= simple_format(message.body) %>
+                  <% end %>
+                </div>
                 <% if message.stored_attachments.any? %>
                   <ul class="attachment-list" aria-label="Attachments">
                     <% message.stored_attachments.each do |attachment| %>
@@ -198,6 +204,33 @@
     <aside class="case-context" aria-label="Case context">
       <% unless @membership.can_write? %>
         <p class="read-only-notice"><strong>Read-only access</strong><br>You can review case work but cannot change it.</p>
+      <% end %>
+      <% if @intercom_link %>
+        <section class="context-section" aria-labelledby="intercom-context-title">
+          <h2 id="intercom-context-title">Intercom source</h2>
+          <dl class="case-facts">
+            <div><dt>State</dt><dd><%= @intercom_link.remote_state.titleize %></dd></div>
+            <div><dt>Assigned to</dt><dd><%= @intercom_link.remote_assignee_name.presence || "Unassigned" %></dd></div>
+            <div><dt>Last synced</dt><dd><time datetime="<%= @intercom_link.synced_at.iso8601 %>"><%= @intercom_link.synced_at.to_fs(:long) %></time></dd></div>
+          </dl>
+          <% remote_notes = @intercom_link.intercom_part_links.select { |part| part.note? && !part.redacted_at? } %>
+          <% if remote_notes.any? %>
+            <h3>Private notes</h3>
+            <ul class="integration-failures">
+              <% remote_notes.sort_by { |note| [ note.remote_created_at, note.id ] }.reverse_each do |note| %>
+                <li><strong><%= note.author_name.presence || "Intercom teammate" %></strong>: <%= strip_tags(note.body).squish %></li>
+              <% end %>
+            </ul>
+          <% end %>
+          <% if @intercom_operations.any? %>
+            <h3>Sync needs review</h3>
+            <ul class="integration-failures">
+              <% @intercom_operations.each do |operation| %>
+                <li><%= operation.operation_kind.humanize %>: <%= operation.status.humanize %><%= " (#{operation.failure_code.humanize})" if operation.failure_code %></li>
+              <% end %>
+            </ul>
+          <% end %>
+        </section>
       <% end %>
       <section class="context-section">
         <h2>Case controls</h2>

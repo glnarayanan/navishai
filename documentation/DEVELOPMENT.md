@@ -36,6 +36,16 @@ To send replies, put SMTP settings in Rails credentials at `shared_email.<creden
 
 Inbound and user-uploaded attachments stay quarantined unless a deployment configures `AttachmentScanner.default` with an adapter whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
 
+## Intercom sync
+
+An Owner or Admin adds an Intercom connection with the app ID and a lowercase credential key. Put the app access token and client secret in Rails credentials at `intercom.<credential_key>.access_token` and `intercom.<credential_key>.client_secret`. You can instead set `NAVISHAI_INTERCOM_<UPPERCASE_CREDENTIAL_KEY>_ACCESS_TOKEN` and `_CLIENT_SECRET`. The client secret must be at least 32 bytes.
+
+Subscribe the Intercom app to its Contact, Company, Conversation, conversation-part redaction, and conversation-tag topics. Intercom posts to the unguessable endpoint shown on the connection page with `X-Hub-Signature: sha1=<hex>`, where the hex value is the HMAC-SHA1 of the exact JSON body with the client secret. NavishAI reads at most 1 MiB, checks the signature in constant time, checks the app ID, and retains each notification by Intercom notification ID and SHA-256 digest.
+
+Webhook intake mirrors contacts, companies, conversations, customer and teammate replies, private notes, remote assignment, and connection-owned tags. Remote state and assignment remain visible source facts rather than overwriting the local Case workflow. Deletions retire source identities and their match keys. Part redaction hides the linked content from current case views. Local notes, assignment, tags, and untag actions on an Intercom-backed Case create a frozen user-attributed sync operation. NavishAI matches the signed-in User and assignment target to Intercom admins by exact email. Definite configuration or API rejection may retry up to five times; a timeout, network failure, interrupted claim, or local failure after a remote call stops for human review instead of risking a duplicate write.
+
+**Reconcile** retries safe inbound and outbound failures, then walks Intercom's cursor-paged conversation list to repair missed events and drift. NavishAI calls only `https://api.intercom.io`, uses API version 2.16, follows no redirects, and bounds network time and response bytes. This sync does not grant customer-send authority.
+
 ## Knowledge sources
 
 Managers, Admins, and Owners can maintain approved text, ingest plain-text uploads, store reviewed URL snapshots, and register Intercom Help Center snapshots. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.

@@ -17,9 +17,9 @@ This baseline records NavishAI's main assets, trust boundaries, threats, and cur
 └─────────┘           │ plane         │         └────────────┘
                       │               │ bounded memory API
 ┌───────────────┐     │               ▼
-│ Email forward │────▶│       ┌────────────────┐
+│ Email/Intercom│────▶│       ┌────────────────┐
 └───────────────┘     │       │ Self-hosted   │
- signed webhook       │       │ memory index  │
+ signed webhooks      │       │ memory index  │
                       │       └────────────────┘
                       └───────┬───────┘
                               │ versioned protocol
@@ -64,6 +64,8 @@ Browser input, mail and integration payloads, public web content, model output, 
 | Memory outage causes false recall, write loss, retry storms, or managed fallback | Continue source transactions and PostgreSQL Memory capture, return no recalled Memory, freeze and show the degraded run state, and disclose no Memory data class. Leave later indexing pending after a failed or unknown attempt, then use explicit stable-key reconstruction. Never call a managed fallback. |
 | Memory archive crosses tenants or imports partial data | Bind an archive to one Workspace key, require an empty target with matching referenced records, bound input to 20 MiB, validate every row and supersession link, and import in one transaction. Exclude engine-private IDs, rebuild the index from PostgreSQL, and audit export, import, and reconstruction without content. |
 | Forged, replayed, or oversized inbound email | Use a per-inbox unguessable endpoint plus a deployment-held HMAC secret, reject stale timestamps and oversized bodies before parsing, suppress duplicate Message-IDs, retain a source digest, and render extracted body text without trusted HTML. |
+| Forged, replayed, cross-app, or drifting Intercom data | Use an unguessable connection endpoint and exact-body HMAC check, cap input before parsing, require the configured app ID, deduplicate by notification ID and digest, retain durable attempts, and reconcile cursor-paged remote state. Bind every mapping through composite Workspace foreign keys. Keep remote state and assignment distinct, and remove only connection-owned tags and identity keys. |
+| Duplicate or unattributed Intercom write | Freeze each local note, assignment, tag, and untag operation with its current human Membership and User tuple. Match Intercom admins by exact email, claim once before external I/O, retry only definite failures with a cap, and stop an interrupted or uncertain result for review. Never put a customer reply in this operation set. |
 | Unauthorised customer communication | No agent, job, or background trigger receives send authority. A current authenticated human must review and issue each send command. |
 
 ## Review rules

@@ -27,7 +27,7 @@ class SupportCasesController < ApplicationController
       @membership = Current.require_membership!
       load_queue(limit: 25)
       @messages = @support_case.conversation.conversation_messages
-        .includes(stored_attachments: { file_attachment: :blob })
+        .includes(:intercom_part_link, stored_attachments: { file_attachment: :blob })
       @status_changes = @support_case.status_changes.includes(:actor).order(occurred_at: :desc, id: :desc)
       @notes = @support_case.case_notes.includes(:author).order(created_at: :desc, id: :desc)
       @available_tags = @workspace.tags.where.not(id: @support_case.tag_ids).order(:name)
@@ -39,6 +39,10 @@ class SupportCasesController < ApplicationController
       @contact_emails = identity_values(contact, :email)
       @account_domains = account ? identity_values(account, :domain) : []
       @email_thread = @workspace.email_threads.includes(:shared_email_inbox).find_by(conversation_id: @support_case.conversation_id)
+      @intercom_link = @workspace.intercom_conversation_links
+        .includes(:intercom_connection, :intercom_part_links)
+        .find_by(conversation_id: @support_case.conversation_id)
+      @intercom_operations = @intercom_link ? @intercom_link.intercom_sync_operations.where.not(status: :completed).order(created_at: :desc) : []
       @email_recipient = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: @support_case) if @email_thread
       @email_draft = @support_case.email_draft || @workspace.email_drafts.new(
         support_case: @support_case, email_thread: @email_thread, conversation: @support_case.conversation
