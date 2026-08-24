@@ -54,6 +54,8 @@ Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, a
 
 The deterministic scripted adapter under `runner/internal/scripted` proves success, retry, timeout, cancellation, malformed-output, and policy-denial behavior without a model or network access. Its bounded JSON fixtures are test and demo inputs, not a live runtime.
 
+Build `runner/cmd/navishai-exec` beside the runner before enabling process execution. The supervisor accepts only configured executable and working roots, resolves symlinks before launch, and passes only named run credentials into the child. The helper applies CPU, memory, file-descriptor, and process limits; bounds output; enforces the wall deadline and cancellation; terminates the process group; and waits for the child. Linux Landlock limits reads to configured runtime and executable roots and limits writes to the run's working root. Seccomp blocks socket calls. The helper fails closed when either boundary is unavailable, and this v1 profile does not support network-enabled runs.
+
 Runner events post to `/webhooks/runner-events` with the same HMAC headers plus `X-NavishAI-Workspace-Key`. PostgreSQL stores each run attempt and ordered event. Exact event replay is idempotent; changed, out-of-order, cross-workspace, and invalid terminal events fail closed.
 
 ## Checks

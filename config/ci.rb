@@ -11,7 +11,7 @@ CI.run do
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"
   step "Tests: Rails", "bin/rails test"
   step "Tests: Rails system", "bin/rails test:system"
-  step "Tests: Go", "go vet ./... && go test ./... && go build -o tmp/navishai-runner ./runner/cmd/navishai-runner"
+  step "Tests: Go", "go vet ./... && go test ./... && go build -o tmp/navishai-runner ./runner/cmd/navishai-runner && go build -o tmp/navishai-exec ./runner/cmd/navishai-exec"
   step "Tests: Rails and Go runner contract", "script/runner_contract"
   step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
 
