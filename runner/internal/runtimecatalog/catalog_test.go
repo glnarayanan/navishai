@@ -62,3 +62,26 @@ func TestDetectOmitsUnregisteredAndMissingExecutables(t *testing.T) {
 		t.Fatalf("expected no installations, got %#v", installations)
 	}
 }
+
+func TestDetectReportsOnlyNonSecretAuthenticatedAccountMetadata(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "account-runtime")
+	script := "#!/bin/sh\nif [ \"$1\" = login ]; then printf 'Logged in using Test Plan\\n'; else printf 'runtime 1.2.3\\n'; fi\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	catalog, err := New([]Definition{{
+		AdapterKey: "account_fixture", ProtocolVersion: "v1", ExecutableNames: []string{"account-runtime"},
+		VersionArguments: []string{"--version"}, AccountArguments: []string{"login", "status"},
+		AccountMarker: "Logged in using Test Plan", AccountMetadata: map[string]string{"authentication": "test_subscription"},
+		MinimumVersion: "1.0.0", MaximumVersion: "1.9.99",
+	}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := catalog.Detect(context.Background())[0]
+	if installation.HealthStatus != "available" || installation.AccountMetadata["authentication"] != "test_subscription" {
+		t.Fatalf("unexpected account detection %#v", installation)
+	}
+}

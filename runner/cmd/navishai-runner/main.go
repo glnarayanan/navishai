@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/admission"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
@@ -50,7 +51,11 @@ func newHandler(secret []byte, store *admission.Store, now func() time.Time) (ht
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
 	}
-	runtimeHandler, err := runtimecatalog.NewHandler(secret, runtimecatalog.Empty(), now)
+	catalog, err := runtimecatalog.New([]runtimecatalog.Definition{codex.Definition()}, now)
+	if err != nil {
+		return nil, fmt.Errorf("create runtime catalog: %w", err)
+	}
+	runtimeHandler, err := runtimecatalog.NewHandler(secret, catalog, now)
 	if err != nil {
 		return nil, fmt.Errorf("create runtime detection handler: %w", err)
 	}
