@@ -2,7 +2,7 @@
 
 <main class="crew-work-page">
   <header class="crew-work-header crew-task-header">
-    <%= link_to "Back to crew work", workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "back-link" %>
+    <%= link_to "Back to crew work", crew_tasks_path_for_scope, class: "back-link" %>
     <div>
       <h1><%= @task.title %></h1>
       <p><strong><%= @task.assigned_agent_profile.name %></strong> · Task <%= @task.task_key.first(8) %></p>
@@ -17,7 +17,7 @@
 
   <div class="crew-task-detail-grid">
     <aside class="crew-work-panel crew-task-rail">
-      <div class="crew-work-panel-heading"><h2>Case plan</h2><span><%= @tasks.size %></span></div>
+      <div class="crew-work-panel-heading"><h2><%= @account ? "Account plan" : "Case plan" %></h2><span><%= @tasks.size %></span></div>
       <%= render "task_list", tasks: @tasks %>
     </aside>
 
@@ -31,7 +31,7 @@
           <strong>Depends on</strong>
           <ul>
             <% @task.dependencies.each do |dependency| %>
-              <li><%= link_to dependency.title, workspace_support_case_crew_task_path(@workspace, @support_case, dependency) %> · <%= dependency.status.humanize %></li>
+              <li><%= link_to dependency.title, crew_task_path_for_scope(dependency) %> · <%= dependency.status.humanize %></li>
             <% end %>
           </ul>
         </div>
@@ -73,15 +73,15 @@
       <% if @membership.can_write? %>
         <% expected = @task.current_event.sequence_number %>
         <% if @task.ready? %>
-          <%= button_to "Start task", command_workspace_support_case_crew_task_path(@workspace, @support_case, @task),
+          <%= button_to "Start task", crew_task_command_path(@task),
             params: { command_name: "start", expected_sequence: expected }, class: "button button-primary" %>
         <% elsif @task.pending? %>
           <p class="muted-copy">This task starts when every dependency is complete.</p>
         <% elsif @task.blocked? %>
-          <%= button_to "Resume task", command_workspace_support_case_crew_task_path(@workspace, @support_case, @task),
+          <%= button_to "Resume task", crew_task_command_path(@task),
             params: { command_name: "resume", expected_sequence: expected }, class: "button button-primary" %>
         <% elsif @task.failed? %>
-          <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+          <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
             <%= form.hidden_field :command_name, value: "retry", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
             <div class="field"><%= form.label :body, "Why retry?", for: "task-retry-body" %><%= form.text_area :body, id: "task-retry-body", required: true, rows: 3 %></div>
             <%= form.submit "Retry task", class: "button button-primary" %>
@@ -91,12 +91,12 @@
         <% unless @task.completed? || @task.canceled? %>
           <details class="crew-command-group" open>
             <summary>Add to the record</summary>
-            <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+            <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
               <%= form.hidden_field :command_name, value: "comment", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
               <div class="field"><%= form.label :body, "Comment", for: "task-comment-body" %><%= form.text_area :body, id: "task-comment-body", required: true, rows: 3 %></div>
               <%= form.submit "Add comment", class: "button button-secondary" %>
             <% end %>
-            <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+            <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
               <%= form.hidden_field :command_name, value: "add_evidence", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
               <div class="field"><%= form.label :evidence_kind, "Evidence type", for: "task-evidence-kind" %><%= form.select :evidence_kind, CrewTaskEvent::EVIDENCE_KINDS.map { |kind| [kind.humanize, kind] }, {}, id: "task-evidence-kind" %></div>
               <div class="field"><%= form.label :evidence_locator, "Stable reference", for: "task-evidence-locator" %><%= form.text_field :evidence_locator, id: "task-evidence-locator", required: true, maxlength: 2_000 %></div>
@@ -108,14 +108,14 @@
           <% if (@task.in_progress? || @task.blocked?) && @active_run.nil? %>
             <details class="crew-command-group">
               <summary>Handoff or outcome</summary>
-              <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+              <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
                 <%= form.hidden_field :command_name, value: "handoff", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
                 <div class="field"><%= form.label :agent_profile_id, "Hand off to", for: "task-handoff-profile" %><%= form.select :agent_profile_id, @profiles.reject { |profile| profile == @task.assigned_agent_profile }.map { |profile| [profile.name, profile.id] }, {}, id: "task-handoff-profile" %></div>
                 <div class="field"><%= form.label :body, "Reason and expected output", for: "task-handoff-body" %><%= form.text_area :body, id: "task-handoff-body", required: true, rows: 3 %></div>
                 <%= form.submit "Record handoff", class: "button button-secondary" %>
               <% end %>
               <% if @task.in_progress? %>
-                <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+                <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
                   <%= form.hidden_field :command_name, value: "request_review", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
                   <div class="field"><%= form.label :body, "What needs review", for: "task-review-request-body" %><%= form.text_area :body, id: "task-review-request-body", required: true, rows: 3 %></div>
                   <%= form.submit "Request review", class: "button button-primary" %>
@@ -123,7 +123,7 @@
               <% end %>
             </details>
           <% elsif @task.review_requested? && @membership.can_manage_work? %>
-            <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form crew-review-form" do |form| %>
+            <%= form_with url: crew_task_command_path(@task), class: "crew-command-form crew-review-form" do |form| %>
               <%= form.hidden_field :command_name, value: "review", id: nil %><%= form.hidden_field :expected_sequence, value: expected, id: nil %>
               <div class="field"><%= form.label :review_outcome, "Decision", for: "task-review-outcome" %><%= form.select :review_outcome, [["Approve outcome", "approved"], ["Request changes", "changes_requested"]], {}, id: "task-review-outcome" %></div>
               <div class="field"><%= form.label :body, "Review record", for: "task-review-body" %><%= form.text_area :body, id: "task-review-body", required: true, rows: 4 %></div>
@@ -139,7 +139,7 @@
           <% if outcome_commands.any? %>
             <details class="crew-command-group">
               <summary>Record a block or stop</summary>
-              <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
+              <%= form_with url: crew_task_command_path(@task), class: "crew-command-form" do |form| %>
                 <%= form.hidden_field :expected_sequence, value: expected, id: nil %>
                 <div class="field"><%= form.label :command_name, "Outcome", for: "task-stop-command" %><%= form.select :command_name, outcome_commands, {}, id: "task-stop-command" %></div>
                 <div class="field"><%= form.label :body, "Reason", for: "task-stop-body" %><%= form.text_area :body, id: "task-stop-body", required: true, rows: 3 %></div>

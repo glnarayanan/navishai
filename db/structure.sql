@@ -245,6 +245,22 @@ $$;
 
 
 --
+-- Name: protect_account_health_snapshot(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_account_health_snapshot() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'account health records are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_agent_profile(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1370,6 +1386,141 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: account_health_assessments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_health_assessments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    previous_assessment_id bigint,
+    score integer NOT NULL,
+    risk_level character varying NOT NULL,
+    trigger_kind character varying NOT NULL,
+    material_change boolean NOT NULL,
+    renewal_on date,
+    calculated_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT account_health_assessments_risk CHECK (((risk_level)::text = ANY ((ARRAY['healthy'::character varying, 'watch'::character varying, 'at_risk'::character varying])::text[]))),
+    CONSTRAINT account_health_assessments_score CHECK (((score >= 0) AND (score <= 100))),
+    CONSTRAINT account_health_assessments_trigger CHECK (((trigger_kind)::text = ANY ((ARRAY['input_change'::character varying, 'schedule'::character varying, 'renewal_window'::character varying, 'human_request'::character varying])::text[])))
+);
+
+
+--
+-- Name: account_health_assessments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.account_health_assessments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: account_health_assessments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.account_health_assessments_id_seq OWNED BY public.account_health_assessments.id;
+
+
+--
+-- Name: account_health_inputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_health_inputs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    input_key character varying NOT NULL,
+    value_kind character varying NOT NULL,
+    numeric_value numeric(18,4),
+    date_value date,
+    source_kind character varying NOT NULL,
+    source_key character varying NOT NULL,
+    source_locator character varying NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    supplied_by_membership_id bigint,
+    supplied_by_user_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT account_health_inputs_key CHECK (((input_key)::text = ANY ((ARRAY['renewal_on'::character varying, 'contract_value'::character varying, 'active_users'::character varying, 'licensed_seats'::character varying])::text[]))),
+    CONSTRAINT account_health_inputs_source CHECK ((((octet_length((source_key)::text) >= 1) AND (octet_length((source_key)::text) <= 255)) AND ((octet_length((source_locator)::text) >= 1) AND (octet_length((source_locator)::text) <= 1000)))),
+    CONSTRAINT account_health_inputs_source_kind CHECK (((source_kind)::text = ANY ((ARRAY['csv'::character varying, 'api'::character varying])::text[]))),
+    CONSTRAINT account_health_inputs_supplier CHECK ((((supplied_by_membership_id IS NULL) AND (supplied_by_user_id IS NULL)) OR ((supplied_by_membership_id IS NOT NULL) AND (supplied_by_user_id IS NOT NULL)))),
+    CONSTRAINT account_health_inputs_typed_value CHECK ((((value_kind)::text = ANY ((ARRAY['date'::character varying, 'number'::character varying])::text[])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL)))))
+);
+
+
+--
+-- Name: account_health_inputs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.account_health_inputs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: account_health_inputs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.account_health_inputs_id_seq OWNED BY public.account_health_inputs.id;
+
+
+--
+-- Name: account_health_signals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_health_signals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    account_health_assessment_id bigint NOT NULL,
+    signal_key character varying NOT NULL,
+    value_kind character varying NOT NULL,
+    numeric_value numeric(18,4),
+    date_value date,
+    weight integer NOT NULL,
+    risk_points integer NOT NULL,
+    source_kind character varying NOT NULL,
+    source_locator character varying NOT NULL,
+    range_starts_at timestamp(6) without time zone,
+    range_ends_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT account_health_signals_source CHECK (((octet_length((source_locator)::text) >= 1) AND (octet_length((source_locator)::text) <= 1000))),
+    CONSTRAINT account_health_signals_source_kind CHECK (((source_kind)::text = ANY ((ARRAY['account_input'::character varying, 'support_cases'::character varying, 'sla'::character varying, 'conversation'::character varying, 'case_notes'::character varying])::text[]))),
+    CONSTRAINT account_health_signals_typed_value CHECK ((((value_kind)::text = ANY ((ARRAY['date'::character varying, 'number'::character varying])::text[])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL))))),
+    CONSTRAINT account_health_signals_weight CHECK ((((weight >= 0) AND (weight <= 100)) AND ((risk_points >= 0) AND (risk_points <= weight))))
+);
+
+
+--
+-- Name: account_health_signals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.account_health_signals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: account_health_signals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.account_health_signals_id_seq OWNED BY public.account_health_signals.id;
+
+
+--
 -- Name: account_merges; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1406,6 +1557,47 @@ CREATE SEQUENCE public.account_merges_id_seq
 --
 
 ALTER SEQUENCE public.account_merges_id_seq OWNED BY public.account_merges.id;
+
+
+--
+-- Name: account_risk_investigations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_risk_investigations (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    account_health_assessment_id bigint NOT NULL,
+    crew_task_id bigint,
+    status character varying DEFAULT 'detected'::character varying NOT NULL,
+    trigger_kind character varying NOT NULL,
+    opened_at timestamp(6) without time zone NOT NULL,
+    resolved_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT account_risk_investigations_state CHECK (((((status)::text = 'detected'::text) AND (crew_task_id IS NULL) AND (resolved_at IS NULL)) OR (((status)::text = 'investigating'::text) AND (crew_task_id IS NOT NULL) AND (resolved_at IS NULL)) OR (((status)::text = 'resolved'::text) AND (crew_task_id IS NOT NULL) AND (resolved_at IS NOT NULL)))),
+    CONSTRAINT account_risk_investigations_status CHECK (((status)::text = ANY ((ARRAY['detected'::character varying, 'investigating'::character varying, 'resolved'::character varying])::text[]))),
+    CONSTRAINT account_risk_investigations_trigger CHECK (((trigger_kind)::text = ANY ((ARRAY['material_change'::character varying, 'renewal_window'::character varying, 'human_request'::character varying])::text[])))
+);
+
+
+--
+-- Name: account_risk_investigations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.account_risk_investigations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: account_risk_investigations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.account_risk_investigations_id_seq OWNED BY public.account_risk_investigations.id;
 
 
 --
@@ -1976,9 +2168,9 @@ CREATE TABLE public.crew_artifacts (
     CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
     CONSTRAINT crew_artifacts_content CHECK (((octet_length(body) >= 1) AND (octet_length(body) <= 51200) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
     CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY (ARRAY[('investigation'::character varying)::text, ('draft'::character varying)::text, ('quality_review'::character varying)::text]))),
+    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY (ARRAY[('investigation'::character varying)::text, ('draft'::character varying)::text, ('quality_review'::character varying)::text, ('account_analysis'::character varying)::text, ('risk_investigation'::character varying)::text, ('intervention_plan'::character varying)::text, ('success_review'::character varying)::text]))),
     CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
-    CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = 'quality_review'::text) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> 'quality_review'::text) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
+    CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = ANY (ARRAY[('quality_review'::character varying)::text, ('success_review'::character varying)::text])) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> ALL (ARRAY[('quality_review'::character varying)::text, ('success_review'::character varying)::text])) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
     CONSTRAINT crew_artifacts_version CHECK ((version_number > 0))
 );
 
@@ -4263,10 +4455,38 @@ ALTER SEQUENCE public.workspaces_id_seq OWNED BY public.workspaces.id;
 
 
 --
+-- Name: account_health_assessments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments ALTER COLUMN id SET DEFAULT nextval('public.account_health_assessments_id_seq'::regclass);
+
+
+--
+-- Name: account_health_inputs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs ALTER COLUMN id SET DEFAULT nextval('public.account_health_inputs_id_seq'::regclass);
+
+
+--
+-- Name: account_health_signals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_signals ALTER COLUMN id SET DEFAULT nextval('public.account_health_signals_id_seq'::regclass);
+
+
+--
 -- Name: account_merges id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_merges ALTER COLUMN id SET DEFAULT nextval('public.account_merges_id_seq'::regclass);
+
+
+--
+-- Name: account_risk_investigations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations ALTER COLUMN id SET DEFAULT nextval('public.account_risk_investigations_id_seq'::regclass);
 
 
 --
@@ -4746,11 +4966,43 @@ ALTER TABLE ONLY public.workspaces ALTER COLUMN id SET DEFAULT nextval('public.w
 
 
 --
+-- Name: account_health_assessments account_health_assessments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments
+    ADD CONSTRAINT account_health_assessments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_health_inputs account_health_inputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT account_health_inputs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_health_signals account_health_signals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_signals
+    ADD CONSTRAINT account_health_signals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: account_merges account_merges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.account_merges
     ADD CONSTRAINT account_merges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_risk_investigations account_risk_investigations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations
+    ADD CONSTRAINT account_risk_investigations_pkey PRIMARY KEY (id);
 
 
 --
@@ -5405,6 +5657,76 @@ CREATE INDEX idx_on_workspace_id_status_created_at_52affea5f4 ON public.intercom
 
 
 --
+-- Name: index_account_health_assessments_for_latest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_health_assessments_for_latest ON public.account_health_assessments USING btree (workspace_id, account_id, calculated_at);
+
+
+--
+-- Name: index_account_health_assessments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_health_assessments_on_workspace_id ON public.account_health_assessments USING btree (workspace_id);
+
+
+--
+-- Name: index_account_health_assessments_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_assessments_on_workspace_id_and_id ON public.account_health_assessments USING btree (workspace_id, id);
+
+
+--
+-- Name: index_account_health_inputs_for_latest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_health_inputs_for_latest ON public.account_health_inputs USING btree (workspace_id, account_id, input_key, observed_at);
+
+
+--
+-- Name: index_account_health_inputs_on_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_inputs_on_source ON public.account_health_inputs USING btree (workspace_id, source_kind, source_key, input_key);
+
+
+--
+-- Name: index_account_health_inputs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_health_inputs_on_workspace_id ON public.account_health_inputs USING btree (workspace_id);
+
+
+--
+-- Name: index_account_health_inputs_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_inputs_on_workspace_id_and_id ON public.account_health_inputs USING btree (workspace_id, id);
+
+
+--
+-- Name: index_account_health_signals_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_health_signals_on_workspace_id ON public.account_health_signals USING btree (workspace_id);
+
+
+--
+-- Name: index_account_health_signals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_signals_on_workspace_id_and_id ON public.account_health_signals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_account_health_signals_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_signals_unique ON public.account_health_signals USING btree (account_health_assessment_id, signal_key);
+
+
+--
 -- Name: index_account_merges_on_merged_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5423,6 +5745,34 @@ CREATE INDEX index_account_merges_on_unmerged_by_id ON public.account_merges USI
 --
 
 CREATE INDEX index_account_merges_on_workspace_id ON public.account_merges USING btree (workspace_id);
+
+
+--
+-- Name: index_account_risk_investigations_on_assessment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_risk_investigations_on_assessment ON public.account_risk_investigations USING btree (account_health_assessment_id);
+
+
+--
+-- Name: index_account_risk_investigations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_risk_investigations_on_workspace_id ON public.account_risk_investigations USING btree (workspace_id);
+
+
+--
+-- Name: index_account_risk_investigations_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_risk_investigations_on_workspace_id_and_id ON public.account_risk_investigations USING btree (workspace_id, id);
+
+
+--
+-- Name: index_account_risk_investigations_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_account_risk_investigations_open ON public.account_risk_investigations USING btree (workspace_id, account_id, status);
 
 
 --
@@ -7239,6 +7589,48 @@ CREATE UNIQUE INDEX index_workspaces_on_runner_key ON public.workspaces USING bt
 
 
 --
+-- Name: account_health_assessments account_health_assessments_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_assessments_append_only BEFORE DELETE OR UPDATE ON public.account_health_assessments FOR EACH ROW EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
+-- Name: account_health_assessments account_health_assessments_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_assessments_no_truncate BEFORE TRUNCATE ON public.account_health_assessments FOR EACH STATEMENT EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
+-- Name: account_health_inputs account_health_inputs_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_inputs_append_only BEFORE DELETE OR UPDATE ON public.account_health_inputs FOR EACH ROW EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
+-- Name: account_health_inputs account_health_inputs_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_inputs_no_truncate BEFORE TRUNCATE ON public.account_health_inputs FOR EACH STATEMENT EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
+-- Name: account_health_signals account_health_signals_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_signals_append_only BEFORE DELETE OR UPDATE ON public.account_health_signals FOR EACH ROW EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
+-- Name: account_health_signals account_health_signals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER account_health_signals_no_truncate BEFORE TRUNCATE ON public.account_health_signals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_account_health_snapshot();
+
+
+--
 -- Name: active_storage_attachments active_storage_attachments_no_stored_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7883,6 +8275,30 @@ CREATE TRIGGER workspaces_protect_runner_key BEFORE UPDATE ON public.workspaces 
 
 
 --
+-- Name: account_health_assessments fk_account_health_assessments_previous; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments
+    ADD CONSTRAINT fk_account_health_assessments_previous FOREIGN KEY (workspace_id, previous_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
+
+
+--
+-- Name: account_health_inputs fk_account_health_inputs_supplier; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT fk_account_health_inputs_supplier FOREIGN KEY (workspace_id, supplied_by_membership_id, supplied_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: account_health_signals fk_account_health_signals_assessment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_signals
+    ADD CONSTRAINT fk_account_health_signals_assessment FOREIGN KEY (workspace_id, account_health_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
+
+
+--
 -- Name: account_merges fk_account_merges_source; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7896,6 +8312,14 @@ ALTER TABLE ONLY public.account_merges
 
 ALTER TABLE ONLY public.account_merges
     ADD CONSTRAINT fk_account_merges_target FOREIGN KEY (workspace_id, target_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: account_risk_investigations fk_account_risk_investigations_assessment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations
+    ADD CONSTRAINT fk_account_risk_investigations_assessment FOREIGN KEY (workspace_id, account_health_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
 
 
 --
@@ -8123,6 +8547,14 @@ ALTER TABLE ONLY public.account_merges
 
 
 --
+-- Name: account_health_inputs fk_rails_008d7a04b1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT fk_rails_008d7a04b1 FOREIGN KEY (supplied_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: crew_task_dependencies fk_rails_00fd3c8c09; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8160,6 +8592,14 @@ ALTER TABLE ONLY public.intercom_outbound_deliveries
 
 ALTER TABLE ONLY public.agent_profile_versions
     ADD CONSTRAINT fk_rails_0a8ca6adb2 FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: account_health_assessments fk_rails_0b433e9580; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments
+    ADD CONSTRAINT fk_rails_0b433e9580 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -8520,6 +8960,14 @@ ALTER TABLE ONLY public.stored_attachments
 
 ALTER TABLE ONLY public.memory_proposals
     ADD CONSTRAINT fk_rails_4a0f4103ec FOREIGN KEY (workspace_id, published_memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
+-- Name: account_health_signals fk_rails_4bcf789340; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_signals
+    ADD CONSTRAINT fk_rails_4bcf789340 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -9171,6 +9619,14 @@ ALTER TABLE ONLY public.email_draft_attachments
 
 
 --
+-- Name: account_risk_investigations fk_rails_a6c56dd60e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations
+    ADD CONSTRAINT fk_rails_a6c56dd60e FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_a79332c57f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9331,6 +9787,14 @@ ALTER TABLE ONLY public.memory_tombstones
 
 
 --
+-- Name: account_health_inputs fk_rails_bd914d14d2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT fk_rails_bd914d14d2 FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
 -- Name: public_web_searches fk_rails_bfba850d20; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9379,6 +9843,14 @@ ALTER TABLE ONLY public.intercom_conversation_links
 
 
 --
+-- Name: account_health_inputs fk_rails_c62df8f1a3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT fk_rails_c62df8f1a3 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: public_web_extractions fk_rails_c6f2785e1f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9408,6 +9880,14 @@ ALTER TABLE ONLY public.email_drafts
 
 ALTER TABLE ONLY public.memory_index_entries
     ADD CONSTRAINT fk_rails_c8546818c4 FOREIGN KEY (workspace_id, memory_record_id) REFERENCES public.memory_records(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: account_health_assessments fk_rails_c87bc4b570; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_assessments
+    ADD CONSTRAINT fk_rails_c87bc4b570 FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
 
 
 --
@@ -9627,6 +10107,14 @@ ALTER TABLE ONLY public.intercom_webhook_deliveries
 
 
 --
+-- Name: account_risk_investigations fk_rails_f07d09c602; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations
+    ADD CONSTRAINT fk_rails_f07d09c602 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: outbound_email_delivery_attachments fk_rails_f20f8e12d5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9675,6 +10163,14 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments
 
 
 --
+-- Name: account_risk_investigations fk_rails_fa70abcfa9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_risk_investigations
+    ADD CONSTRAINT fk_rails_fa70abcfa9 FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
 -- Name: email_message_links fk_rails_fad997ec9c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9713,6 +10209,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824210000'),
 ('20260824200000'),
 ('20260824190000'),
 ('20260824180000'),

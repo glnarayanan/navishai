@@ -8,7 +8,15 @@ class AuditEvent < ApplicationRecord
     "authentication.signed_out" => {},
     "authentication.succeeded" => { "method" => %w[local break_glass] },
     "account.created" => {},
+    "account.data_imported" => { "source_kind" => AccountHealthInput::SOURCE_KINDS, "record_count" => Integer },
+    "account.health_recalculated" => {
+      "trigger_kind" => AccountHealthAssessment::TRIGGER_KINDS,
+      "risk_level" => AccountHealthAssessment::RISK_LEVELS
+    },
     "account.merged" => {},
+    "account.risk_detected" => { "trigger_kind" => AccountRiskInvestigation::TRIGGER_KINDS },
+    "account.risk_resolved" => {},
+    "account.risk_started" => {},
     "account.unmerged" => {},
     "agent.profile_updated" => {},
     "crew.artifact_published" => { "artifact_kind" => CrewArtifact::KINDS, "version" => Integer },

@@ -3,7 +3,7 @@
     controller: "run-poll",
     run_poll_active_value: @active_run.present?,
     run_poll_interval_value: 3_000,
-    run_poll_url_value: workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, @task)
+    run_poll_url_value: crew_task_runs_path(@task)
   } do %>
   <section class="execution-panel" aria-labelledby="execution-title">
     <div class="execution-heading">
@@ -120,7 +120,7 @@
 
         <% if @membership.can_write? && latest_run.admitting? %>
           <%= button_to "Retry runner connection",
-            reconcile_workspace_support_case_crew_task_execution_run_path(@workspace, @support_case, @task, latest_run),
+            crew_task_run_reconcile_path(@task, latest_run),
             class: "button button-secondary run-action" %>
         <% end %>
 
@@ -157,7 +157,7 @@
 
     <% if @membership.can_write? && @task.in_progress? && @active_run.nil? %>
       <%= button_to latest_run ? "Run specialist again" : "Run specialist",
-        workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, @task),
+        crew_task_runs_path(@task),
         params: { request_key: "web:#{SecureRandom.uuid}" }, class: "button button-primary run-action" %>
     <% elsif @active_run %>
       <p class="execution-footnote">A new attempt stays blocked until this run reaches a confirmed terminal state.</p>

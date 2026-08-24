@@ -1,0 +1,66 @@
+require "test_helper"
+
+class AccountsControllerTest < ActionDispatch::IntegrationTest
+  setup do
+    @workspace = workspaces(:acme_support)
+    @account = accounts(:acme)
+    sign_in_as users(:owner)
+  end
+
+  test "shows scoped accounts and a complete deterministic signal record" do
+    assessment = AccountHealth.recalculate!(workspace: @workspace, account: @account,
+      trigger_kind: "human_request", membership: memberships(:owner_support))
+
+    get workspace_accounts_path(@workspace)
+    assert_response :success
+    assert_select "a", text: /#{@account.name}/
+    assert_select "a", text: /#{accounts(:beta).name}/, count: 0
+
+    get workspace_account_path(@workspace, @account)
+    assert_response :success
+    assert_select ".health-score-panel strong", text: /#{assessment.score}/
+    assert_select ".health-signals tbody tr", count: assessment.signals.count
+    assert_select "small", text: assessment.signals.first.citation_uri
+    assert_select "h2", text: "Renewal-risk work"
+  end
+
+  test "imports CSV and JSON inputs and rejects foreign accounts" do
+    csv = Rack::Test::UploadedFile.new(
+      StringIO.new("source_id,account_name,renewal_on\ncontroller-csv,Controller Import,2026-09-20\n"),
+      "text/csv", original_filename: "accounts.csv"
+    )
+    post workspace_account_imports_path(@workspace), params: { file: csv }
+    assert_redirected_to workspace_accounts_path(@workspace)
+    assert @workspace.accounts.exists?(name: "Controller Import")
+
+    post workspace_account_api_inputs_path(@workspace), params: {
+      records: [ { source_id: "controller-api", account_name: "API Import", active_users: 30 } ]
+    }, as: :json
+    assert_response :created
+    assert_equal 1, response.parsed_body.fetch("imported_accounts")
+
+    post workspace_account_api_inputs_path(@workspace), params: { records: "not-an-array" }, as: :json
+    assert_response :unprocessable_content
+    assert_equal "API payload must contain 1 to 500 records.", response.parsed_body.fetch("error")
+
+    get workspace_account_path(@workspace, accounts(:beta))
+    assert_response :not_found
+  end
+
+  test "viewer can inspect but cannot recalculate or import" do
+    viewer = User.create!(email_address: "account-viewer@example.com", password: "password12345", verified_at: Time.current)
+    @workspace.memberships.create!(user: viewer, role: :viewer)
+    sign_in_as viewer
+    get workspace_account_path(@workspace, @account)
+    assert_response :success
+    assert_select "form[action=?]", recalculate_workspace_account_path(@workspace, @account), count: 0
+
+    post recalculate_workspace_account_path(@workspace, @account)
+    assert_response :forbidden
+
+    post workspace_account_api_inputs_path(@workspace), params: { records: [ {
+      source_id: "viewer", account_name: "Nope", active_users: 1
+    } ] }, as: :json
+    assert_response :forbidden
+  end
+end

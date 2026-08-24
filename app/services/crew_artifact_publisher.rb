@@ -8,8 +8,13 @@ class CrewArtifactPublisher
   ROLE_KINDS = {
     "support_investigator" => "investigation",
     "resolution_drafter" => "draft",
-    "support_reviewer" => "quality_review"
+    "support_reviewer" => "quality_review",
+    "account_analyst" => "account_analysis",
+    "risk_investigator" => "risk_investigation",
+    "success_strategist" => "intervention_plan",
+    "success_reviewer" => "success_review"
   }.freeze
+  REVIEW_TARGET_KINDS = { "quality_review" => "draft", "success_review" => "intervention_plan" }.freeze
   CITATION_KEYS = %w[kind label locator].sort.freeze
   CONFLICT_KEYS = %w[details severity summary].sort.freeze
   CONFLICT_SEVERITIES = %w[info warning blocking].freeze
@@ -35,7 +40,7 @@ class CrewArtifactPublisher
     digest = Digest::SHA256.hexdigest(run.output.to_s)
     payload = parse(run.output)
     kind = ROLE_KINDS.fetch(run.agent_profile.role_key) do
-      raise InvalidOutput, "This specialist cannot publish a support artifact."
+      raise InvalidOutput, "This specialist cannot publish a crew artifact."
     end
     raise InvalidOutput, "Output kind does not match the specialist role." unless payload.fetch("kind") == kind
 
@@ -97,21 +102,22 @@ class CrewArtifactPublisher
     end
 
     def review_target!(task, run, kind, value)
-      if kind != "quality_review"
-        raise InvalidOutput, "Only a quality review can target an artifact." if value.present?
+      target_kind = REVIEW_TARGET_KINDS[kind]
+      unless target_kind
+        raise InvalidOutput, "Only a review can target an artifact." if value.present?
         return nil
       end
       if value.present? && value != run.input_artifact
         raise InvalidOutput, "Quality review target changed after the run started."
       end
       value ||= run.input_artifact
-      raise InvalidOutput, "A quality review must target the latest draft." if value.blank?
+      raise InvalidOutput, "A review must target the latest #{target_kind.humanize.downcase}." if value.blank?
 
       target = @workspace.crew_artifacts.find(value.id)
       latest = @workspace.crew_artifacts.joins(:crew_task)
-        .where(artifact_kind: "draft", crew_tasks: scope_filter(task)).order(created_at: :desc, id: :desc).first
-      unless target.draft? && target == latest && same_scope?(task, target.crew_task)
-        raise InvalidOutput, "A quality review must target the latest draft."
+        .where(artifact_kind: target_kind, crew_tasks: scope_filter(task)).order(created_at: :desc, id: :desc).first
+      unless target.artifact_kind == target_kind && target == latest && same_scope?(task, target.crew_task)
+        raise InvalidOutput, "A review must target the latest #{target_kind.humanize.downcase}."
       end
       target
     end
@@ -141,7 +147,11 @@ class CrewArtifactPublisher
         raise InvalidOutput, "Knowledge citation is unavailable." unless version&.citation_uri == locator
       when "conversation"
         match = locator.match(%r{\Aconversation://(\d+)/messages/(\d+)\z})
-        conversation = task.support_case&.conversation
+        conversation = if task.support_case
+          task.support_case.conversation
+        elsif match
+          @workspace.conversations.where(contact_id: task.account.contacts.select(:id)).find_by(id: match[1])
+        end
         message = match && conversation&.conversation_messages&.find_by(id: match[2])
         unless conversation && conversation.id == match[1].to_i && message
           raise InvalidOutput, "Conversation citation is unavailable."
@@ -151,6 +161,12 @@ class CrewArtifactPublisher
       when "account"
         account_id = task.account_id || task.support_case&.conversation&.contact&.account_id
         raise InvalidOutput, "Account citation is unavailable." unless account_id && locator == "account://#{account_id}"
+      when "health_signal"
+        match = locator.match(%r{\Ahealth://assessments/(\d+)/signals/([a-z0-9_]+)\z})
+        signal = match && @workspace.account_health_signals.joins(:account_health_assessment)
+          .find_by(account_health_assessment_id: match[1], signal_key: match[2],
+            account_health_assessments: { account_id: task.account_id })
+        raise InvalidOutput, "Health-signal citation is unavailable." unless signal&.citation_uri == locator
       when "public_web"
         match = locator.match(%r{\Apublic-web://([0-9a-f-]{36})\z})
         result = match && @workspace.public_web_search_results.joins(:public_web_search)
@@ -185,12 +201,12 @@ class CrewArtifactPublisher
 
     def review_outcome!(kind, payload)
       outcome = payload.fetch("review_outcome")
-      if kind == "quality_review"
+      if REVIEW_TARGET_KINDS.key?(kind)
         raise InvalidOutput, "Review outcome is invalid." unless CrewArtifact::REVIEW_OUTCOMES.include?(outcome)
         has_blocker = payload.fetch("conflicts").any? { |conflict| conflict.is_a?(Hash) && conflict["severity"] == "blocking" }
         raise InvalidOutput, "A review with blocking conflicts cannot be approved." if outcome == "approved" && has_blocker
       elsif outcome.present?
-        raise InvalidOutput, "Only a quality review can record an outcome."
+        raise InvalidOutput, "Only a review can record an outcome."
       end
       outcome
     end
@@ -200,10 +216,10 @@ class CrewArtifactPublisher
       unless values.is_a?(Array) && values.size <= 20
         raise InvalidOutput, "Change requests must be an array with at most 20 entries."
       end
-      if kind != "quality_review" && values.present?
-        raise InvalidOutput, "Only a quality review can request changes."
+      if !REVIEW_TARGET_KINDS.key?(kind) && values.present?
+        raise InvalidOutput, "Only a review can request changes."
       end
-      if kind == "quality_review" && (payload.fetch("review_outcome") == "changes_requested") != values.present?
+      if REVIEW_TARGET_KINDS.key?(kind) && (payload.fetch("review_outcome") == "changes_requested") != values.present?
         raise InvalidOutput, "Change requests do not match the review outcome."
       end
       values.map { |value| bounded_text(value, 2_000, "Change request") }

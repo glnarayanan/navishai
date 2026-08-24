@@ -1,5 +1,8 @@
 class CrewArtifact < ApplicationRecord
-  KINDS = %w[investigation draft quality_review].freeze
+  KINDS = %w[
+    investigation draft quality_review account_analysis risk_investigation intervention_plan success_review
+  ].freeze
+  REVIEW_KINDS = %w[quality_review success_review].freeze
   REVIEW_OUTCOMES = %w[approved changes_requested].freeze
 
   attribute :artifact_key, default: -> { SecureRandom.uuid }
@@ -42,7 +45,7 @@ class CrewArtifact < ApplicationRecord
     end
 
     def shape_is_consistent
-      review = artifact_kind == "quality_review"
+      review = REVIEW_KINDS.include?(artifact_kind)
       errors.add(:target_artifact, "does not match artifact kind") if review != target_artifact.present?
       errors.add(:review_outcome, "does not match artifact kind") if review != review_outcome.present?
       records = [ crew_task, execution_run, supersedes_artifact, target_artifact ].compact

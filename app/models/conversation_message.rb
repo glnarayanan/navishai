@@ -20,11 +20,17 @@ class ConversationMessage < ApplicationRecord
   validates :external_author_name, presence: true, length: { maximum: 200 }, if: :external?
   validate :author_matches_kind
 
+  after_create_commit :recalculate_account_health
+
   def readonly?
     persisted?
   end
 
   private
+    def recalculate_account_health
+      AccountHealthRecalculationJob.enqueue_after_commit(conversation.contact.account)
+    end
+
     def author_matches_kind
       expected_contact = contact?
       errors.add(:author_user, "does not match author kind") if user? != author_user.present?

@@ -1,7 +1,7 @@
 <nav class="crew-task-list" aria-label="Crew tasks">
   <% if tasks.any? %>
     <% tasks.each do |task| %>
-      <%= link_to workspace_support_case_crew_task_path(@workspace, @support_case, task),
+      <%= link_to crew_task_path_for_scope(task),
         class: ["crew-task-list-item", ("is-current" if @task == task)] do %>
         <span class="crew-task-list-copy">
           <strong><%= task.title %></strong>
