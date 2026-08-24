@@ -9,6 +9,15 @@ class WorkspaceDataPolicyTest < ActiveSupport::TestCase
     assert_equal now - 365.days, policy.audit_cutoff(at: now)
   end
 
+  test "audit expiry state and counts are bounded" do
+    policy = WorkspaceDataPolicy.new(
+      workspace: workspaces(:acme_support), audit_expiry_status: "completed", audit_expired_event_count: -1
+    )
+
+    refute policy.valid?
+    assert_includes policy.errors[:audit_expired_event_count], "must be greater than or equal to 0"
+  end
+
   test "new workspaces get an indefinite policy" do
     workspace = organizations(:acme).workspaces.create!(name: "Retention test", slug: "retention-test")
 

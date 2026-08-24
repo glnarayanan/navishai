@@ -16,3 +16,6 @@ production:
   expire_workspace_content:
     command: "Workspace.includes(:workspace_data_policy).find_each { |workspace| WorkspaceContentExpiry.request!(workspace:) if workspace.workspace_data_policy.content_retention_days }"
     schedule: every day at 2:30am
+  expire_workspace_audit:
+    command: "Workspace.includes(:workspace_data_policy).find_each { |workspace| WorkspaceDataGovernance.request_audit_expiry!(workspace:) if workspace.workspace_data_policy.audit_retention_days }"
+    schedule: every day at 3am

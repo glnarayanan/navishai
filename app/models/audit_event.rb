@@ -124,6 +124,9 @@ class AuditEvent < ApplicationRecord
     "workspace.content_expiry_requested" => {},
     "workspace.content_expiry_completed" => { "record_count" => Integer },
     "workspace.content_expiry_failed" => { "failure_code" => String },
+    "workspace.audit_expiry_requested" => {},
+    "workspace.audit_expiry_completed" => { "event_count" => Integer },
+    "workspace.audit_expiry_failed" => { "failure_code" => String },
     "webhook.endpoint_configured" => { "active" => %w[true false] }
   }.freeze
 

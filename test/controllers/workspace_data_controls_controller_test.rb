@@ -81,4 +81,22 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action='#{expire_workspace_data_controls_path(@workspace)}']"
     assert_select "td", "Pending"
   end
+
+  test "owner can queue separate audit expiry" do
+    @policy.update!(audit_retention_days: 365)
+    sign_in_as users(:owner)
+
+    assert_enqueued_with job: WorkspaceAuditExpiryJob do
+      post expire_audit_workspace_data_controls_path(@workspace)
+    end
+
+    assert_redirected_to workspace_data_controls_path(@workspace)
+    assert_equal "pending", @policy.reload.audit_expiry_status
+    assert_equal 365.days.ago.to_date, @policy.audit_expiry_cutoff_at.to_date
+
+    get workspace_data_controls_path(@workspace)
+    assert_select "h2", "Audit expiry"
+    assert_select "form[action='#{expire_audit_workspace_data_controls_path(@workspace)}']"
+    assert_select "dd", "Pending"
+  end
 end

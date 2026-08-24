@@ -80,4 +80,28 @@
       <p class="empty-state">No content expiry runs yet.</p>
     <% end %>
   </section>
+
+  <section class="section-block data-policy-form-section" aria-labelledby="audit-expiry-title">
+    <div>
+      <h2 id="audit-expiry-title">Audit expiry</h2>
+      <p>Audit expiry removes actor, network, request, and metadata fields after the separate audit cutoff. The action, subject, trusted time, and an expiry mark remain as a tombstone so ledger links do not break.</p>
+    </div>
+    <% if @policy.audit_retention_days %>
+      <%= button_to "Run audit expiry now", expire_audit_workspace_data_controls_path(Current.workspace),
+        class: "button button-secondary",
+        form: { data: { turbo_confirm: "Expire audit details older than #{@policy.audit_retention_days} days? This cannot be undone." } } %>
+    <% else %>
+      <p class="empty-state">Choose an audit period before running expiry.</p>
+    <% end %>
+
+    <% if @policy.audit_expiry_status %>
+      <dl class="data-policy-summary">
+        <div><dt>State</dt><dd><%= @policy.audit_expiry_status == "failed" ? "Failed: #{@policy.audit_expiry_failure_code.humanize}" : @policy.audit_expiry_status.humanize %></dd></div>
+        <div><dt>Cutoff</dt><dd><%= @policy.audit_expiry_cutoff_at.to_fs(:long) %></dd></div>
+        <div><dt>Events</dt><dd><%= @policy.audit_expiry_status == "completed" ? number_with_delimiter(@policy.audit_expired_event_count) : "—" %></dd></div>
+      </dl>
+    <% else %>
+      <p class="empty-state">No audit expiry runs yet.</p>
+    <% end %>
+  </section>
 </main>

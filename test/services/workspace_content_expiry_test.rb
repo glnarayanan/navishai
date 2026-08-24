@@ -13,9 +13,11 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     end
 
     assert_equal now - policy.content_retention_days.days, @run.cutoff_at
+    enqueued_count = ActiveJob::Base.queue_adapter.enqueued_jobs.count
     assert_equal @run, WorkspaceContentExpiry.request!(
       workspace:, membership: memberships(:owner_support), source: :web, requested_at: now
     )
+    assert_equal enqueued_count, ActiveJob::Base.queue_adapter.enqueued_jobs.count
     audit = AuditEvent.order(:id).last
     assert_equal "workspace.content_expiry_requested", audit.action
     assert_equal users(:owner), audit.actor

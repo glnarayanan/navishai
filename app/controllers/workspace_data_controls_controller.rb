@@ -31,6 +31,15 @@ class WorkspaceDataControlsController < ApplicationController
     redirect_to workspace_data_controls_path(Current.workspace), alert: error.message
   end
 
+  def expire_audit
+    WorkspaceDataGovernance.request_audit_expiry!(
+      workspace: Current.workspace, membership: Current.require_membership!, source: :web
+    )
+    redirect_to workspace_data_controls_path(Current.workspace), notice: "Audit expiry queued."
+  rescue ArgumentError => error
+    redirect_to workspace_data_controls_path(Current.workspace), alert: error.message
+  end
+
   private
     def policy_params
       params.require(:workspace_data_policy).permit(:content_retention_days, :audit_retention_days)

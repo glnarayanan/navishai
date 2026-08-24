@@ -14,11 +14,16 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_equal 320, page.evaluate_script("window.innerWidth")
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
     assert_operator find_button("Run content expiry now").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    assert_operator find_button("Run audit expiry now").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_link("Data").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
 
     accept_confirm { click_button "Run content expiry now" }
     assert_text "Content expiry queued."
     assert_text "Pending"
+
+    accept_confirm { click_button "Run audit expiry now" }
+    assert_text "Audit expiry queued."
+    assert_selector "h2", text: "Audit expiry"
   end
 
   private
