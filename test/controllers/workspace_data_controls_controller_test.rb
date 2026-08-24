@@ -99,4 +99,19 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_select "form[action='#{expire_audit_workspace_data_controls_path(@workspace)}']"
     assert_select "dd", "Pending"
   end
+
+  test "owner downloads a compressed complete workspace export" do
+    sign_in_as users(:owner)
+
+    assert_difference "AuditEvent.count", 1 do
+      get export_workspace_data_controls_path(@workspace)
+    end
+
+    assert_response :success
+    assert_equal "application/gzip", response.media_type
+    assert_match(/navishai-workspace-support-.*\.json\.gz/, response.headers.fetch("Content-Disposition"))
+    archive = JSON.parse(Zlib::GzipReader.new(StringIO.new(response.body)).read)
+    assert_equal "navishai-workspace-v1", archive.fetch("format")
+    assert_equal @workspace.runner_key, archive.dig("workspace", "runner_key")
+  end
 end

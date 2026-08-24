@@ -18,6 +18,15 @@
     </dl>
   </section>
 
+  <section class="section-block data-policy-form-section" aria-labelledby="workspace-export-title">
+    <div>
+      <h2 id="workspace-export-title">Workspace export</h2>
+      <p>Download a compressed, workspace-scoped snapshot of PostgreSQL records and verified attachment bytes. The archive names referenced users by email but excludes passwords, sessions, and deployment secrets.</p>
+    </div>
+    <%= link_to "Download workspace export", export_workspace_data_controls_path(Current.workspace),
+      class: "button button-secondary" %>
+  </section>
+
   <section class="section-block data-policy-form-section" aria-labelledby="retention-policy-title">
     <div>
       <h2 id="retention-policy-title">Retention policy</h2>

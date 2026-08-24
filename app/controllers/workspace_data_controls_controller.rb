@@ -40,6 +40,15 @@ class WorkspaceDataControlsController < ApplicationController
     redirect_to workspace_data_controls_path(Current.workspace), alert: error.message
   end
 
+  def export
+    archive = WorkspacePortability.export(
+      workspace: Current.workspace, membership: Current.require_membership!
+    )
+    send_data archive,
+      filename: "navishai-workspace-#{Current.workspace.slug}-#{Date.current.iso8601}.json.gz",
+      type: "application/gzip", disposition: "attachment"
+  end
+
   private
     def policy_params
       params.require(:workspace_data_policy).permit(:content_retention_days, :audit_retention_days)
