@@ -4,12 +4,14 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
   class RecordingTransport
     attr_reader :deliveries
 
-    def initialize
+    def initialize(error: nil)
+      @error = error
       @deliveries = []
     end
 
     def deliver!(**attributes)
       @deliveries << attributes
+      raise @error if @error
     end
   end
 
@@ -64,6 +66,31 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
     assert_select ".command-error[role='alert']", text: /can't be blank/i
     assert_select "textarea[name='body']", text: " "
+  end
+
+  test "a fresh writer reviews an unknown outcome while a viewer cannot forge it" do
+    transport = RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))
+    with_transport(transport) do
+      post email_send_workspace_support_case_path(@workspace, @support_case),
+        params: { body: "Uncertain send", draft_version: "new", idempotency_key: "uncertain-send" }
+    end
+    delivery = @workspace.outbound_email_deliveries.sole
+    assert delivery.unknown?
+
+    viewer = User.create!(email_address: "delivery-review-viewer@example.com", password: "password12345", verified_at: Time.current)
+    Membership.create!(workspace: @workspace, user: viewer, role: :viewer)
+    sign_in_as viewer
+    assert_no_difference [ "ConversationMessage.outbound.count", "AuditEvent.count" ] do
+      post email_delivery_review_workspace_support_case_path(@workspace, @support_case, delivery), params: { outcome: "accepted" }
+    end
+    assert_response :forbidden
+    assert delivery.reload.unknown?
+
+    sign_in_as users(:owner)
+    post email_delivery_review_workspace_support_case_path(@workspace, @support_case, delivery), params: { outcome: "rejected" }
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
+    assert delivery.reload.failed?
+    assert delivery.email_draft.reload.ready?
   end
 
   test "a stale draft cannot overwrite or send a newer edit" do

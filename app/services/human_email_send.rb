@@ -3,6 +3,47 @@ class HumanEmailSend
     new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, transport:).send!
   end
 
+  def self.review_unknown!(workspace:, support_case:, membership:, delivery:, outcome:)
+    raise ArgumentError, "invalid delivery outcome" unless %w[accepted rejected].include?(outcome.to_s)
+
+    OutboundEmailDelivery.transaction do
+      current_session = Session.active.lock.find(Current.session&.id)
+      actor = workspace.memberships.lock.find(membership.id)
+      raise Current::RoleAccessDenied unless actor.can_write? && actor.user == current_session.user
+
+      current_case = workspace.support_cases.lock.find(support_case.id)
+      current = workspace.outbound_email_deliveries.lock.find(delivery.id)
+      raise ActiveRecord::RecordNotFound unless current.conversation_id == current_case.conversation_id
+      return current unless current.unknown?
+
+      if outcome.to_s == "accepted"
+        message = ConversationThread.append_confirmed_outbound!(
+          workspace: workspace, conversation: current.conversation,
+          author_membership: current.actor_membership, reviewer_membership: actor,
+          body: current.body, occurred_at: current.started_at, source: :web
+        )
+        workspace.email_message_links.create!(
+          shared_email_inbox: current.shared_email_inbox,
+          email_thread: current.email_thread,
+          conversation: current.conversation,
+          conversation_message: message,
+          message_id: current.message_id
+        )
+        current.update!(status: :sent, failure_code: nil, conversation_message: message, sent_at: current.started_at)
+        current.email_draft.update!(status: :sent)
+        AuditEvent.record!(action: "email.send_succeeded", source: :web, workspace: workspace, actor: current.actor_user, subject: current)
+      else
+        current.update!(status: :failed, failure_code: "confirmed_not_sent")
+        current.email_draft.update!(status: :ready)
+      end
+      AuditEvent.record!(
+        action: "email.send_reviewed", source: :web, workspace: workspace,
+        actor: actor.user, subject: current, metadata: { outcome: outcome.to_s }
+      )
+      current
+    end
+  end
+
   def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, transport:)
     @workspace = workspace
     @support_case = support_case
@@ -66,8 +107,9 @@ class HumanEmailSend
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
 
-        destination = destination_for(thread)
-        in_reply_to = thread.email_message_links.order(created_at: :desc, id: :desc).pick(:message_id)
+        reply_link = latest_inbound_link(thread)
+        destination = reply_link.reply_to_address || destination_for(thread)
+        in_reply_to = reply_link.message_id
         delivery = @workspace.outbound_email_deliveries.create!(
           email_draft: draft,
           shared_email_inbox: thread.shared_email_inbox,
@@ -82,7 +124,7 @@ class HumanEmailSend
           to_address: destination,
           subject: reply_subject(current_case.conversation.subject),
           body: draft.body,
-          started_at: Time.current
+          started_at: [ Time.current, current_case.conversation.last_message_at ].compact.max
         )
         draft.update!(status: :sending)
         AuditEvent.record!(action: "email.send_started", source: :web, workspace: @workspace, actor: actor.user, subject: delivery)
@@ -100,7 +142,7 @@ class HumanEmailSend
           conversation: current.conversation,
           membership: current.actor_membership,
           body: current.body,
-          occurred_at: Time.current,
+          occurred_at: [ Time.current, current.started_at ].max,
           source: :web
         )
         @workspace.email_message_links.create!(
@@ -140,6 +182,14 @@ class HumanEmailSend
       raise ActiveRecord::RecordNotFound unless identity.canonical_record == thread.conversation.contact.canonical
 
       identity.source_record_id
+    end
+
+    def latest_inbound_link(thread)
+      thread.email_message_links
+        .joins(:conversation_message)
+        .where(conversation_messages: { direction: :inbound })
+        .order("conversation_messages.occurred_at DESC, conversation_messages.id DESC")
+        .first!
     end
 
     def reply_subject(subject)

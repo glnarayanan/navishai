@@ -72,9 +72,21 @@
           <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
             <div class="inline-error" role="status">
               <strong>Delivery outcome needs review</strong>
-              <p>Do not resend this message until an operator confirms whether SMTP accepted it.</p>
+              <p>Check the shared mailbox or SMTP logs, then record whether SMTP accepted this exact message. Do not resend before checking.</p>
+              <% if @email_delivery.unknown? && @membership.can_write? %>
+                <div class="reply-actions">
+                  <%= button_to "Mark accepted",
+                    email_delivery_review_workspace_support_case_path(@workspace, @support_case, @email_delivery),
+                    params: { outcome: "accepted" }, class: "button button-primary",
+                    data: { turbo_confirm: "Confirm that SMTP accepted this exact message?" } %>
+                  <%= button_to "Mark not sent",
+                    email_delivery_review_workspace_support_case_path(@workspace, @support_case, @email_delivery),
+                    params: { outcome: "rejected" }, class: "button button-secondary",
+                    data: { turbo_confirm: "Confirm that SMTP did not accept this message? A fresh send will be allowed." } %>
+                </div>
+              <% end %>
             </div>
-          <% elsif @email_draft.sent? %>
+          <% elsif @email_draft.sent? && !@email_follow_up_available %>
             <p class="muted-copy">This draft was sent by <%= @email_delivery.actor_user.email_address %> at <%= @email_delivery.sent_at.to_fs(:short) %>.</p>
           <% elsif @membership.can_write? %>
             <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
@@ -82,7 +94,7 @@
               <%= form.hidden_field :draft_version, value: @email_draft.persisted? ? @email_draft.lock_version : "new" %>
               <div class="field">
                 <%= form.label :body, "Message" %>
-                <%= form.text_area :body, value: @submitted_email_body || @email_draft.body, required: true, rows: 8, maxlength: EmailDraft::MAX_BODY_BYTES %>
+                <%= form.text_area :body, value: @submitted_email_body || (@email_draft.sent? ? "" : @email_draft.body), required: true, rows: 8, maxlength: EmailDraft::MAX_BODY_BYTES %>
                 <span class="field-hint">Plain text only. Attachments are not available yet.</span>
               </div>
               <div class="reply-actions">

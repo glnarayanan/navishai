@@ -171,7 +171,7 @@ class SharedEmailIntake
 
         thread, message = find_or_create_thread!(mail, identity.record, body)
         message ||= append_message!(thread, mail, identity.record, body)
-        create_message_link!(thread, message, mail)
+        create_message_link!(thread, message, mail, reply_target(mail, sender_email))
         current_delivery.update!(
           status: :processed,
           conversation: thread.conversation,
@@ -239,15 +239,23 @@ class SharedEmailIntake
       )
     end
 
-    def create_message_link!(thread, message, mail)
+    def create_message_link!(thread, message, mail, reply_to_address)
       message_id = normalized_message_id(mail.message_id)
       @inbox.email_message_links.create!(
         workspace: @workspace,
         email_thread: thread,
         conversation: thread.conversation,
         conversation_message: message,
-        message_id: message_id
+        message_id: message_id,
+        reply_to_address: reply_to_address
       )
+    end
+
+    def reply_target(mail, sender_email)
+      address = mail[:reply_to]&.addresses&.first
+      address ? IdentityKeyNormalizer.normalize(:email, address) : sender_email
+    rescue ArgumentError
+      sender_email
     end
 
     def thread_key(mail)

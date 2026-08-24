@@ -6,6 +6,10 @@ class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
       name: "index_support_cases_on_tenant_conversation"
     add_index :email_threads, [ :workspace_id, :id, :conversation_id ], unique: true,
       name: "index_email_threads_on_workspace_thread_conversation"
+    add_column :email_message_links, :reply_to_address, :string
+    add_check_constraint :email_message_links,
+      "reply_to_address IS NULL OR (length(reply_to_address) <= 254 AND reply_to_address ~ '^[^[:space:]<>@]+@[^[:space:]<>@]+$')",
+      name: "email_message_links_reply_to_address"
 
     create_table :email_drafts do |t|
       t.references :workspace, null: false, foreign_key: true
@@ -94,6 +98,8 @@ class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
   def down
     drop_table :outbound_email_deliveries
     drop_table :email_drafts
+    remove_check_constraint :email_message_links, name: "email_message_links_reply_to_address"
+    remove_column :email_message_links, :reply_to_address
     remove_index :email_threads, name: "index_email_threads_on_workspace_thread_conversation"
     remove_index :support_cases, name: "index_support_cases_on_tenant_conversation"
     remove_index :memberships, name: "index_memberships_on_workspace_id_id_user_id"
@@ -111,18 +117,19 @@ class CreateHumanEmailSendRecords < ActiveRecord::Migration[8.1]
             AS $$
             BEGIN
               IF TG_OP = 'UPDATE' AND
-                 ROW(OLD.workspace_id, OLD.email_draft_id, OLD.shared_email_inbox_id,
+                 ROW(OLD.id, OLD.workspace_id, OLD.email_draft_id, OLD.shared_email_inbox_id,
                      OLD.email_thread_id, OLD.conversation_id, OLD.actor_membership_id,
                      OLD.actor_user_id, OLD.idempotency_key, OLD.message_id,
                      OLD.in_reply_to_message_id, OLD.from_address, OLD.to_address,
                      OLD.subject, OLD.body, OLD.started_at, OLD.created_at)
                  IS NOT DISTINCT FROM
-                 ROW(NEW.workspace_id, NEW.email_draft_id, NEW.shared_email_inbox_id,
+                 ROW(NEW.id, NEW.workspace_id, NEW.email_draft_id, NEW.shared_email_inbox_id,
                      NEW.email_thread_id, NEW.conversation_id, NEW.actor_membership_id,
                      NEW.actor_user_id, NEW.idempotency_key, NEW.message_id,
                      NEW.in_reply_to_message_id, NEW.from_address, NEW.to_address,
                      NEW.subject, NEW.body, NEW.started_at, NEW.created_at) AND
-                 OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown') THEN
+                 ((OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown')) OR
+                  (OLD.status = 'unknown' AND NEW.status IN ('sent', 'failed'))) THEN
                 RETURN NEW;
               END IF;
               RAISE EXCEPTION 'outbound email delivery records are durable';

@@ -4,12 +4,14 @@ class HumanEmailSendTest < ApplicationSystemTestCase
   class RecordingTransport
     attr_reader :deliveries
 
-    def initialize
+    def initialize(error: nil)
+      @error = error
       @deliveries = []
     end
 
     def deliver!(**attributes)
       @deliveries << attributes
+      raise @error if @error
     end
   end
 
@@ -60,6 +62,27 @@ class HumanEmailSendTest < ApplicationSystemTestCase
     assert_text "Read-only access. You cannot draft or send customer email."
     assert_no_selector ".email-reply-form"
     refute_button "Send email"
+  end
+
+  test "a human reviews an uncertain outcome before a fresh send is allowed" do
+    support_case = email_support_case
+    sign_in_in_browser(users(:owner))
+
+    with_transport(RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))) do
+      visit workspace_support_case_path(support_case.workspace, support_case)
+      find(".email-reply-form textarea[name='body']").set("Uncertain answer")
+      accept_confirm { click_button "Send email" }
+      assert_text "Delivery outcome needs review"
+      assert_button "Mark accepted"
+      assert_button "Mark not sent"
+      refute_button "Send email"
+      save_screenshot Rails.root.join(".amp/in/artifacts/human-email-send-review.png") if ENV["CAPTURE_HUMAN_EMAIL_SEND"]
+
+      accept_confirm { click_button "Mark not sent" }
+      assert_text "Delivery marked as not sent"
+      assert_button "Send email"
+      assert_equal "Uncertain answer", find(".email-reply-form textarea[name='body']").value
+    end
   end
 
   private

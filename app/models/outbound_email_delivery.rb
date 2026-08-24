@@ -1,6 +1,6 @@
 class OutboundEmailDelivery < ApplicationRecord
   STATUSES = %w[sending sent failed unknown].freeze
-  FAILURE_CODES = %w[configuration_error rejected unknown_outcome].freeze
+  FAILURE_CODES = %w[configuration_error rejected unknown_outcome confirmed_not_sent].freeze
 
   belongs_to :workspace
   belongs_to :email_draft

@@ -19,6 +19,8 @@ Rails.application.routes.draw do
         post "tag-definitions", action: :create_tag, as: :create_tag, controller: "support_case_commands"
         post :email_draft, controller: "email_replies", action: :save_draft
         post :email_send, controller: "email_replies", action: :send_email
+        post "email_deliveries/:delivery_id/review", controller: "email_replies", action: :review_delivery,
+          as: :email_delivery_review
       end
     end
   end

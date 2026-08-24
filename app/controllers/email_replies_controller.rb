@@ -30,6 +30,19 @@ class EmailRepliesController < SupportCasesController
     end
   end
 
+  def review_delivery
+    delivery = Current.workspace.outbound_email_deliveries.find(params[:delivery_id])
+    HumanEmailSend.review_unknown!(
+      workspace: Current.workspace,
+      support_case: @support_case,
+      membership: Current.require_membership!,
+      delivery: delivery,
+      outcome: params[:outcome]
+    )
+    notice = params[:outcome] == "accepted" ? "Delivery marked as accepted." : "Delivery marked as not sent. You can send a fresh reply."
+    redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "email-reply"), notice: notice
+  end
+
   private
     def forbidden
       render "shared/permission_denied", status: :forbidden

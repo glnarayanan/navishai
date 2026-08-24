@@ -41,6 +41,7 @@ class SupportCasesController < ApplicationController
         support_case: @support_case, email_thread: @email_thread, conversation: @support_case.conversation
       )
       @email_delivery = @email_draft.persisted? ? @email_draft.outbound_email_deliveries.order(created_at: :desc).first : nil
+      @email_follow_up_available = EmailDraftWorkflow.follow_up_available?(@email_draft)
       @send_token ||= SecureRandom.uuid
     end
 

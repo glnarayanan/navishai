@@ -146,18 +146,19 @@ CREATE FUNCTION public.protect_outbound_email_delivery() RETURNS trigger
     AS $$
 BEGIN
   IF TG_OP = 'UPDATE' AND
-     ROW(OLD.workspace_id, OLD.email_draft_id, OLD.shared_email_inbox_id,
+     ROW(OLD.id, OLD.workspace_id, OLD.email_draft_id, OLD.shared_email_inbox_id,
          OLD.email_thread_id, OLD.conversation_id, OLD.actor_membership_id,
          OLD.actor_user_id, OLD.idempotency_key, OLD.message_id,
          OLD.in_reply_to_message_id, OLD.from_address, OLD.to_address,
          OLD.subject, OLD.body, OLD.started_at, OLD.created_at)
      IS NOT DISTINCT FROM
-     ROW(NEW.workspace_id, NEW.email_draft_id, NEW.shared_email_inbox_id,
+     ROW(NEW.id, NEW.workspace_id, NEW.email_draft_id, NEW.shared_email_inbox_id,
          NEW.email_thread_id, NEW.conversation_id, NEW.actor_membership_id,
          NEW.actor_user_id, NEW.idempotency_key, NEW.message_id,
          NEW.in_reply_to_message_id, NEW.from_address, NEW.to_address,
          NEW.subject, NEW.body, NEW.started_at, NEW.created_at) AND
-     OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown') THEN
+     ((OLD.status = 'sending' AND NEW.status IN ('sent', 'failed', 'unknown')) OR
+      (OLD.status = 'unknown' AND NEW.status IN ('sent', 'failed'))) THEN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'outbound email delivery records are durable';
@@ -582,7 +583,9 @@ CREATE TABLE public.email_message_links (
     conversation_message_id bigint NOT NULL,
     message_id character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    reply_to_address character varying,
+    CONSTRAINT email_message_links_reply_to_address CHECK (((reply_to_address IS NULL) OR ((length((reply_to_address)::text) <= 254) AND ((reply_to_address)::text ~ '^[^[:space:]<>@]+@[^[:space:]<>@]+$'::text))))
 );
 
 

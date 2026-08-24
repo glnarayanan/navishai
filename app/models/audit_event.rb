@@ -36,6 +36,7 @@ class AuditEvent < ApplicationRecord
     "email.inbox_created" => {},
     "email.inbox_updated" => { "active" => %w[true false] },
     "email.send_failed" => { "failure_code" => OutboundEmailDelivery::FAILURE_CODES },
+    "email.send_reviewed" => { "outcome" => %w[accepted rejected] },
     "email.send_started" => {},
     "email.send_succeeded" => {},
     "installation.bootstrapped" => {},
