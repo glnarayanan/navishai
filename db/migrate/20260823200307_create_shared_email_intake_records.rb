@@ -55,10 +55,13 @@ class CreateSharedEmailIntakeRecords < ActiveRecord::Migration[8.1]
         t.bigint :conversation_message_id
         t.datetime :received_at, null: false
         t.datetime :processed_at
+        t.integer :attempt_count, null: false, default: 0
+        t.datetime :last_attempted_at
         t.timestamps
       end
       add_index :inbound_email_deliveries, [ :workspace_id, :id ], unique: true
-      add_index :inbound_email_deliveries, [ :shared_email_inbox_id, :source_message_id ], unique: true, name: "index_inbound_email_deliveries_on_source"
+      add_index :inbound_email_deliveries, [ :shared_email_inbox_id, :source_message_id, :content_sha256 ],
+        unique: true, name: "index_inbound_email_deliveries_on_source"
       add_index :inbound_email_deliveries, [ :workspace_id, :status, :received_at ], name: "index_inbound_email_deliveries_on_visibility"
       add_foreign_key :inbound_email_deliveries, :shared_email_inboxes,
         column: [ :workspace_id, :shared_email_inbox_id ],
@@ -76,10 +79,13 @@ class CreateSharedEmailIntakeRecords < ActiveRecord::Migration[8.1]
         "content_sha256 ~ '^[0-9a-f]{64}$'",
         name: "inbound_email_deliveries_digest"
       add_check_constraint :inbound_email_deliveries,
+        "(attempt_count = 0 AND last_attempted_at IS NULL) OR (attempt_count > 0 AND last_attempted_at IS NOT NULL)",
+        name: "inbound_email_deliveries_attempts"
+      add_check_constraint :inbound_email_deliveries,
         "status IN ('received', 'processed', 'failed')",
         name: "inbound_email_deliveries_status"
       add_check_constraint :inbound_email_deliveries,
-        "failure_code IS NULL OR failure_code IN ('parse_error', 'missing_sender', 'missing_message_id', 'empty_body', 'body_too_large', 'identity_ambiguous', 'identity_error', 'persistence_error')",
+        "failure_code IS NULL OR failure_code IN ('parse_error', 'missing_sender', 'missing_message_id', 'message_id_conflict', 'empty_body', 'body_too_large', 'identity_ambiguous', 'identity_error', 'persistence_error')",
         name: "inbound_email_deliveries_failure_code"
       add_check_constraint :inbound_email_deliveries,
         "(status = 'received' AND failure_code IS NULL AND conversation_id IS NULL AND conversation_message_id IS NULL AND processed_at IS NULL) OR " \

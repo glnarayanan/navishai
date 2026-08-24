@@ -70,13 +70,129 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
       assert_equal original, SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
     end
 
-    assert_raises(SharedEmailIntake::Conflict) do
-      SharedEmailIntake.receive!(
-        inbox: @inbox,
-        raw_email: raw_email(message_id: "duplicate@example.net", body: "Changed content"),
-        received_at: @received_at
+    changed = raw_email(message_id: "duplicate@example.net", body: "Changed content")
+    assert_difference -> { InboundEmailDelivery.where(failure_code: "message_id_conflict").count }, 1 do
+      assert_raises(SharedEmailIntake::Conflict) do
+        SharedEmailIntake.receive!(inbox: @inbox, raw_email: changed, received_at: @received_at)
+      end
+    end
+    conflict = @inbox.inbound_email_deliveries.find_by!(failure_code: "message_id_conflict")
+    assert_equal "duplicate@example.net", conflict.source_message_id
+    assert_equal Digest::SHA256.hexdigest(changed), conflict.content_sha256
+    assert AuditEvent.where(action: "email.intake_failed", subject_id: conflict.id).exists?
+  end
+
+  test "malformed reference tokens cannot merge unrelated conversations" do
+    first = SharedEmailIntake.receive!(
+      inbox: @inbox, raw_email: raw_email(message_id: "first@example.net", references: "newsletter weekly"),
+      received_at: @received_at
+    )
+    second = SharedEmailIntake.receive!(
+      inbox: @inbox, raw_email: raw_email(message_id: "second@example.net", references: "newsletter weekly"),
+      received_at: @received_at + 1.minute
+    )
+
+    refute_equal first.conversation, second.conversation
+    assert_equal 2, @inbox.email_threads.count
+  end
+
+  test "receipt time controls case and message ordering instead of sender date" do
+    delivery = SharedEmailIntake.receive!(
+      inbox: @inbox, raw_email: raw_email(message_id: "old-date@example.net", date: 10.years.ago),
+      received_at: @received_at
+    )
+
+    assert_equal @received_at, delivery.conversation_message.occurred_at
+    assert_equal @received_at, delivery.conversation.started_at
+    assert_equal @received_at, delivery.conversation.support_case.status_changed_at
+  end
+
+  test "a delayed sender date cannot suppress a reopen after trusted receipt" do
+    received_at = Time.current - 2.hours
+    root = SharedEmailIntake.receive!(
+      inbox: @inbox, raw_email: raw_email(message_id: "reopen-root@example.net"), received_at: received_at
+    )
+    support_case = root.conversation.support_case
+    actor = memberships(:owner_support)
+    transitions = [
+      [ "triaged", received_at + 10.minutes ],
+      [ "investigating", received_at + 20.minutes ],
+      [ "resolved", received_at + 30.minutes ],
+      [ "closed", received_at + 40.minutes ]
+    ]
+    transitions.each do |status, at|
+      CaseWorkflow.transition!(
+        workspace: @workspace, support_case: support_case, membership: actor,
+        to: status, reason: "test transition", occurred_at: at
       )
     end
+
+    reply = SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(
+        message_id: "reopen-reply@example.net", references: "<reopen-root@example.net>",
+        date: received_at - 1.day
+      ),
+      received_at: received_at + 1.hour
+    )
+
+    assert reply.processed?
+    assert_equal "investigating", support_case.reload.status
+    assert_equal (received_at + 1.hour).to_i, support_case.status_changed_at.to_i
+  end
+
+  test "unnamed attachment parts never enter the customer message body" do
+    boundary = "navishai-boundary"
+    raw = raw_email(
+      message_id: "attachment@example.net",
+      content_type: "multipart/mixed; boundary=#{boundary}",
+      body: [
+        "--#{boundary}", "Content-Type: text/plain; charset=UTF-8", "", "Visible request",
+        "--#{boundary}", "Content-Type: text/plain; charset=UTF-8", "Content-Disposition: attachment", "", "ATTACHMENT SECRET",
+        "--#{boundary}--", ""
+      ].join("\r\n")
+    )
+
+    delivery = SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
+
+    assert_equal "Visible request", delivery.conversation_message.body
+    refute_includes delivery.conversation_message.body, "ATTACHMENT SECRET"
+  end
+
+  test "permanent failures cannot starve received reconciliation work" do
+    100.times do |index|
+      raw = raw_email(message_id: "permanent-#{index}@example.net").sub(/From:.*\r\n/, "")
+      @inbox.inbound_email_deliveries.create!(
+        workspace: @workspace, source_message_id: "permanent-#{index}@example.net",
+        content_sha256: Digest::SHA256.hexdigest(raw), raw_email: raw,
+        status: :failed, failure_code: "missing_sender",
+        received_at: @received_at - 1.day, processed_at: @received_at
+      )
+    end
+    valid = raw_email(message_id: "not-starved@example.net")
+    received = @inbox.inbound_email_deliveries.create!(
+      workspace: @workspace, source_message_id: "not-starved@example.net",
+      content_sha256: Digest::SHA256.hexdigest(valid), raw_email: valid, received_at: @received_at
+    )
+
+    assert_includes SharedEmailIntake.reconcile!(inbox: @inbox, membership: memberships(:owner_support)), received
+    assert received.reload.processed?
+    assert AuditEvent.where(action: "email.intake_retried", actor: users(:owner), subject_id: received.id).exists?
+  end
+
+  test "reconciliation bounds repeated retryable failures" do
+    raw = raw_email(message_id: "bounded@example.net")
+    delivery = @inbox.inbound_email_deliveries.create!(
+      workspace: @workspace, source_message_id: "bounded@example.net",
+      content_sha256: Digest::SHA256.hexdigest(raw), raw_email: raw,
+      status: :failed, failure_code: "persistence_error",
+      attempt_count: SharedEmailIntake::MAX_RECONCILIATION_ATTEMPTS,
+      last_attempted_at: @received_at,
+      received_at: @received_at, processed_at: @received_at
+    )
+
+    refute_includes SharedEmailIntake.reconcile!(inbox: @inbox, membership: memberships(:owner_support)), delivery
+    assert_equal SharedEmailIntake::MAX_RECONCILIATION_ATTEMPTS, delivery.reload.attempt_count
   end
 
   test "records safe failures and can reconcile a failed valid delivery" do
@@ -100,7 +216,7 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
       processed_at: @received_at
     )
 
-    assert_includes SharedEmailIntake.reconcile!(inbox: @inbox), retry_delivery
+    assert_includes SharedEmailIntake.reconcile!(inbox: @inbox, membership: memberships(:owner_support)), retry_delivery
     assert retry_delivery.reload.processed?
   end
 
@@ -131,7 +247,7 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
       received_at: @received_at
     )
 
-    assert_includes SharedEmailIntake.reconcile!(inbox: @inbox), delivery
+    assert_includes SharedEmailIntake.reconcile!(inbox: @inbox, membership: memberships(:owner_support)), delivery
     assert delivery.reload.processed?
   end
 
@@ -160,7 +276,7 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
       first.conversation.contact.source_identities.pluck(:source_namespace).sort
   end
 
-  test "renders HTML as plain text and does not trust a future date" do
+  test "renders HTML as plain text" do
     raw = raw_email(
       message_id: "html@example.net",
       date: @received_at + 1.day,
@@ -214,9 +330,9 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
   end
 
   private
-    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8")
+    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8", from: "Alice Example <alice@example.net>")
       headers = [
-        "From: Alice Example <alice@example.net>",
+        "From: #{from}",
         "To: Support <support@example.com>",
         "Date: #{date.rfc2822}",
         "Subject: Email help",

@@ -101,6 +101,9 @@ class SharedEmailInboxesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to workspace_shared_email_inboxes_path(@workspace)
     assert delivery.reload.processed?
+    retry_audit = AuditEvent.find_by!(action: "email.intake_retried", subject_id: delivery.id)
+    assert_equal users(:owner), retry_audit.actor
+    assert retry_audit.source_web?
   end
 
   test "manager cannot see or invoke inbox configuration" do

@@ -32,7 +32,7 @@ class SharedEmailInboxesController < ApplicationController
 
   def reconcile
     inbox = Current.require_workspace!.shared_email_inboxes.find(params[:id])
-    deliveries = SharedEmailIntake.reconcile!(inbox: inbox)
+    deliveries = SharedEmailIntake.reconcile!(inbox: inbox, membership: Current.require_membership!)
     redirect_to workspace_shared_email_inboxes_path(Current.workspace), notice: "Retried #{deliveries.size} email deliveries."
   end
 

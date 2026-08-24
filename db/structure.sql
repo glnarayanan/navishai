@@ -625,10 +625,13 @@ CREATE TABLE public.inbound_email_deliveries (
     conversation_message_id bigint,
     received_at timestamp(6) without time zone NOT NULL,
     processed_at timestamp(6) without time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_attempted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT inbound_email_deliveries_attempts CHECK ((((attempt_count = 0) AND (last_attempted_at IS NULL)) OR ((attempt_count > 0) AND (last_attempted_at IS NOT NULL)))),
     CONSTRAINT inbound_email_deliveries_digest CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT inbound_email_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['parse_error'::character varying, 'missing_sender'::character varying, 'missing_message_id'::character varying, 'empty_body'::character varying, 'body_too_large'::character varying, 'identity_ambiguous'::character varying, 'identity_error'::character varying, 'persistence_error'::character varying])::text[])))),
+    CONSTRAINT inbound_email_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['parse_error'::character varying, 'missing_sender'::character varying, 'missing_message_id'::character varying, 'message_id_conflict'::character varying, 'empty_body'::character varying, 'body_too_large'::character varying, 'identity_ambiguous'::character varying, 'identity_error'::character varying, 'persistence_error'::character varying])::text[])))),
     CONSTRAINT inbound_email_deliveries_size CHECK ((octet_length(raw_email) <= 10485760)),
     CONSTRAINT inbound_email_deliveries_state CHECK (((((status)::text = 'received'::text) AND (failure_code IS NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NULL)) OR (((status)::text = 'processed'::text) AND (failure_code IS NULL) AND (conversation_id IS NOT NULL) AND (conversation_message_id IS NOT NULL) AND (processed_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (conversation_id IS NULL) AND (conversation_message_id IS NULL) AND (processed_at IS NOT NULL)))),
     CONSTRAINT inbound_email_deliveries_status CHECK (((status)::text = ANY ((ARRAY['received'::character varying, 'processed'::character varying, 'failed'::character varying])::text[])))
@@ -2135,7 +2138,7 @@ CREATE INDEX index_identity_match_candidates_on_workspace_id ON public.identity_
 -- Name: index_inbound_email_deliveries_on_source; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_inbound_email_deliveries_on_source ON public.inbound_email_deliveries USING btree (shared_email_inbox_id, source_message_id);
+CREATE UNIQUE INDEX index_inbound_email_deliveries_on_source ON public.inbound_email_deliveries USING btree (shared_email_inbox_id, source_message_id, content_sha256);
 
 
 --

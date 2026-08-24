@@ -73,7 +73,7 @@
           </tbody>
         </table>
       </div>
-      <p class="field-hint integration-hint">Sign each raw RFC 5322 request with <code>X-NavishAI-Timestamp</code> and an HMAC-SHA256 <code>X-NavishAI-Signature</code>. The signature payload is <code>timestamp.raw_email</code>.</p>
+      <p class="field-hint integration-hint">Sign each raw RFC 5322 request with <code>X-NavishAI-Timestamp</code> and an HMAC-SHA256 <code>X-NavishAI-Signature</code>. The signature payload is <code>timestamp.webhook_key.raw_email</code>.</p>
     <% else %>
       <%= render "shared/empty_state",
         title: "No email inboxes",

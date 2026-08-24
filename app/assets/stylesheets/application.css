@@ -526,10 +526,16 @@ textarea {
   overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 0.8125rem;
+  white-space: normal;
 }
 
 .integration-hint {
   margin-top: 1rem;
+}
+
+.integration-hint code {
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .integration-failures {
@@ -1230,10 +1236,15 @@ td {
 @media (max-width: 42rem) {
   .app-header {
     min-height: 4rem;
+    padding-block: 0.5rem;
   }
 
   .app-header nav {
+    flex: 1;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 0.5rem;
+    min-width: 0;
   }
 
   .app-header nav a,
@@ -1246,6 +1257,9 @@ td {
 
   .app-header nav a,
   .app-header nav .button {
+    justify-content: center;
+    min-width: 3rem;
+    padding-inline: 0.5rem;
     font-size: 0.875rem;
   }
 

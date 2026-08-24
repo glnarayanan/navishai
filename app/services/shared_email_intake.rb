@@ -2,6 +2,7 @@ require "mail"
 
 class SharedEmailIntake
   MAX_BODY_BYTES = 1.megabyte
+  MAX_RECONCILIATION_ATTEMPTS = 5
 
   class Conflict < StandardError; end
   class ProcessingError < StandardError
@@ -17,11 +18,13 @@ class SharedEmailIntake
     new(inbox: inbox, raw_email: raw_email, received_at: received_at).receive!
   end
 
-  def self.reconcile!(inbox:, limit: 100)
+  def self.reconcile!(inbox:, membership:, limit: 100)
     raise ActiveRecord::RecordNotFound unless inbox.active?
+    actor = inbox.workspace.memberships.find(membership.id)
+    raise Current::RoleAccessDenied unless actor.can_configure_integrations?
 
-    inbox.inbound_email_deliveries.outstanding.order(:received_at, :id).limit(limit).filter_map do |delivery|
-      new(inbox: inbox, raw_email: delivery.raw_email, received_at: delivery.received_at).retry!(delivery)
+    inbox.inbound_email_deliveries.outstanding.order(Arel.sql("CASE status WHEN 'received' THEN 0 ELSE 1 END"), :received_at, :id).limit(limit).filter_map do |delivery|
+      new(inbox: inbox, raw_email: delivery.raw_email, received_at: delivery.received_at).retry!(delivery, actor: actor.user)
     end
   end
 
@@ -42,6 +45,7 @@ class SharedEmailIntake
     return persist_initial_failure!("missing_message_id") unless message_id
 
     delivery = persist_received!(message_id)
+    raise Conflict, "message id was reused with different content" if delivery.failure_code == "message_id_conflict"
     return delivery unless delivery.received?
 
     process!(delivery, mail)
@@ -49,11 +53,20 @@ class SharedEmailIntake
     persist_initial_failure!("parse_error")
   end
 
-  def retry!(delivery)
+  def retry!(delivery, actor:)
     mail = parse_mail
     delivery.with_lock do
       return delivery if delivery.processed?
-      delivery.update!(status: :received, failure_code: nil, processed_at: nil) if delivery.failed?
+      previous_failure_code = delivery.failure_code
+      delivery.update!(
+        status: :received, failure_code: nil, processed_at: nil,
+        attempt_count: delivery.attempt_count + 1, last_attempted_at: Time.current
+      )
+      AuditEvent.record!(
+        action: "email.intake_retried", source: :web, workspace: @workspace,
+        actor: actor, subject: delivery,
+        metadata: previous_failure_code ? { failure_code: previous_failure_code } : {}
+      )
     end
     process!(delivery, mail)
   rescue Mail::Field::ParseError, Mail::UnknownEncodingType, EncodingError
@@ -68,13 +81,12 @@ class SharedEmailIntake
     def persist_received!(message_id)
       InboundEmailDelivery.transaction do
         lock_active_inbox!
-        delivery = @inbox.inbound_email_deliveries.find_or_initialize_by(source_message_id: message_id)
-        if delivery.persisted?
-          raise Conflict, "message id was reused with different content" unless delivery.content_sha256 == @digest
-          return delivery
-        end
+        delivery = @inbox.inbound_email_deliveries.find_by(source_message_id: message_id, content_sha256: @digest)
+        return delivery if delivery
+        return persist_conflict!(message_id) if @inbox.inbound_email_deliveries.exists?(source_message_id: message_id)
 
-        delivery.assign_attributes(
+        delivery = @inbox.inbound_email_deliveries.new(
+          source_message_id: message_id,
           workspace: @workspace,
           content_sha256: @digest,
           raw_email: @raw_email,
@@ -87,6 +99,25 @@ class SharedEmailIntake
         )
         delivery
       end
+    end
+
+    def persist_conflict!(message_id)
+      delivery = @inbox.inbound_email_deliveries.create!(
+        workspace: @workspace,
+        source_message_id: message_id,
+        content_sha256: @digest,
+        raw_email: @raw_email,
+        status: :failed,
+        failure_code: "message_id_conflict",
+        received_at: @received_at,
+        processed_at: Time.current
+      )
+      AuditEvent.record!(
+        action: "email.intake_received", source: :integration, workspace: @workspace,
+        actor_kind: :system, subject: delivery
+      )
+      audit_failure!(delivery, "message_id_conflict")
+      delivery
     end
 
     def persist_initial_failure!(code)
@@ -123,14 +154,21 @@ class SharedEmailIntake
       raise ProcessingError, "empty_body" if body.blank?
       raise ProcessingError, "body_too_large" if body.bytesize > MAX_BODY_BYTES
 
-      identity = resolve_contact(sender_email, sender_name)
-      raise ProcessingError, "identity_ambiguous" unless identity.matched?
-
       InboundEmailDelivery.transaction do
         current_delivery = @inbox.inbound_email_deliveries.lock.find(delivery.id)
         return current_delivery if current_delivery.processed?
 
         lock_active_inbox!
+        identity = resolve_contact(sender_email, sender_name)
+        unless identity.matched?
+          current_delivery.update!(
+            status: :failed, failure_code: "identity_ambiguous",
+            processed_at: Time.current
+          )
+          audit_failure!(current_delivery, "identity_ambiguous")
+          next current_delivery
+        end
+
         thread, message = find_or_create_thread!(mail, identity.record, body)
         message ||= append_message!(thread, mail, identity.record, body)
         create_message_link!(thread, message, mail)
@@ -176,7 +214,7 @@ class SharedEmailIntake
         contact: contact,
         subject: mail.subject.to_s.squish.truncate(500),
         body: body,
-        occurred_at: occurred_at(mail),
+        occurred_at: @received_at,
         source: :integration
       )
       thread = @inbox.email_threads.create!(
@@ -193,7 +231,7 @@ class SharedEmailIntake
         conversation: thread.conversation,
         author: contact,
         body: body,
-        occurred_at: occurred_at(mail),
+        occurred_at: @received_at,
         source: :integration
       )
     end
@@ -234,8 +272,8 @@ class SharedEmailIntake
 
     def plain_text_body(mail)
       text = if mail.multipart?
-        plain = mail.all_parts.select { |part| part.mime_type == "text/plain" && part.filename.nil? }.map(&:decoded).join("\n")
-        html = mail.all_parts.select { |part| part.mime_type == "text/html" && part.filename.nil? }.map(&:decoded).join("\n")
+        plain = body_parts(mail, "text/plain").map(&:decoded).join("\n")
+        html = body_parts(mail, "text/html").map(&:decoded).join("\n")
         plain.presence || html_to_text(html)
       elsif mail.mime_type == "text/html"
         html_to_text(mail.decoded)
@@ -245,29 +283,31 @@ class SharedEmailIntake
       text.to_s.encode("UTF-8", invalid: :replace, undef: :replace).strip
     end
 
+    def body_parts(container, mime_type)
+      container.parts.flat_map do |part|
+        next [] if part.filename.present? || part.content_disposition.to_s.match?(/\Aattachment(?:;|\z)/i) || part.mime_type == "message/rfc822"
+
+        part.multipart? ? body_parts(part, mime_type) : (part.mime_type == mime_type ? [ part ] : [])
+      end
+    end
+
     def html_to_text(html)
       fragment = Nokogiri::HTML5.fragment(html)
       fragment.css("script, style").remove
       fragment.text.squish
     end
 
-    def occurred_at(mail)
-      source_time = mail.date&.to_time || @received_at
-      [ source_time, @received_at ].min
-    rescue ArgumentError
-      @received_at
-    end
-
     def message_ids(value)
       Array(value).flat_map do |entry|
         bracketed = entry.to_s.scan(/<([^>]+)>/).flatten
-        (bracketed.presence || entry.to_s.split).filter_map { |candidate| normalized_message_id(candidate) }
+        candidates = bracketed.presence || entry.to_s.split
+        candidates.filter_map { |candidate| normalized_message_id(candidate) }
       end
     end
 
     def normalized_message_id(value)
       normalized = value.to_s.strip.delete_prefix("<").delete_suffix(">")
-      normalized if normalized.present? && normalized.length <= 998
+      normalized if normalized.length <= 998 && normalized.match?(/\A[^\s<>@]+@[^\s<>@]+\z/)
     end
 
     def lock_active_inbox!

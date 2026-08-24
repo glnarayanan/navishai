@@ -31,6 +31,7 @@ class AuditEvent < ApplicationRecord
     "email_verification.completed" => {},
     "email.intake_failed" => { "failure_code" => InboundEmailDelivery::FAILURE_CODES },
     "email.intake_received" => {},
+    "email.intake_retried" => { "failure_code" => InboundEmailDelivery::FAILURE_CODES },
     "email.inbox_created" => {},
     "email.inbox_updated" => { "active" => %w[true false] },
     "installation.bootstrapped" => {},

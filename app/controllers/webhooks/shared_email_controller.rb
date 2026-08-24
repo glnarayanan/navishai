@@ -5,7 +5,9 @@ class Webhooks::SharedEmailController < ActionController::API
 
   def create
     inbox = SharedEmailInbox.active.find_by!(webhook_key: params[:webhook_key])
-    raw_email = request.raw_post.b
+    return head :content_too_large if request.content_length.to_i > InboundEmailDelivery::MAX_BYTES
+
+    raw_email = request.body.read(InboundEmailDelivery::MAX_BYTES + 1).to_s.b
     return head :content_too_large if raw_email.bytesize > InboundEmailDelivery::MAX_BYTES
     return head :unauthorized unless valid_signature?(inbox, raw_email)
 
@@ -24,7 +26,7 @@ class Webhooks::SharedEmailController < ActionController::API
       signature = request.headers["X-NavishAI-Signature"].to_s
       return false if secret.to_s.bytesize < 32 || timestamp.nil? || (Time.current.to_i - timestamp).abs > MAX_TIMESTAMP_SKEW
 
-      expected = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{timestamp}.#{raw_email}")
+      expected = OpenSSL::HMAC.hexdigest("SHA256", secret, "#{timestamp}.#{inbox.webhook_key}.#{raw_email}")
       signature.bytesize == expected.bytesize && ActiveSupport::SecurityUtils.secure_compare(signature, expected)
     end
 end

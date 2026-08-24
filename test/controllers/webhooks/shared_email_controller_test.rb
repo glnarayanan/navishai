@@ -38,6 +38,19 @@ class Webhooks::SharedEmailControllerTest < ActionDispatch::IntegrationTest
     assert_equal 1, @inbox.inbound_email_deliveries.count
   end
 
+  test "a signature is bound to one inbox even when credential secrets match" do
+    other = workspaces(:beta_support).shared_email_inboxes.create!(
+      name: "Other support", email_address: "other@example.com", credential_key: "support"
+    )
+
+    post webhooks_shared_email_path(other.webhook_key),
+      params: @raw_email,
+      headers: signed_headers(Time.current.to_i)
+
+    assert_response :unauthorized
+    assert_empty other.inbound_email_deliveries
+  end
+
   test "rejects invalid and stale signatures without persisting input" do
     assert_no_difference "InboundEmailDelivery.count" do
       post webhooks_shared_email_path(@inbox.webhook_key),
@@ -80,7 +93,7 @@ class Webhooks::SharedEmailControllerTest < ActionDispatch::IntegrationTest
 
   private
     def signed_headers(timestamp)
-      signature = OpenSSL::HMAC.hexdigest("SHA256", @secret, "#{timestamp}.#{@raw_email}")
+      signature = OpenSSL::HMAC.hexdigest("SHA256", @secret, "#{timestamp}.#{@inbox.webhook_key}.#{@raw_email}")
       {
         "CONTENT_TYPE" => "message/rfc822",
         "X-NavishAI-Timestamp" => timestamp.to_s,
