@@ -134,4 +134,25 @@ class AuditEventTest < ActiveSupport::TestCase
 
     assert_equal [ own_event ], AuditEvent.for_workspace(workspaces(:acme_support))
   end
+
+  test "helpdesk actions reject customer text and unsupported state values" do
+    safe = AuditEvent.new(
+      action: "case.status_changed",
+      source: :web,
+      actor: users(:owner),
+      actor_kind: :user,
+      occurred_at: Time.current,
+      metadata: { from_status: "triaged", to_status: "investigating" }
+    )
+    customer_text = safe.dup
+    customer_text.metadata = { from_status: "triaged", to_status: "investigating", body: "customer text" }
+    invalid_state = safe.dup
+    invalid_state.metadata = { from_status: "triaged", to_status: "deleted" }
+
+    assert safe.valid?
+    assert_not customer_text.valid?
+    assert_includes customer_text.errors[:metadata], "contains an unsupported key"
+    assert_not invalid_state.valid?
+    assert_includes invalid_state.errors[:metadata], "contains an unsupported value"
+  end
 end

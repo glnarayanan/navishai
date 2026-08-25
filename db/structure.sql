@@ -36,6 +36,19 @@ END;
 $$;
 
 
+--
+-- Name: prevent_helpdesk_record_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_helpdesk_record_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RAISE EXCEPTION 'helpdesk records are append-only';
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -168,6 +181,40 @@ ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
 
 
 --
+-- Name: case_notes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.case_notes (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    author_id bigint NOT NULL,
+    body text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: case_notes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.case_notes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: case_notes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.case_notes_id_seq OWNED BY public.case_notes.id;
+
+
+--
 -- Name: contact_merges; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -237,6 +284,83 @@ CREATE SEQUENCE public.contacts_id_seq
 --
 
 ALTER SEQUENCE public.contacts_id_seq OWNED BY public.contacts.id;
+
+
+--
+-- Name: conversation_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_messages (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    direction character varying NOT NULL,
+    author_kind character varying NOT NULL,
+    author_contact_id bigint,
+    author_user_id bigint,
+    external_author_name character varying,
+    in_reply_to_id bigint,
+    body text NOT NULL,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT conversation_messages_author CHECK (((((author_kind)::text = 'contact'::text) AND (author_contact_id IS NOT NULL) AND (author_user_id IS NULL) AND (external_author_name IS NULL)) OR (((author_kind)::text = 'user'::text) AND (author_contact_id IS NULL) AND (author_user_id IS NOT NULL) AND (external_author_name IS NULL)) OR (((author_kind)::text = 'external'::text) AND (author_contact_id IS NULL) AND (author_user_id IS NULL) AND (external_author_name IS NOT NULL)))),
+    CONSTRAINT conversation_messages_direction CHECK (((direction)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying])::text[])))
+);
+
+
+--
+-- Name: conversation_messages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.conversation_messages_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: conversation_messages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.conversation_messages_id_seq OWNED BY public.conversation_messages.id;
+
+
+--
+-- Name: conversations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversations (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    contact_id bigint NOT NULL,
+    subject character varying,
+    started_at timestamp(6) without time zone NOT NULL,
+    last_message_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: conversations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.conversations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: conversations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
@@ -504,6 +628,154 @@ ALTER SEQUENCE public.source_identity_keys_id_seq OWNED BY public.source_identit
 
 
 --
+-- Name: support_case_status_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.support_case_status_changes (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    from_status character varying,
+    to_status character varying NOT NULL,
+    actor_kind character varying NOT NULL,
+    actor_id bigint,
+    source character varying NOT NULL,
+    reason character varying NOT NULL,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT support_case_status_changes_actor CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'system'::character varying])::text[])) AND ((((actor_kind)::text = 'user'::text) AND (actor_id IS NOT NULL)) OR (((actor_kind)::text = 'system'::text) AND (actor_id IS NULL))))),
+    CONSTRAINT support_case_status_changes_from_status CHECK (((from_status IS NULL) OR ((from_status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[])))),
+    CONSTRAINT support_case_status_changes_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'runner'::character varying, 'integration'::character varying, 'system'::character varying])::text[]))),
+    CONSTRAINT support_case_status_changes_to_status CHECK (((to_status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[])))
+);
+
+
+--
+-- Name: support_case_status_changes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.support_case_status_changes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: support_case_status_changes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.support_case_status_changes_id_seq OWNED BY public.support_case_status_changes.id;
+
+
+--
+-- Name: support_case_taggings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.support_case_taggings (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: support_case_taggings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.support_case_taggings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: support_case_taggings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.support_case_taggings_id_seq OWNED BY public.support_case_taggings.id;
+
+
+--
+-- Name: support_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.support_cases (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    assigned_membership_id bigint,
+    status character varying DEFAULT 'new'::character varying NOT NULL,
+    priority character varying DEFAULT 'normal'::character varying NOT NULL,
+    status_changed_at timestamp(6) without time zone NOT NULL,
+    resolved_at timestamp(6) without time zone,
+    closed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT support_cases_priority CHECK (((priority)::text = ANY ((ARRAY['low'::character varying, 'normal'::character varying, 'high'::character varying, 'urgent'::character varying])::text[]))),
+    CONSTRAINT support_cases_status CHECK (((status)::text = ANY ((ARRAY['new'::character varying, 'triaged'::character varying, 'investigating'::character varying, 'waiting_customer'::character varying, 'waiting_internal'::character varying, 'draft_ready'::character varying, 'awaiting_human_review'::character varying, 'resolved'::character varying, 'closed'::character varying])::text[]))),
+    CONSTRAINT support_cases_terminal_timestamps CHECK (((((status)::text = 'resolved'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NULL)) OR (((status)::text = 'closed'::text) AND (resolved_at IS NOT NULL) AND (closed_at IS NOT NULL)) OR (((status)::text <> ALL ((ARRAY['resolved'::character varying, 'closed'::character varying])::text[])) AND (resolved_at IS NULL) AND (closed_at IS NULL))))
+);
+
+
+--
+-- Name: support_cases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.support_cases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: support_cases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.support_cases_id_seq OWNED BY public.support_cases.id;
+
+
+--
+-- Name: tags; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tags (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: tags_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.tags_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.tags_id_seq OWNED BY public.tags.id;
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -633,6 +905,13 @@ ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: case_notes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_notes ALTER COLUMN id SET DEFAULT nextval('public.case_notes_id_seq'::regclass);
+
+
+--
 -- Name: contact_merges id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -644,6 +923,20 @@ ALTER TABLE ONLY public.contact_merges ALTER COLUMN id SET DEFAULT nextval('publ
 --
 
 ALTER TABLE ONLY public.contacts ALTER COLUMN id SET DEFAULT nextval('public.contacts_id_seq'::regclass);
+
+
+--
+-- Name: conversation_messages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages ALTER COLUMN id SET DEFAULT nextval('public.conversation_messages_id_seq'::regclass);
+
+
+--
+-- Name: conversations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('public.conversations_id_seq'::regclass);
 
 
 --
@@ -693,6 +986,34 @@ ALTER TABLE ONLY public.source_identities ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.source_identity_keys ALTER COLUMN id SET DEFAULT nextval('public.source_identity_keys_id_seq'::regclass);
+
+
+--
+-- Name: support_case_status_changes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_status_changes ALTER COLUMN id SET DEFAULT nextval('public.support_case_status_changes_id_seq'::regclass);
+
+
+--
+-- Name: support_case_taggings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings ALTER COLUMN id SET DEFAULT nextval('public.support_case_taggings_id_seq'::regclass);
+
+
+--
+-- Name: support_cases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases ALTER COLUMN id SET DEFAULT nextval('public.support_cases_id_seq'::regclass);
+
+
+--
+-- Name: tags id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id_seq'::regclass);
 
 
 --
@@ -749,6 +1070,14 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: case_notes case_notes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_notes
+    ADD CONSTRAINT case_notes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: contact_merges contact_merges_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -762,6 +1091,22 @@ ALTER TABLE ONLY public.contact_merges
 
 ALTER TABLE ONLY public.contacts
     ADD CONSTRAINT contacts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: conversation_messages conversation_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT conversation_messages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
 
 
 --
@@ -826,6 +1171,38 @@ ALTER TABLE ONLY public.source_identities
 
 ALTER TABLE ONLY public.source_identity_keys
     ADD CONSTRAINT source_identity_keys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: support_case_status_changes support_case_status_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_status_changes
+    ADD CONSTRAINT support_case_status_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: support_case_taggings support_case_taggings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings
+    ADD CONSTRAINT support_case_taggings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: support_cases support_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT support_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tags tags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
 
 
 --
@@ -951,6 +1328,20 @@ CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_
 
 
 --
+-- Name: index_case_notes_on_support_case_id_and_created_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_notes_on_support_case_id_and_created_at_and_id ON public.case_notes USING btree (support_case_id, created_at, id);
+
+
+--
+-- Name: index_case_notes_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_notes_on_workspace_id ON public.case_notes USING btree (workspace_id);
+
+
+--
 -- Name: index_contact_merges_on_merged_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1000,6 +1391,48 @@ CREATE INDEX index_contacts_on_workspace_id_and_name ON public.contacts USING bt
 
 
 --
+-- Name: index_conversation_messages_for_replies; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_conversation_messages_for_replies ON public.conversation_messages USING btree (workspace_id, conversation_id, id);
+
+
+--
+-- Name: index_conversation_messages_on_timeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversation_messages_on_timeline ON public.conversation_messages USING btree (conversation_id, occurred_at, id);
+
+
+--
+-- Name: index_conversation_messages_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversation_messages_on_workspace_id ON public.conversation_messages USING btree (workspace_id);
+
+
+--
+-- Name: index_conversations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_on_workspace_id ON public.conversations USING btree (workspace_id);
+
+
+--
+-- Name: index_conversations_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_conversations_on_workspace_id_and_id ON public.conversations USING btree (workspace_id, id);
+
+
+--
+-- Name: index_conversations_on_workspace_id_and_last_message_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_conversations_on_workspace_id_and_last_message_at ON public.conversations USING btree (workspace_id, last_message_at);
+
+
+--
 -- Name: index_current_source_identity_keys; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1046,6 +1479,13 @@ CREATE INDEX index_memberships_on_user_id ON public.memberships USING btree (use
 --
 
 CREATE INDEX index_memberships_on_workspace_id ON public.memberships USING btree (workspace_id);
+
+
+--
+-- Name: index_memberships_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memberships_on_workspace_id_and_id ON public.memberships USING btree (workspace_id, id);
 
 
 --
@@ -1133,6 +1573,90 @@ CREATE INDEX index_source_identity_keys_on_workspace_id ON public.source_identit
 
 
 --
+-- Name: index_support_case_status_changes_on_timeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_case_status_changes_on_timeline ON public.support_case_status_changes USING btree (support_case_id, occurred_at, id);
+
+
+--
+-- Name: index_support_case_status_changes_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_case_status_changes_on_workspace_id ON public.support_case_status_changes USING btree (workspace_id);
+
+
+--
+-- Name: index_support_case_taggings_on_support_case_id_and_tag_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_case_taggings_on_support_case_id_and_tag_id ON public.support_case_taggings USING btree (support_case_id, tag_id);
+
+
+--
+-- Name: index_support_case_taggings_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_case_taggings_on_workspace_id ON public.support_case_taggings USING btree (workspace_id);
+
+
+--
+-- Name: index_support_cases_on_assignment_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_assignment_queue ON public.support_cases USING btree (workspace_id, assigned_membership_id, status);
+
+
+--
+-- Name: index_support_cases_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_workspace_id ON public.support_cases USING btree (workspace_id);
+
+
+--
+-- Name: index_support_cases_on_workspace_id_and_conversation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_cases_on_workspace_id_and_conversation_id ON public.support_cases USING btree (workspace_id, conversation_id);
+
+
+--
+-- Name: index_support_cases_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_cases_on_workspace_id_and_id ON public.support_cases USING btree (workspace_id, id);
+
+
+--
+-- Name: index_support_cases_on_workspace_id_and_status_and_priority; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_workspace_id_and_status_and_priority ON public.support_cases USING btree (workspace_id, status, priority);
+
+
+--
+-- Name: index_tags_on_workspace_and_lower_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_tags_on_workspace_and_lower_name ON public.tags USING btree (workspace_id, lower((name)::text));
+
+
+--
+-- Name: index_tags_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_tags_on_workspace_id ON public.tags USING btree (workspace_id);
+
+
+--
+-- Name: index_tags_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_tags_on_workspace_id_and_id ON public.tags USING btree (workspace_id, id);
+
+
+--
 -- Name: index_users_on_lower_email_address; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1196,6 +1720,48 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: case_notes case_notes_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER case_notes_append_only BEFORE DELETE OR UPDATE ON public.case_notes FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: case_notes case_notes_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER case_notes_no_truncate BEFORE TRUNCATE ON public.case_notes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: conversation_messages conversation_messages_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_messages_append_only BEFORE DELETE OR UPDATE ON public.conversation_messages FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: conversation_messages conversation_messages_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conversation_messages FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: support_case_status_changes support_case_status_changes_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER support_case_status_changes_append_only BEFORE DELETE OR UPDATE ON public.support_case_status_changes FOR EACH ROW EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: support_case_status_changes support_case_status_changes_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER support_case_status_changes_no_truncate BEFORE TRUNCATE ON public.support_case_status_changes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
 -- Name: account_merges fk_account_merges_source; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1228,6 +1794,14 @@ ALTER TABLE ONLY public.contact_merges
 
 
 --
+-- Name: conversation_messages fk_conversation_messages_reply; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT fk_conversation_messages_reply FOREIGN KEY (workspace_id, conversation_id, in_reply_to_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
 -- Name: account_merges fk_rails_00215f0be3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1244,11 +1818,51 @@ ALTER TABLE ONLY public.contact_merges
 
 
 --
+-- Name: support_case_taggings fk_rails_1557a3d783; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings
+    ADD CONSTRAINT fk_rails_1557a3d783 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: conversation_messages fk_rails_317b29f039; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT fk_rails_317b29f039 FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
+-- Name: support_cases fk_rails_34c044a23d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_34c044a23d FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
+-- Name: tags fk_rails_3633c0c202; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT fk_rails_3633c0c202 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: workspaces fk_rails_3e6d59991e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT fk_rails_3e6d59991e FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: support_case_taggings fk_rails_418830fb15; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings
+    ADD CONSTRAINT fk_rails_418830fb15 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
 
 
 --
@@ -1273,6 +1887,14 @@ ALTER TABLE ONLY public.source_identity_keys
 
 ALTER TABLE ONLY public.identity_match_candidates
     ADD CONSTRAINT fk_rails_5e06149d55 FOREIGN KEY (workspace_id, contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
+-- Name: case_notes fk_rails_5e366734ed; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_notes
+    ADD CONSTRAINT fk_rails_5e366734ed FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
 
 
 --
@@ -1316,6 +1938,30 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 
 --
+-- Name: conversation_messages fk_rails_69e4535daa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT fk_rails_69e4535daa FOREIGN KEY (workspace_id, author_contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
+-- Name: conversations fk_rails_6aeb936dee; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT fk_rails_6aeb936dee FOREIGN KEY (workspace_id, contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
+-- Name: support_cases fk_rails_6f0c83db70; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_6f0c83db70 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: account_merges fk_rails_73bbb32f1d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1340,11 +1986,27 @@ ALTER TABLE ONLY public.workspace_invitations
 
 
 --
+-- Name: conversation_messages fk_rails_7c459f2c0a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT fk_rails_7c459f2c0a FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: source_identities fk_rails_7e80950554; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.source_identities
     ADD CONSTRAINT fk_rails_7e80950554 FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: support_cases fk_rails_7f25fe210e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_7f25fe210e FOREIGN KEY (workspace_id, assigned_membership_id) REFERENCES public.memberships(workspace_id, id);
 
 
 --
@@ -1356,11 +2018,35 @@ ALTER TABLE ONLY public.source_identity_keys
 
 
 --
+-- Name: support_case_status_changes fk_rails_8ddc724e46; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_status_changes
+    ADD CONSTRAINT fk_rails_8ddc724e46 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: support_case_taggings fk_rails_8f572d50d0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings
+    ADD CONSTRAINT fk_rails_8f572d50d0 FOREIGN KEY (workspace_id, tag_id) REFERENCES public.tags(workspace_id, id);
+
+
+--
 -- Name: contact_merges fk_rails_93b8e9788d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.contact_merges
     ADD CONSTRAINT fk_rails_93b8e9788d FOREIGN KEY (unmerged_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: case_notes fk_rails_971560bd73; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_notes
+    ADD CONSTRAINT fk_rails_971560bd73 FOREIGN KEY (author_id) REFERENCES public.users(id);
 
 
 --
@@ -1404,6 +2090,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: case_notes fk_rails_b1575b0540; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.case_notes
+    ADD CONSTRAINT fk_rails_b1575b0540 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: identity_match_candidates fk_rails_b43f253bd6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1412,11 +2106,43 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 
 --
+-- Name: conversations fk_rails_b44b6eb8c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT fk_rails_b44b6eb8c4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: accounts fk_rails_bac5365c2c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT fk_rails_bac5365c2c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: support_case_status_changes fk_rails_c0b65ffdac; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_status_changes
+    ADD CONSTRAINT fk_rails_c0b65ffdac FOREIGN KEY (actor_id) REFERENCES public.users(id);
+
+
+--
+-- Name: support_case_status_changes fk_rails_c15e982c02; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_status_changes
+    ADD CONSTRAINT fk_rails_c15e982c02 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: conversation_messages fk_rails_cd0fa9de6c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_messages
+    ADD CONSTRAINT fk_rails_cd0fa9de6c FOREIGN KEY (author_user_id) REFERENCES public.users(id);
 
 
 --
@@ -1458,6 +2184,7 @@ ALTER TABLE ONLY public.contact_merges
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260823200305'),
 ('20260823200304'),
 ('20260823200303'),
 ('20260823200302'),
@@ -1471,4 +2198,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195258'),
 ('20260823195257'),
 ('20260823193334');
-
