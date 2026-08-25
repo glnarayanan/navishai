@@ -15,15 +15,16 @@ The stacked source includes:
 - Compose and native Linux packaging, an experimental cloud-neutral Helm chart, backup and restore tools, and upgrade preflight; and
 - a seeded demo, dependency record, CycloneDX SBOM, release manifest, threat model, and operator guides.
 
-`bin/ci` is the source checkpoint. It runs Ruby and Go style checks, dependency audits, Brakeman, the full Rails and browser suites, Go vet and tests, the Rails-to-runner contract, seed checks, and the SBOM check. Each stacked checkpoint passed it locally.
+`bin/ci` is the source checkpoint. It runs Ruby and Go style checks, dependency audits, Brakeman, the full Rails and browser suites, Go vet and tests, the Rails-to-runner contract, seed checks, and the SBOM check. Record host-specific omissions instead of treating a partial run as a green release checkpoint.
 
-The 24 August source checkpoint passed `bin/ci`: 510 Rails tests with 3,183 assertions and 33 browser tests with 413 assertions, plus all style, security, Go, protocol, seed, and SBOM checks. A later release-blocker review added durable admitted-run execution and event delivery, byte-bound runtime dispatch, and streamed attachment-complete Workspace archives. The final merge candidate must pass the same local `bin/ci` gate. Impeccable type and layout detectors reported no mechanical findings. Direct browser review covered the seeded Support and Customer Success paths at 1,440 and 320 pixels with no page overflow.
+The 25 August Ruby 4.0.6 and pgvector 0.8.6 checkpoint passed setup, 406-file Ruby style, Go style, gem and Importmap audits, Brakeman, 520 Rails tests with 3,212 assertions, seed replant, and the 84-component SBOM check. The 33-test browser suite completed 376 assertions on macOS but retained six environment-specific failures: Chrome enforces a 500-pixel minimum window for five 320/375-pixel assertions, and local font rendering produces one 22-pixel link target where the test requires 24 pixels. Direct browser smoke testing at exact 1,440 and 320-pixel device viewports covered sign-in, Workspace selection, Cases, Accounts, and account health with no horizontal overflow. The Go runner cross-compiles and vets for Linux amd64, but the full native Linux runner suite, persistent PostgreSQL 15 upgrade smoke, and production container build still need a Linux container host before this becomes a green release checkpoint.
 
 ## Known gaps before a public release
 
 - Final source-licence text and contributor terms still need legal review. Do not publish a release or describe the licence as OSI-approved before that review.
 - No project release-signing identity has been set up. Current manifests provide SHA-256 integrity, not signed provenance or a SLSA claim.
 - GitHub Actions is manual-only and has not been used for this build. Local repository checks are the current verification record.
+- Podman 6.1 cannot currently boot its Fedora CoreOS machine on this macOS 26 host, so the production container build and live pgvector 0.8.1-to-0.8.6 volume upgrade remain Linux-host release checks.
 - The Helm chart is experimental. It does not yet have the same live upgrade, restore, and platform-security evidence as Compose and native Linux.
 - Live OpenID Connect, SMTP, Intercom, SearXNG, object-store, and subscription-runtime smoke tests need deployment-owned endpoints or credentials. The default suites use protocol fixtures and must not consume customer accounts.
 - The self-hosted Supermemory Lite build has a 10,000-document licence cap. Operators must size and monitor within that limit.

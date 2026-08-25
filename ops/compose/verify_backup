@@ -17,7 +17,7 @@ require_archive "$archive"
 
 (cd "$archive" && sha256sum --check --strict SHA256SUMS)
 postgres_image="$(grep -E '^pgvector/pgvector:' "$archive/images.txt" || true)"
-[[ -n "$postgres_image" && "$(printf '%s\n' "$postgres_image" | wc -l)" == 1 ]] || {
+[[ -n "$postgres_image" && "$(printf '%s\n' "$postgres_image" | wc -l)" -eq 1 ]] || {
   printf 'Backup must name exactly one pgvector PostgreSQL image.\n' >&2
   exit 1
 }
