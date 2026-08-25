@@ -29,12 +29,13 @@ type ProcessRunner interface {
 }
 
 type Invocation struct {
-	Admission  protocol.AdmissionRequest
-	Executable string
-	WorkingDir string
-	CodexHome  string
-	Model      string
-	Prompt     string
+	Admission        protocol.AdmissionRequest
+	Executable       string
+	WorkingDir       string
+	CodexHome        string
+	Model            string
+	Prompt           string
+	EgressProfileKey string
 }
 
 type Result struct {
@@ -69,7 +70,8 @@ func New(now func() time.Time) *Adapter {
 }
 
 func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runner ProcessRunner, emit func(protocol.CanonicalEvent) error) (Result, error) {
-	if runner == nil || emit == nil || strings.TrimSpace(invocation.Prompt) == "" || invocation.CodexHome == "" {
+	if runner == nil || emit == nil || strings.TrimSpace(invocation.Prompt) == "" ||
+		invocation.CodexHome == "" || invocation.EgressProfileKey == "" {
 		return Result{}, errors.New("invalid Codex invocation")
 	}
 	sequence := 2
@@ -92,6 +94,7 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 	process, processErr := runner.Run(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: arguments(invocation), WorkingDir: invocation.WorkingDir,
 		Input: []byte(invocation.Prompt), Credentials: map[string]string{"CODEX_HOME": invocation.CodexHome},
+		EgressProfileKey: invocation.EgressProfileKey,
 	})
 	if process.TimedOut {
 		return Result{Status: "timed_out", FailureCode: "codex_timed_out"}, emitEvent("run.timed_out", map[string]any{"reason": "Codex exceeded the run deadline."})

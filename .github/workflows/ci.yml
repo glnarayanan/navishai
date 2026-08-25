@@ -29,7 +29,10 @@ jobs:
         run: go test ./...
 
       - name: Build runner
-        run: go build -o /tmp/navishai-runner ./runner/cmd/navishai-runner
+        run: |
+          go build -o /tmp/navishai-runner ./runner/cmd/navishai-runner
+          go build -o /tmp/navishai-exec ./runner/cmd/navishai-exec
+          cc -std=c11 -O2 -Wall -Wextra -Werror -o /tmp/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c
 
   scan_ruby:
     runs-on: ubuntu-latest
