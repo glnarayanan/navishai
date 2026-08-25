@@ -1,6 +1,6 @@
 <%= @invitation.invited_by.email_address %> invited you to join <%= @invitation.workspace.name %> as <%= @invitation.role.titleize %>.
 
 Review the invitation:
-<%= workspace_invitation_acceptance_url(@token) %>
+<%= workspace_invitation_acceptance_url(token: @token) %>
 
 This invitation expires in 7 days.

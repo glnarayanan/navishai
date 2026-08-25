@@ -6,6 +6,6 @@
       <h1 id="verify-title">Verify your email</h1>
       <p>Confirm <strong><%= @user.email_address %></strong> as your NavishAI sign-in address.</p>
     </div>
-    <%= button_to "Verify email", verification_path(params[:token]), method: :patch, class: "button button-primary" %>
+    <%= button_to "Verify email", verification_path(token: params[:token]), method: :patch, class: "button button-primary" %>
   </section>
 </main>

@@ -15,9 +15,13 @@ class WorkspaceInvitationsController < ApplicationController
     actor = Current.require_membership!
     return head :forbidden unless actor.can_invite_role?(invitation_params[:role])
 
-    invitation = Current.require_workspace!.workspace_invitations.create!(
-      invitation_params.merge(status: :pending, invited_by: Current.user)
-    )
+    invitation = WorkspaceInvitation.transaction do
+      Current.require_workspace!.workspace_invitations.create!(
+        invitation_params.merge(status: :pending, invited_by: Current.user)
+      ).tap do |created_invitation|
+        audit_event("workspace_invitation.created", subject: created_invitation, metadata: { role: created_invitation.role })
+      end
+    end
     WorkspaceInvitationsMailer.invite(invitation).deliver_later
     redirect_to workspace_workspace_invitations_path(Current.workspace), notice: "Invitation sent."
   rescue ActiveRecord::RecordInvalid => error
@@ -31,7 +35,11 @@ class WorkspaceInvitationsController < ApplicationController
     invitation = Current.require_workspace!.workspace_invitations.pending.find(params[:id])
     return head :forbidden unless Current.require_membership!.can_invite_role?(invitation.role)
 
-    invitation.revoke!
+    invitation.with_lock do
+      if invitation.revoke!
+        audit_event("workspace_invitation.revoked", subject: invitation, metadata: { role: invitation.role })
+      end
+    end
     redirect_to workspace_workspace_invitations_path(Current.workspace), notice: "Invitation revoked."
   end
 

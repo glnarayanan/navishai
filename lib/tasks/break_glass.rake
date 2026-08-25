@@ -27,6 +27,13 @@ namespace :navishai do
         membership = workspace.memberships.find_or_initialize_by(user: user)
         membership.role = :admin
         membership.save!
+        AuditEvent.record!(
+          action: "break_glass.configured",
+          source: :task,
+          workspace: workspace,
+          actor: user,
+          subject: membership
+        )
       end
 
       puts "Break-glass Admin is ready for #{organization.slug}/#{workspace.slug}."

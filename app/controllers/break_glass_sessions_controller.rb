@@ -1,7 +1,7 @@
 class BreakGlassSessionsController < ApplicationController
   allow_unauthenticated_access
   before_action :require_local_request
-  rate_limit to: 5, within: 10.minutes, only: :create, with: -> { head :too_many_requests }
+  rate_limit(**SecurityRateLimits::SENSITIVE, only: :create, with: -> { head :too_many_requests })
 
   def new
   end
@@ -11,12 +11,17 @@ class BreakGlassSessionsController < ApplicationController
 
     user = User.find_by(email_address: params[:email_address])
     destination = user&.with_lock do
-      start_new_session_for(user) if user.authenticate(params[:password]) && user.break_glass? && user.verified?
+      next unless user.authenticate(params[:password]) && user.break_glass? && user.verified?
+
+      start_new_session_for(user).tap do
+        audit_event("authentication.succeeded", workspace: nil, actor: user, subject: Current.session, metadata: { method: "break_glass" })
+      end
     end
     if destination
       redirect_to destination, status: :see_other
     else
       User.authenticate_by(params.permit(:email_address, :password)) unless user
+      audit_event("authentication.failed", workspace: nil, actor: nil, metadata: { method: "break_glass" })
       redirect_to new_break_glass_session_path, alert: "Try another email address or password."
     end
   end

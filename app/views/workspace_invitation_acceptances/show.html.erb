@@ -8,7 +8,7 @@
     </div>
 
     <% if Current.user || !@existing_user %>
-      <%= form_with url: workspace_invitation_acceptance_path(params[:token]), class: "form-stack" do |form| %>
+      <%= form_with url: workspace_invitation_acceptance_path(token: params[:token]), class: "form-stack" do |form| %>
         <% unless Current.user %>
           <div class="field">
             <%= form.label :password, "Create a password" %>

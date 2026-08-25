@@ -4,6 +4,7 @@ class Workspace < ApplicationRecord
   has_many :memberships, dependent: :restrict_with_exception
   has_many :users, through: :memberships
   has_many :workspace_invitations, dependent: :restrict_with_exception
+  has_many :audit_events, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
