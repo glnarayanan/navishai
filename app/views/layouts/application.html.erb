@@ -53,6 +53,10 @@
               <%= link_to "Email", workspace_shared_email_inboxes_path(Current.workspace),
                 aria: { current: controller_name == "shared_email_inboxes" ? "page" : nil } %>
             <% end %>
+            <% if Current.require_membership!.owner? %>
+              <%= link_to "Data", workspace_data_controls_path(Current.workspace),
+                aria: { current: controller_name == "workspace_data_controls" ? "page" : nil } %>
+            <% end %>
           <% end %>
           <%= link_to "Workspaces", workspaces_path,
             aria: { current: controller_name.in?(%w[workspaces workspace_invitations]) ? "page" : nil } %>

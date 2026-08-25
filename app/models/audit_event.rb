@@ -116,7 +116,11 @@ class AuditEvent < ApplicationRecord
     "tag.created" => {},
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },
-    "workspace_invitation.revoked" => { "role" => Membership::ROLES }
+    "workspace_invitation.revoked" => { "role" => Membership::ROLES },
+    "workspace.data_policy_updated" => {
+      "content_retention_days" => Integer,
+      "audit_retention_days" => Integer
+    }
   }.freeze
 
   belongs_to :workspace, optional: true

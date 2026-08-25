@@ -73,6 +73,7 @@ class Workspace < ApplicationRecord
   has_many :health_scorecard_versions, dependent: :restrict_with_exception
   has_many :health_scorecard_design_turns, dependent: :restrict_with_exception
   has_many :health_scorecard_backtests, dependent: :restrict_with_exception
+  has_one :workspace_data_policy, dependent: :destroy
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
@@ -87,6 +88,7 @@ class Workspace < ApplicationRecord
 
   after_create :install_default_crew_configuration
   after_create :install_default_health_scorecard
+  after_create :install_default_data_policy
 
   scope :accessible_to, ->(user) { joins(:memberships).where(memberships: { user: user }).distinct }
 
@@ -97,5 +99,9 @@ class Workspace < ApplicationRecord
 
     def install_default_health_scorecard
       HealthScorecardDesigner.install_default!(workspace: self)
+    end
+
+    def install_default_data_policy
+      create_workspace_data_policy!
     end
 end
