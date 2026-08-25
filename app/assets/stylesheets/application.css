@@ -994,7 +994,7 @@ textarea {
 
 .memory-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(18rem, 0.7fr);
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 18rem);
   gap: 3rem;
   margin-top: 2rem;
 }
@@ -2279,11 +2279,11 @@ td {
 }
 
 .crew-work-index-grid {
-  grid-template-columns: minmax(18rem, 0.9fr) minmax(24rem, 1.1fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
 }
 
 .crew-task-detail-grid {
-  grid-template-columns: minmax(13rem, 0.65fr) minmax(25rem, 1.45fr) minmax(16rem, 0.9fr);
+  grid-template-columns: minmax(0, 0.65fr) minmax(0, 1.45fr) minmax(0, 0.9fr);
 }
 
 .crew-work-panel {
@@ -2819,7 +2819,7 @@ td {
   }
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 64rem) {
   .case-workspace-grid {
     display: flex;
     flex-direction: column;
@@ -3390,21 +3390,23 @@ td {
 
 .account-health-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: 1.5rem;
 }
 
-.account-health-heading > div:first-child {
-  display: grid;
-  gap: 0.65rem;
-}
-
 .account-health-actions,
 .risk-review-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.625rem;
+}
+
+.account-health-heading > div:first-child {
+  display: grid;
+  gap: 0.65rem;
 }
 
 .account-health-actions form,
@@ -3445,7 +3447,7 @@ td {
 
 .account-list-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1fr) 5rem 7rem minmax(10rem, 0.7fr);
+  grid-template-columns: minmax(0, 1fr) 5rem 7rem minmax(0, 0.7fr);
   align-items: center;
   gap: 1rem;
   min-height: 5.5rem;
@@ -3469,6 +3471,11 @@ td {
 .health-score {
   display: grid;
   gap: 0.15rem;
+  min-width: 0;
+}
+
+.account-list-name strong {
+  overflow-wrap: anywhere;
 }
 
 .account-list-name small,
@@ -3499,7 +3506,7 @@ td {
 
 .health-overview {
   display: grid;
-  grid-template-columns: minmax(14rem, 0.7fr) minmax(20rem, 1.3fr);
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   overflow: hidden;
   border-radius: var(--radius);
   background: var(--surface);
@@ -3725,7 +3732,7 @@ td {
   background: var(--surface);
 }
 
-.scorecard-preview { overflow: hidden; }
+.scorecard-preview { overflow: visible; }
 
 .scorecard-designer > header,
 .scorecard-proposal > header,
@@ -3750,7 +3757,11 @@ td {
   font-variant-numeric: tabular-nums;
 }
 
-.scorecard-form { display: grid; gap: 1.5rem; }
+.scorecard-form section > header {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
 .scorecard-goal textarea { width: 100%; resize: vertical; }
 .scorecard-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 
@@ -3801,18 +3812,84 @@ td {
 .scorecard-preview-stats div:last-child { border-right: 0; }
 .scorecard-preview-stats strong { font-size: 2rem; font-variant-numeric: tabular-nums; }
 .scorecard-preview-stats span { color: var(--muted); font-size: 0.8125rem; }
-.scorecard-preview table { width: 100%; margin-top: 1.25rem; border-collapse: collapse; text-align: left; }
+.scorecard-preview table { width: 100%; min-width: 36rem; margin-top: 1.25rem; border-collapse: collapse; text-align: left; }
 .scorecard-preview th,
 .scorecard-preview td { padding: 0.75rem; border-bottom: 1px solid var(--line); }
 .scorecard-preview thead th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .scorecard-evidence { margin-top: 1rem; color: var(--muted); font-size: 0.75rem; overflow-wrap: anywhere; }
+.scorecard-compare-scroll {
+  margin-top: 1.25rem;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.scorecard-compare-scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.scorecard-compare-cards {
+  display: none;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.scorecard-compare-cards > li {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+}
+.scorecard-compare-cards h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.scorecard-compare-cards dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+.scorecard-compare-cards dl > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.scorecard-compare-cards dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.scorecard-compare-cards dd { margin: 0; }
+.scorecard-stage {
+  padding: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.scorecard-stage > summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+.scorecard-stage > summary::-webkit-details-marker { display: none; }
+.scorecard-stage > summary strong { display: block; }
+.scorecard-stage > summary small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+}
+.scorecard-stage > :not(summary) { padding: 0 1.25rem 1.25rem; }
 .scorecard-empty { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
 .scorecard-empty p { margin-top: 0.3rem; color: var(--muted); }
 .scorecard-published-notice { padding: 1rem; border: 1px solid var(--success); border-radius: var(--radius); background: var(--success-soft); }
 .scorecard-publish .read-only-notice { border: 1px solid var(--line-strong); }
 
 .scorecard-history > header { margin-bottom: 1rem; }
-.scorecard-history ol { margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
+.scorecard-history ol { margin: 0.75rem 0 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
 .scorecard-history li { border-bottom: 1px solid var(--line); }
 .scorecard-history li.is-selected { box-shadow: inset 3px 0 var(--accent); }
 .scorecard-history a { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.5rem; padding: 0.75rem 1rem; color: var(--ink); text-decoration: none; }
@@ -3826,7 +3903,8 @@ td {
   .scorecard-preview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scorecard-preview-stats div:nth-child(2) { border-right: 0; }
   .scorecard-preview-stats div:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
-  .scorecard-preview table { min-width: 38rem; }
+  .scorecard-compare-scroll { display: none; }
+  .scorecard-compare-cards { display: grid; }
 }
 
 @media (max-width: 24rem) {
@@ -4188,15 +4266,29 @@ td {
 .theme-menu {
   position: absolute;
   right: 0;
+  top: calc(100% + 0.4rem);
   z-index: 20;
   display: grid;
   min-width: 9.5rem;
-  margin: 0.4rem 0 0;
+  max-height: min(14rem, calc(100dvh - 1.5rem));
+  margin: 0;
   padding: 0.35rem;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--popover);
   box-shadow: var(--shadow-lg);
+}
+
+.theme-menu.is-drop-up,
+.sidebar-foot .theme-menu {
+  top: auto;
+  bottom: calc(100% + 0.4rem);
+}
+
+.theme-menu.is-drop-down {
+  top: calc(100% + 0.4rem);
+  bottom: auto;
 }
 
 .theme-option {
@@ -4211,6 +4303,11 @@ td {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.theme-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .theme-option.is-selected,

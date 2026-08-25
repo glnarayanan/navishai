@@ -14,7 +14,7 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Data controls"
     assert_select "select[name='workspace_data_policy[content_retention_days]']"
-    assert_select "a", text: "Data"
+    assert_select ".nav-label", text: "Data"
 
     assert_difference "AuditEvent.count", 1 do
       patch workspace_data_controls_path(@workspace), params: {
@@ -60,7 +60,7 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
 
     get workspace_support_cases_path(@workspace)
-    assert_select "a", { text: "Data", count: 0 }
+    assert_select ".nav-label", text: "Data", count: 0
   end
 
   test "owner can queue an irreversible content expiry run" do

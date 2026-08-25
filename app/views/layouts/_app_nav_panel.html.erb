@@ -3,23 +3,20 @@
   <div class="sidebar-head">
     <%= render "layouts/wordmark" %>
     <% if Current.workspace %>
-      <div class="sidebar-identity">
+      <div class="sidebar-identity" title="<%= Current.user.email_address %>">
         <p class="sidebar-workspace-name" title="<%= Current.workspace.name %>"><%= Current.workspace.name %></p>
         <p class="sidebar-workspace-meta">
           <span title="<%= Current.workspace.organization.name %>"><%= Current.workspace.organization.name %></span>
           <span aria-hidden="true">·</span>
           <span><%= role_label(membership.role) %></span>
         </p>
-        <p class="sidebar-user" title="<%= Current.user.email_address %>"><%= Current.user.email_address %></p>
       </div>
     <% else %>
-      <div class="sidebar-identity">
+      <div class="sidebar-identity" title="<%= Current.user.email_address %>">
         <p class="sidebar-workspace-name">Choose a workspace</p>
-        <p class="sidebar-user" title="<%= Current.user.email_address %>"><%= Current.user.email_address %></p>
       </div>
     <% end %>
-    <%= link_to "Workspaces", workspaces_path, class: "nav-item #{ "is-current" if nav_current?("workspaces", "workspace_invitations") }",
-      aria: { current: nav_current?("workspaces", "workspace_invitations") ? "page" : nil } %>
+    <%= nav_link "Workspaces", workspaces_path, "workspaces", "workspace_invitations" %>
   </div>
 
   <% if Current.workspace %>
@@ -30,7 +27,7 @@
         <%= nav_link "Accounts", workspace_accounts_path(Current.workspace), "accounts", "account_imports" %>
       </div>
       <div class="sidebar-group">
-        <p class="sidebar-group-label">Knowledge and intelligence</p>
+        <p class="sidebar-group-label">Knowledge and<br>intelligence</p>
         <%= nav_link "Knowledge", workspace_knowledge_sources_path(Current.workspace), "knowledge_sources" %>
         <% if membership.can_inspect_memory? %>
           <%= nav_link "Memory", workspace_memory_records_path(Current.workspace), "memory_records", "memory_corrections" %>
@@ -51,7 +48,7 @@
       <% end %>
       <% if membership.can_configure_integrations? || membership.owner? %>
         <div class="sidebar-group">
-          <p class="sidebar-group-label">Workspace administration</p>
+          <p class="sidebar-group-label">Workspace<br>administration</p>
           <% if membership.can_configure_integrations? %>
             <%= nav_link "Webhooks", workspace_outbound_webhook_endpoints_path(Current.workspace), "outbound_webhook_endpoints" %>
           <% end %>
@@ -68,7 +65,8 @@
       <%= link_to workspace_notifications_path(Current.workspace),
         class: "nav-item nav-utility #{ "is-current" if nav_current?("notifications") }",
         aria: { current: nav_current?("notifications") ? "page" : nil } do %>
-        Notifications
+        <%= nav_icon("Notifications") %>
+        <span class="nav-label">Notifications</span>
         <% if unread_notification_count.positive? %>
           <span class="nav-count" aria-label="<%= pluralize(unread_notification_count, "unread notification") %>"><%= unread_notification_count %></span>
         <% end %>

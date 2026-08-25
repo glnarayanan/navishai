@@ -22,6 +22,10 @@ module Navishai
     # Files are available only through workspace-authorized controllers.
     config.active_storage.draw_routes = false
 
+    # Turbo already keeps stylesheets in the document. Preload Link headers for the
+    # same files produce unused-preload warnings after navigation without speeding first paint.
+    config.action_view.preload_links_header = false
+
     config.action_dispatch.default_headers = {
       "X-Frame-Options" => "DENY",
       "X-XSS-Protection" => "0",

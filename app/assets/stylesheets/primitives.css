@@ -265,7 +265,7 @@
   min-width: 0;
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 64rem) {
   .page-family-staged,
   .scorecard-layout,
   .integration-layout {
@@ -327,5 +327,148 @@
 @media (prefers-reduced-motion: reduce) {
   html.is-fetching::before {
     animation: none;
+  }
+}
+
+.table-scroll,
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.table-scroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.setup-disclosure,
+.data-task {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.setup-disclosure > summary,
+.data-task > summary {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-weight: var(--weight-semibold);
+  list-style: none;
+}
+
+.setup-disclosure > summary::-webkit-details-marker,
+.data-task > summary::-webkit-details-marker {
+  display: none;
+}
+
+.setup-disclosure > summary::after,
+.data-task > summary::after {
+  content: "Show";
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
+}
+
+.setup-disclosure[open] > summary::after,
+.data-task[open] > summary::after {
+  content: "Hide";
+}
+
+.setup-disclosure > :not(summary),
+.data-task > :not(summary) {
+  padding: 0 1rem 1.15rem;
+}
+
+.route-status {
+  min-width: 0;
+  margin-bottom: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.route-status dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.85rem 1.25rem;
+  margin: 0;
+}
+
+.route-status dt {
+  color: var(--muted-foreground);
+  font-size: var(--text-meta);
+}
+
+.route-status dd {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+@container canvas (max-width: 70rem) {
+  .case-workspace-grid,
+  .is-app .case-workspace-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
+  }
+
+  .queue-rail,
+  .is-app .queue-rail {
+    display: none;
+  }
+
+  .scorecard-layout,
+  .page-family-staged,
+  .integration-layout,
+  .crew-work-index-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stage-rail {
+    position: static;
+    max-height: none;
+  }
+}
+
+@container canvas (max-width: 52rem) {
+  .case-workspace-grid,
+  .is-app .case-workspace-grid {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .is-app .conversation-thread {
+    order: 1;
+  }
+
+  .is-app .case-context,
+  .decision-rail {
+    order: 2;
+    position: static;
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .health-overview,
+  .memory-detail-grid,
+  .account-supporting-grid,
+  .crew-task-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .account-list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .account-renewal {
+    grid-column: 1 / -1;
   }
 }

@@ -13,10 +13,37 @@ export default class extends Controller {
       if (this.storedTheme() === "system") this.apply("system")
     }
     this.media.addEventListener("change", this.mediaListener)
+    this.placeListener = () => this.placeOpenMenus()
+    window.addEventListener("resize", this.placeListener)
   }
 
   disconnect() {
     this.media?.removeEventListener("change", this.mediaListener)
+    window.removeEventListener("resize", this.placeListener)
+  }
+
+  placeMenu(event) {
+    const details = event.currentTarget
+    if (!details.open) return
+    requestAnimationFrame(() => this.placeDetails(details))
+  }
+
+  placeOpenMenus() {
+    this.element.querySelectorAll("details.theme-control[open]").forEach((details) => this.placeDetails(details))
+  }
+
+  placeDetails(details) {
+    const menu = details.querySelector(".theme-menu")
+    if (!menu) return
+
+    menu.classList.remove("is-drop-up", "is-drop-down")
+    const toggle = details.querySelector("summary")
+    const toggleRect = toggle.getBoundingClientRect()
+    const menuHeight = Math.max(menu.scrollHeight, menu.offsetHeight)
+    const spaceBelow = window.innerHeight - toggleRect.bottom
+    const spaceAbove = toggleRect.top
+    const dropUp = spaceBelow < menuHeight + 8 && spaceAbove > spaceBelow
+    menu.classList.add(dropUp ? "is-drop-up" : "is-drop-down")
   }
 
   choose(event) {

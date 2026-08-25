@@ -21,6 +21,17 @@ class HealthScorecardTest < ApplicationSystemTestCase
     click_button "Run preview and backtest"
     assert_text "Preview and historical backtest saved"
     assert_text "snapshots tested"
+
+    page.current_window.resize_to(1024, 900)
+    assert_no_horizontal_overflow
+    compare = find(".scorecard-compare-scroll")
+    assert_includes %w[auto scroll], compare.evaluate_script("getComputedStyle(this).overflowX")
+    assert_operator compare.evaluate_script("this.scrollWidth"), :>=, compare.evaluate_script("this.clientWidth")
+    assert_selector ".scorecard-compare-table th", text: /Proposal/i
+    assert_selector ".scorecard-compare-table th", text: /Change/i
+    assert_not_equal "hidden", find(".scorecard-preview").evaluate_script("getComputedStyle(this).overflowX")
+    page.current_window.resize_to(1440, 1100)
+
     click_button "Publish version 2"
     assert_text "Version 2 now scores future account snapshots"
     assert_text "Version 2 is published"
@@ -44,6 +55,7 @@ class HealthScorecardTest < ApplicationSystemTestCase
       }).slice(0, 12).map((element) => `${element.tagName}.${element.className}:${Math.round(element.getBoundingClientRect().left)}-${Math.round(element.getBoundingClientRect().right)}`)
     JAVASCRIPT
     assert_equal 0, overflow, offenders.join(", ")
+    reveal_setup "Build proposal"
     assert_operator find_button("Create proposal").rect.height, :>=, 48
     assert_operator find_button("Refresh preview and backtest").rect.height, :>=, 48
     assert_operator find_link("Accounts", match: :first).rect.height, :>=, 48
