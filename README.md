@@ -10,6 +10,7 @@ The project is greenfield. The target is a secure, self-hostable, market-review-
 2. Read [documentation/BUILD.md](./documentation/BUILD.md) for the complete product decisions, Q1-Q74 interview ledger, done evidence, and autonomous stacked-PR plan.
 3. Use [documentation/DEVELOPMENT.md](./documentation/DEVELOPMENT.md) to set up the application and run its checks.
 4. Follow [documentation/DESIGN.md](./documentation/DESIGN.md) when building or reviewing product UI.
+5. Use [documentation/DOMAIN.md](./documentation/DOMAIN.md) for canonical product terms.
 
 The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 

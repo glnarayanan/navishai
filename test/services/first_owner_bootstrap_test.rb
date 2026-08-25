@@ -5,6 +5,13 @@ class FirstOwnerBootstrapTest < ActiveSupport::TestCase
     InstallationState.delete_all
     WorkspaceInvitation.delete_all
     Session.delete_all
+    IdentityMatchCandidate.delete_all
+    SourceIdentityKey.delete_all
+    SourceIdentity.delete_all
+    ContactMerge.delete_all
+    AccountMerge.delete_all
+    Contact.delete_all
+    Account.delete_all
     Membership.delete_all
     Workspace.delete_all
     Organization.delete_all

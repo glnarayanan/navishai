@@ -1,0 +1,11 @@
+acme:
+  workspace: acme_support
+  name: Acme Customer
+
+acme_duplicate:
+  workspace: acme_support
+  name: Acme Customer Duplicate
+
+beta:
+  workspace: beta_support
+  name: Beta Customer

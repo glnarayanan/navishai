@@ -1,0 +1,32 @@
+acme_domain:
+  workspace: acme_support
+  entity_kind: account
+  source_namespace: manual_import
+  source_record_type: company
+  source_record_id: acme-company
+  status: matched
+  account: acme
+  resolution_method: created
+  resolved_at: <%= Time.current %>
+
+alice_email:
+  workspace: acme_support
+  entity_kind: contact
+  source_namespace: shared_email
+  source_record_type: sender
+  source_record_id: alice-message
+  status: matched
+  contact: alice
+  resolution_method: created
+  resolved_at: <%= Time.current %>
+
+bob_email:
+  workspace: beta_support
+  entity_kind: contact
+  source_namespace: shared_email
+  source_record_type: sender
+  source_record_id: bob-message
+  status: matched
+  contact: bob
+  resolution_method: created
+  resolved_at: <%= Time.current %>
