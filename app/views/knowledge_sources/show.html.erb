@@ -1,0 +1,99 @@
+<% content_for :title, "#{@source.title} · Knowledge — NavishAI" %>
+<% status, status_class = knowledge_source_status(@source) %>
+
+<main class="page-shell knowledge-shell">
+  <%= link_to "Back to knowledge", workspace_knowledge_sources_path(Current.workspace), class: "back-link" %>
+  <div class="workspace-heading knowledge-source-heading">
+    <div class="page-heading">
+      <h1><%= @source.title %></h1>
+      <p><%= knowledge_source_kind_label(@source.source_kind) %> · <%= @source.versions.size %> immutable <%= "version".pluralize(@source.versions.size) %></p>
+    </div>
+    <span class="status-badge <%= status_class %>"><%= status %></span>
+  </div>
+
+  <% if @source.deleted? %>
+    <div class="knowledge-warning" role="status">
+      <strong>Deleted from current use</strong>
+      <p>This source no longer appears in search. Its versions and citation links remain for prior evidence.</p>
+    </div>
+  <% elsif @source.stale? %>
+    <div class="knowledge-warning" role="status">
+      <strong>Current version is stale</strong>
+      <p>Add a checked version before relying on this source for new work.</p>
+    </div>
+  <% end %>
+
+  <% current = @source.current_version %>
+  <section class="section-block knowledge-current" aria-labelledby="current-version-title">
+    <div class="section-heading-row">
+      <h2 id="current-version-title">Current version</h2>
+      <span>Version <%= current.version_number %></span>
+    </div>
+    <dl class="knowledge-metadata">
+      <div><dt>Retrieved</dt><dd><%= time_tag current.retrieved_at, current.retrieved_at.to_fs(:long) %></dd></div>
+      <div><dt>Expires</dt><dd><%= current.expires_at ? time_tag(current.expires_at, current.expires_at.to_fs(:long)) : "No expiry" %></dd></div>
+      <div><dt>Digest</dt><dd><code><%= current.content_sha256 %></code></dd></div>
+      <% if current.retrieved_from_url %><div><dt>Retrieved from</dt><dd><%= link_to current.retrieved_from_url, current.retrieved_from_url, rel: "noreferrer" %></dd></div><% end %>
+      <% if @source.external_id %><div><dt>External ID</dt><dd><%= @source.external_id %></dd></div><% end %>
+    </dl>
+    <div class="knowledge-content"><%= simple_format current.content %></div>
+    <div class="citation-block">
+      <span>Citation</span>
+      <code class="citation-uri"><%= current.citation_uri %></code>
+    </div>
+  </section>
+
+  <% if @can_manage && !@source.deleted? %>
+    <section class="section-block" aria-labelledby="new-version-title">
+      <h2 id="new-version-title">Add a checked version</h2>
+      <p class="section-intro">A new version replaces current search content. Earlier versions and citations stay unchanged.</p>
+      <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
+      <%= form_with url: workspace_knowledge_source_path(Current.workspace, @source), method: :patch,
+        scope: :knowledge_source, class: "knowledge-form", multipart: true do |form| %>
+        <% if @source.upload? %>
+          <div class="field">
+            <%= form.label :upload, "Replacement plain-text file" %>
+            <%= form.file_field :upload, required: true, accept: "text/plain,.txt" %>
+          </div>
+        <% else %>
+          <div class="field">
+            <%= form.label :content, "Approved source text" %>
+            <%= form.text_area :content, rows: 10, required: !@source.url?, maxlength: KnowledgeSourceVersion::MAX_CONTENT_BYTES,
+              aria: { describedby: (@source.url? ? "url-refresh-hint" : nil) } %>
+            <% if @source.url? %><span class="field-hint" id="url-refresh-hint">Leave blank to fetch the public HTTPS source again.</span><% end %>
+          </div>
+        <% end %>
+        <div class="field knowledge-expiry-field">
+          <%= form.label :expires_at, "Expires at" %>
+          <%= form.datetime_local_field :expires_at %>
+        </div>
+        <%= form.submit "Add version", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="section-block" aria-labelledby="version-history-title">
+    <h2 id="version-history-title">Version history</h2>
+    <ol class="knowledge-version-list">
+      <% @versions.each do |version| %>
+        <li>
+          <div>
+            <strong>Version <%= version.version_number %></strong>
+            <% if version.stale? %><span class="status-badge status-warning">Stale</span><% end %>
+          </div>
+          <p>Retrieved <%= time_tag version.retrieved_at, version.retrieved_at.to_fs(:long) %><%= " by #{version.created_by_user.email_address}" if version.created_by_user %></p>
+          <code class="citation-uri"><%= version.citation_uri %></code>
+        </li>
+      <% end %>
+    </ol>
+  </section>
+
+  <% if @can_manage && !@source.deleted? %>
+    <section class="section-block knowledge-delete" aria-labelledby="delete-source-title">
+      <h2 id="delete-source-title">Remove from current use</h2>
+      <p>Deletion hides this source from search but keeps its versions and citation history.</p>
+      <%= button_to "Delete knowledge source", workspace_knowledge_source_path(Current.workspace, @source),
+        method: :delete, class: "button button-quiet", form: { data: { turbo_confirm: "Delete this source from current use?" } } %>
+    </section>
+  <% end %>
+</main>

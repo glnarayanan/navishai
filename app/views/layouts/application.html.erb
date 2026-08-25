@@ -37,6 +37,8 @@
             <span class="current-workspace"><%= Current.workspace.name %></span>
             <%= link_to "Cases", workspace_support_cases_path(Current.workspace),
               aria: { current: controller_name.in?(%w[support_cases support_case_commands]) ? "page" : nil } %>
+            <%= link_to "Knowledge", workspace_knowledge_sources_path(Current.workspace),
+              aria: { current: controller_name == "knowledge_sources" ? "page" : nil } %>
             <% if Current.require_membership!.can_configure_integrations? %>
               <%= link_to "Email", workspace_shared_email_inboxes_path(Current.workspace),
                 aria: { current: controller_name == "shared_email_inboxes" ? "page" : nil } %>
