@@ -33,6 +33,7 @@ class SecurityBaselineTest < ActionDispatch::IntegrationTest
       bootstrap_token: "bootstrap-value",
       deployment_token: "deployment-value",
       email_address: "owner@example.com",
+      public_web_query: "owner@example.com token=secret",
       safe_role: "manager"
     }
 
@@ -43,6 +44,7 @@ class SecurityBaselineTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filtered[:bootstrap_token]
     assert_equal "[FILTERED]", filtered[:deployment_token]
     assert_equal "[FILTERED]", filtered[:email_address]
+    assert_equal "[FILTERED]", filtered[:public_web_query]
     assert_equal "manager", filtered[:safe_role]
   end
 

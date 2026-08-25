@@ -14,7 +14,7 @@ func TestHealthEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newHandler([]byte("runner-test-secret-that-is-at-least-32-bytes"), store, time.Now)
+	handler, err := newHandler([]byte("runner-test-secret-that-is-at-least-32-bytes"), store, "", time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestHandlerRequiresASecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newHandler([]byte("short"), store, time.Now); err == nil {
+	if _, err := newHandler([]byte("short"), store, "", time.Now); err == nil {
 		t.Fatal("expected a short secret to fail")
 	}
 }

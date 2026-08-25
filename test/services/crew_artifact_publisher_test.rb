@@ -128,6 +128,43 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_equal 1, @investigation.artifacts.count
   end
 
+  test "completed public-web evidence enters run context and can be cited only by its task" do
+    response = {
+      "protocol_version" => "v1", "workspace_key" => @workspace.runner_key,
+      "request_key" => "search:artifact", "query" => "reset status incident",
+      "provider_key" => "searxng", "policy_decision" => "allowed", "cost_units" => 1,
+      "retrieved_at" => "2026-08-24T12:00:00Z",
+      "results" => [ {
+        "rank" => 1, "title" => "Reset status", "url" => "https://status.example.com/reset",
+        "excerpt" => "Reset delivery recovered.", "published_at" => nil
+      } ]
+    }
+    client = Object.new
+    client.define_singleton_method(:web_search!) { |**| response }
+    search = PublicWebResearch.perform!(
+      workspace: @workspace, membership: @owner, task: @investigation,
+      query: "reset status incident", request_key: "search:artifact", client:
+    )
+    citation = {
+      "kind" => "public_web", "locator" => "public-web://#{search.results.sole.citation_key}",
+      "label" => "Public status report"
+    }
+
+    start(@investigation)
+    artifact = publish(@investigation, artifact_payload(
+      kind: "investigation", body: "The public status page reports recovery.", citations: [ citation ]
+    ))
+
+    assert_equal citation, artifact.citations.sole
+    assert_includes artifact.execution_run.input_context, "Untrusted public-web evidence"
+    assert_includes artifact.execution_run.input_context, "public-web://#{search.results.sole.citation_key}"
+    review_and_approve(@investigation, "The public source is clearly marked and supports the finding.")
+    assert_raises(ExecutionLedger::InvalidRun) do
+      start(@draft)
+      complete_run(@draft, artifact_payload(kind: "draft", body: "Cites another task.", citations: [ citation ]))
+    end
+  end
+
   private
     def create_task(profile, title, dependencies: [])
       CrewWork.create!(

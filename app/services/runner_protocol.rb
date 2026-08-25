@@ -1,9 +1,11 @@
 require "openssl"
+require "uri"
 
 module RunnerProtocol
   VERSION = "v1"
   ADMISSION_PATH = "/v1/runs/admit"
   RUNTIME_DETECTION_PATH = "/v1/runtimes/detect"
+  WEB_SEARCH_PATH = "/v1/tools/web-search"
   MAX_BODY_BYTES = 256.kilobytes
   UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
   KEY_PATTERN = /\A[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}\z/
@@ -239,6 +241,59 @@ module RunnerProtocol
     rescue ArgumentError
       raise MalformedMessage, "#{name} is invalid"
     end
+  end
+
+  class WebSearchResponse
+    KEYS = %w[protocol_version workspace_key request_key query provider_key policy_decision cost_units retrieved_at results].freeze
+    RESULT_KEYS = %w[rank title url excerpt published_at].freeze
+
+    attr_reader :attributes
+
+    def self.parse(body, workspace_key:, request_key:, query:)
+      raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body), workspace_key:, request_key:, query:)
+    rescue JSON::ParserError
+      raise MalformedMessage, "response body is not valid JSON"
+    end
+
+    def initialize(attributes, workspace_key:, request_key:, query:)
+      unless attributes.is_a?(Hash) && attributes.keys.sort == KEYS.sort &&
+          attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
+          attributes["request_key"] == request_key && attributes["query"] == query &&
+          attributes["provider_key"].is_a?(String) && attributes["provider_key"].match?(POLICY_KEY_PATTERN) &&
+          attributes["policy_decision"] == "allowed" && attributes["cost_units"].is_a?(Integer) && attributes["cost_units"] >= 0 &&
+          valid_time?(attributes["retrieved_at"]) && valid_results?(attributes["results"])
+        raise MalformedMessage, "web search response is invalid"
+      end
+      @attributes = attributes.deep_dup.freeze
+    end
+
+    private
+      def valid_results?(results)
+        return false unless results.is_a?(Array) && results.length <= 10
+
+        results.each_with_index.all? do |result, index|
+          result.is_a?(Hash) && result.keys.sort == RESULT_KEYS.sort && result["rank"] == index + 1 &&
+            result["title"].is_a?(String) && result["title"].bytesize.between?(1, 500) &&
+            valid_url?(result["url"]) && result["excerpt"].is_a?(String) && result["excerpt"].bytesize <= 4_000 &&
+            (result["published_at"].nil? || valid_time?(result["published_at"]))
+        end
+      end
+
+      def valid_url?(value)
+        uri = URI.parse(value.to_s)
+        uri.scheme == "https" && uri.host.present? && uri.userinfo.nil? && uri.fragment.nil? && value.bytesize <= 2_048
+      rescue URI::InvalidURIError
+        false
+      end
+
+      def valid_time?(value)
+        Time.iso8601(value.to_s)
+        true
+      rescue ArgumentError
+        false
+      end
   end
 
   class RuntimeDetectionResponse

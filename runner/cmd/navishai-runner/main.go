@@ -15,6 +15,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/admission"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
+	"github.com/glnarayanan/navishai/runner/internal/websearch"
 )
 
 func main() {
@@ -31,7 +32,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("open runner admission state: %v", err)
 	}
-	handler, err := newHandler(secret, store, time.Now)
+	searchStatePath := os.Getenv("NAVISHAI_WEB_SEARCH_STATE_PATH")
+	if searchStatePath == "" {
+		searchStatePath = statePath + ".web-search"
+	}
+	handler, err := newHandler(secret, store, searchStatePath, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner protocol: %v", err)
 	}
@@ -49,7 +54,7 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
-func newHandler(secret []byte, store *admission.Store, now func() time.Time) (http.Handler, error) {
+func newHandler(secret []byte, store *admission.Store, searchStatePath string, now func() time.Time) (http.Handler, error) {
 	admissionHandler, err := admission.NewHandler(secret, store, now)
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
@@ -62,11 +67,30 @@ func newHandler(secret []byte, store *admission.Store, now func() time.Time) (ht
 	if err != nil {
 		return nil, fmt.Errorf("create runtime detection handler: %w", err)
 	}
+	searchStore, err := websearch.OpenStore(searchStatePath)
+	if err != nil {
+		return nil, fmt.Errorf("open web search state: %w", err)
+	}
+	var searchProvider websearch.Provider
+	if providerKey := os.Getenv("NAVISHAI_WEB_SEARCH_PROVIDER"); providerKey != "" {
+		if providerKey != "searxng" {
+			return nil, fmt.Errorf("unsupported web search provider %q", providerKey)
+		}
+		searchProvider, err = websearch.NewSearXNG(os.Getenv("NAVISHAI_SEARXNG_URL"), nil)
+		if err != nil {
+			return nil, fmt.Errorf("configure SearXNG: %w", err)
+		}
+	}
+	searchHandler, err := websearch.NewHandler(secret, searchProvider, searchStore, now)
+	if err != nil {
+		return nil, fmt.Errorf("create web search handler: %w", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", healthHandler)
 	mux.HandleFunc("GET /readyz", healthHandler)
 	mux.Handle("POST /v1/runs/admit", admissionHandler)
 	mux.Handle("POST "+runtimecatalog.DetectionPath, runtimeHandler)
+	mux.Handle("POST "+websearch.Path, searchHandler)
 	return mux, nil
 }
 

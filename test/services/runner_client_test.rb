@@ -57,4 +57,32 @@ class RunnerClientTest < ActiveSupport::TestCase
       RunnerProtocol::RuntimeDetectionResponse.parse(JSON.generate(protocol_version: "v1", installations: [ report ]))
     end
   end
+
+  test "signs and validates a public web search request" do
+    secret = "s" * 32
+    now = Time.iso8601("2026-08-24T12:00:00Z")
+    workspace_key = "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
+    response = RunnerClient::Response.new(
+      code: 200,
+      body: JSON.generate(
+        protocol_version: "v1", workspace_key:, request_key: "search:one", query: "status incident",
+        provider_key: "searxng", policy_decision: "allowed", cost_units: 1,
+        retrieved_at: now.iso8601, results: []
+      )
+    )
+    client = RunnerClient.new(secret:, clock: -> { now })
+    captured = nil
+    client.define_singleton_method(:perform) do |request|
+      captured = request
+      response
+    end
+
+    result = client.web_search!(workspace_key:, request_key: "search:one", query: "status incident")
+
+    assert_equal "searxng", result.fetch("provider_key")
+    assert_equal RunnerProtocol::WEB_SEARCH_PATH, captured.path
+    assert_equal RunnerProtocol.signature(
+      secret:, timestamp: now.to_i.to_s, method: "POST", path: captured.path, body: captured.body
+    ), captured["X-NavishAI-Signature"]
+  end
 end

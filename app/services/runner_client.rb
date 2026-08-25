@@ -92,6 +92,30 @@ class RunnerClient
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
+  def web_search!(workspace_key:, request_key:, query:, max_results: 5)
+    body = JSON.generate(
+      protocol_version: RunnerProtocol::VERSION, workspace_key:, request_key:, query:, max_results:
+    )
+    timestamp = @clock.call.to_i.to_s
+    request = Net::HTTP::Post.new(RunnerProtocol::WEB_SEARCH_PATH)
+    request["Content-Type"] = "application/json"
+    request["X-NavishAI-Timestamp"] = timestamp
+    request["X-NavishAI-Signature"] = RunnerProtocol.signature(
+      secret: @secret, timestamp:, method: "POST", path: RunnerProtocol::WEB_SEARCH_PATH, body:
+    )
+    request.body = body
+    response = perform(request)
+    raise_for_response(response) unless response.code == 200
+
+    RunnerProtocol::WebSearchResponse.parse(response.body, workspace_key:, request_key:, query:).attributes
+  rescue RunnerProtocol::MalformedMessage => error
+    raise MalformedResponse, error.message
+  rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
+    raise AmbiguousResult, "web search outcome is unknown: #{error.class}"
+  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+    raise Unavailable, "runner is unavailable: #{error.class}"
+  end
+
   private
 
   def parse_address(address)

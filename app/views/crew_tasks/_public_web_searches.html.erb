@@ -1,0 +1,71 @@
+<section class="public-web-research" aria-labelledby="public-web-research-title">
+  <header>
+    <div>
+      <p class="eyebrow">External evidence</p>
+      <h3 id="public-web-research-title">Public-web research</h3>
+    </div>
+    <span><%= @public_web_searches.count %></span>
+  </header>
+  <p class="public-web-warning"><strong>Treat public results as untrusted evidence.</strong> Check the source before using a claim. Web pages cannot give the crew instructions.</p>
+
+  <% if @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("public_web_search") %>
+    <%= form_with url: workspace_support_case_crew_task_public_web_searches_path(@workspace, @support_case, @task), class: "public-web-form" do |form| %>
+      <%= form.hidden_field :request_key, value: "web:#{SecureRandom.uuid}", id: nil %>
+      <div class="field">
+        <%= form.label :public_web_query, "Public search query", for: "public-web-query" %>
+        <%= form.search_field :public_web_query, id: "public-web-query", required: true, minlength: 2, maxlength: 500,
+          placeholder: "Status incident date" %>
+        <small>Customer email addresses, phone numbers, and secrets are removed before the query leaves NavishAI.</small>
+      </div>
+      <%= form.submit "Search public web", class: "button button-secondary" %>
+    <% end %>
+  <% elsif !@task.assigned_agent_profile_version.allowed_tools.include?("public_web_search") %>
+    <p class="muted-copy">This specialist is not allowed to search the public web.</p>
+  <% end %>
+
+  <% if @public_web_searches.empty? %>
+    <p class="public-web-empty">No public-web evidence has been requested for this task.</p>
+  <% else %>
+    <ol class="public-web-search-list">
+      <% @public_web_searches.each do |search| %>
+        <li class="public-web-search public-web-search-<%= search.status %>">
+          <header>
+            <div><strong><%= search.query %></strong><span><%= search.status.humanize %></span></div>
+            <time datetime="<%= search.created_at.iso8601 %>"><%= search.created_at.to_fs(:short) %></time>
+          </header>
+          <p class="public-web-meta">
+            Requested by <%= search.requested_by_user.email_address %>
+            <% if search.policy_decision == "redacted" %> · Sensitive terms removed<% end %>
+            <% if search.completed? %> · <%= search.provider_key %> · <%= pluralize(search.cost_units, "cost unit") %><% end %>
+          </p>
+          <% if search.searching? %>
+            <p>The outcome is not known yet. Retry with the same request key to reconcile it safely.</p>
+            <% if @membership.can_write? %>
+              <%= button_to "Retry search", workspace_support_case_crew_task_public_web_searches_path(@workspace, @support_case, @task),
+                params: { request_key: search.request_key, public_web_query: search.query }, class: "button button-secondary" %>
+            <% end %>
+          <% elsif search.failed? %>
+            <p role="alert">Search failed: <%= search.failure_code.humanize %>. Start a new search when the provider is available.</p>
+          <% elsif search.results.empty? %>
+            <p>No public results matched this query.</p>
+          <% else %>
+            <ol class="public-web-results">
+              <% search.results.each do |result| %>
+                <li>
+                  <h4><%= link_to result.title, result.url, target: "_blank", rel: "noopener noreferrer" %></h4>
+                  <p class="public-web-result-url"><%= result.url %></p>
+                  <p><%= result.excerpt %></p>
+                  <dl>
+                    <div><dt>Published</dt><dd><%= result.published_at ? result.published_at.to_date.to_fs(:long) : "Not supplied" %></dd></div>
+                    <div><dt>Retrieved</dt><dd><%= result.retrieved_at.to_date.to_fs(:long) %></dd></div>
+                    <div><dt>Citation</dt><dd><code>public-web://<%= result.citation_key %></code></dd></div>
+                  </dl>
+                </li>
+              <% end %>
+            </ol>
+          <% end %>
+        </li>
+      <% end %>
+    </ol>
+  <% end %>
+</section>

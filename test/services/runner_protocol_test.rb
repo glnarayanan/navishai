@@ -81,4 +81,37 @@ class RunnerProtocolTest < ActiveSupport::TestCase
       RunnerProtocol::AdmissionRequest.parse(JSON.generate(body))
     end
   end
+
+  test "parses strict provider-neutral public web results" do
+    workspace_key = "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
+    payload = {
+      protocol_version: "v1", workspace_key:, request_key: "search:one", query: "status incident",
+      provider_key: "searxng", policy_decision: "allowed", cost_units: 1,
+      retrieved_at: "2026-08-24T12:00:00Z",
+      results: [ {
+        rank: 1, title: "Incident report", url: "https://status.example.com/incidents/1",
+        excerpt: "The service recovered.", published_at: "2026-08-24T11:00:00Z"
+      } ]
+    }
+
+    response = RunnerProtocol::WebSearchResponse.parse(
+      JSON.generate(payload), workspace_key:, request_key: "search:one", query: "status incident"
+    )
+    assert_equal "searxng", response.attributes.fetch("provider_key")
+    assert_equal "Incident report", response.attributes.fetch("results").sole.fetch("title")
+
+    payload[:results].first[:url] = "https://status.example.com/incidents/1#untrusted"
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::WebSearchResponse.parse(
+        JSON.generate(payload), workspace_key:, request_key: "search:one", query: "status incident"
+      )
+    end
+    payload[:results].first[:url] = "https://status.example.com/incidents/1"
+    payload[:provider_name] = "specific"
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::WebSearchResponse.parse(
+        JSON.generate(payload), workspace_key:, request_key: "search:one", query: "status incident"
+      )
+    end
+  end
 end
