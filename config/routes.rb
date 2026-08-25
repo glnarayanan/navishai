@@ -11,6 +11,12 @@ Rails.application.routes.draw do
     end
     resources :attachments, only: :show, controller: "attachment_downloads"
     resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ]
+    resources :memory_records, path: "memory", only: %i[ index show destroy ] do
+      post :corrections, controller: "memory_corrections", action: :create
+      post "corrections/:correction_id/review", controller: "memory_corrections", action: :review,
+        as: :correction_review
+      post :retry_removal, on: :member
+    end
     resources :crew_templates, path: "crews", only: :index do
       resources :agent_profiles, only: :update
     end

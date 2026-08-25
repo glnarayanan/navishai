@@ -53,6 +53,7 @@ class ExecutionLedger
         raise InvalidRun, "Only ready or active tasks can run."
       end
 
+      lock_memory_context!(memory_context)
       attempt = task.execution_runs.maximum(:attempt_number).to_i + 1
       input_context, input_artifact = context_for(task, memory_context)
       extra_data = memory_context.present? ? [ "retrieved_memory" ] : []
@@ -169,6 +170,18 @@ class ExecutionLedger
   end
 
   private
+    def lock_memory_context!(memory_context)
+      return unless memory_context.present?
+
+      records = @workspace.memory_records.where(id: memory_context.items.map { |item| item.record.id })
+        .order(:id).lock.index_by(&:id)
+      current_ids = @workspace.memory_records.where(id: records.keys).current.available.eligible_at(Time.current)
+        .joins(:memory_index_entry).where(memory_index_entries: { status: "indexed" }).pluck(:id)
+      unless records.size == memory_context.items.size && current_ids.sort == records.keys.sort
+        raise InvalidRun, "Retrieved memory changed before the run was prepared. Try again."
+      end
+    end
+
     def context_for(task, memory_context)
       context = task.input_context.dup
       input_artifact = nil

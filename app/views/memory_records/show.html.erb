@@ -1,0 +1,138 @@
+<% content_for :title, "#{memory_topic_label(@memory_record)} · Memory — NavishAI" %>
+<% state, state_class = memory_state(@memory_record) %>
+
+<main class="page-shell memory-shell">
+  <%= link_to "Back to memory", workspace_memory_records_path(@workspace), class: "back-link" %>
+  <div class="page-heading memory-detail-heading">
+    <div>
+      <h1><%= memory_topic_label(@memory_record) %></h1>
+      <p><%= memory_scope_label(@memory_record) %></p>
+    </div>
+    <span class="status-badge <%= state_class %>"><%= state %></span>
+  </div>
+
+  <% if @memory_record.memory_tombstone %>
+    <div class="inline-error memory-deletion-state" role="status">
+      <strong>Deleted from retrieval</strong>
+      <p><%= @memory_record.memory_tombstone.reason %></p>
+      <span>External index: <%= @memory_record.memory_tombstone.index_status.humanize %></span>
+      <% if @can_manage && (@memory_record.memory_tombstone.index_status_failed? || @memory_record.memory_tombstone.index_status_unknown?) %>
+        <%= button_to "Retry index removal", retry_removal_workspace_memory_record_path(@workspace, @memory_record), class: "button button-secondary" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <div class="memory-detail-grid">
+    <article class="memory-record-content" aria-labelledby="memory-content-title">
+      <h2 id="memory-content-title">Recorded context</h2>
+      <div class="message-body"><%= simple_format(@memory_record.content) %></div>
+      <code class="citation-uri">memory://<%= @memory_record.memory_key %></code>
+    </article>
+
+    <aside class="memory-metadata" aria-label="Memory details">
+      <dl>
+        <div><dt>Type</dt><dd><%= @memory_record.memory_type.titleize %></dd></div>
+        <div><dt>Authority</dt><dd><%= memory_authority_label(@memory_record) %></dd></div>
+        <div><dt>Confidence</dt><dd><%= number_to_percentage(@memory_record.confidence * 100, precision: 0) %></dd></div>
+        <div><dt>Observed</dt><dd><time datetime="<%= @memory_record.observed_at.iso8601 %>"><%= @memory_record.observed_at.to_fs(:long) %></time></dd></div>
+        <div><dt>Valid from</dt><dd><%= @memory_record.valid_from.to_fs(:long) %></dd></div>
+        <div><dt>Retention</dt><dd><%= memory_retention_label(@memory_record) %></dd></div>
+        <div><dt>Source</dt><dd><code><%= @memory_record.source_reference %></code></dd></div>
+        <div><dt>Index</dt><dd><%= @memory_record.memory_index_entry&.status&.humanize || "Not queued" %></dd></div>
+      </dl>
+    </aside>
+  </div>
+
+  <% if @memory_record.supersedes_memory_record || @memory_record.revisions.any? %>
+    <section class="section-block" aria-labelledby="memory-history-title">
+      <h2 id="memory-history-title">Supersession history</h2>
+      <ol class="memory-history-list">
+        <% if @memory_record.supersedes_memory_record %>
+          <li><span>Prior record</span>
+            <% if @can_manage %>
+              <%= link_to @memory_record.supersedes_memory_record.memory_key, workspace_memory_record_path(@workspace, @memory_record.supersedes_memory_record) %>
+            <% else %>
+              <code><%= @memory_record.supersedes_memory_record.memory_key %></code>
+            <% end %>
+          </li>
+        <% end %>
+        <% @memory_record.revisions.each do |revision| %>
+          <li><span>Newer record</span>
+            <% if @can_manage %>
+              <%= link_to revision.memory_key, workspace_memory_record_path(@workspace, revision) %>
+            <% else %>
+              <code><%= revision.memory_key %></code>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
+
+  <% if @corrections.any? %>
+    <section class="section-block" aria-labelledby="correction-history-title">
+      <h2 id="correction-history-title">Correction history</h2>
+      <ol class="memory-proposal-list">
+        <% @corrections.each do |proposal| %>
+          <li>
+            <div><strong><%= proposal.status.humanize %></strong><span>Proposed by <%= proposal.proposed_by_user.email_address %> · <%= proposal.created_at.to_fs(:short) %></span></div>
+            <p><%= proposal.content %></p>
+            <% if @can_manage && proposal.proposed? %>
+              <div class="memory-review-actions">
+                <%= button_to "Accept correction", workspace_memory_record_correction_review_path(@workspace, @memory_record, proposal),
+                  params: { outcome: "accepted" }, class: "button button-primary" %>
+                <%= button_to "Reject", workspace_memory_record_correction_review_path(@workspace, @memory_record, proposal),
+                  params: { outcome: "rejected" }, class: "button button-secondary" %>
+              </div>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
+
+  <% if @correctable %>
+    <section class="section-block" aria-labelledby="propose-correction-title">
+      <h2 id="propose-correction-title"><%= @can_manage ? "Publish a correction" : "Propose a correction" %></h2>
+      <p class="section-intro">A correction creates a new record and keeps this source in history. It never rewrites prior evidence.</p>
+      <%= form_with url: workspace_memory_record_corrections_path(@workspace, @memory_record), scope: :memory_correction,
+        class: "memory-correction-form" do |form| %>
+        <div class="field">
+          <%= form.label :content, "Corrected context" %>
+          <%= form.text_area :content, value: @memory_record.content, rows: 7, required: true, maxlength: 32_768 %>
+        </div>
+        <div class="memory-correction-fields">
+          <div class="field">
+            <%= form.label :confidence %>
+            <%= form.number_field :confidence, value: @memory_record.confidence, min: 0, max: 1, step: 0.001, required: true %>
+          </div>
+          <div class="field">
+            <%= form.label :retention_policy, "Retention" %>
+            <%= form.select :retention_policy, [ [ "Indefinite", "indefinite" ], [ "Until a set time", "time_bound" ] ], selected: "indefinite" %>
+          </div>
+          <div class="field">
+            <%= form.label :retention_until, "Retain until" %>
+            <%= form.datetime_local_field :retention_until %>
+            <span class="field-hint">Required when retention has an end time.</span>
+          </div>
+        </div>
+        <%= form.submit @can_manage ? "Publish correction" : "Send for review", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <% if @can_manage && !@memory_record.memory_tombstone %>
+    <section class="section-block memory-delete" aria-labelledby="delete-memory-title">
+      <h2 id="delete-memory-title">Remove from use</h2>
+      <p class="section-intro">Retrieval stops at once. The source, audit trail, and tombstone remain.</p>
+      <%= form_with url: workspace_memory_record_path(@workspace, @memory_record), method: :delete do |form| %>
+        <div class="field">
+          <%= form.label :reason, "Deletion reason" %>
+          <%= form.text_field :reason, required: true, maxlength: 500, autocomplete: "off" %>
+        </div>
+        <%= form.submit "Delete memory", class: "button button-danger",
+          data: { turbo_confirm: "Remove this memory from retrieval and the external index?" } %>
+      <% end %>
+    </section>
+  <% end %>
+</main>

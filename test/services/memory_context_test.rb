@@ -127,6 +127,36 @@ class MemoryContextTest < ActiveSupport::TestCase
     end
   end
 
+  test "run preparation rejects memory deleted after retrieval" do
+    memory = create_memory(topic: "deleted-during-preparation")
+    index!(memory)
+    item = MemoryContext::Item.new(record: memory, rank: 1, score: 0.9)
+    result = MemoryContext::Result.new(text: "\nRetrieved memory", items: [ item ])
+    workspace = @workspace
+    owner = @owner
+    replacement = lambda do |**|
+      MemoryGovernance.delete!(
+        workspace:, membership: owner, memory_record: memory, reason: "Remove before selection"
+      )
+      result
+    end
+
+    original = MemoryContext.method(:build)
+    MemoryContext.define_singleton_method(:build, replacement)
+    begin
+      assert_no_difference -> { @workspace.execution_runs.count } do
+        error = assert_raises(ExecutionLedger::InvalidRun) do
+          ExecutionLedger.new(workspace: @workspace).prepare!(
+            task: @task, request_key: "memory-context:deleted-race"
+          )
+        end
+        assert_includes error.message, "Retrieved memory changed"
+      end
+    ensure
+      MemoryContext.define_singleton_method(:build, original)
+    end
+  end
+
   private
     def create_memory(topic:, workspace: @workspace, content: "Durable context", authority: :source_record,
       origin_kind: :system, source_membership: nil, source_user: nil, confidence: 1,

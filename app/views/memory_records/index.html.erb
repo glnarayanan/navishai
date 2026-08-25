@@ -1,0 +1,86 @@
+<% content_for :title, "Memory · #{@workspace.name} — NavishAI" %>
+
+<main class="page-shell memory-shell">
+  <%= link_to "Back to cases", workspace_support_cases_path(@workspace), class: "back-link" %>
+  <div class="page-heading memory-heading">
+    <div>
+      <h1>Workspace memory</h1>
+      <p>
+        <% if @access_scope == "all" %>
+          Inspect scoped records, source history, corrections, and retention.
+        <% else %>
+          Review memory disclosed to execution runs that you own.
+        <% end %>
+      </p>
+    </div>
+    <span class="memory-access-note"><strong><%= @access_scope == "all" ? "Full workspace view" : "Used in your work" %></strong>Every view is audited.</span>
+  </div>
+
+  <%= form_with url: workspace_memory_records_path(@workspace), method: :get, class: "memory-filters" do |form| %>
+    <div class="field">
+      <%= form.label :type, "Memory type" %>
+      <%= form.select :type, [ [ "All types", "" ] ] + MemoryRecord::MEMORY_TYPES.map { |type| [ type.titleize, type ] }, selected: params[:type] %>
+    </div>
+    <div class="field">
+      <%= form.label :scope %>
+      <%= form.select :scope, [ [ "All scopes", "" ] ] + MemoryRecord::SCOPE_KINDS.map { |scope| [ scope.humanize, scope ] }, selected: params[:scope] %>
+    </div>
+    <div class="field">
+      <%= form.label :authority %>
+      <%= form.select :authority, [ [ "All authority", "" ] ] + MemoryRecord::AUTHORITIES.map { |authority| [ authority.humanize, authority ] }, selected: params[:authority] %>
+    </div>
+    <div class="field">
+      <%= form.label :state %>
+      <%= form.select :state, [ [ "All states", "" ], [ "Current", "current" ], [ "Superseded", "superseded" ], [ "Deleted", "deleted" ] ], selected: params[:state] %>
+    </div>
+    <%= form.submit "Apply filters", class: "button button-secondary" %>
+  <% end %>
+
+  <% if @pending_corrections.any? %>
+    <section class="section-block" aria-labelledby="memory-corrections-title">
+      <div class="section-heading-row">
+        <h2 id="memory-corrections-title"><%= @can_manage ? "Corrections to review" : "Your correction proposals" %></h2>
+        <p><%= pluralize(@pending_corrections.size, "proposal") %></p>
+      </div>
+      <ol class="memory-correction-list">
+        <% @pending_corrections.each do |proposal| %>
+          <li>
+            <div>
+              <strong><%= memory_topic_label(proposal.memory_record) %></strong>
+              <span><%= proposal.status.humanize %> · <%= proposal.proposed_by_user.email_address %></span>
+            </div>
+            <%= link_to "Review record", workspace_memory_record_path(@workspace, proposal.memory_record), class: "button button-quiet" %>
+          </li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
+
+  <section class="section-block" aria-labelledby="memory-library-title">
+    <div class="section-heading-row">
+      <h2 id="memory-library-title">Memory records</h2>
+      <p><%= @records.size == 100 ? "First 100 records" : pluralize(@records.size, "record") %></p>
+    </div>
+    <% if @records.any? %>
+      <ol class="memory-record-list">
+        <% @records.each do |memory| %>
+          <% state, state_class = memory_state(memory) %>
+          <li>
+            <%= link_to workspace_memory_record_path(@workspace, memory), class: "memory-record-link" do %>
+              <span class="memory-record-main">
+                <span class="memory-record-kinds"><strong><%= memory_topic_label(memory) %></strong><span><%= memory.memory_type.titleize %></span></span>
+                <span class="memory-preview"><%= truncate(memory.content, length: 180) %></span>
+                <span class="memory-record-meta"><%= memory_scope_label(memory) %> · <%= memory_authority_label(memory) %> · Observed <%= time_ago_in_words(memory.observed_at) %> ago</span>
+              </span>
+              <span class="status-badge <%= state_class %>"><%= state %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <%= render "shared/empty_state",
+        title: "No memory matches",
+        description: @access_scope == "all" ? "Change the filters or wait for a source event to create memory." : "No memory has been disclosed to one of your execution runs." %>
+    <% end %>
+  </section>
+</main>

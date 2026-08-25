@@ -55,6 +55,8 @@ class Workspace < ApplicationRecord
   has_many :memory_index_entries, dependent: :restrict_with_exception
   has_many :memory_proposals, dependent: :restrict_with_exception
   has_many :execution_memory_selections, dependent: :restrict_with_exception
+  has_many :memory_correction_proposals, dependent: :restrict_with_exception
+  has_many :memory_tombstones, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

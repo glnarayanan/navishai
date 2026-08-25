@@ -23,6 +23,8 @@ class MemoryRecord < ApplicationRecord
   has_one :accepted_memory_proposal, class_name: "MemoryProposal", foreign_key: :published_memory_record_id,
     dependent: :restrict_with_exception, inverse_of: :published_memory_record
   has_many :execution_memory_selections, dependent: :restrict_with_exception
+  has_many :memory_correction_proposals, dependent: :restrict_with_exception
+  has_one :memory_tombstone, dependent: :restrict_with_exception
 
   enum :memory_type, MEMORY_TYPES.index_by(&:itself), validate: true, prefix: true
   enum :scope_kind, SCOPE_KINDS.index_by(&:itself), validate: true, prefix: true
@@ -58,9 +60,15 @@ class MemoryRecord < ApplicationRecord
     where("valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)", time, time)
       .where("retention_policy <> 'time_bound' OR retention_until > ?", time)
   }
+  scope :available, -> { where.missing(:memory_tombstone) }
 
   def readonly?
     persisted?
+  end
+
+  def eligible_at?(time)
+    valid_from <= time && (valid_until.nil? || valid_until > time) &&
+      (!retention_policy_time_bound? || retention_until > time)
   end
 
   def scope_target

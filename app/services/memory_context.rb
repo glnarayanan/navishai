@@ -49,7 +49,7 @@ class MemoryContext
     attr_reader :workspace, :task, :engine, :at
 
     def scoped_records
-      MemoryScope.resolve(context: scope_context).current.eligible_at(at)
+      MemoryScope.resolve(context: scope_context).current.available.eligible_at(at)
         .joins(:memory_index_entry).where(memory_index_entries: { status: "indexed" })
     end
 

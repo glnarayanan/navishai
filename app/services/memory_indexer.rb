@@ -2,6 +2,7 @@ class MemoryIndexer
   def self.perform!(entry:, engine: nil, attempted_at: Time.current)
     entry.with_lock do
       return entry if entry.indexed?
+      return entry if entry.memory_record.memory_tombstone
 
       entry.update!(
         status: :indexing,
