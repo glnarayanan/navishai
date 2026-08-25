@@ -1,0 +1,42 @@
+<% content_for :title, "Case queue · #{@workspace.name} — NavishAI" %>
+
+<main class="workbench-shell queue-page">
+  <header class="workspace-toolbar">
+    <div>
+      <h1><%= @workspace.name %></h1>
+      <p><%= @workspace.organization.name %> · <%= role_label(@membership.role) %></p>
+    </div>
+    <% if @membership.owner? || @membership.admin? %>
+      <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
+    <% end %>
+  </header>
+
+  <%= render "filters" %>
+  <% if @support_cases.any? %>
+    <div class="queue-index-grid">
+      <div class="queue-index-rail">
+        <%= render "queue", support_cases: @support_cases %>
+      </div>
+      <section class="empty-selection" aria-labelledby="empty-selection-title">
+        <div>
+          <p class="eyebrow">Case workspace</p>
+          <h2 id="empty-selection-title">Select a case</h2>
+          <p>Choose a queue item to read the conversation and review its case work.</p>
+        </div>
+      </section>
+    </div>
+  <% else %>
+    <%= render "queue", support_cases: @support_cases %>
+  <% end %>
+
+  <% if @page > 1 || @has_next_page %>
+    <nav class="pagination" aria-label="Case queue pages">
+      <% if @page > 1 %>
+        <%= link_to "Previous", workspace_support_cases_path(@workspace, request.query_parameters.merge(page: @page - 1)), class: "button button-quiet" %>
+      <% end %>
+      <% if @has_next_page %>
+        <%= link_to "Next", workspace_support_cases_path(@workspace, request.query_parameters.merge(page: @page + 1)), class: "button button-quiet" %>
+      <% end %>
+    </nav>
+  <% end %>
+</main>

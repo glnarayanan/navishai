@@ -1,0 +1,23 @@
+<li>
+  <% case item %>
+  <% when SupportCaseStatusChange %>
+    <span><%= case_status_label(item.from_status || "new") %> → <%= case_status_label(item.to_status) %></span>
+    <small>
+      <%= item.actor&.email_address || "System" %> · <%= item.source.titleize %> ·
+      <time datetime="<%= item.occurred_at.iso8601 %>"><%= item.occurred_at.to_fs(:long) %></time><br>
+      <%= item.reason %>
+    </small>
+  <% when CaseNote %>
+    <span>Private note added</span>
+    <small>
+      <%= item.author.email_address %> ·
+      <time datetime="<%= item.created_at.iso8601 %>"><%= item.created_at.to_fs(:long) %></time>
+    </small>
+  <% when AuditEvent %>
+    <span><%= audit_action_label(item.action) %></span>
+    <small>
+      <%= item.actor&.email_address || "System" %> · <%= item.source.titleize %> ·
+      <time datetime="<%= item.occurred_at.iso8601 %>"><%= item.occurred_at.to_fs(:long) %></time>
+    </small>
+  <% end %>
+</li>

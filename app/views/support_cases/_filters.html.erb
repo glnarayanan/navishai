@@ -1,0 +1,24 @@
+<%= form_with url: workspace_support_cases_path(@workspace), method: :get, class: "queue-filters" do |form| %>
+  <div class="field">
+    <%= form.label :status, "Status" %>
+    <%= form.select :status,
+      [[ "Open", "open" ], [ "All", "all" ]] + SupportCase::STATUSES.map { |status| [ case_status_label(status), status ] },
+      selected: params[:status].presence || "open" %>
+  </div>
+  <div class="field">
+    <%= form.label :priority, "Priority" %>
+    <%= form.select :priority, [[ "Any priority", "" ]] + SupportCase::PRIORITIES.map { |priority| [ priority.titleize, priority ] }, selected: params[:priority] %>
+  </div>
+  <div class="field">
+    <%= form.label :assignment, "Assignment" %>
+    <%= form.select :assignment, [[ "Anyone", "any" ], [ "Assigned to me", "mine" ], [ "Unassigned", "unassigned" ]], selected: params[:assignment] %>
+  </div>
+  <div class="field">
+    <%= form.label :tag_id, "Tag" %>
+    <%= form.select :tag_id, [[ "Any tag", "" ]] + @workspace.tags.order(:name).map { |tag| [ tag.name, tag.id ] }, selected: params[:tag_id] %>
+  </div>
+  <%= form.submit "Filter", class: "button button-secondary" %>
+  <% if @queue_filters_active %>
+    <%= link_to "Clear filters", workspace_support_cases_path(@workspace), class: "button button-quiet" %>
+  <% end %>
+<% end %>
