@@ -60,7 +60,11 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	acceptedAt := handler.now().UTC()
-	eventID, err := protocol.NewEventID()
+	event, err := protocol.NewCanonicalEvent(admission.RunID, 1, "run.admitted", acceptedAt, map[string]any{
+		"workspace_key": admission.WorkspaceKey,
+		"task_key":      admission.Task.TaskKey,
+		"attempt":       admission.Task.Attempt,
+	})
 	if err != nil {
 		handler.writeError(response, http.StatusServiceUnavailable, "admission_unavailable", "Runner cannot durably admit this request.")
 		return
@@ -69,15 +73,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		ProtocolVersion: protocol.Version,
 		RunID:           admission.RunID,
 		Status:          "accepted",
-		Event: protocol.CanonicalEvent{
-			ProtocolVersion: protocol.Version, EventID: eventID, RunID: admission.RunID,
-			Sequence: 1, EventType: "run.admitted", OccurredAt: acceptedAt,
-			Data: map[string]any{
-				"workspace_key": admission.WorkspaceKey,
-				"task_key":      admission.Task.TaskKey,
-				"attempt":       admission.Task.Attempt,
-			},
-		},
+		Event:           event,
 	}
 	result, replayed, err := handler.store.Admit(admission.IdempotencyKey, protocol.Digest(body), result)
 	if errors.Is(err, ErrConflict) {

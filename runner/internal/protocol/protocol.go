@@ -191,6 +191,22 @@ func NewEventID() (string, error) {
 		hex.EncodeToString(value[6:8]) + "-" + hex.EncodeToString(value[8:10]) + "-" + hex.EncodeToString(value[10:16])), nil
 }
 
+func NewCanonicalEvent(runID string, sequence int, eventType string, occurredAt time.Time, data map[string]any) (CanonicalEvent, error) {
+	eventID, err := NewEventID()
+	if err != nil {
+		return CanonicalEvent{}, err
+	}
+	return CanonicalEvent{
+		ProtocolVersion: Version,
+		EventID:         eventID,
+		RunID:           runID,
+		Sequence:        sequence,
+		EventType:       eventType,
+		OccurredAt:      occurredAt.UTC(),
+		Data:            data,
+	}, nil
+}
+
 func ensureEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {

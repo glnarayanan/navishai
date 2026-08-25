@@ -1,0 +1,13 @@
+{
+  "scenario": "successful investigation",
+  "attempts": [
+    {
+      "number": 1,
+      "result": "success",
+      "delay_millis": 0,
+      "tool_calls": ["case_read", "knowledge_search"],
+      "output_json": "{\"text\":\"The sign-in failure follows an expired reset link. Evidence: case message 1 and knowledge source 4.\"}",
+      "usage": {"input_units": 120, "output_units": 24}
+    }
+  ]
+}
