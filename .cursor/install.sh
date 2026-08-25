@@ -5,9 +5,12 @@
 # source-derived state only.
 set -euo pipefail
 
-export PATH="${HOME}/.local/share/mise/shims:${HOME}/.local/bin:/usr/lib/postgresql/15/bin:${PATH}"
+export PATH="${HOME}/.local/bin:${HOME}/.local/share/mise/shims:/usr/lib/postgresql/15/bin:${PATH}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+echo "== Installing pinned toolchains (mise.toml) =="
+mise install
 
 # PostgreSQL must be running so the database can be prepared.
 if ! pg_isready --quiet; then
