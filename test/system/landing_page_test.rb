@@ -1,0 +1,28 @@
+require "application_system_test_case"
+
+class LandingPageTest < ApplicationSystemTestCase
+  test "public landing explains the self-hosted product without invented claims" do
+    visit root_path
+
+    assert_title(/NavishAI/)
+    assert_selector "h1", text: /Specialist AI crews/
+    assert_text "Open source and self-hosted"
+    assert_text "A signed-in human still reviews every customer message"
+    assert_link "Sign in"
+    assert_link "See how it works"
+    assert_no_text(/SOC 2 certified/i)
+    assert_no_text(/HIPAA/)
+    assert_no_text(/trusted by/i)
+    refute_selector "img[alt*='logo' i]"
+
+    click_link "See how it works"
+    assert_selector "#how-it-works"
+
+    find("summary", text: "Does this replace Intercom on day one?").click
+    assert_text "Intercom remains authoritative"
+
+    page.current_window.resize_to(390, 844)
+    assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
+    assert_link "Sign in", visible: true
+  end
+end
