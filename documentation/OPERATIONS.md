@@ -75,7 +75,7 @@ Build or pull the target images without changing the running services. Then run:
 ops/compose/upgrade_preflight /secure/backups/navishai-2026-08-24
 ```
 
-Preflight requires a verified backup, valid Compose configuration, a runner certificate valid for at least seven more days with the `runner` DNS SAN, PostgreSQL 15, and pgvector 0.8.1. It prints the target image's migration status against the current database so the operator can review the exact pending set. It does not migrate data or restart the application. Run it while the current Compose application is healthy; the target Rails check shares the live Supermemory network namespace.
+Preflight requires a verified backup, valid Compose configuration, a runner certificate valid for at least seven more days with the `runner` DNS SAN, PostgreSQL 15, and pgvector 0.8.6. It prints the target image's migration status against the current database so the operator can review the exact pending set. It does not migrate data or restart the application. Run it while the current Compose application is healthy; the target Rails check shares the live Supermemory network namespace.
 
 After preflight, stop jobs and web, apply the target release, let web run `db:prepare`, then start jobs. Confirm `/up`, runner `/readyz`, queue processing, attachment download, and Memory health before ending the change window.
 

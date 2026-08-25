@@ -45,7 +45,7 @@ The supported layout is:
 - `/var/lib/navishai`: Rails `log`, `storage`, and `tmp` directories, owned by `navishai` and linked from the matching paths in the release tree
 - `/var/lib/navishai-runner`: runner state and run roots, owned by the separate `navishai-runner` user
 - `/var/lib/supermemory`: Supermemory state, owned by `supermemory`
-- a PostgreSQL 15 server with pgvector 0.8.1 and four databases named in `config/database.yml`
+- a PostgreSQL 15 server with pgvector 0.8.6 and four databases named in `config/database.yml`
 
 Build the three Go binaries from the pinned Go toolchain and install them in `/usr/local/bin`. Install the pinned Supermemory binary with `script/install_supermemory`, then copy it to `/usr/local/bin`. Bundle Rails with the locked gems and precompile assets with `SECRET_KEY_BASE_DUMMY=1`.
 
@@ -62,7 +62,7 @@ The web unit runs `db:prepare` before boot. Do not run migrations from the jobs 
 
 ## Experimental Helm
 
-The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 15 with pgvector 0.8.1, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it.
+The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 15 with pgvector 0.8.6, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it.
 
 Create the application secret with these keys:
 

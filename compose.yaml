@@ -37,7 +37,7 @@ x-rails-service: &rails-service
 
 services:
   postgres:
-    image: pgvector/pgvector:0.8.1-pg15@sha256:94aee7e88f98125114657cab98e28c5dfa8dd517a6bf83fd98b503439f1e3de6
+    image: pgvector/pgvector:0.8.6-pg15@sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da
     restart: unless-stopped
     environment:
       POSTGRES_USER: navishai

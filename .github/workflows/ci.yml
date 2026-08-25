@@ -98,7 +98,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector@sha256:a6579dded3ff4ed3d9565ae54ab253e2cb7ae24c5d1eb3bec8a89e73f038b68a
+        image: pgvector/pgvector:0.8.6-pg15@sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

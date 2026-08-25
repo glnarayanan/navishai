@@ -16,9 +16,9 @@ class ComposeOperationsTest < ActiveSupport::TestCase
       case "$*" in
         *"pg_dump"*) printf 'fake pg dump' ;;
         *"--entrypoint tar"*) tar -cf - --files-from /dev/null ;;
-        *"config --images"*) printf 'navishai-rails:test\nnavishai-runner:test\npgvector/pgvector:0.8.1-pg15@sha256:test\n' ;;
+        *"config --images"*) printf 'navishai-rails:test\nnavishai-runner:test\npgvector/pgvector:0.8.6-pg15@sha256:test\n' ;;
         *"SHOW server_version_num"*) printf '150014\n' ;;
-        *"SELECT extversion"*) printf '0.8.1\n' ;;
+        *"SELECT extversion"*) printf '0.8.6\n' ;;
         *"pg_restore --list"*|*"pg_restore --username"*|*"--entrypoint sh"*) cat >/dev/null ;;
       esac
     SH

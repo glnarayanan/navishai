@@ -28,7 +28,7 @@ compose up -d --wait postgres
 postgres_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command 'SHOW server_version_num')"
 [[ "$postgres_version" == 15* ]] || { printf 'PostgreSQL 15 is required; found %s.\n' "$postgres_version" >&2; exit 1; }
 vector_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command "SELECT extversion FROM pg_extension WHERE extname = 'vector'")"
-[[ "$vector_version" == "0.8.1" ]] || { printf 'pgvector 0.8.1 is required; found %s.\n' "${vector_version:-none}" >&2; exit 1; }
+[[ "$vector_version" == "0.8.6" ]] || { printf 'pgvector 0.8.6 is required; found %s.\n' "${vector_version:-none}" >&2; exit 1; }
 
 compose run --rm -T --no-deps web bin/rails db:migrate:status
 printf 'Upgrade preflight passed with verified backup %s\n' "$archive"
