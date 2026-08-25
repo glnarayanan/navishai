@@ -28,7 +28,7 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     csp = response.headers["Content-Security-Policy"].to_s
     assert_match(/style-src 'self'/, csp)
     refute_match(/style-src[^;]*'unsafe-inline'/, csp)
-    assert Rails.application.assets.load_path.find("fonts/Geist-Variable.woff2")
-    assert Rails.application.assets.load_path.find("fonts/GeistMono-Variable.woff2")
+    assert Rails.application.assets.load_path.find("Geist-Variable.woff2")
+    assert Rails.application.assets.load_path.find("GeistMono-Variable.woff2")
   end
 end
