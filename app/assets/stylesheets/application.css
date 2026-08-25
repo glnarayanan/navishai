@@ -118,12 +118,11 @@ strong {
 }
 
 .app-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 40;
   display: flex;
   min-height: 3.75rem;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   width: min(100% - 1.5rem, 80rem);
@@ -137,6 +136,7 @@ strong {
 
 .app-header nav {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
@@ -3980,7 +3980,7 @@ td {
   display: flex;
   width: min(100%, 70rem);
   min-height: 3.5rem;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.35rem 0.65rem 0.35rem 0.85rem;
@@ -3989,8 +3989,11 @@ td {
   transition: width 280ms cubic-bezier(0.25, 0.1, 0.25, 1), background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 
+.is-public .site-header {
+  align-items: center;
+}
+
 .is-scrolled .site-header,
-.is-app .site-header,
 .is-public .site-header-wrap:not(.is-marketing) .site-header {
   width: min(100%, 50rem);
   border-color: var(--border);
@@ -3999,13 +4002,22 @@ td {
   backdrop-filter: blur(18px);
 }
 
+.is-app .site-header-wrap {
+  padding: 0.5rem 0.75rem 0;
+}
+
 .is-app .site-header {
   width: min(100%, 80rem);
+  border-color: var(--border);
+  background: color-mix(in oklch, var(--background) 78%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
 }
 
 .site-header nav {
   display: flex;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 12rem;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;

@@ -11,8 +11,8 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_link "Sign in"
     assert_link "See how it works"
     assert_no_text(/SOC 2 certified/i)
-    assert_no_text(/HIPAA/)
     assert_no_text(/trusted by/i)
+    assert_text "does not claim SOC 2, HIPAA, ISO 27001, or any other certification."
     refute_selector "img[alt*='logo' i]"
 
     click_link "See how it works"
