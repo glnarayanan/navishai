@@ -4,6 +4,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   background: var(--canvas);
   color: var(--ink);
@@ -3505,21 +3509,22 @@ td {
 .health-score-panel {
   display: grid;
   gap: 0.35rem;
-  align-content: center;
-  min-height: 15rem;
-  padding: 2rem;
-  color: #fff;
-  background: var(--accent);
+  align-content: start;
+  min-height: 0;
+  padding: 1.25rem 1.5rem;
+  color: var(--foreground);
+  background: var(--card);
+  box-shadow: inset 3px 0 0 var(--success);
 }
 
-.health-score-panel-watch { background: color-mix(in oklch, var(--warning) 70%, black); }
-.health-score-panel-at-risk { background: color-mix(in oklch, var(--destructive) 80%, black); }
+.health-score-panel-watch { box-shadow: inset 3px 0 0 var(--warning); }
+.health-score-panel-at-risk { box-shadow: inset 3px 0 0 var(--destructive); }
 .health-score-panel span,
-.health-score-panel time { color: rgba(255, 255, 255, 0.78); }
-.health-score-panel strong { color: #fff; font-size: 4rem; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-.health-score-panel strong small { font-size: 1rem; letter-spacing: 0; }
-.health-score-panel b { font-size: 1.1rem; }
-.health-score-panel time { margin-top: 1rem; font-size: 0.8125rem; }
+.health-score-panel time { color: var(--muted-foreground); }
+.health-score-panel strong { color: var(--foreground); font-size: clamp(2.5rem, 4vw, 3.25rem); line-height: 1; letter-spacing: var(--tracking-page); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+.health-score-panel strong small { font-size: 1rem; letter-spacing: 0; font-weight: var(--weight-regular); }
+.health-score-panel b { font-size: 1.1rem; color: var(--foreground); }
+.health-score-panel time { margin-top: 0.75rem; font-size: 0.8125rem; }
 
 .health-context {
   display: grid;
@@ -3654,7 +3659,6 @@ td {
   .account-renewal { grid-column: 1 / -1; }
   .account-list-row .risk-state { justify-self: end; }
   .health-overview { grid-template-columns: 1fr; }
-  .health-score-panel { min-height: 12rem; }
   .account-supporting-grid { grid-template-columns: 1fr; }
   .table-scroll { overflow-x: auto; }
   .health-signals table { min-width: 48rem; }
@@ -3742,7 +3746,7 @@ td {
   flex: 0 0 auto;
   color: var(--accent);
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3785,7 +3789,7 @@ td {
   background: var(--canvas);
 }
 
-.version-label { color: var(--accent); font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.version-label { color: var(--accent); font-size: 0.75rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: 0.05em; }
 .scorecard-proposal-head h3 { margin: 0.25rem 0; font-size: 1.5rem; }
 .scorecard-rule-summary { display: grid; margin: 1rem 0 0; }
 .scorecard-rule-summary div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.85rem; border-bottom: 1px solid var(--line); }
@@ -3930,7 +3934,7 @@ td {
   color: var(--accent);
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 800;
+  font-weight: var(--weight-bold);
 }
 
 .notifications-page { max-width: 48rem; }
@@ -3952,7 +3956,7 @@ td {
 }
 .notification-link:hover { background: color-mix(in srgb, var(--accent-soft), transparent 30%); }
 .notification-link:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
-.notification-category { color: var(--accent); font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.notification-category { color: var(--accent); font-size: 0.75rem; font-weight: var(--weight-bold); text-transform: uppercase; letter-spacing: 0.04em; }
 .notification-link time { color: var(--muted); font-size: 0.8125rem; }
 
 @media (max-width: 32rem) {
@@ -4263,50 +4267,6 @@ td {
   gap: 0.5rem;
 }
 
-.app-nav-more {
-  position: relative;
-}
-
-.app-nav-more > summary {
-  list-style: none;
-  min-height: 2rem;
-  padding: 0.35rem 0.6rem;
-  border-radius: var(--radius-pill);
-  color: color-mix(in oklch, var(--foreground) 62%, transparent);
-  cursor: pointer;
-}
-
-.app-nav-more > summary::-webkit-details-marker { display: none; }
-
-.app-nav-more[open] > summary,
-.app-nav-more > summary:hover {
-  color: var(--foreground);
-  background: var(--muted-surface);
-}
-
-.app-nav-more-panel {
-  position: absolute;
-  right: 0;
-  z-index: 30;
-  display: grid;
-  min-width: 14rem;
-  margin-top: 0.4rem;
-  padding: 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--popover);
-  box-shadow: var(--shadow-lg);
-}
-
-.app-nav-more-panel a,
-.app-nav-more-panel .button {
-  justify-content: flex-start;
-  width: 100%;
-  min-height: 2.5rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 0.5rem;
-}
-
 .nav-drawer-panel {
   display: grid;
   gap: 0.75rem;
@@ -4340,8 +4300,6 @@ td {
 }
 
 .risk-state-watch { color: var(--warning-foreground); background: var(--warning-soft); }
-.health-score-panel-watch { background: color-mix(in oklch, var(--warning) 70%, black); }
-.health-score-panel-at-risk { background: color-mix(in oklch, var(--destructive) 80%, black); }
 
 .button-danger {
   color: #fff;

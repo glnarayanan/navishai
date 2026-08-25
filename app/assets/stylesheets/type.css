@@ -42,7 +42,6 @@ body {
 }
 
 .text-page,
-.page-bar-title,
 .is-app h1 {
   max-width: 40ch;
   font-size: var(--text-page);

@@ -39,10 +39,11 @@ export default class extends Controller {
     this.element.classList.remove("is-nav-open")
     document.documentElement.classList.remove("is-nav-open")
     this.triggerTargets.forEach((trigger) => trigger.setAttribute("aria-expanded", "false"))
-    if (this.previouslyFocused && typeof this.previouslyFocused.focus === "function") {
-      this.previouslyFocused.focus()
-    }
+    const restore = this.previouslyFocused
     this.previouslyFocused = null
+    queueMicrotask(() => {
+      if (restore && typeof restore.focus === "function") restore.focus()
+    })
   }
 
   focusFirst() {
