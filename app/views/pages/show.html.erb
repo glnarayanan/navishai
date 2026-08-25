@@ -1,0 +1,272 @@
+<% content_for :title, "NavishAI — Support and Customer Success crews" %>
+
+<main class="landing">
+  <section class="landing-hero" id="overview" aria-labelledby="hero-title">
+    <div class="landing-hero-wash" aria-hidden="true"></div>
+    <div class="landing-hero-grid" data-controller="flickering-grid" aria-hidden="true">
+      <canvas></canvas>
+    </div>
+    <div class="landing-hero-inner">
+      <p class="landing-badge">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path fill="currentColor" d="M8 1.2 13.4 4.3v7.4L8 14.8 2.6 11.7V4.3L8 1.2Z"/>
+        </svg>
+        Open source and self-hosted
+      </p>
+      <div>
+        <h1 id="hero-title">Specialist AI crews for Support and Customer Success</h1>
+        <p>NavishAI gives teams coordinated crews that investigate, retrieve, draft, review, and remember. A signed-in human still reviews every customer message and presses Send.</p>
+      </div>
+      <div class="landing-actions">
+        <%= link_to "Sign in", new_session_path, class: "button button-primary" %>
+        <a href="#how-it-works" class="button button-secondary" data-action="landing-header#jump">See how it works</a>
+      </div>
+    </div>
+    <figure class="product-stage" aria-label="Case workspace preview">
+      <div class="product-stage-bar">
+        <span class="product-stage-dot"></span>
+        <span class="product-stage-dot"></span>
+        <span class="product-stage-dot"></span>
+        <span>Acme Support · Case queue</span>
+      </div>
+      <div class="product-stage-grid">
+        <div class="product-stage-rail">
+          <article class="stage-row is-current"><strong>Invoice webhook retry</strong><small>Investigating · High</small></article>
+          <article class="stage-row"><strong>SSO domain mismatch</strong><small>Draft ready</small></article>
+          <article class="stage-row"><strong>Renewal risk: Northwind</strong><small>Waiting internally</small></article>
+        </div>
+        <div class="product-stage-main">
+          <div class="stage-message"><strong>Maya Chen</strong><span>The webhook still returns 401 after we rotated the secret. Can you confirm whether the new key is live?</span></div>
+          <div class="stage-draft">
+            <strong>Draft ready for human send</strong>
+            <span>The secret rotation completed at 14:02. The 401 is from the previous signing key still cached on one worker. Here is the exact retry window and the command to flush it.</span>
+            <span class="button button-primary" aria-hidden="true">Send email</span>
+          </div>
+        </div>
+        <aside class="product-stage-side">
+          <div class="stage-note"><strong>Evidence</strong><small>Runtime, knowledge, and memory stay cited beside the draft.</small></div>
+          <div class="stage-note"><strong>Human send</strong><small>No agent, job, or approval record can send later.</small></div>
+        </aside>
+      </div>
+    </figure>
+  </section>
+
+  <section class="capability-marquee" aria-label="Product capabilities">
+    <div class="capability-track">
+      <% capabilities = [
+        "Support Case Crew",
+        "Customer Success Crew",
+        "Human-only send",
+        "Shared email",
+        "Intercom sync",
+        "Account health",
+        "Scorecard designer",
+        "Scoped memory",
+        "Public-web evidence",
+        "Self-hosted runner"
+      ] %>
+      <% 2.times do %>
+        <% capabilities.each do |capability| %>
+          <span><%= capability %></span>
+        <% end %>
+      <% end %>
+    </div>
+  </section>
+
+  <section id="how-it-works" aria-labelledby="bento-title">
+    <header class="section-header">
+      <h2 id="bento-title">Work stays attributable from intake to send</h2>
+      <p>Support is the entry product. Customer Success is the longer path: account health, renewal-risk investigation, and customer-specific scorecards.</p>
+    </header>
+    <div class="bento-shell">
+      <div class="bento-hatch bento-hatch-start" aria-hidden="true"></div>
+      <div class="bento-hatch bento-hatch-end" aria-hidden="true"></div>
+      <div class="bento-grid">
+        <article class="bento-card">
+          <div class="bento-visual demo-chat">
+            <div class="chat-bubble chat-human">The customer says the webhook still 401s after the secret rotation. Check whether we can send a reply yet.</div>
+            <div class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="chat-bubble chat-agent">Investigation cites the worker cache and a current knowledge article. The draft is ready. Sending still needs you.</div>
+          </div>
+          <div class="bento-copy">
+            <h3>Case work with a human send</h3>
+            <p>Crews prepare cited drafts. Sending is a fresh, authenticated human command, never a standing permission.</p>
+          </div>
+        </article>
+        <article class="bento-card">
+          <div class="bento-visual orbit-stage" aria-hidden="true">
+            <div class="orbit-ring orbit-ring-1"></div>
+            <div class="orbit-ring orbit-ring-2"></div>
+            <div class="orbit-node">Triage</div>
+            <div class="orbit-node">Investigate</div>
+            <div class="orbit-node">Draft</div>
+            <div class="orbit-node">Review</div>
+            <div class="orbit-node">Health</div>
+            <div class="orbit-node">Risk</div>
+            <div class="orbit-core" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.2 13.4 4.3v7.4L8 14.8 2.6 11.7V4.3L8 1.2Z"/></svg>
+            </div>
+          </div>
+          <div class="bento-copy">
+            <h3>Bounded specialist roles</h3>
+            <p>Support and Customer Success templates invoke only the roles a case needs. Admins stay inside the approved runtime registry.</p>
+          </div>
+        </article>
+        <article class="bento-card">
+          <div class="bento-visual health-demo">
+            <svg viewBox="0 0 320 140" role="img" aria-label="Schematic account-health trend">
+              <path class="chart-fill" d="M8 118 L8 86 C40 90 70 70 100 74 C140 80 170 40 210 48 C250 56 280 28 312 32 L312 118 Z"/>
+              <path class="chart-line" d="M8 86 C40 90 70 70 100 74 C140 80 170 40 210 48 C250 56 280 28 312 32"/>
+            </svg>
+            <span class="health-callout">Signals stay visible</span>
+          </div>
+          <div class="bento-copy">
+            <h3>Account health you can inspect</h3>
+            <p>Deterministic signals keep their source and weight. AI narrative is labeled as analysis, not as a hidden score.</p>
+          </div>
+        </article>
+        <article class="bento-card">
+          <div class="bento-visual stack-demo" aria-hidden="true">
+            <div class="stack-card">Human send</div>
+            <div class="stack-card">Evidence and review</div>
+            <div class="stack-card">Crew draft</div>
+          </div>
+          <div class="bento-copy">
+            <h3>Memory with a paper trail</h3>
+            <p>Scoped records carry source, time, and supersession. If memory is down, NavishAI says so and keeps the rest of the case moving.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="quote-section" aria-labelledby="principle-title">
+    <h2 id="principle-title" class="visually-hidden">Operating principle</h2>
+    <blockquote>Agents investigate, draft, and recommend. A human presses Send.</blockquote>
+    <p>No agent, background job, or earlier approval can send, schedule, or trigger a customer message.</p>
+  </section>
+
+  <section id="features" aria-labelledby="features-title" data-controller="feature-cycle">
+    <header class="section-header">
+      <h2 id="features-title">From inbox to attributed send</h2>
+      <p>The primary path is a Support case. Customer Success uses the same evidence, memory, and review rules on account health.</p>
+    </header>
+    <div class="feature-cycle">
+      <ul class="feature-list" role="tablist" aria-label="Workflow steps">
+        <% features = [
+          ["Receive and identify", "Shared email and Intercom land on Accounts, Contacts, and a case with a recorded state change."],
+          ["Investigate with evidence", "Crews pull current records, approved knowledge, scoped memory, and read-only public-web results."],
+          ["Review the draft", "Policy review surfaces missing evidence, stale sources, and conflicts before anyone can send."],
+          ["Send as yourself", "A signed-in human edits the draft and presses Send. The ledger stores who sent what, where, and when."]
+        ] %>
+        <% features.each_with_index do |(title, body), index| %>
+          <li>
+            <button type="button" class="feature-item<%= " is-active" if index.zero? %>" role="tab"
+              aria-selected="<%= index.zero? %>" data-feature-cycle-target="item" data-feature-index="<%= index %>"
+              data-action="feature-cycle#select keydown->feature-cycle#keyselect">
+              <h3><%= title %></h3>
+              <p><%= body %></p>
+              <span class="feature-line" data-feature-cycle-target="line"></span>
+            </button>
+          </li>
+        <% end %>
+      </ul>
+      <div>
+        <% features.each_with_index do |(title, body), index| %>
+          <article class="feature-panel" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
+            <span class="feature-kicker">Step <%= index + 1 %></span>
+            <h3><%= title %></h3>
+            <p><%= body %></p>
+          </article>
+        <% end %>
+      </div>
+    </div>
+  </section>
+
+  <section id="self-host" aria-labelledby="host-title">
+    <header class="section-header">
+      <h2 id="host-title">Run it on infrastructure you control</h2>
+      <p>The first release is open source and self-hostable. A managed offering is a later option, not something NavishAI sells today.</p>
+    </header>
+    <div class="host-grid">
+      <article class="host-card">
+        <h3>Supported installs</h3>
+        <p>Docker Compose and native Linux are supported. Helm is experimental and cloud-neutral. PostgreSQL stays authoritative for tenant, policy, memory records, and the execution ledger.</p>
+      </article>
+      <article class="host-card">
+        <h3>Security posture, not a certificate</h3>
+        <div class="shield" aria-hidden="true"></div>
+        <p>NavishAI is designed so a later SOC 2 or ISO review has evidence to inspect. It does not claim SOC 2, HIPAA, ISO 27001, or any other certification.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="faq" aria-labelledby="faq-title">
+    <header class="section-header">
+      <h2 id="faq-title">Questions teams ask before installing</h2>
+      <p>Direct answers for Support and Customer Success operators reviewing a self-hosted workspace.</p>
+    </header>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>Who can send a customer message?</summary>
+        <p>Only a signed-in human who reviews the current draft and presses Send in NavishAI. Agents, jobs, and earlier approvals cannot send later.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Does this replace Intercom on day one?</summary>
+        <p>No. NavishAI can sit beside Intercom and shared email. Intercom remains authoritative for its native conversation. NavishAI owns crew work, evidence, memory, review, and the human-send audit.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Where do model credentials live?</summary>
+        <p>Subscription CLI credentials stay on the customer-controlled runner. NavishAI does not import, copy, display, or store those login tokens.</p>
+      </details>
+      <details class="faq-item">
+        <summary>What happens if memory is unavailable?</summary>
+        <p>Authoritative writes and deterministic case work continue. Capture and recall stop in the open, with a warning. NavishAI does not fail over to a managed memory vendor.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is there a hosted trial or billed plan?</summary>
+        <p>Not yet. Install the self-hosted product if you operate the stack. Billing stays manual until demand is validated.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Can we use our own scorecard?</summary>
+        <p>Yes. Starting templates exist, but customer-specific scorecards are a core path: propose, preview, backtest, publish, and roll back a deterministic definition.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="cta-panel" id="get-started" aria-labelledby="cta-title">
+    <h2 id="cta-title">Install it. Keep the send button human.</h2>
+    <%= link_to "Sign in to a workspace", new_session_path, class: "button" %>
+    <p class="cta-note">Use first-time setup on the deployment host when no Owner exists yet.</p>
+  </section>
+
+  <footer class="landing-footer">
+    <div>
+      <h2>NavishAI</h2>
+      <p>An agent-first, human-governed workspace for Support and Customer Success.</p>
+    </div>
+    <div>
+      <h3>Product</h3>
+      <ul>
+        <li><a href="#how-it-works">How it works</a></li>
+        <li><a href="#features">Workflow</a></li>
+        <li><a href="#self-host">Self-hosting</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Operators</h3>
+      <ul>
+        <li><%= link_to "Sign in", new_session_path %></li>
+        <li><%= link_to "Reset password", new_password_path %></li>
+        <li><%= link_to "First-time setup", new_setup_path %></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Source</h3>
+      <ul>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="#overview">Overview</a></li>
+      </ul>
+    </div>
+  </footer>
+</main>

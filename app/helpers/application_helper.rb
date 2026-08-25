@@ -1,4 +1,28 @@
 module ApplicationHelper
+  def color_theme_options
+    [
+      [ "System", "system" ],
+      [ "Light", "light" ],
+      [ "Dark", "dark" ]
+    ]
+  end
+
+  def color_theme_label
+    { "light" => "Light", "dark" => "Dark" }.fetch(color_theme, "System")
+  end
+
+  def landing_page?
+    controller_name == "pages"
+  end
+
+  def nav_current?(*names)
+    controller_name.in?(names.map(&:to_s))
+  end
+
+  def nav_link(label, path, *controllers)
+    link_to label, path, aria: { current: nav_current?(*controllers) ? "page" : nil }
+  end
+
   def role_label(role)
     role.to_s == "viewer" ? "Viewer / Auditor" : role.to_s.titleize
   end

@@ -1,0 +1,14 @@
+<details class="theme-control">
+  <summary class="theme-toggle">
+    <span class="visually-hidden">Color theme</span>
+    <span data-theme-target="label"><%= color_theme_label %></span>
+  </summary>
+  <div class="theme-menu" role="radiogroup" aria-label="Color theme">
+    <% color_theme_options.each do |label, value| %>
+      <button type="button" class="theme-option" role="radio" data-theme-target="option"
+        aria-checked="<%= value == color_theme %>" data-theme-value="<%= value %>" data-action="theme#choose">
+        <%= label %>
+      </button>
+    <% end %>
+  </div>
+</details>

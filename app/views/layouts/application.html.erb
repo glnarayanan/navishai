@@ -1,82 +1,49 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="<%= color_theme %>">
   <head>
     <title><%= content_for(:title) || "NavishAI" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="application-name" content="NavishAI">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="color-scheme" content="light dark">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= javascript_tag nonce: true do %>
+      (function () {
+        var root = document.documentElement;
+        var stored = root.getAttribute("data-theme") || "system";
+        var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        var resolved = stored === "dark" || (stored === "system" && prefersDark) ? "dark" : "light";
+        root.classList.toggle("dark", resolved === "dark");
+        root.style.colorScheme = resolved;
+      })();
+    <% end %>
 
     <%= yield :head %>
-
-    <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
-    <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
 
     <link rel="icon" href="/icon.png" type="image/png">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icon.png">
 
-    <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
-  <body>
+  <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="theme<%= " landing-header" if landing_page? %>">
     <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
-    <header class="app-header">
-      <%= link_to root_path, class: "wordmark", aria: { label: "NavishAI home" } do %>
-        <span class="wordmark-mark" aria-hidden="true"></span>
-        <span>NavishAI</span>
+    <div class="site-frame">
+      <% unless authenticated? %>
+        <div class="site-rail site-rail-start" aria-hidden="true"></div>
+        <div class="site-rail site-rail-end" aria-hidden="true"></div>
       <% end %>
 
-      <% if authenticated? %>
-        <nav aria-label="Account">
-          <% if Current.workspace %>
-            <span class="current-workspace"><%= Current.workspace.name %></span>
-            <%= link_to "Cases", workspace_support_cases_path(Current.workspace),
-              aria: { current: controller_name.in?(%w[support_cases support_case_commands]) ? "page" : nil } %>
-            <%= link_to "Accounts", workspace_accounts_path(Current.workspace),
-              aria: { current: controller_name.in?(%w[accounts account_imports]) ? "page" : nil } %>
-            <%= link_to "Knowledge", workspace_knowledge_sources_path(Current.workspace),
-              aria: { current: controller_name == "knowledge_sources" ? "page" : nil } %>
-            <% if Current.require_membership!.can_inspect_memory? %>
-              <%= link_to "Memory", workspace_memory_records_path(Current.workspace),
-                aria: { current: controller_name.in?(%w[memory_records memory_corrections]) ? "page" : nil } %>
-            <% end %>
-            <%= link_to "Crews", workspace_crew_templates_path(Current.workspace),
-              aria: { current: controller_name.in?(%w[crew_templates agent_profiles]) ? "page" : nil } %>
-            <%= link_to "Runtimes", workspace_runtime_installations_path(Current.workspace),
-              aria: { current: controller_name == "runtime_installations" ? "page" : nil } %>
-            <% if Current.require_membership!.can_configure_integrations? %>
-              <%= link_to "Email", workspace_shared_email_inboxes_path(Current.workspace),
-                aria: { current: controller_name == "shared_email_inboxes" ? "page" : nil } %>
-              <%= link_to "Webhooks", workspace_outbound_webhook_endpoints_path(Current.workspace),
-                aria: { current: controller_name == "outbound_webhook_endpoints" ? "page" : nil } %>
-            <% end %>
-            <% if Current.require_membership!.owner? %>
-              <%= link_to "Data", workspace_data_controls_path(Current.workspace),
-                aria: { current: controller_name == "workspace_data_controls" ? "page" : nil } %>
-            <% end %>
-            <%= link_to workspace_notifications_path(Current.workspace),
-              aria: { current: controller_name == "notifications" ? "page" : nil } do %>
-              Notifications
-              <% unread_notifications = Current.require_membership!.notifications.unread.count %>
-              <span class="nav-count" aria-label="<%= pluralize(unread_notifications, "unread notification") %>"><%= unread_notifications %></span>
-            <% end %>
-          <% end %>
-          <%= link_to "Workspaces", workspaces_path,
-            aria: { current: controller_name.in?(%w[workspaces workspace_invitations]) ? "page" : nil } %>
-          <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
-        </nav>
-      <% end %>
-    </header>
+      <%= render authenticated? ? "layouts/app_header" : "layouts/public_header" %>
+      <%= render "shared/flash_messages" %>
 
-    <%= render "shared/flash_messages" %>
-
-    <div class="app-container" id="main-content" tabindex="-1">
-      <%= yield %>
+      <div class="app-container" id="main-content" tabindex="-1">
+        <%= yield %>
+      </div>
     </div>
   </body>
 </html>
