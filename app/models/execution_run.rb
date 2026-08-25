@@ -1,6 +1,7 @@
 class ExecutionRun < ApplicationRecord
   STATUSES = %w[admitting admitted running completed failed timed_out canceled policy_denied].freeze
   TERMINAL_STATUSES = %w[completed failed timed_out canceled policy_denied].freeze
+  MEMORY_CONTEXT_STATUSES = %w[not_applicable available degraded].freeze
 
   attribute :run_key, default: -> { SecureRandom.uuid }
 
@@ -17,6 +18,7 @@ class ExecutionRun < ApplicationRecord
   has_many :retrieved_memory_records, through: :execution_memory_selections, source: :memory_record
 
   enum :status, STATUSES.index_by(&:itself), validate: true
+  enum :memory_context_status, MEMORY_CONTEXT_STATUSES.index_by(&:itself), validate: true, prefix: :memory
 
   validates :run_key, presence: true, uniqueness: true
   validates :request_key, presence: true, length: { maximum: 128 }, uniqueness: { scope: :workspace_id }
@@ -27,6 +29,8 @@ class ExecutionRun < ApplicationRecord
   validates :selected_runtime_profile_key, inclusion: { in: AgentPolicy::RUNTIME_PROFILES }
   validates :runtime_selection_reason, inclusion: { in: %w[primary fallback] }
   validates :runtime_selection_detail, presence: true, length: { maximum: 500 }
+  validates :memory_context_detail, presence: true, length: { maximum: 100 }, if: :memory_degraded?
+  validates :memory_context_detail, absence: true, unless: :memory_degraded?
   validates :selected_runtime_detection_key, format: { with: /\A[0-9a-f]{64}\z/ }
   validates :selected_adapter_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }
   validates :max_input_units, :max_output_units,

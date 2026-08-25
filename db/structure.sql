@@ -602,6 +602,23 @@ $$;
 
 
 --
+-- Name: protect_execution_run_memory_context(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_run_memory_context() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF ROW(OLD.memory_context_status, OLD.memory_context_detail)
+    IS DISTINCT FROM ROW(NEW.memory_context_status, NEW.memory_context_detail) THEN
+    RAISE EXCEPTION 'execution run memory context is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1460,6 +1477,7 @@ CREATE TABLE public.agent_profile_versions (
     created_by_user_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    memory_required boolean DEFAULT false NOT NULL,
     CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT agent_profile_versions_budget CHECK (((timeout_seconds >= 30) AND (timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
@@ -2338,11 +2356,15 @@ CREATE TABLE public.execution_runs (
     disclosed_data_classes jsonb DEFAULT '[]'::jsonb NOT NULL,
     max_input_units bigint DEFAULT 100000 NOT NULL,
     max_output_units bigint DEFAULT 25000 NOT NULL,
+    memory_context_status character varying DEFAULT 'not_applicable'::character varying NOT NULL,
+    memory_context_detail character varying,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
+    CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY ((ARRAY['not_applicable'::character varying, 'available'::character varying, 'degraded'::character varying])::text[])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
+    CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
     CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND ((runtime_selection_reason)::text = ANY ((ARRAY['primary'::character varying, 'fallback'::character varying])::text[])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
@@ -6699,6 +6721,13 @@ CREATE TRIGGER execution_runs_immutable_context BEFORE UPDATE ON public.executio
 
 
 --
+-- Name: execution_runs execution_runs_memory_context_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_memory_context_immutable BEFORE UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_run_memory_context();
+
+
+--
 -- Name: execution_runs execution_runs_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8590,6 +8619,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824180000'),
 ('20260824170000'),
 ('20260824160000'),
 ('20260824150000'),

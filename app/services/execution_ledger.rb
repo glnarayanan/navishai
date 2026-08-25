@@ -41,6 +41,9 @@ class ExecutionLedger
       return existing
     end
     memory_context = MemoryContext.build(workspace: @workspace, task:, engine: @memory_engine)
+    if memory_context.degraded? && task.assigned_agent_profile_version.memory_required?
+      raise InvalidRun, "Memory is required for this specialist and is currently unavailable."
+    end
 
     ExecutionRun.transaction do
       task.lock!
@@ -77,6 +80,8 @@ class ExecutionLedger
         disclosed_data_classes: selection.data_classes,
         max_input_units: selection.max_input_units,
         max_output_units: selection.max_output_units,
+        memory_context_status: memory_context.status,
+        memory_context_detail: memory_context.detail,
         input_context:, input_artifact:
       )
       memory_context.items.each do |item|
@@ -89,8 +94,6 @@ class ExecutionLedger
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidRun, error.record.errors.full_messages.to_sentence
   rescue RuntimeRouter::NoCompatibleRuntime => error
-    raise InvalidRun, error.message
-  rescue MemoryContext::Unavailable => error
     raise InvalidRun, error.message
   end
 

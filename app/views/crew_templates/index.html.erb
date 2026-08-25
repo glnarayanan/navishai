@@ -49,6 +49,7 @@
                   <div><dt>Fallback</dt><dd><%= version.fallback_profile_keys.map { |key| AgentPolicy::RUNTIME_PROFILES.fetch(key) }.presence&.join(" → ") || "None" %></dd></div>
                   <div><dt>Review</dt><dd><%= AgentPolicy::REVIEW_POLICIES.fetch(version.review_policy) %></dd></div>
                   <div><dt>Tool calls</dt><dd>Up to <%= version.max_tool_calls %></dd></div>
+                  <div><dt>Memory outage</dt><dd><%= version.memory_required? ? "Block run" : "Continue degraded" %></dd></div>
                 </dl>
                 <ul class="agent-tool-list" aria-label="Allowed tools">
                   <% version.allowed_tools.each do |tool| %><li><%= AgentPolicy::TOOLS.fetch(tool) %></li><% end %>
@@ -116,6 +117,10 @@
                         <%= form.label :review_policy, "Review policy" %>
                         <%= form.select :review_policy, AgentPolicy::REVIEW_POLICIES.map { |key, label| [ label, key ] },
                           { selected: submitted&.fetch("review_policy", nil) || version.review_policy }, required: true %>
+                      </div>
+                      <div class="field checkbox-field">
+                        <%= form.check_box :memory_required, checked: ActiveModel::Type::Boolean.new.cast(submitted&.fetch("memory_required", version.memory_required?)) %>
+                        <%= form.label :memory_required, "Block runs when memory is unavailable" %>
                       </div>
                     </div>
                     <%= form.submit "Save new policy version", class: "button button-primary" %>

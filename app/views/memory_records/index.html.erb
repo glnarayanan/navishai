@@ -16,6 +16,34 @@
     <span class="memory-access-note"><strong><%= @access_scope == "all" ? "Full workspace view" : "Used in your work" %></strong>Every view is audited.</span>
   </div>
 
+  <% if @can_manage %>
+    <section class="section-block memory-operations" aria-labelledby="memory-operations-title">
+      <div>
+        <h2 id="memory-operations-title">Portability and index</h2>
+        <p>PostgreSQL stays authoritative. Export a complete archive or rebuild the external index from current records.</p>
+      </div>
+      <% if @degraded_index_count.positive? %>
+        <div class="execution-alert execution-alert-warning" role="status">
+          <strong>Memory indexing is degraded</strong>
+          <p><%= pluralize(@degraded_index_count, "record") %> failed or has an unknown result. Source work remains saved.</p>
+        </div>
+      <% end %>
+      <div class="memory-operation-actions">
+        <%= link_to "Export memory", export_workspace_memory_records_path(@workspace), class: "button button-secondary" %>
+        <%= button_to "Rebuild index", reconstruct_workspace_memory_records_path(@workspace), class: "button button-secondary" %>
+      </div>
+      <% unless @workspace.memory_records.exists? %>
+        <%= form_with url: import_workspace_memory_records_path(@workspace), multipart: true, class: "memory-import-form" do |form| %>
+          <div class="field">
+            <%= form.label :archive, "Import memory archive" %>
+            <%= form.file_field :archive, accept: "application/json,.json", required: true %>
+          </div>
+          <%= form.submit "Import archive", class: "button button-primary" %>
+        <% end %>
+      <% end %>
+    </section>
+  <% end %>
+
   <%= form_with url: workspace_memory_records_path(@workspace), method: :get, class: "memory-filters" do |form| %>
     <div class="field">
       <%= form.label :type, "Memory type" %>

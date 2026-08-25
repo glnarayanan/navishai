@@ -92,7 +92,9 @@ class CrewConfiguration
         timeout_seconds: strict_integer(attributes[:timeout_seconds]),
         max_steps: strict_integer(attributes[:max_steps]),
         max_tool_calls: strict_integer(attributes[:max_tool_calls]),
-        review_policy: attributes[:review_policy].to_s
+        review_policy: attributes[:review_policy].to_s,
+        memory_required: attributes.key?(:memory_required) ?
+          ActiveModel::Type::Boolean.new.cast(attributes[:memory_required]) : profile.current_version.memory_required
       }
       candidate = profile.versions.build(workspace: @workspace, version_number: 1, **values)
       raise InvalidConfiguration, candidate.errors.full_messages.to_sentence unless candidate.valid?
