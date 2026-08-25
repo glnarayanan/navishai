@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "navishai.fullname" . }}-jobs
+  labels:
+    {{- include "navishai.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.jobs.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: jobs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: jobs
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000 }
+      containers:
+        - name: jobs
+          image: {{ include "navishai.image" .Values.image.rails }}
+          imagePullPolicy: {{ .Values.image.rails.pullPolicy }}
+          command: ["bin/jobs"]
+          envFrom:
+            - configMapRef: { name: {{ include "navishai.fullname" . }} }
+            - secretRef: { name: {{ .Values.applicationSecret }} }
+          volumeMounts:
+            - { name: storage, mountPath: /rails/storage }
+            - { name: runner-tls, mountPath: /run/navishai/runner-ca.crt, subPath: ca.crt, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: storage
+          persistentVolumeClaim: { claimName: {{ include "navishai.fullname" . }}-rails }
+        - name: runner-tls
+          secret: { secretName: {{ .Values.runnerTlsSecret }} }
+      nodeSelector: {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity: {{- toYaml .Values.affinity | nindent 8 }}

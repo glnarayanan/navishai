@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "navishai.fullname" . }}-runner
+  labels:
+    {{- include "navishai.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "navishai.fullname" . }}-runner
+  replicas: {{ .Values.runner.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: runner
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000 }
+      containers:
+        - name: runner
+          image: {{ include "navishai.image" .Values.image.runner }}
+          imagePullPolicy: {{ .Values.image.runner.pullPolicy }}
+          env:
+            - { name: NAVISHAI_RUNNER_BIND_ADDRESS, value: "0.0.0.0:8081" }
+            - { name: NAVISHAI_RUNNER_STATE_PATH, value: /var/lib/navishai/admissions.json }
+            - { name: NAVISHAI_RUNNER_TLS_CERT_FILE, value: /run/navishai/tls.crt }
+            - { name: NAVISHAI_RUNNER_TLS_KEY_FILE, value: /run/navishai/tls.key }
+            - name: NAVISHAI_RUNNER_SHARED_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_RUNNER_SHARED_SECRET } }
+          ports:
+            - { name: https, containerPort: 8081 }
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/navishai }
+            - { name: runner-tls, mountPath: /run/navishai/tls.crt, subPath: tls.crt, readOnly: true }
+            - { name: runner-tls, mountPath: /run/navishai/tls.key, subPath: tls.key, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: state
+          persistentVolumeClaim: { claimName: {{ include "navishai.fullname" . }}-runner }
+        - name: runner-tls
+          secret: { secretName: {{ .Values.runnerTlsSecret }} }
+      nodeSelector: {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity: {{- toYaml .Values.affinity | nindent 8 }}

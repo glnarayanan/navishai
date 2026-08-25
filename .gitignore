@@ -6,6 +6,8 @@
 
 # Ignore local environment files.
 /.env*
+!/.env.example
+/ops/secrets/
 
 # Ignore runtime output while retaining directory placeholders.
 /log/*

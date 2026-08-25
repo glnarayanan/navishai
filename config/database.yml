@@ -90,6 +90,8 @@ production:
     database: navishai_production
     username: navishai
     password: <%= ENV["NAVISHAI_DATABASE_PASSWORD"] %>
+    host: <%= ENV["NAVISHAI_DATABASE_HOST"] %>
+    port: <%= ENV["NAVISHAI_DATABASE_PORT"] %>
   cache:
     <<: *primary_production
     database: navishai_production_cache

@@ -1,0 +1,44 @@
+image:
+  rails:
+    repository: navishai-rails
+    tag: local
+    pullPolicy: IfNotPresent
+  runner:
+    repository: navishai-runner
+    tag: local
+    pullPolicy: IfNotPresent
+appHost: navishai.example.com
+database:
+  host: postgresql.example.internal
+  port: 5432
+supermemory:
+  # Stock Supermemory Local has no TLS listener. Supply a customer-run HTTPS endpoint.
+  address: https://supermemory.example.internal
+
+# Create both secrets before installing the chart. See documentation/DEPLOYMENT.md.
+applicationSecret: navishai-application
+runnerTlsSecret: navishai-runner-tls
+
+web:
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 80
+jobs:
+  replicas: 1
+runner:
+  replicas: 1
+
+storage:
+  rails:
+    size: 10Gi
+    accessModes: [ReadWriteMany]
+    storageClassName: ""
+  runner:
+    size: 5Gi
+    accessModes: [ReadWriteOnce]
+    storageClassName: ""
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

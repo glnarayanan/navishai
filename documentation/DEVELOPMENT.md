@@ -62,7 +62,7 @@ Start the runner with:
 NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' go run ./runner/cmd/navishai-runner
 ```
 
-For a runner on another host or container, set `NAVISHAI_RUNNER_TLS_CERT_FILE` and `NAVISHAI_RUNNER_TLS_KEY_FILE` together. Rails requires HTTPS for every non-loopback runner address. Mount the issuing CA into the Rails host trust store; do not disable certificate checks. The runner keeps cleartext HTTP only for its default loopback bind.
+For a runner on another host or container, set `NAVISHAI_RUNNER_TLS_CERT_FILE` and `NAVISHAI_RUNNER_TLS_KEY_FILE` together. Rails requires HTTPS for every non-loopback runner address. Set `NAVISHAI_RUNNER_CA_FILE` when a private CA issues the runner certificate. Rails adds that CA to the operating system roots rather than replacing them. Do not disable certificate checks. The runner keeps cleartext HTTP only for its default loopback bind.
 
 Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains accepted idempotency keys before it replies. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
 

@@ -1,0 +1,8 @@
+.git
+.amp
+.local-agent
+log/*
+storage/*
+tmp/*
+!.keep
+config/master.key

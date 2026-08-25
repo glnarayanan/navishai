@@ -1,0 +1,22 @@
+[Unit]
+Description=NavishAI background jobs
+After=network-online.target postgresql.service navishai-web.service
+Requires=navishai-web.service
+
+[Service]
+Type=simple
+User=navishai
+Group=navishai
+WorkingDirectory=/opt/navishai/current
+EnvironmentFile=/etc/navishai/navishai.env
+ExecStart=/opt/navishai/current/bin/jobs
+Restart=on-failure
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/navishai
+
+[Install]
+WantedBy=multi-user.target
