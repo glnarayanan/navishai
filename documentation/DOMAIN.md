@@ -9,6 +9,9 @@ Use these terms in product copy, code, tests, and design notes.
 - **Account health input:** one retained typed renewal, contract, or usage fact supplied through a CSV or authenticated API import. Its source ID makes exact replay idempotent; a changed fact uses a new source ID.
 - **Account health assessment:** one append-only deterministic score snapshot for an Account. It keeps the prior snapshot, risk band, trigger, renewal date, and exact calculation time.
 - **Account health signal:** one typed input to an Account health assessment, with its value, source locator, time range, weight, risk points, and stable `health://` citation.
+- **Health scorecard:** one Workspace’s published choice of deterministic Account health rules. It points to one immutable version for future assessments.
+- **Health scorecard version:** one immutable mapping from retained signals to weights and health bands, with the human’s goal and a plain explanation.
+- **Health scorecard backtest:** one immutable replay of a version against up to 500 retained assessments. It keeps the compared results and a digest of the exact source snapshots.
 - **Material health change:** a score change of at least ten points or any risk-band change between retained assessments.
 - **Risk investigation:** the retained review opened by a material health change, a renewal within 90 days, or a human request. Crew analysis stays separate from its deterministic assessment.
 - **Contact:** a customer person inside one Workspace, optionally linked to one Account.

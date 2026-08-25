@@ -37,14 +37,26 @@ class AccountHealthTest < ActiveSupport::TestCase
     assert AuditEvent.exists?(action: "account.created", actor: @owner.user, subject_type: "Account", subject_id: account.id)
   end
 
-  test "clamps combined risk at zero and blocks truncating retained snapshots" do
+  test "clamps combined score at zero and blocks truncating retained snapshots" do
     signals = [ AccountHealth::Signal.new(
-      signal_key: "open_cases", value_kind: "number", numeric_value: 1, date_value: nil,
-      weight: 100, risk_points: 100, source_kind: "support_cases", source_locator: "account://#{@account.id}/cases",
+      signal_key: "open_cases", value_kind: "number", numeric_value: 10, date_value: nil,
+      weight: 0, risk_points: 0, source_kind: "support_cases", source_locator: "account://#{@account.id}/cases",
       range_starts_at: nil, range_ends_at: @at
     ), AccountHealth::Signal.new(
-      signal_key: "sla_breaches", value_kind: "number", numeric_value: 1, date_value: nil,
-      weight: 25, risk_points: 25, source_kind: "sla", source_locator: "account://#{@account.id}/slas",
+      signal_key: "sla_breaches", value_kind: "number", numeric_value: 10, date_value: nil,
+      weight: 0, risk_points: 0, source_kind: "sla", source_locator: "account://#{@account.id}/slas",
+      range_starts_at: nil, range_ends_at: @at
+    ), AccountHealth::Signal.new(
+      signal_key: "customer_inactivity_days", value_kind: "number", numeric_value: 90, date_value: nil,
+      weight: 0, risk_points: 0, source_kind: "conversation", source_locator: "account://#{@account.id}/conversations",
+      range_starts_at: nil, range_ends_at: @at
+    ), AccountHealth::Signal.new(
+      signal_key: "renewal_on", value_kind: "date", numeric_value: nil, date_value: @at.to_date + 10,
+      weight: 0, risk_points: 0, source_kind: "account_input", source_locator: "account://#{@account.id}/renewal",
+      range_starts_at: nil, range_ends_at: @at
+    ), AccountHealth::Signal.new(
+      signal_key: "seat_utilization_percent", value_kind: "number", numeric_value: 10, date_value: nil,
+      weight: 0, risk_points: 0, source_kind: "account_input", source_locator: "account://#{@account.id}/seats",
       range_starts_at: nil, range_ends_at: @at
     ) ]
     service = AccountHealth.new(workspace: @workspace, membership: @owner)
@@ -55,7 +67,7 @@ class AccountHealthTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::StatementInvalid) do
       AccountHealthSignal.transaction(requires_new: true) { AccountHealthSignal.connection.execute("TRUNCATE account_health_signals") }
     end
-    assert_equal 2, assessment.signals.count
+    assert_equal 5, assessment.signals.count
   end
 
   test "material changes and human requests open retained risk reviews while schedules remain callable" do

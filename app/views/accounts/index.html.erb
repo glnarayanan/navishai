@@ -6,7 +6,9 @@
       <h1>Accounts</h1>
       <p>Renewal risk starts with facts. Each score keeps its signal values, source, time range, weight, and result.</p>
     </div>
-    <% if @membership.can_manage_work? %>
+    <div class="account-health-actions">
+      <%= link_to "Scorecard designer", workspace_health_scorecard_path(@workspace), class: "button button-secondary" %>
+      <% if @membership.can_manage_work? %>
       <details class="account-import">
         <summary class="button button-secondary">Import account data</summary>
         <%= form_with url: workspace_account_imports_path(@workspace), multipart: true do |form| %>
@@ -19,6 +21,7 @@
         <% end %>
       </details>
     <% end %>
+    </div>
   </header>
 
   <% if @accounts.any? %>
