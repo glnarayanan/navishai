@@ -57,6 +57,12 @@
               <%= link_to "Data", workspace_data_controls_path(Current.workspace),
                 aria: { current: controller_name == "workspace_data_controls" ? "page" : nil } %>
             <% end %>
+            <%= link_to workspace_notifications_path(Current.workspace),
+              aria: { current: controller_name == "notifications" ? "page" : nil } do %>
+              Notifications
+              <% unread_notifications = Current.require_membership!.notifications.unread.count %>
+              <span class="nav-count" aria-label="<%= pluralize(unread_notifications, "unread notification") %>"><%= unread_notifications %></span>
+            <% end %>
           <% end %>
           <%= link_to "Workspaces", workspaces_path,
             aria: { current: controller_name.in?(%w[workspaces workspace_invitations]) ? "page" : nil } %>
