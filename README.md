@@ -8,7 +8,9 @@ The project is greenfield. The target is a secure, self-hostable, market-review-
 
 1. Read [AGENTS.md](./AGENTS.md) for working agreements and architecture boundaries.
 2. Read [documentation/BUILD.md](./documentation/BUILD.md) for the complete product decisions, Q1-Q74 interview ledger, done evidence, and autonomous stacked-PR plan.
-3. Give the short kickoff prompt at the top of BUILD.md to Amp. Amp should continue through the green PR stack without requiring the owner to initiate or approve each PR.
+3. Use [documentation/DEVELOPMENT.md](./documentation/DEVELOPMENT.md) to set up the application and run its checks.
+
+The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 
 ## Selected architecture
 
