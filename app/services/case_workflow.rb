@@ -99,7 +99,8 @@ class CaseWorkflow
     return current_case unless INBOUND_RESUMABLE.include?(current_case.status)
     return current_case unless current_message.occurred_at > current_case.status_changed_at
 
-    change_status!(current_case, "investigating", reason: "new inbound message", occurred_at: Time.current, source: source, actor: nil, inbound: true)
+    resume_at = [ current_message.occurred_at, Time.current ].min
+    change_status!(current_case, "investigating", reason: "new inbound message", occurred_at: resume_at, source: source, actor: nil, inbound: true)
   end
   private_class_method :resume_for_inbound!
 
@@ -158,6 +159,7 @@ class CaseWorkflow
       subject: change,
       metadata: { from_status: from, to_status: target }
     )
+    SlaEngine.status_changed!(workspace: support_case.workspace, support_case: support_case, from: from, to: target, at: occurred_at)
     support_case
   end
   private_class_method :change_status!

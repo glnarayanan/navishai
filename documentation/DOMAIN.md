@@ -22,3 +22,9 @@ Use these terms in product copy, code, tests, and design notes.
 - **Tag:** a Workspace-owned label that staff can apply to Cases.
 - **Resume:** a new inbound Message moves a Case from Waiting on Customer or Resolved to Investigating.
 - **Reopen:** a new inbound Message moves a Closed Case back to Investigating while retaining its assignment, priority, tags, notes, and history.
+- **Service calendar:** one Workspace’s named business hours, time zone, and holiday dates used for SLA calculations.
+- **SLA policy:** the active first-response target, resolution target, and warning threshold for one Case priority. A Case snapshots its policy when its SLA starts. Clock settings, calendars, and holidays become immutable once a Case uses them; later configuration creates a replacement for new Cases.
+- **Case SLA:** the durable first-response and resolution clocks for one Case, including warnings, deadlines, pauses, and outcomes. Reopening a resolved or closed Case reactivates its resolution clock without counting terminal time.
+- **First response:** the first recorded outbound Message in a Conversation. Recording it for SLA purposes does not grant authority to send it.
+- **SLA pause:** time in Waiting on Customer. Only business minutes in that interval extend pending SLA deadlines.
+- **SLA escalation task:** an idempotent internal warning or breach item for one Case SLA objective.
