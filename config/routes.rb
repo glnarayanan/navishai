@@ -107,6 +107,8 @@ Rails.application.routes.draw do
   get "verification", to: "verifications#show", as: :verification
   patch "verification", to: "verifications#update"
   resource :session, only: %i[ new create destroy ]
+  post "session/oidc", to: "oidc_sessions#create", as: :oidc_session
+  get "session/oidc/callback", to: "oidc_sessions#callback", as: :oidc_session_callback
   resources :passwords, only: %i[ new create ]
   get "passwords/edit", to: "passwords#edit", as: :edit_password
   put "passwords", to: "passwords#update", as: :password

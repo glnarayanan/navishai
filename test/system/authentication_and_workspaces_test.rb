@@ -38,6 +38,19 @@ class AuthenticationAndWorkspacesTest < ApplicationSystemTestCase
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
   end
 
+  test "single sign-on remains clear and usable at 320 pixels" do
+    with_oidc_configuration do
+      page.current_window.resize_to(320, 844)
+      visit new_session_path
+
+      button = find_button("Continue with single sign-on")
+      assert button.visible?
+      assert_operator button.rect.height, :>=, 48
+      assert_equal 320, page.evaluate_script("window.innerWidth")
+      assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
+    end
+  end
+
   test "keyboard users can skip the application header" do
     visit new_session_path
 
@@ -46,4 +59,17 @@ class AuthenticationAndWorkspacesTest < ApplicationSystemTestCase
     assert_equal "#main-content", find(".skip-link")[:href].delete_prefix(page.current_url)
     assert_selector "#main-content[tabindex='-1']"
   end
+
+  private
+    def with_oidc_configuration
+      keys = %w[NAVISHAI_OIDC_ISSUER NAVISHAI_OIDC_CLIENT_ID NAVISHAI_OIDC_CLIENT_SECRET]
+      previous = ENV.to_h.slice(*keys)
+      ENV["NAVISHAI_OIDC_ISSUER"] = "https://identity.example.com"
+      ENV["NAVISHAI_OIDC_CLIENT_ID"] = "navishai-system-test"
+      ENV["NAVISHAI_OIDC_CLIENT_SECRET"] = "test-client-secret"
+      yield
+    ensure
+      keys.each { |key| ENV.delete(key) }
+      previous.each { |key, value| ENV[key] = value }
+    end
 end

@@ -34,7 +34,7 @@ module Authentication
       redirect_to new_session_path
     end
 
-    def start_new_session_for(user)
+    def start_new_session_for(user, authentication_method: nil)
       user.with_lock do
         return_to = session.delete(:return_to_after_authenticating)
         reset_session
@@ -42,7 +42,7 @@ module Authentication
         new_session = user.sessions.create!(
           user_agent: request.user_agent,
           ip_address: request.remote_ip,
-          authentication_method: user.break_glass? ? :break_glass : :local,
+          authentication_method: authentication_method || (user.break_glass? ? :break_glass : :local),
           expires_at: duration.from_now
         )
         Current.session = new_session

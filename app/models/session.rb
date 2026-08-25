@@ -1,7 +1,7 @@
 class Session < ApplicationRecord
   belongs_to :user
 
-  enum :authentication_method, { local: "local", break_glass: "break_glass" }, validate: true
+  enum :authentication_method, { local: "local", oidc: "oidc", break_glass: "break_glass" }, validate: true
 
   scope :active, -> { where(revoked_at: nil, expires_at: Time.current..) }
 

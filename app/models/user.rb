@@ -2,6 +2,7 @@ class User < ApplicationRecord
   has_many :memberships, dependent: :restrict_with_exception
   has_many :workspaces, through: :memberships
   has_many :sessions, dependent: :destroy
+  has_many :oidc_identities, dependent: :restrict_with_exception
   has_many :workspace_invitations, foreign_key: :invited_by_id, dependent: :restrict_with_exception, inverse_of: :invited_by
   has_many :audit_events, foreign_key: :actor_id, dependent: :restrict_with_exception, inverse_of: :actor
   has_many :authored_conversation_messages, class_name: "ConversationMessage", foreign_key: :author_user_id, dependent: :restrict_with_exception

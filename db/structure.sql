@@ -4102,6 +4102,40 @@ ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
 
 
 --
+-- Name: oidc_identities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.oidc_identities (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    issuer character varying NOT NULL,
+    subject character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT oidc_identities_lengths CHECK ((((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048)) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
+);
+
+
+--
+-- Name: oidc_identities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.oidc_identities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: oidc_identities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.oidc_identities_id_seq OWNED BY public.oidc_identities.id;
+
+
+--
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4590,7 +4624,7 @@ CREATE TABLE public.sessions (
     updated_at timestamp(6) without time zone NOT NULL,
     authentication_method character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('break_glass'::character varying)::text])))
+    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('oidc'::character varying)::text, ('break_glass'::character varying)::text])))
 );
 
 
@@ -5668,6 +5702,13 @@ ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: oidc_identities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oidc_identities ALTER COLUMN id SET DEFAULT nextval('public.oidc_identities_id_seq'::regclass);
+
+
+--
 -- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6316,6 +6357,14 @@ ALTER TABLE ONLY public.memory_tombstones
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: oidc_identities oidc_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oidc_identities
+    ADD CONSTRAINT oidc_identities_pkey PRIMARY KEY (id);
 
 
 --
@@ -8257,6 +8306,20 @@ CREATE UNIQUE INDEX index_notifications_on_workspace_and_id ON public.notificati
 --
 
 CREATE INDEX index_notifications_on_workspace_id ON public.notifications USING btree (workspace_id);
+
+
+--
+-- Name: index_oidc_identities_on_issuer_and_subject; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_oidc_identities_on_issuer_and_subject ON public.oidc_identities USING btree (issuer, subject);
+
+
+--
+-- Name: index_oidc_identities_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_oidc_identities_on_user_id ON public.oidc_identities USING btree (user_id);
 
 
 --
@@ -11716,6 +11779,14 @@ ALTER TABLE ONLY public.health_scorecard_backtests
 
 
 --
+-- Name: oidc_identities fk_rails_f976bdec82; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.oidc_identities
+    ADD CONSTRAINT fk_rails_f976bdec82 FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: intercom_outbound_deliveries fk_rails_f98c838305; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11786,6 +11857,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824230700'),
 ('20260824230600'),
 ('20260824230500'),
 ('20260824230400'),

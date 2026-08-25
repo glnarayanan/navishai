@@ -21,5 +21,12 @@
       </div>
       <%= form.submit "Sign in", class: "button button-primary" %>
     <% end %>
+
+    <% if OidcProvider.configured? %>
+      <div class="auth-alternative">
+        <span>or</span>
+        <%= button_to "Continue with single sign-on", oidc_session_path, class: "button button-secondary" %>
+      </div>
+    <% end %>
   </section>
 </main>
