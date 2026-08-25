@@ -7,6 +7,7 @@ class ConversationMessage < ApplicationRecord
   belongs_to :author_contact, class_name: "Contact", optional: true
   belongs_to :author_user, class_name: "User", optional: true
   belongs_to :in_reply_to, class_name: "ConversationMessage", optional: true
+  has_one :email_message_link, dependent: :restrict_with_exception
 
   enum :direction, DIRECTIONS.index_by(&:itself), validate: true
   enum :author_kind, AUTHOR_KINDS.index_by(&:itself), validate: true

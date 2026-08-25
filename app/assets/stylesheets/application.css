@@ -507,6 +507,45 @@ textarea {
   margin-top: 1.25rem;
 }
 
+.inbox-form {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.7fr) minmax(14rem, 1fr) minmax(14rem, 1fr) auto;
+  align-items: start;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.inbox-form .button {
+  margin-top: 1.75rem;
+}
+
+.endpoint {
+  display: block;
+  min-width: 0;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  white-space: normal;
+}
+
+.integration-hint {
+  margin-top: 1rem;
+}
+
+.integration-hint code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.integration-failures {
+  margin: 0.35rem 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  list-style: none;
+}
+
 .invite-form .button {
   margin-bottom: 0.0625rem;
 }
@@ -520,6 +559,22 @@ table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+}
+
+.inbox-table {
+  table-layout: fixed;
+}
+
+.inbox-table th:nth-child(2) {
+  width: 38%;
+}
+
+.inbox-table th:last-child {
+  width: 8rem;
+}
+
+.inbox-table td {
+  white-space: normal;
 }
 
 th,
@@ -1181,10 +1236,15 @@ td {
 @media (max-width: 42rem) {
   .app-header {
     min-height: 4rem;
+    padding-block: 0.5rem;
   }
 
   .app-header nav {
-    gap: 0.75rem;
+    flex: 1;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    min-width: 0;
   }
 
   .app-header nav a,
@@ -1193,6 +1253,14 @@ td {
     display: inline-flex;
     align-items: center;
     min-height: 3rem;
+  }
+
+  .app-header nav a,
+  .app-header nav .button {
+    justify-content: center;
+    min-width: 3rem;
+    padding-inline: 0.5rem;
+    font-size: 0.875rem;
   }
 
   .wordmark > span:last-child {
@@ -1215,8 +1283,56 @@ td {
   }
 
   .field-grid,
-  .invite-form {
+  .invite-form,
+  .inbox-form {
     grid-template-columns: 1fr;
+  }
+
+  .inbox-form .button {
+    margin-top: 0;
+  }
+
+  .inbox-table-wrap {
+    overflow: visible;
+  }
+
+  .inbox-table,
+  .inbox-table tbody,
+  .inbox-table tr,
+  .inbox-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .inbox-table thead {
+    display: none;
+  }
+
+  .inbox-table tr {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .inbox-table td,
+  .inbox-table td:first-child {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border: 0;
+    white-space: normal;
+  }
+
+  .inbox-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.875rem;
+    font-weight: 650;
+  }
+
+  .endpoint {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .workspace-heading {

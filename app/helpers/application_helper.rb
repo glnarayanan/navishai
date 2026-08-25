@@ -14,4 +14,10 @@ module ApplicationHelper
   def audit_action_label(action)
     action.to_s.tr(".", "_").humanize
   end
+
+  def shared_email_inbox_status_label(inbox)
+    return "Paused" unless inbox.active?
+
+    inbox.webhook_ready? ? "Ready" : "Needs secret"
+  end
 end

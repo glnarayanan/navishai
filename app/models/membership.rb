@@ -22,6 +22,10 @@ class Membership < ApplicationRecord
     owner? || admin? || manager?
   end
 
+  def can_configure_integrations?
+    owner? || admin?
+  end
+
   def can_invite_role?(invited_role)
     return true if owner? && ROLES.include?(invited_role.to_s)
 

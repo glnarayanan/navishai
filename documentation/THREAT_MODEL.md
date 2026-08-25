@@ -16,6 +16,10 @@ This baseline records NavishAI's main assets, trust boundaries, threats, and cur
 │ Browser │──────────▶│ Rails control │────────▶│ PostgreSQL │
 └─────────┘           │ plane         │         └────────────┘
                       └───────┬───────┘
+                              ▲
+┌───────────────┐   signed    │
+│ Email forward │─────────────┘
+└───────────────┘   webhook
                               │ versioned protocol
                               ▼
                       ┌───────────────┐
@@ -44,6 +48,7 @@ Browser input, mail and integration payloads, public web content, model output, 
 | Duplicate or reordered security actions | Database uniqueness, row locks, signed token state, idempotency keys where a protocol crosses processes, and transactional state-plus-audit writes. |
 | Compromised model, tool, or runtime | Rails never starts runtimes; the runner admits only approved versioned requests and must enforce roots, time, process, credential, and egress bounds. |
 | Unsafe external fetch or webhook | Authenticate webhooks; revalidate DNS and redirects; bound size and time; treat content as evidence, not instruction. These controls arrive with each integration. |
+| Forged, replayed, or oversized inbound email | Use a per-inbox unguessable endpoint plus a deployment-held HMAC secret, reject stale timestamps and oversized bodies before parsing, suppress duplicate Message-IDs, retain a source digest, and render extracted body text without trusted HTML. |
 | Unauthorised customer communication | No agent, job, or background trigger receives send authority. A current authenticated human must review and issue each send command. |
 
 ## Review rules

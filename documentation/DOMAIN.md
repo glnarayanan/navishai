@@ -28,3 +28,6 @@ Use these terms in product copy, code, tests, and design notes.
 - **First response:** the first recorded outbound Message in a Conversation. Recording it for SLA purposes does not grant authority to send it.
 - **SLA pause:** time in Waiting on Customer. Only business minutes in that interval extend pending SLA deadlines.
 - **SLA escalation task:** an idempotent internal warning or breach item for one Case SLA objective.
+- **Shared email inbox:** one Workspace-owned inbound address and signed webhook endpoint. Its credential key points to deployment-managed secrets; secret values never enter business or audit rows.
+- **Inbound email delivery:** the durable original RFC 5322 source, digest, provider Message-ID, receipt state, and safe failure status for one webhook delivery.
+- **Email thread:** an immutable mapping from email threading identifiers to one Conversation inside one Shared email inbox.
