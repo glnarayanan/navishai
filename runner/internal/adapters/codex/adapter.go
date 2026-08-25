@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
@@ -23,10 +24,6 @@ const (
 )
 
 var threadIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-
-type ProcessRunner interface {
-	Run(context.Context, supervisor.Request) (supervisor.Result, error)
-}
 
 type Invocation struct {
 	Admission        protocol.AdmissionRequest
@@ -55,10 +52,11 @@ func Definition() runtimecatalog.Definition {
 	return runtimecatalog.Definition{
 		AdapterKey: AdapterKey, ProtocolVersion: protocol.Version, ExecutableNames: []string{"codex"},
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"login", "status"},
-		AccountMarker:   "Logged in using ChatGPT",
-		AccountMetadata: map[string]string{"authentication": "chatgpt_subscription"},
-		Capabilities:    []string{"structured_output", "tool_calling"},
-		MinimumVersion:  minVersion, MaximumVersion: maxVersion,
+		AccountMarker:      "Logged in using ChatGPT",
+		AccountEnvironment: []string{"CODEX_HOME"},
+		AccountMetadata:    map[string]string{"authentication": "chatgpt_subscription"},
+		Capabilities:       []string{"structured_output", "tool_calling"},
+		MinimumVersion:     minVersion, MaximumVersion: maxVersion,
 	}
 }
 
@@ -69,7 +67,7 @@ func New(now func() time.Time) *Adapter {
 	return &Adapter{now: now}
 }
 
-func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runner ProcessRunner, emit func(protocol.CanonicalEvent) error) (Result, error) {
+func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runner adapters.ProcessRunner, emit func(protocol.CanonicalEvent) error) (Result, error) {
 	if runner == nil || emit == nil || strings.TrimSpace(invocation.Prompt) == "" ||
 		invocation.CodexHome == "" || invocation.EgressProfileKey == "" {
 		return Result{}, errors.New("invalid Codex invocation")

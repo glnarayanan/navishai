@@ -23,18 +23,21 @@ const (
 
 var ErrInvalidDefinition = errors.New("invalid runtime definition")
 var semanticVersionPattern = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
+var environmentNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 
 type Definition struct {
-	AdapterKey       string
-	ProtocolVersion  string
-	ExecutableNames  []string
-	VersionArguments []string
-	AccountArguments []string
-	AccountMarker    string
-	AccountMetadata  map[string]string
-	Capabilities     []string
-	MinimumVersion   string
-	MaximumVersion   string
+	AdapterKey         string
+	ProtocolVersion    string
+	ExecutableNames    []string
+	VersionArguments   []string
+	AccountArguments   []string
+	AccountMarker      string
+	AccountValidator   func(string) bool
+	AccountEnvironment []string
+	AccountMetadata    map[string]string
+	Capabilities       []string
+	MinimumVersion     string
+	MaximumVersion     string
 }
 
 type Installation struct {
@@ -63,7 +66,10 @@ func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
 			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] ||
-			(len(definition.AccountArguments) > 0 && (definition.AccountMarker == "" || len(definition.AccountMetadata) == 0)) {
+			(len(definition.AccountArguments) > 0 && ((definition.AccountMarker == "") == (definition.AccountValidator == nil) ||
+				len(definition.AccountMetadata) == 0)) ||
+			(len(definition.AccountEnvironment) > 0 && len(definition.AccountArguments) == 0) ||
+			!validEnvironmentNames(definition.AccountEnvironment) {
 			return nil, ErrInvalidDefinition
 		}
 		seen[definition.AdapterKey] = true
@@ -72,6 +78,17 @@ func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 		now = time.Now
 	}
 	return &Catalog{definitions: append([]Definition(nil), definitions...), now: now}, nil
+}
+
+func validEnvironmentNames(values []string) bool {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if !environmentNamePattern.MatchString(value) || strings.HasPrefix(value, "NAVISHAI_") || seen[value] {
+			return false
+		}
+		seen[value] = true
+	}
+	return true
 }
 
 func Empty() *Catalog {
@@ -104,7 +121,7 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 	if err != nil {
 		return Installation{}, false
 	}
-	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, false)
+	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil)
 	health := "available"
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
 	if probeErr != nil || version == "" || versionOverflowed {
@@ -112,8 +129,12 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 	}
 	accountMetadata := map[string]string{"authentication": "managed_on_runner"}
 	if len(definition.AccountArguments) > 0 {
-		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, true)
-		if accountErr != nil || overflowed || !strings.Contains(accountOutput, definition.AccountMarker) {
+		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, definition.AccountEnvironment)
+		authenticated := strings.Contains(accountOutput, definition.AccountMarker)
+		if definition.AccountValidator != nil {
+			authenticated = definition.AccountValidator(accountOutput)
+		}
+		if accountErr != nil || overflowed || !authenticated {
 			health = "unhealthy"
 			accountMetadata = map[string]string{"authentication": "not_authenticated"}
 		} else {
@@ -132,17 +153,19 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 	}, true
 }
 
-func probe(ctx context.Context, executable string, arguments []string, includeAccountHome bool) (string, error, bool) {
+func probe(ctx context.Context, executable string, arguments, accountEnvironment []string) (string, error, bool) {
 	probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	command := exec.CommandContext(probeContext, executable, arguments...)
 	home := os.TempDir()
-	if includeAccountHome && os.Getenv("HOME") != "" {
+	if len(accountEnvironment) > 0 && os.Getenv("HOME") != "" {
 		home = os.Getenv("HOME")
 	}
 	command.Env = []string{"HOME=" + home, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
-	if includeAccountHome && os.Getenv("CODEX_HOME") != "" {
-		command.Env = append(command.Env, "CODEX_HOME="+os.Getenv("CODEX_HOME"))
+	for _, key := range accountEnvironment {
+		if value := os.Getenv(key); value != "" {
+			command.Env = append(command.Env, key+"="+value)
+		}
 	}
 	output := &boundedBuffer{maximum: maxVersionBytes}
 	command.Stdout, command.Stderr = output, output
