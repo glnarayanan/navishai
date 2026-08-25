@@ -10,7 +10,7 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
         workspace:, membership: memberships(:owner_support), exported_at:
       )
     end
-    archive = JSON.parse(Zlib::GzipReader.new(StringIO.new(@compressed)).read)
+    archive = archive_manifest(@compressed)
     expected_tables = ActiveRecord::Base.connection.select_values(<<~SQL.squish)
       SELECT table_name FROM information_schema.columns
       WHERE table_schema = 'public' AND column_name = 'workspace_id'
@@ -62,7 +62,7 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
 
     assert_difference "Workspace.count", 1 do
       @imported = WorkspacePortability.import(
-        workspace: source, membership: memberships(:owner_support), archive_io: StringIO.new(compressed),
+        workspace: source, membership: memberships(:owner_support), archive_io: compressed,
         name: "Restored Support", slug: "restored-support"
       )
     end
@@ -94,9 +94,114 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       assert_raises(WorkspacePortability::InvalidArchive) do
         WorkspacePortability.import(
           workspace:, membership:,
-          archive_io: StringIO.new(compressed), name: "Wrong Org", slug: "wrong-org"
+          archive_io: compressed, name: "Wrong Org", slug: "wrong-org"
         )
       end
     end
   end
+
+  test "round trips two incompressible five MiB attachments" do
+    source = workspaces(:acme_support)
+    contents = 2.times.map { SecureRandom.random_bytes(5.megabytes) }
+    contents.each_with_index do |content, index|
+      attachment = source.stored_attachments.create!(
+        source: :user_upload, uploaded_by_membership: memberships(:owner_support), uploaded_by_user: users(:owner),
+        filename: "random-#{index}.bin", byte_size: content.bytesize, content_sha256: Digest::SHA256.hexdigest(content),
+        detected_content_type: "application/octet-stream", scan_status: :available, scan_result_code: "clean",
+        scanned_at: Time.current
+      )
+      attachment.file.attach(io: StringIO.new(content), filename: attachment.filename,
+        content_type: attachment.detected_content_type)
+    end
+
+    archive = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
+    imported = WorkspacePortability.import(workspace: source, membership: memberships(:owner_support), archive_io: archive,
+      name: "Large Restore", slug: "large-restore")
+
+    assert_equal contents.map { |content| Digest::SHA256.hexdigest(content) }.sort,
+      imported.stored_attachments.map { |attachment| Digest::SHA256.hexdigest(attachment.download_verified!) }.sort
+  ensure
+    archive&.close!
+  end
+
+  test "rejects a missing attachment object before writing" do
+    source = workspaces(:acme_support)
+    content = "must exist"
+    attachment = source.stored_attachments.create!(
+      source: :user_upload, uploaded_by_membership: memberships(:owner_support), uploaded_by_user: users(:owner),
+      filename: "required.txt", byte_size: content.bytesize, content_sha256: Digest::SHA256.hexdigest(content),
+      detected_content_type: "text/plain", scan_status: :available, scan_result_code: "clean", scanned_at: Time.current
+    )
+    attachment.file.attach(io: StringIO.new(content), filename: attachment.filename, content_type: "text/plain")
+    archive = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
+    truncated = archive_without_objects(archive)
+
+    assert_no_difference "Workspace.count" do
+      assert_raises(WorkspacePortability::InvalidArchive) do
+        WorkspacePortability.import(workspace: source, membership: memberships(:owner_support), archive_io: truncated,
+          name: "Truncated", slug: "truncated")
+      end
+    end
+  ensure
+    archive&.close!
+    truncated&.close!
+  end
+
+  test "rejects duplicate attachment metadata before writing an object" do
+    source = workspaces(:acme_support)
+    content = "one object"
+    attachment = source.stored_attachments.create!(
+      source: :user_upload, uploaded_by_membership: memberships(:owner_support), uploaded_by_user: users(:owner),
+      filename: "one.txt", byte_size: content.bytesize, content_sha256: Digest::SHA256.hexdigest(content),
+      detected_content_type: "text/plain", scan_status: :available, scan_result_code: "clean", scanned_at: Time.current
+    )
+    attachment.file.attach(io: StringIO.new(content), filename: attachment.filename, content_type: "text/plain")
+    archive = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
+    duplicate = archive_with_manifest(archive) do |manifest|
+      rows = manifest.fetch("tables").fetch("stored_attachments")
+      rows << rows.last.dup
+    end
+
+    assert_no_difference "Workspace.count" do
+      assert_raises(WorkspacePortability::InvalidArchive) do
+        WorkspacePortability.import(workspace: source, membership: memberships(:owner_support), archive_io: duplicate,
+          name: "Duplicate", slug: "duplicate")
+      end
+    end
+  ensure
+    archive&.close!
+    duplicate&.close!
+  end
+
+  private
+    def archive_manifest(archive)
+      archive.rewind
+      gzip = Zlib::GzipReader.new(archive)
+      manifest = nil
+      Gem::Package::TarReader.new(gzip) do |tar|
+        manifest = JSON.parse(tar.find { |entry| entry.full_name == "manifest.json" }.read)
+      end
+      manifest
+    end
+
+    def archive_without_objects(archive)
+      archive_with_manifest(archive) { |_manifest| }
+    end
+
+    def archive_with_manifest(archive)
+      output = Tempfile.new([ "truncated", ".tar.gz" ], binmode: true)
+      parsed = archive_manifest(archive)
+      yield parsed
+      manifest = JSON.generate(parsed)
+      gzip = Zlib::GzipWriter.new(output)
+      begin
+        Gem::Package::TarWriter.new(gzip) do |tar|
+          tar.add_file_simple("manifest.json", 0o600, manifest.bytesize) { |entry| entry.write(manifest) }
+        end
+      ensure
+        gzip.finish
+      end
+      output.rewind
+      output
+    end
 end

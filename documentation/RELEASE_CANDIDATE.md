@@ -17,7 +17,7 @@ The stacked source includes:
 
 `bin/ci` is the source checkpoint. It runs Ruby and Go style checks, dependency audits, Brakeman, the full Rails and browser suites, Go vet and tests, the Rails-to-runner contract, seed checks, and the SBOM check. Each stacked checkpoint passed it locally.
 
-The final source candidate passed `bin/ci` on 24 August 2026: 510 Rails tests with 3,183 assertions and 33 browser tests with 413 assertions, plus all style, security, Go, protocol, seed, and SBOM checks. Impeccable type and layout detectors reported no mechanical findings. Direct browser review covered the seeded Support and Customer Success paths at 1,440 and 320 pixels with no page overflow.
+The 24 August source checkpoint passed `bin/ci`: 510 Rails tests with 3,183 assertions and 33 browser tests with 413 assertions, plus all style, security, Go, protocol, seed, and SBOM checks. A later release-blocker review added durable admitted-run execution and event delivery, byte-bound runtime dispatch, and streamed attachment-complete Workspace archives. The final merge candidate must pass the same local `bin/ci` gate. Impeccable type and layout detectors reported no mechanical findings. Direct browser review covered the seeded Support and Customer Success paths at 1,440 and 320 pixels with no page overflow.
 
 ## Known gaps before a public release
 

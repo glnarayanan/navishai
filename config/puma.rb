@@ -28,9 +28,9 @@
 threads_count = ENV.fetch("RAILS_MAX_THREADS", 3)
 threads threads_count, threads_count
 
-# Reject oversized request bodies before Rack reads them. Shared email retains
-# the largest accepted body, and no current endpoint accepts a larger payload.
-http_content_length_limit 10 * 1024 * 1024
+# Reject oversized request bodies before Rack reads them. Endpoint-level checks
+# enforce smaller limits for email, attachments, imports, and protocol traffic.
+http_content_length_limit 64 * 1024 * 1024
 
 # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
 port ENV.fetch("PORT", 3000)

@@ -44,9 +44,18 @@ class WorkspaceDataControlsController < ApplicationController
     archive = WorkspacePortability.export(
       workspace: Current.workspace, membership: Current.require_membership!
     )
-    send_data archive,
-      filename: "navishai-workspace-#{Current.workspace.slug}-#{Date.current.iso8601}.json.gz",
-      type: "application/gzip", disposition: "attachment"
+    filename = "navishai-workspace-#{Current.workspace.slug}-#{Date.current.iso8601}.tar.gz"
+    response.headers["Content-Disposition"] = ActionDispatch::Http::ContentDisposition.format(
+      disposition: "attachment", filename:
+    )
+    response.headers["Content-Type"] = "application/gzip"
+    self.response_body = Enumerator.new do |output|
+      while (chunk = archive.read(64.kilobytes))
+        output << chunk
+      end
+    ensure
+      archive.close!
+    end
   end
 
   def import
