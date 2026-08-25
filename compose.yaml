@@ -62,10 +62,17 @@ services:
       NAVISHAI_RUNNER_BIND_ADDRESS: 0.0.0.0:8081
       NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
       NAVISHAI_RUNNER_STATE_PATH: /var/lib/navishai/admissions.json
+      NAVISHAI_RUNNER_EXECUTION_CONFIG: /etc/navishai/execution.json
+      NAVISHAI_CONTROL_PLANE_ADDRESS: http://supermemory:3000
+      NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP: "true"
+      PATH: /opt/navishai/runtimes:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       NAVISHAI_RUNNER_TLS_CERT_FILE: /run/navishai/tls.crt
       NAVISHAI_RUNNER_TLS_KEY_FILE: /run/navishai/tls.key
     volumes:
       - runner_data:/var/lib/navishai
+      - ${NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH:-./ops/runner/execution.example.json}:/etc/navishai/execution.json:ro
+      - ${NAVISHAI_RUNTIME_EXECUTABLES_PATH:-./ops/runtime-executables}:/opt/navishai/runtimes:ro
+      - ${NAVISHAI_RUNTIME_STATE_PATH:-./ops/runtime-state}:/var/lib/navishai/runtime:ro
       - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.crt:/run/navishai/tls.crt:ro
       - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.key:/run/navishai/tls.key:ro
     networks: [control]

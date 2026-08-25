@@ -18,6 +18,7 @@ Set up and start the stack:
 cp .env.example .env
 bin/rails secret
 script/generate_runner_tls
+mkdir -p ops/runtime-executables ops/runtime-state
 # Put the generated secret and all other required values in .env.
 docker compose build
 docker compose up -d
@@ -33,6 +34,8 @@ To enable OpenID Connect, set the three optional `NAVISHAI_OIDC_*` values in `.e
 
 Optional S3-compatible object storage and SearXNG remain external. Configure them only when used; the default stack has no general runner egress.
 
+The checked-in runner execution policy starts with all live adapters disabled. `NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH` selects a host policy file, `NAVISHAI_RUNTIME_EXECUTABLES_PATH` mounts approved CLI files at `/opt/navishai/runtimes`, and `NAVISHAI_RUNTIME_STATE_PATH` mounts their credential homes read-only. Keep both host directories and all credential files out of source control. A live adapter also needs an exact executable approval and a deployment-owned subordinate user/network namespace egress profile in the policy. Compose does not create those host security boundaries. Leave the adapter disabled until the namespace files, firewall or allowlisting proxy, TLS roots, executable, and subscription login are present. The runner sends signed events back to Rails over the private, internal Compose network; the explicit cleartext opt-in applies only to that link. It keeps its admission state and pending event outbox on `runner_data`.
+
 ## Native Linux
 
 The supported layout is:
@@ -45,6 +48,8 @@ The supported layout is:
 - a PostgreSQL 15 server with pgvector 0.8.1 and four databases named in `config/database.yml`
 
 Build the three Go binaries from the pinned Go toolchain and install them in `/usr/local/bin`. Install the pinned Supermemory binary with `script/install_supermemory`, then copy it to `/usr/local/bin`. Bundle Rails with the locked gems and precompile assets with `SECRET_KEY_BASE_DUMMY=1`.
+
+Copy `ops/runner/execution.example.json` to `/etc/navishai/execution.json`. Its default keeps all live adapters off. Install each approved subscription CLI under `/opt/navishai/runtimes`, keep its credential home under `/var/lib/navishai-runner`, and edit the copy with the exact executable approval, allowed policy, and egress profile. Set `NAVISHAI_CONTROL_PLANE_ADDRESS` to the public Rails HTTPS origin or another trusted route to it. The runner must reach `/webhooks/runner-events`; Rails does not need to expose the runner outside the private host network.
 
 Copy the units and environment examples from `ops/systemd` into the host's systemd and `/etc/navishai` directories. Replace every `change-me` value. Issue the runner certificate with SAN `127.0.0.1` when using the example loopback URL, or use a DNS SAN that matches `NAVISHAI_RUNNER_ADDRESS`. Link the release's `log`, `storage`, and `tmp` paths to their matching writable directories under `/var/lib/navishai`. Block inbound access to ports 6767 and 8081 in the host firewall; only local services should reach them. Then run:
 
@@ -68,7 +73,7 @@ Create the application secret with these keys:
 
 To enable OpenID Connect, also add `NAVISHAI_OIDC_ISSUER`, `NAVISHAI_OIDC_CLIENT_ID`, and `NAVISHAI_OIDC_CLIENT_SECRET` to this Secret. Omit all three to keep it off.
 
-Create the runner TLS secret with `tls.crt`, `tls.key`, and `ca.crt`. The certificate DNS SAN must match `<release>-navishai-runner` in the target namespace. Set the database host, app host, image tags or digests, storage classes, replica counts, and resource limits in a private values file. Validate before install:
+Create the runner TLS secret with `tls.crt`, `tls.key`, and `ca.crt`. The certificate DNS SAN must match `<release>-navishai-runner` in the target namespace. The runner image contains the disabled execution policy. To replace it, create a separate Secret with an `execution.json` key and set `runner.executionConfigSecret`; keep subscription credentials in runner-only storage, not that Secret. The chart opts into cleartext runner callbacks only for the cluster-internal Rails Service. Use a NetworkPolicy or service mesh to keep that route private, or replace it with an HTTPS service route and remove the opt-in in a deployment overlay. Set the database host, app host, image tags or digests, storage classes, replica counts, and resource limits in a private values file. Validate before install:
 
 ```sh
 helm lint ops/helm/navishai -f production-values.yaml

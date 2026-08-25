@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,8 @@ const (
 var ErrInvalidDefinition = errors.New("invalid runtime definition")
 var semanticVersionPattern = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
 var environmentNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
+var policyKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+var lowerHexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Definition struct {
 	AdapterKey         string
@@ -58,10 +61,15 @@ type Installation struct {
 
 type Catalog struct {
 	definitions []Definition
+	static      []Installation
 	now         func() time.Time
 }
 
 func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
+	return NewWithInstallations(definitions, nil, now)
+}
+
+func NewWithInstallations(definitions []Definition, installations []Installation, now func() time.Time) (*Catalog, error) {
 	seen := make(map[string]bool, len(definitions))
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
@@ -74,10 +82,47 @@ func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 		}
 		seen[definition.AdapterKey] = true
 	}
+	installationKeys := make(map[string]bool, len(installations))
+	for _, installation := range installations {
+		if !validInstallation(installation) || installationKeys[installation.DetectionKey] {
+			return nil, ErrInvalidDefinition
+		}
+		installationKeys[installation.DetectionKey] = true
+	}
 	if now == nil {
 		now = time.Now
 	}
-	return &Catalog{definitions: append([]Definition(nil), definitions...), now: now}, nil
+	return &Catalog{
+		definitions: append([]Definition(nil), definitions...),
+		static:      append([]Installation(nil), installations...), now: now,
+	}, nil
+}
+
+func validInstallation(installation Installation) bool {
+	if !lowerHexPattern.MatchString(installation.DetectionKey) || !policyKeyPattern.MatchString(installation.AdapterKey) ||
+		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || installation.ExecutableVersion == "" ||
+		installation.CompatibilityStatus != "compatible" || installation.IncompatibilityReason != "" ||
+		installation.HealthStatus != "available" || len(installation.Capabilities) == 0 ||
+		installation.AccountMetadata == nil || len(installation.AccountMetadata) == 0 {
+		return false
+	}
+	if _, ok := semanticVersion(installation.MinimumVersion); !ok {
+		return false
+	}
+	if _, ok := semanticVersion(installation.MaximumVersion); !ok {
+		return false
+	}
+	if _, err := time.Parse(time.RFC3339Nano, installation.CheckedAt); err != nil {
+		return false
+	}
+	capabilities := make(map[string]bool, len(installation.Capabilities))
+	for _, capability := range installation.Capabilities {
+		if !policyKeyPattern.MatchString(capability) || capabilities[capability] {
+			return false
+		}
+		capabilities[capability] = true
+	}
+	return true
 }
 
 func validEnvironmentNames(values []string) bool {
@@ -97,7 +142,7 @@ func Empty() *Catalog {
 }
 
 func (catalog *Catalog) Detect(ctx context.Context) []Installation {
-	installations := make([]Installation, 0, len(catalog.definitions))
+	installations := append([]Installation{}, catalog.static...)
 	for _, definition := range catalog.definitions {
 		installation, ok := catalog.detect(ctx, definition)
 		if ok {
@@ -108,7 +153,44 @@ func (catalog *Catalog) Detect(ctx context.Context) []Installation {
 	return installations
 }
 
+func (catalog *Catalog) ResolveApproved(ctx context.Context, wantedKey string, approvedPaths []string) (Installation, bool) {
+	approved := make(map[string]bool, len(approvedPaths))
+	for _, path := range approvedPaths {
+		resolved, err := approvedExecutable(path)
+		if err != nil {
+			return Installation{}, false
+		}
+		approved[resolved] = true
+	}
+	for _, installation := range catalog.static {
+		if approved[installation.ExecutablePath] && installation.DetectionKey == wantedKey &&
+			detectionKey(installation.AdapterKey, installation.ExecutablePath) == wantedKey {
+			return installation, true
+		}
+	}
+	for _, definition := range catalog.definitions {
+		resolved, ok := resolveExecutable(definition)
+		if !ok || !approved[resolved] || detectionKey(definition.AdapterKey, resolved) != wantedKey {
+			continue
+		}
+		installation := catalog.detectResolved(ctx, definition, resolved)
+		if installation.DetectionKey == wantedKey {
+			return installation, true
+		}
+		return Installation{}, false
+	}
+	return Installation{}, false
+}
+
 func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Installation, bool) {
+	resolved, ok := resolveExecutable(definition)
+	if !ok {
+		return Installation{}, false
+	}
+	return catalog.detectResolved(ctx, definition, resolved), true
+}
+
+func resolveExecutable(definition Definition) (string, bool) {
 	path := ""
 	for _, name := range definition.ExecutableNames {
 		candidate, err := exec.LookPath(name)
@@ -119,8 +201,12 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 	}
 	resolved, err := approvedExecutable(path)
 	if err != nil {
-		return Installation{}, false
+		return "", false
 	}
+	return resolved, true
+}
+
+func (catalog *Catalog) detectResolved(ctx context.Context, definition Definition, resolved string) Installation {
 	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil)
 	health := "available"
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
@@ -150,7 +236,7 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,
 		CheckedAt: catalog.now().UTC().Format(time.RFC3339Nano),
-	}, true
+	}
 }
 
 func probe(ctx context.Context, executable string, arguments, accountEnvironment []string) (string, error, bool) {
@@ -235,8 +321,17 @@ func approvedExecutable(path string) (string, error) {
 }
 
 func detectionKey(adapterKey, path string) string {
-	digest := sha256.Sum256([]byte(adapterKey + "\x00" + path))
-	return hex.EncodeToString(digest[:])
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	digest := sha256.New()
+	_, _ = digest.Write([]byte(adapterKey + "\x00" + path + "\x00"))
+	if _, err := io.Copy(digest, file); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 type boundedBuffer struct {

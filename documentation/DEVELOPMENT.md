@@ -60,17 +60,22 @@ Managers, Admins, and Owners can maintain approved text, ingest plain-text uploa
 
 ## Execution runner
 
-Set `NAVISHAI_RUNNER_SHARED_SECRET` to the same random value of at least 32 bytes for Rails and the Go runner. Rails uses `NAVISHAI_RUNNER_ADDRESS`, which defaults to `http://127.0.0.1:8081`. Cleartext HTTP works only on a loopback address; other addresses must use HTTPS. Set `NAVISHAI_RUNNER_BIND_ADDRESS` to change the Go listener from `127.0.0.1:8081`. Set `NAVISHAI_RUNNER_STATE_PATH` to change its durable admission store from `tmp/runner-admissions.json`.
+Set `NAVISHAI_RUNNER_SHARED_SECRET` to the same random value of at least 32 bytes for Rails and the Go runner. Rails uses `NAVISHAI_RUNNER_ADDRESS`, which defaults to `http://127.0.0.1:8081`. Cleartext HTTP works only on a loopback address; other addresses must use HTTPS. Set `NAVISHAI_RUNNER_BIND_ADDRESS` to change the Go listener from `127.0.0.1:8081`. Set `NAVISHAI_RUNNER_STATE_PATH` to change its durable run and event-outbox store from `tmp/runner-admissions.json`. The runner also needs `NAVISHAI_RUNNER_EXECUTION_CONFIG` and `NAVISHAI_CONTROL_PLANE_ADDRESS`; the latter is the Rails origin that receives signed runner events.
 
 Start the runner with:
 
 ```sh
-NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' go run ./runner/cmd/navishai-runner
+NAVISHAI_RUNNER_SHARED_SECRET='a-random-secret-of-at-least-32-bytes' \
+NAVISHAI_RUNNER_EXECUTION_CONFIG="$PWD/ops/runner/execution.example.json" \
+NAVISHAI_CONTROL_PLANE_ADDRESS=http://127.0.0.1:3000 \
+go run ./runner/cmd/navishai-runner
 ```
 
 For a runner on another host or container, set `NAVISHAI_RUNNER_TLS_CERT_FILE` and `NAVISHAI_RUNNER_TLS_KEY_FILE` together. Rails requires HTTPS for every non-loopback runner address. Set `NAVISHAI_RUNNER_CA_FILE` when a private CA issues the runner certificate. Rails adds that CA to the operating system roots rather than replacing them. Do not disable certificate checks. The runner keeps cleartext HTTP only for its default loopback bind.
 
-Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains accepted idempotency keys before it replies. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
+Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, and SHA-256 body digest with HMAC-SHA256. The runner accepts a five-minute clock skew and retains the full accepted request and `run.admitted` event before it replies. It stores each later canonical event before delivery and retries the exact event after an unavailable response. After a restart, it delivers the durable outbox first and closes an interrupted running process as `runner_interrupted`; it never starts that attempt twice. `GET /livez` and `GET /readyz` expose process and protocol health. Rails uses short network deadlines and does not follow redirects.
+
+`ops/runner/execution.example.json` is the fail-closed policy template. Every live adapter is disabled by default. To enable one, install its maintained executable under an approved root, keep its subscription home on the runner, add the exact executable to `approved_executables`, define a namespace-backed egress profile, and set that adapter's allowed profiles, roles, tools, data classes, and budgets. The runner rejects unknown keys, duplicate policy values, missing egress profiles, and changed executable bytes at startup or admission. Do not put subscription credentials in this file.
 
 ### Public-web search
 

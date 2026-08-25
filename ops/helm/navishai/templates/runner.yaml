@@ -25,6 +25,9 @@ spec:
           env:
             - { name: NAVISHAI_RUNNER_BIND_ADDRESS, value: "0.0.0.0:8081" }
             - { name: NAVISHAI_RUNNER_STATE_PATH, value: /var/lib/navishai/admissions.json }
+            - { name: NAVISHAI_RUNNER_EXECUTION_CONFIG, value: /etc/navishai/execution.json }
+            - { name: NAVISHAI_CONTROL_PLANE_ADDRESS, value: {{ printf "http://%s:%v" (include "navishai.fullname" .) .Values.web.service.port | quote }} }
+            - { name: NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP, value: "true" }
             - { name: NAVISHAI_RUNNER_TLS_CERT_FILE, value: /run/navishai/tls.crt }
             - { name: NAVISHAI_RUNNER_TLS_KEY_FILE, value: /run/navishai/tls.key }
             - name: NAVISHAI_RUNNER_SHARED_SECRET
@@ -35,6 +38,9 @@ spec:
             - { name: state, mountPath: /var/lib/navishai }
             - { name: runner-tls, mountPath: /run/navishai/tls.crt, subPath: tls.crt, readOnly: true }
             - { name: runner-tls, mountPath: /run/navishai/tls.key, subPath: tls.key, readOnly: true }
+            {{- if .Values.runner.executionConfigSecret }}
+            - { name: execution-config, mountPath: /etc/navishai/execution.json, subPath: execution.json, readOnly: true }
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
@@ -44,6 +50,10 @@ spec:
           persistentVolumeClaim: { claimName: {{ include "navishai.fullname" . }}-runner }
         - name: runner-tls
           secret: { secretName: {{ .Values.runnerTlsSecret }} }
+        {{- if .Values.runner.executionConfigSecret }}
+        - name: execution-config
+          secret: { secretName: {{ .Values.runner.executionConfigSecret }} }
+        {{- end }}
       nodeSelector: {{- toYaml .Values.nodeSelector | nindent 8 }}
       tolerations: {{- toYaml .Values.tolerations | nindent 8 }}
       affinity: {{- toYaml .Values.affinity | nindent 8 }}

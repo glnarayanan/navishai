@@ -1,0 +1,85 @@
+{
+  "work_root": "/var/lib/navishai/runs",
+  "scripted_fixtures": {},
+  "adapters": {
+    "codex_subscription": {
+      "enabled": false,
+      "home_dir": "/var/lib/navishai/runtime/codex",
+      "model": "",
+      "egress_profile_key": "codex",
+      "profiles": ["workspace_default", "fast", "thorough"],
+      "roles": ["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"],
+      "tools": ["account_read", "case_read", "conversation_read", "draft_propose", "knowledge_search", "note_propose", "public_web_search", "review_record", "web_extract"],
+      "data_classes": ["account_context", "approved_knowledge", "case_content", "customer_identity", "public_web_query", "retrieved_memory"],
+      "max_timeout_seconds": 900,
+      "max_steps": 20,
+      "max_tool_calls": 50,
+      "max_input_units": 100000,
+      "max_output_units": 25000
+    },
+    "claude_subscription": {
+      "enabled": false,
+      "home_dir": "/var/lib/navishai/runtime/claude",
+      "model": "sonnet",
+      "egress_profile_key": "claude",
+      "profiles": ["workspace_default", "fast", "thorough"],
+      "roles": ["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"],
+      "tools": ["account_read", "case_read", "conversation_read", "draft_propose", "knowledge_search", "note_propose", "public_web_search", "review_record", "web_extract"],
+      "data_classes": ["account_context", "approved_knowledge", "case_content", "customer_identity", "public_web_query", "retrieved_memory"],
+      "max_timeout_seconds": 900,
+      "max_steps": 20,
+      "max_tool_calls": 50,
+      "max_input_units": 100000,
+      "max_output_units": 25000
+    },
+    "grok_acp_subscription": {
+      "enabled": false,
+      "home_dir": "/var/lib/navishai/runtime/grok",
+      "model": "grok-code-fast-1",
+      "egress_profile_key": "grok",
+      "profiles": ["workspace_default", "fast", "thorough"],
+      "roles": ["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"],
+      "tools": ["account_read", "case_read", "conversation_read", "draft_propose", "knowledge_search", "note_propose", "public_web_search", "review_record", "web_extract"],
+      "data_classes": ["account_context", "approved_knowledge", "case_content", "customer_identity", "public_web_query", "retrieved_memory"],
+      "max_timeout_seconds": 900,
+      "max_steps": 20,
+      "max_tool_calls": 50,
+      "max_input_units": 100000,
+      "max_output_units": 25000
+    },
+    "cursor_acp_subscription": {
+      "enabled": false,
+      "home_dir": "/var/lib/navishai/runtime/cursor",
+      "model": "",
+      "egress_profile_key": "cursor",
+      "profiles": ["workspace_default", "fast", "thorough"],
+      "roles": ["support_coordinator", "support_investigator", "resolution_drafter", "support_reviewer", "account_analyst", "risk_investigator", "success_strategist", "success_reviewer"],
+      "tools": ["account_read", "case_read", "conversation_read", "draft_propose", "knowledge_search", "note_propose", "public_web_search", "review_record", "web_extract"],
+      "data_classes": ["account_context", "approved_knowledge", "case_content", "customer_identity", "public_web_query", "retrieved_memory"],
+      "max_timeout_seconds": 900,
+      "max_steps": 20,
+      "max_tool_calls": 50,
+      "max_input_units": 100000,
+      "max_output_units": 25000
+    }
+  },
+  "supervisor": {
+    "helper_path": "/usr/local/bin/navishai-exec",
+    "namespace_launcher_path": "/usr/local/bin/navishai-netns-launch",
+    "allowed_executable_roots": ["/opt/navishai/runtimes"],
+    "approved_executables": [],
+    "allowed_working_roots": ["/var/lib/navishai/runs"],
+    "allowed_home_roots": ["/var/lib/navishai/runtime"],
+    "runtime_read_roots": ["/usr", "/lib", "/lib64", "/etc/ssl"],
+    "egress_profiles": [],
+    "limits": {
+      "wall_time_seconds": 900,
+      "cpu_seconds": 900,
+      "memory_bytes": 1073741824,
+      "open_files": 128,
+      "processes": 64,
+      "output_bytes": 262144,
+      "kill_grace_millis": 2000
+    }
+  }
+}
