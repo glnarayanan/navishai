@@ -27,5 +27,10 @@ class LandingPageTest < ApplicationSystemTestCase
     page.current_window.resize_to(390, 844)
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
     assert_link "Sign in", visible: true
+    click_button "Open menu"
+    assert_selector "dialog[open]"
+    assert_link "How it works", visible: true
+    find("body").send_keys(:escape)
+    assert_no_selector "dialog[open]"
   end
 end

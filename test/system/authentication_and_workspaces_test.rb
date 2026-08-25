@@ -23,6 +23,7 @@ class AuthenticationAndWorkspacesTest < ApplicationSystemTestCase
     assert_selector "select[name='workspace_invitation[role]'] option", count: 5
 
     page.current_window.resize_to(375, 812)
+    open_workspace_nav
     assert_link "Workspaces", visible: true
   end
 

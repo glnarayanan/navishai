@@ -117,6 +117,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     sign_in_in_browser(users(:outsider))
     click_link "Beta Support"
     assert_text "No cases in the queue"
+    open_workspace_nav
     assert_link "Workspaces", visible: true
   end
 

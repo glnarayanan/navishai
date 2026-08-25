@@ -25,7 +25,9 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_operator find_link("Download workspace export").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_button("Import as new Workspace").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_button("Delete Workspace").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    open_workspace_nav
     assert_operator find_link("Data").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    find("body").send_keys(:escape)
 
     accept_confirm { click_button "Run content expiry now" }
     assert_text "Content expiry queued."
