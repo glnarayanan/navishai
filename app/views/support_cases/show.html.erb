@@ -53,6 +53,20 @@
                   <time datetime="<%= message.occurred_at.iso8601 %>"><%= message.occurred_at.to_fs(:short) %></time>
                 </header>
                 <div class="message-body"><%= simple_format(message.body) %></div>
+                <% if message.stored_attachments.any? %>
+                  <ul class="attachment-list" aria-label="Attachments">
+                    <% message.stored_attachments.each do |attachment| %>
+                      <li>
+                        <% if attachment.available? %>
+                          <%= link_to attachment.filename, workspace_attachment_path(@workspace, attachment), class: "attachment-link" %>
+                        <% else %>
+                          <span><%= attachment.filename %></span>
+                          <small><%= attachment.rejected? ? "Blocked" : "Quarantined" %>: <%= attachment.scan_result_code.humanize %></small>
+                        <% end %>
+                      </li>
+                    <% end %>
+                  </ul>
+                <% end %>
               </article>
             </li>
           <% end %>
@@ -86,6 +100,16 @@
                 <div><dt>Attempted</dt><dd><time datetime="<%= @email_delivery.started_at.iso8601 %>"><%= @email_delivery.started_at.to_fs(:long) %></time></dd></div>
               </dl>
               <div class="message-body delivery-review-body"><%= simple_format(@email_delivery.body) %></div>
+              <% if @email_delivery.stored_attachments.any? %>
+                <ul class="attachment-list" aria-label="Delivery attachments">
+                  <% @email_delivery.stored_attachments.each do |attachment| %>
+                    <li>
+                      <%= link_to attachment.filename, workspace_attachment_path(@workspace, attachment), class: "attachment-link" %>
+                      <small><%= number_to_human_size(attachment.byte_size) %></small>
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
               <% if @membership.can_write? %>
                 <div class="reply-actions">
                   <%= button_to "Mark accepted",
@@ -121,12 +145,48 @@
               <div class="field">
                 <%= form.label :body, "Message" %>
                 <%= form.text_area :body, value: @submitted_email_body || (@email_draft.sent? ? "" : @email_draft.body), required: true, rows: 8, maxlength: EmailDraft::MAX_BODY_BYTES %>
-                <span class="field-hint">Plain text only. Attachments are not available yet.</span>
+                <span class="field-hint">Plain text. Up to five scanned attachments.</span>
               </div>
+              <% if @draft_attachments.any? %>
+                <ul class="attachment-list draft-attachment-list" aria-label="Draft attachments">
+                  <% @draft_attachments.each do |attachment| %>
+                    <li>
+                      <span><%= attachment.filename %></span>
+                      <small><%= attachment.available? ? number_to_human_size(attachment.byte_size) : "#{attachment.scan_status.humanize}: #{attachment.scan_result_code.humanize}" %></small>
+                      <%= link_to "Remove",
+                        email_attachment_workspace_support_case_path(
+                          @workspace, @support_case, attachment_id: attachment.id,
+                          draft_version: @email_draft.lock_version
+                        ),
+                        data: { turbo_method: :delete }, class: "button button-quiet" %>
+                    </li>
+                  <% end %>
+                </ul>
+                <% if @draft_attachments.any? { |attachment| !attachment.available? } %>
+                  <p class="field-hint" role="status">Send stays blocked until every attachment passes malware scanning. Remove blocked files to continue.</p>
+                <% end %>
+              <% end %>
               <div class="reply-actions">
                 <%= form.submit "Save draft", formaction: email_draft_workspace_support_case_path(@workspace, @support_case), class: "button button-secondary" %>
-                <%= form.submit "Send email", class: "button button-primary", data: { turbo_confirm: "Send this exact message to the customer now?" } %>
+                <%= form.submit "Send email", class: "button button-primary",
+                  disabled: @draft_attachments.any? { |attachment| !attachment.available? },
+                  data: { turbo_confirm: "Send this exact message to the customer now?" } %>
               </div>
+            <% end %>
+            <% if @email_draft.persisted? && !@email_draft.sent? %>
+              <%= form_with url: email_attachments_workspace_support_case_path(@workspace, @support_case),
+                class: "attachment-upload-form", multipart: true do |form| %>
+                <%= form.hidden_field :draft_version, value: @email_draft.lock_version %>
+                <div class="field">
+                  <%= form.label :files, "Add attachments" %>
+                  <%= form.file_field :files, multiple: true, required: true,
+                    accept: "text/plain,application/pdf,image/png,image/jpeg,image/gif" %>
+                  <span class="field-hint">PDF, text, PNG, JPEG, or GIF. 5 MiB per file; 10 MiB total.</span>
+                </div>
+                <%= form.submit "Add files", class: "button button-secondary" %>
+              <% end %>
+            <% else %>
+              <p class="field-hint">Save this draft before adding attachments.</p>
             <% end %>
           <% else %>
             <p class="muted-copy">Read-only access. You cannot draft or send customer email.</p>

@@ -8,6 +8,7 @@ Rails.application.routes.draw do
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
       post :reconcile, on: :member
     end
+    resources :attachments, only: :show, controller: "attachment_downloads"
     resources :support_cases, path: "cases", only: %i[ index show ] do
       member do
         patch :transition, controller: "support_case_commands"
@@ -21,6 +22,9 @@ Rails.application.routes.draw do
         post :email_send, controller: "email_replies", action: :send_email
         post "email_deliveries/:delivery_id/review", controller: "email_replies", action: :review_delivery,
           as: :email_delivery_review
+        post :email_attachments, controller: "email_attachments", action: :create
+        delete "email_attachments/:attachment_id", controller: "email_attachments", action: :destroy,
+          as: :email_attachment
       end
     end
   end

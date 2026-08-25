@@ -8,6 +8,8 @@ class ConversationMessage < ApplicationRecord
   belongs_to :author_user, class_name: "User", optional: true
   belongs_to :in_reply_to, class_name: "ConversationMessage", optional: true
   has_one :email_message_link, dependent: :restrict_with_exception
+  has_many :conversation_message_attachments, dependent: :restrict_with_exception
+  has_many :stored_attachments, through: :conversation_message_attachments
 
   enum :direction, DIRECTIONS.index_by(&:itself), validate: true
   enum :author_kind, AUTHOR_KINDS.index_by(&:itself), validate: true

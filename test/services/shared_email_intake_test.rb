@@ -28,6 +28,17 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
     assert AuditEvent.where(action: "email.intake_received", subject_id: @delivery.id).exists?
   end
 
+  test "an invalid Reply-To falls back to the valid sender" do
+    delivery = SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(message_id: "invalid-reply-to@example.net", reply_to: "not an email"),
+      received_at: @received_at
+    )
+
+    assert delivery.processed?
+    assert_equal "alice@example.net", delivery.conversation_message.email_message_link.reply_to_address
+  end
+
   test "threads replies and out-of-order parents by the root reference" do
     child = raw_email(
       message_id: "child@example.net",
@@ -181,6 +192,51 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
 
     assert_equal "Visible request", delivery.conversation_message.body
     refute_includes delivery.conversation_message.body, "ATTACHMENT SECRET"
+    attachment = delivery.conversation_message.stored_attachments.sole
+    assert_equal "attachment-2", attachment.filename
+    assert attachment.quarantined?
+    assert_equal "ATTACHMENT SECRET", attachment.file.download
+  end
+
+  test "a single-part attachment is scanned and kept out of the customer message body" do
+    raw = raw_email(
+      message_id: "single-attachment@example.net",
+      content_type: "text/plain; charset=UTF-8\r\nContent-Disposition: attachment; filename=\"secret.txt\"",
+      body: "ATTACHMENT SECRET"
+    )
+
+    delivery = SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
+
+    assert delivery.processed?
+    assert_equal "Attachment received.", delivery.conversation_message.body
+    refute_includes delivery.conversation_message.body, "ATTACHMENT SECRET"
+    attachment = delivery.conversation_message.stored_attachments.sole
+    assert_equal "secret.txt", attachment.filename
+    assert attachment.quarantined?
+    assert_equal "ATTACHMENT SECRET", attachment.file.download.strip
+  end
+
+  test "an attachment decode error fails the canonical delivery without a duplicate row" do
+    boundary = "unknown-encoding-boundary"
+    raw = raw_email(
+      message_id: "unknown-encoding@example.net",
+      content_type: "multipart/mixed; boundary=#{boundary}",
+      body: [
+        "--#{boundary}", "Content-Type: text/plain; charset=UTF-8", "", "Visible request",
+        "--#{boundary}", "Content-Type: text/plain", "Content-Disposition: attachment; filename=\"note.txt\"",
+        "Content-Transfer-Encoding: x-unknown", "", "encoded attachment",
+        "--#{boundary}--", ""
+      ].join("\r\n")
+    )
+
+    assert_difference -> { InboundEmailDelivery.count }, 1 do
+      @delivery = SharedEmailIntake.receive!(inbox: @inbox, raw_email: raw, received_at: @received_at)
+    end
+
+    assert @delivery.failed?
+    assert_equal "unknown-encoding@example.net", @delivery.source_message_id
+    assert_equal "parse_error", @delivery.failure_code
+    refute @inbox.inbound_email_deliveries.exists?(source_message_id: "sha256:#{Digest::SHA256.hexdigest(raw)}")
   end
 
   test "permanent failures cannot starve received reconciliation work" do
@@ -354,9 +410,10 @@ class SharedEmailIntakeTest < ActiveSupport::TestCase
   end
 
   private
-    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8", from: "Alice Example <alice@example.net>")
+    def raw_email(message_id:, body: "Please help", references: nil, in_reply_to: nil, reply_to: nil, date: @received_at - 5.minutes, content_type: "text/plain; charset=UTF-8", from: "Alice Example <alice@example.net>")
       headers = [
         "From: #{from}",
+        ("Reply-To: #{reply_to}" if reply_to),
         "To: Support <support@example.com>",
         "Date: #{date.rfc2822}",
         "Subject: Email help",

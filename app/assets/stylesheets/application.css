@@ -404,6 +404,12 @@ textarea {
   opacity: 0.5;
 }
 
+.button-primary:disabled {
+  color: var(--muted);
+  background: var(--line);
+  opacity: 1;
+}
+
 .panel-foot {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
@@ -1081,6 +1087,56 @@ td {
 
 .reply-actions .button-primary {
   width: auto;
+}
+
+.attachment-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--canvas);
+}
+
+.attachment-list li > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.attachment-list small {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.draft-attachment-list .button {
+  margin-left: auto;
+}
+
+.draft-attachment-list small {
+  white-space: normal;
+  text-align: right;
+}
+
+.attachment-upload-form {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.attachment-upload-form .button {
+  justify-self: end;
 }
 
 .message-outbound {

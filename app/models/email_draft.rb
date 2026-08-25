@@ -8,6 +8,8 @@ class EmailDraft < ApplicationRecord
   belongs_to :conversation
   belongs_to :updated_by, class_name: "User"
   has_many :outbound_email_deliveries, dependent: :restrict_with_exception
+  has_many :email_draft_attachments, dependent: :destroy
+  has_many :stored_attachments, through: :email_draft_attachments
 
   enum :status, STATUSES.index_by(&:itself), validate: true
 

@@ -1,6 +1,7 @@
 class EmailRepliesController < SupportCasesController
   rescue_from Current::RoleAccessDenied, with: :forbidden
-  rescue_from ActiveRecord::RecordInvalid, ActiveRecord::StaleObjectError, ArgumentError, with: :invalid_reply
+  rescue_from ActiveRecord::RecordInvalid, ActiveRecord::StaleObjectError,
+    AttachmentIntake::InvalidAttachment, ArgumentError, with: :invalid_reply
 
   def save_draft
     EmailDraftWorkflow.save!(
@@ -28,7 +29,13 @@ class EmailRepliesController < SupportCasesController
     if delivery.sent?
       redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Email sent."
     else
-      message = delivery.unknown? ? "Delivery outcome needs review. Do not resend." : "Email was not sent. Check SMTP settings and try a fresh send."
+      message = if delivery.unknown?
+        "Delivery outcome needs review. Do not resend."
+      elsif delivery.failure_code == "attachment_unavailable"
+        "Email was not sent because an attachment changed or could not be read. Remove it, add the file again, then retry."
+      else
+        "Email was not sent. Check SMTP settings and try a fresh send."
+      end
       redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "email-reply"), alert: message
     end
   end
