@@ -24,6 +24,7 @@
   </head>
 
   <body>
+    <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
     <header class="app-header">
       <%= link_to root_path, class: "wordmark", aria: { label: "NavishAI home" } do %>
         <span class="wordmark-mark" aria-hidden="true"></span>
@@ -32,18 +33,19 @@
 
       <% if authenticated? %>
         <nav aria-label="Account">
-          <%= link_to "Workspaces", workspaces_path %>
+          <% if Current.workspace %>
+            <span class="current-workspace"><%= Current.workspace.name %></span>
+          <% end %>
+          <%= link_to "Workspaces", workspaces_path,
+            aria: { current: controller_name.in?(%w[workspaces workspace_invitations]) ? "page" : nil } %>
           <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
         </nav>
       <% end %>
     </header>
 
-    <div class="flash-region" aria-live="polite">
-      <%= tag.p(flash[:notice], class: "flash flash-notice") if flash[:notice] %>
-      <%= tag.p(flash[:alert], class: "flash flash-alert", role: "alert") if flash[:alert] %>
-    </div>
+    <%= render "shared/flash_messages" %>
 
-    <div class="app-container">
+    <div class="app-container" id="main-content" tabindex="-1">
       <%= yield %>
     </div>
   </body>

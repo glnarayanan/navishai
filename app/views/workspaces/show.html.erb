@@ -1,3 +1,5 @@
+<% content_for :title, "#{@workspace.name} — NavishAI" %>
+
 <main class="page-shell">
   <%= link_to "All workspaces", workspaces_path, class: "back-link" %>
   <div class="workspace-heading">
@@ -8,11 +10,15 @@
     <span class="role-badge"><%= role_label(@membership.role) %></span>
   </div>
 
-  <section class="empty-state workspace-empty">
-    <h2>Workspace ready</h2>
-    <p>Customer, policy, and work queues will appear here as they are added.</p>
-    <% if @membership.owner? || @membership.admin? %>
-      <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
-    <% end %>
-  </section>
+  <% if @membership.owner? || @membership.admin? %>
+    <%= render "shared/empty_state",
+      title: "Workspace ready",
+      description: "Customer, policy, and work queues will appear here as they are added.",
+      action_label: "Manage invitations",
+      action_path: workspace_workspace_invitations_path(@workspace) %>
+  <% else %>
+    <%= render "shared/empty_state",
+      title: "Workspace ready",
+      description: "Customer, policy, and work queues will appear here as they are added." %>
+  <% end %>
 </main>

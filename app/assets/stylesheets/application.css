@@ -60,6 +60,24 @@ select:focus-visible {
   outline-offset: 0.1875rem;
 }
 
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 10;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: var(--accent);
+  font-weight: 700;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  color: #fff;
+  transform: translateY(0);
+}
+
 input:focus-visible,
 select:focus-visible {
   outline-width: 0.125rem;
@@ -121,6 +139,21 @@ strong {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+.app-header nav a[aria-current="page"] {
+  color: var(--ink);
+  text-decoration-thickness: 0.125rem;
+}
+
+.current-workspace {
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-header nav form {
@@ -299,6 +332,16 @@ select:hover {
   font-weight: 600;
 }
 
+.inline-error h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.inline-error ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
 .button {
   display: inline-flex;
   min-height: 2.25rem;
@@ -313,6 +356,7 @@ select:hover {
   line-height: 1.25;
   text-align: center;
   text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -527,7 +571,15 @@ td {
     min-height: 4rem;
   }
 
-  .app-header nav > a {
+  .app-header nav {
+    gap: 0.75rem;
+  }
+
+  .wordmark > span:last-child {
+    display: none;
+  }
+
+  .current-workspace {
     display: none;
   }
 

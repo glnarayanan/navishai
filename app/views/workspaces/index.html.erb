@@ -1,3 +1,5 @@
+<% content_for :title, "Workspaces — NavishAI" %>
+
 <main class="page-shell">
   <div class="page-heading">
     <h1>Choose a workspace</h1>
@@ -19,9 +21,8 @@
       <% end %>
     </ul>
   <% else %>
-    <section class="empty-state">
-      <h2>No workspace access</h2>
-      <p>Ask an Owner or Admin to invite you to a workspace.</p>
-    </section>
+    <%= render "shared/empty_state",
+      title: "No workspace access",
+      description: "Ask an Owner or Admin to invite you to a workspace." %>
   <% end %>
 </main>

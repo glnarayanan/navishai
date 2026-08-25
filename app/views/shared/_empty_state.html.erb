@@ -1,0 +1,7 @@
+<section class="empty-state">
+  <h2><%= title %></h2>
+  <p><%= description %></p>
+  <% if local_assigns[:action_path] %>
+    <%= link_to action_label, action_path, class: "button button-secondary" %>
+  <% end %>
+</section>
