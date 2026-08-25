@@ -29,6 +29,9 @@ type Definition struct {
 	ProtocolVersion  string
 	ExecutableNames  []string
 	VersionArguments []string
+	AccountArguments []string
+	AccountMarker    string
+	AccountMetadata  map[string]string
 	Capabilities     []string
 	MinimumVersion   string
 	MaximumVersion   string
@@ -59,7 +62,8 @@ func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 	seen := make(map[string]bool, len(definitions))
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
-			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] {
+			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] ||
+			(len(definition.AccountArguments) > 0 && (definition.AccountMarker == "" || len(definition.AccountMetadata) == 0)) {
 			return nil, ErrInvalidDefinition
 		}
 		seen[definition.AdapterKey] = true
@@ -100,29 +104,58 @@ func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Inst
 	if err != nil {
 		return Installation{}, false
 	}
-	probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
-	defer cancel()
-	command := exec.CommandContext(probeContext, resolved, definition.VersionArguments...)
-	command.Env = []string{"HOME=" + os.TempDir(), "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
-	output := &boundedBuffer{maximum: maxVersionBytes}
-	command.Stdout, command.Stderr = output, output
-	probeErr := command.Run()
-	version := strings.TrimSpace(output.String())
+	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, false)
 	health := "available"
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
-	if probeErr != nil || version == "" || output.overflowed {
+	if probeErr != nil || version == "" || versionOverflowed {
 		health, compatibility, reason = "unhealthy", "unknown", "The runtime version probe failed."
+	}
+	accountMetadata := map[string]string{"authentication": "managed_on_runner"}
+	if len(definition.AccountArguments) > 0 {
+		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, true)
+		if accountErr != nil || overflowed || !strings.Contains(accountOutput, definition.AccountMarker) {
+			health = "unhealthy"
+			accountMetadata = map[string]string{"authentication": "not_authenticated"}
+		} else {
+			accountMetadata = cloneMetadata(definition.AccountMetadata)
+		}
 	}
 	capabilities := append([]string(nil), definition.Capabilities...)
 	sort.Strings(capabilities)
 	return Installation{
 		DetectionKey: detectionKey(definition.AdapterKey, resolved), AdapterKey: definition.AdapterKey,
 		ProtocolVersion: definition.ProtocolVersion, ExecutablePath: resolved, ExecutableVersion: version,
-		AccountMetadata: map[string]string{"authentication": "managed_on_runner"}, Capabilities: capabilities,
+		AccountMetadata: accountMetadata, Capabilities: capabilities,
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,
 		CheckedAt: catalog.now().UTC().Format(time.RFC3339Nano),
 	}, true
+}
+
+func probe(ctx context.Context, executable string, arguments []string, includeAccountHome bool) (string, error, bool) {
+	probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	command := exec.CommandContext(probeContext, executable, arguments...)
+	home := os.TempDir()
+	if includeAccountHome && os.Getenv("HOME") != "" {
+		home = os.Getenv("HOME")
+	}
+	command.Env = []string{"HOME=" + home, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
+	if includeAccountHome && os.Getenv("CODEX_HOME") != "" {
+		command.Env = append(command.Env, "CODEX_HOME="+os.Getenv("CODEX_HOME"))
+	}
+	output := &boundedBuffer{maximum: maxVersionBytes}
+	command.Stdout, command.Stderr = output, output
+	err := command.Run()
+	return strings.TrimSpace(output.String()), err, output.overflowed
+}
+
+func cloneMetadata(metadata map[string]string) map[string]string {
+	result := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		result[key] = value
+	}
+	return result
 }
 
 func compatibilityFor(output, minimum, maximum string) (string, string) {
