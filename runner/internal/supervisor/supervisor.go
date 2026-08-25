@@ -57,6 +57,7 @@ type Config struct {
 	AllowedExecutableRoots []string
 	ApprovedExecutables    []string
 	AllowedWorkingRoots    []string
+	AllowedHomeRoots       []string
 	RuntimeReadRoots       []string
 	EgressProfiles         []EgressProfile
 	Limits                 Limits
@@ -74,6 +75,7 @@ type Request struct {
 	Executable       string
 	Arguments        []string
 	WorkingDir       string
+	HomeDir          string
 	Input            []byte
 	Credentials      map[string]string
 	EgressProfileKey string
@@ -93,6 +95,7 @@ type Supervisor struct {
 	executableRoots     []string
 	approvedExecutables map[string]bool
 	workingRoots        []string
+	homeRoots           []string
 	runtimeReadRoots    []string
 	namespaceLauncher   string
 	egressProfiles      map[string]resolvedEgressProfile
@@ -129,6 +132,13 @@ func New(config Config) (*Supervisor, error) {
 	if err != nil {
 		return nil, err
 	}
+	homeRoots := []string(nil)
+	if len(config.AllowedHomeRoots) > 0 {
+		homeRoots, err = realRoots(config.AllowedHomeRoots)
+		if err != nil {
+			return nil, err
+		}
+	}
 	runtimeReadRoots, err := realRoots(config.RuntimeReadRoots)
 	if err != nil {
 		return nil, err
@@ -156,7 +166,7 @@ func New(config Config) (*Supervisor, error) {
 		return nil, err
 	}
 	return &Supervisor{helperPath: helper, executableRoots: executableRoots, approvedExecutables: approvedExecutables,
-		workingRoots: workingRoots, runtimeReadRoots: runtimeReadRoots, namespaceLauncher: launcher,
+		workingRoots: workingRoots, homeRoots: homeRoots, runtimeReadRoots: runtimeReadRoots, namespaceLauncher: launcher,
 		egressProfiles: egressProfiles, limits: config.Limits}, nil
 }
 
@@ -411,6 +421,13 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 	if err != nil || len(request.Arguments) > maxArguments || len(request.Input) > maxInputBytes || len(request.Credentials) > maxCredentialKeys {
 		return preparedRequest{}, ErrInvalidRequest
 	}
+	homeDir := workingDir
+	if request.HomeDir != "" {
+		homeDir, err = approvedDirectory(request.HomeDir, supervisor.homeRoots)
+		if err != nil {
+			return preparedRequest{}, ErrInvalidRequest
+		}
+	}
 	argumentBytes := 0
 	for _, argument := range request.Arguments {
 		if strings.ContainsRune(argument, 0) {
@@ -422,7 +439,7 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 		return preparedRequest{}, ErrInvalidRequest
 	}
 	environment := []string{
-		"HOME=" + workingDir, "LANG=C.UTF-8",
+		"HOME=" + homeDir, "LANG=C.UTF-8",
 		"NAVISHAI_LIMIT_CPU_SECONDS=" + strconv.FormatUint(supervisor.limits.CPUSeconds, 10),
 		"NAVISHAI_LIMIT_MEMORY_BYTES=" + strconv.FormatUint(supervisor.limits.MemoryBytes, 10),
 		"NAVISHAI_LIMIT_OPEN_FILES=" + strconv.FormatUint(supervisor.limits.OpenFiles, 10),
