@@ -28,16 +28,18 @@
     <div class="account-list" role="list">
       <% @accounts.each do |account| %>
         <% assessment = account.health_assessments.first %>
-        <%= link_to workspace_account_path(@workspace, account), class: "account-list-row", role: "listitem" do %>
-          <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(account.contacts.size, "contact") %></small></span>
-          <% if assessment %>
-            <span class="health-score health-score-<%= assessment.risk_level.dasherize %>"><b><%= assessment.score %></b><small>of 100</small></span>
-            <span class="risk-state risk-state-<%= assessment.risk_level.dasherize %>"><%= assessment.risk_level.humanize %></span>
-            <span class="account-renewal"><small>Renewal</small><%= assessment.renewal_on&.to_fs(:long) || "Not supplied" %></span>
-          <% else %>
-            <span class="account-unscored">Not scored</span>
+        <div role="listitem">
+          <%= link_to workspace_account_path(@workspace, account), class: "account-list-row" do %>
+            <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(account.contacts.size, "contact") %></small></span>
+            <% if assessment %>
+              <span class="health-score health-score-<%= assessment.risk_level.dasherize %>"><b><%= assessment.score %></b><small>of 100</small></span>
+              <span class="risk-state risk-state-<%= assessment.risk_level.dasherize %>"><%= assessment.risk_level.humanize %></span>
+              <span class="account-renewal"><small>Renewal</small><%= assessment.renewal_on&.to_fs(:long) || "Not supplied" %></span>
+            <% else %>
+              <span class="account-unscored">Not scored</span>
+            <% end %>
           <% end %>
-        <% end %>
+        </div>
       <% end %>
     </div>
   <% else %>

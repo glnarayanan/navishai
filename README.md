@@ -2,7 +2,7 @@
 
 NavishAI is an agent-first, human-governed workspace for Support and Customer Success. Specialist AI crews investigate, retrieve, analyse, draft, review, and remember. Humans retain customer communication and consequential authority.
 
-The project is greenfield. The target is a secure, self-hostable, market-review-ready v1, not a synthetic prototype.
+The v1 source stack is build-complete and market-review-ready for owner review. It is not yet a public release, a certified system, or proof of market demand. See the [release-candidate record](./documentation/RELEASE_CANDIDATE.md) for local evidence and known gaps.
 
 ## Start here
 
@@ -15,6 +15,7 @@ The project is greenfield. The target is a secure, self-hostable, market-review-
 7. Use [documentation/OPERATIONS.md](./documentation/OPERATIONS.md) for backup, restore tests, and upgrade preflight.
 8. Use [documentation/DEMO.md](./documentation/DEMO.md) to create the seeded review Workspace.
 9. Use [documentation/RELEASE.md](./documentation/RELEASE.md) for SBOM, provenance, patch, and release rules.
+10. Read [documentation/RELEASE_CANDIDATE.md](./documentation/RELEASE_CANDIDATE.md) for the current review boundary and known gaps.
 
 The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 
