@@ -9,6 +9,7 @@ Rails.application.routes.draw do
     resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls" do
       post :expire
       post :expire_audit
+      get :export
     end
     resources :notifications, only: %i[ index update ] do
       post :read_all, on: :collection
