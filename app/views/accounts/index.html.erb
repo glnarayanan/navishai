@@ -1,0 +1,44 @@
+<% content_for :title, "Accounts — NavishAI" %>
+
+<main class="account-health-page">
+  <header class="account-health-heading">
+    <div>
+      <h1>Accounts</h1>
+      <p>Renewal risk starts with facts. Each score keeps its signal values, source, time range, weight, and result.</p>
+    </div>
+    <% if @membership.can_manage_work? %>
+      <details class="account-import">
+        <summary class="button button-secondary">Import account data</summary>
+        <%= form_with url: workspace_account_imports_path(@workspace), multipart: true do |form| %>
+          <div class="field">
+            <%= form.label :file, "CSV file" %>
+            <%= form.file_field :file, accept: ".csv,text/csv", required: true %>
+            <span class="field-hint">Use source_id, account_name, and any of account_domain, contact_name, contact_email, renewal_on, contract_value, active_users, or licensed_seats.</span>
+          </div>
+          <%= form.submit "Import and recalculate", class: "button button-primary" %>
+        <% end %>
+      </details>
+    <% end %>
+  </header>
+
+  <% if @accounts.any? %>
+    <div class="account-list" role="list">
+      <% @accounts.each do |account| %>
+        <% assessment = account.health_assessments.first %>
+        <%= link_to workspace_account_path(@workspace, account), class: "account-list-row", role: "listitem" do %>
+          <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(account.contacts.size, "contact") %></small></span>
+          <% if assessment %>
+            <span class="health-score health-score-<%= assessment.risk_level.dasherize %>"><b><%= assessment.score %></b><small>of 100</small></span>
+            <span class="risk-state risk-state-<%= assessment.risk_level.dasherize %>"><%= assessment.risk_level.humanize %></span>
+            <span class="account-renewal"><small>Renewal</small><%= assessment.renewal_on&.to_fs(:long) || "Not supplied" %></span>
+          <% else %>
+            <span class="account-unscored">Not scored</span>
+          <% end %>
+        <% end %>
+      <% end %>
+    </div>
+  <% else %>
+    <%= render "shared/empty_state", title: "No accounts yet",
+      description: "Sync Intercom or import account data to create the first health record." %>
+  <% end %>
+</main>

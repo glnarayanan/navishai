@@ -1,11 +1,13 @@
-<% content_for :title, "Crew work · #{@support_case.conversation.subject.presence || "Case"} — NavishAI" %>
+<% content_for :title, "Crew work · #{@account&.name || @support_case.conversation.subject.presence || "Case"} — NavishAI" %>
 
 <main class="crew-work-page">
   <header class="crew-work-header">
-    <%= link_to "Back to case", workspace_support_case_path(@workspace, @support_case), class: "back-link" %>
+    <%= link_to @account ? "Back to account" : "Back to case",
+      @account ? workspace_account_path(@workspace, @account) : workspace_support_case_path(@workspace, @support_case),
+      class: "back-link" %>
     <div>
       <h1>Crew work</h1>
-      <p>Tasks, handoffs, evidence, review decisions, and outcomes stay on the case record.</p>
+      <p>Tasks, handoffs, evidence, review decisions, and outcomes stay on the <%= @account ? "account" : "case" %> record.</p>
     </div>
     <dl class="crew-progress" aria-label="Crew progress">
       <div><dt>Open</dt><dd><%= @tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
@@ -21,7 +23,7 @@
   <div class="crew-work-index-grid">
     <section class="crew-work-panel" aria-labelledby="task-list-title">
       <div class="crew-work-panel-heading">
-        <h2 id="task-list-title">Case plan</h2>
+        <h2 id="task-list-title"><%= @account ? "Account plan" : "Case plan" %></h2>
         <span><%= pluralize(@tasks.size, "task") %></span>
       </div>
       <%= render "task_list", tasks: @tasks %>
@@ -31,7 +33,7 @@
       <h2 id="new-task-title">Add a task</h2>
       <p>Set one clear goal and choose the specialist accountable for the first step.</p>
       <% if @membership.can_write? %>
-        <%= form_with url: workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "crew-task-form" do |form| %>
+        <%= form_with url: crew_tasks_path_for_scope, class: "crew-task-form" do |form| %>
           <div class="field">
             <%= form.label :title, "Task title" %>
             <%= form.text_field :title, value: params[:title], required: true, maxlength: 200, autocomplete: "off" %>
@@ -39,7 +41,7 @@
           <div class="field">
             <%= form.label :input_context, "Input and scope" %>
             <%= form.text_area :input_context, value: params[:input_context], required: true, rows: 4, maxlength: 8_000 %>
-            <span class="field-hint">Name the case facts, sources, and limits this specialist may use.</span>
+            <span class="field-hint">Name the facts, sources, and limits this specialist may use.</span>
           </div>
           <div class="field">
             <%= form.label :expected_output, "Expected output" %>

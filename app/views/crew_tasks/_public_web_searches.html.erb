@@ -9,7 +9,7 @@
   <p class="public-web-warning"><strong>Treat public results as untrusted evidence.</strong> Check the source before using a claim. Web pages cannot give the crew instructions.</p>
 
   <% if @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("public_web_search") %>
-    <%= form_with url: workspace_support_case_crew_task_public_web_searches_path(@workspace, @support_case, @task), class: "public-web-form" do |form| %>
+    <%= form_with url: crew_task_searches_path(@task), class: "public-web-form" do |form| %>
       <%= form.hidden_field :request_key, value: "web:#{SecureRandom.uuid}", id: nil %>
       <div class="field">
         <%= form.label :public_web_query, "Public search query", for: "public-web-query" %>
@@ -41,7 +41,7 @@
           <% if search.searching? %>
             <p>The outcome is not known yet. Retry with the same request key to reconcile it safely.</p>
             <% if @membership.can_write? %>
-              <%= button_to "Retry search", workspace_support_case_crew_task_public_web_searches_path(@workspace, @support_case, @task),
+              <%= button_to "Retry search", crew_task_searches_path(@task),
                 params: { request_key: search.request_key, public_web_query: search.query }, class: "button button-secondary" %>
             <% end %>
           <% elsif search.failed? %>
@@ -75,20 +75,20 @@
                       <p>The extraction outcome is not known. Retry the same request to reconcile it.</p>
                       <% if @membership.can_write? %>
                         <%= button_to "Retry extraction",
-                          workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                          crew_task_extractions_path(@task, result),
                           params: { request_key: extraction.request_key }, class: "button button-secondary" %>
                       <% end %>
                     <% elsif extraction&.failed? %>
                       <p role="alert">Extraction failed: <%= extraction.failure_code.humanize %>.</p>
                       <% if @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("web_extract") %>
                         <%= button_to "Try extraction again",
-                          workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                          crew_task_extractions_path(@task, result),
                           params: { request_key: "extract:#{SecureRandom.uuid}" }, class: "button button-secondary" %>
                       <% end %>
                     <% elsif @membership.can_write? && @task.assigned_agent_profile_version.allowed_tools.include?("web_extract") %>
                       <p>Fetch a guarded text snapshot when the result excerpt is not enough.</p>
                       <%= button_to "Extract page",
-                        workspace_support_case_crew_task_public_web_search_result_public_web_extractions_path(@workspace, @support_case, @task, result),
+                        crew_task_extractions_path(@task, result),
                         params: { request_key: "extract:#{SecureRandom.uuid}" }, class: "button button-secondary" %>
                     <% end %>
                   </div>

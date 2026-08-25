@@ -121,9 +121,21 @@ Its live smoke is opt-in: `NAVISHAI_CURSOR_LIVE_SMOKE=1 NAVISHAI_CURSOR_HOME=/ho
 
 Runner events post to `/webhooks/runner-events` with the same HMAC headers plus `X-NavishAI-Workspace-Key`. Admission freezes the selected installation identity, adapter, routing profile, primary or fallback reason, disclosed data classes, and input/output unit caps. Every adapter stops before it emits output when reported usage exceeds those caps; the Rails ledger also rejects an over-budget usage event. PostgreSQL stores each run attempt and ordered event. Exact event replay is idempotent; changed, out-of-order, cross-workspace, over-budget, and invalid terminal events fail closed.
 
-Completed Support Crew runs publish strict artifact schema `1` JSON with a role-bound `kind`, body, explicit uncertainty, one or more workspace-checked citations, conflicts, change requests, and review outcome. Investigation, draft, and quality-review artifacts are append-only and versioned. A quality review freezes the exact draft it saw. A rerun freezes the prior review and its requested changes into the next admission context, which is bounded at 128 KiB on both Rails and Go. Invalid or stale output rolls the completion event back instead of creating an uncited or mismatched result. These records propose work only; they cannot create or send an email draft.
+Completed Support and Customer Success Crew runs publish strict artifact schema `1` JSON with a role-bound `kind`, body, explicit uncertainty, one or more workspace-checked citations, conflicts, change requests, and review outcome. Investigations, drafts, intervention plans, and reviews are append-only and versioned. A review freezes the exact draft or intervention plan it saw. A rerun freezes the prior review and its requested changes into the next admission context, which is bounded at 128 KiB on both Rails and Go. Invalid or stale output rolls the completion event back instead of creating an uncited or mismatched result. These records propose work only; they cannot send or schedule a customer message.
 
-The Crew task page polls its workspace-scoped run record while an attempt is active. A writer can retry an unconfirmed admission with its original idempotency key or start a later attempt after a terminal result. The page keeps blocked, degraded, failed, canceled, and completed states distinct and exposes safe run IDs, event sequence, policy version, usage, and failure codes for operator checks. An active run blocks task cancellation until the runner records a terminal event.
+## Account health and renewal risk
+
+Managers, Admins, and Owners can import up to 2 MiB or 500 rows of account data through the Accounts page or the authenticated JSON endpoint at `POST /workspaces/:workspace_id/account-api-inputs`. Each record needs `source_id` and `account_name`; it may add `account_domain`, `contact_name`, `contact_email`, `renewal_on`, `contract_value`, `active_users`, and `licensed_seats`. Reusing a source ID is idempotent only when its values match. Changed source facts need a new source ID so prior facts remain retained.
+
+NavishAI recalculates after imported inputs and committed conversation, note, Case, priority, or SLA changes. A deployment schedule can run the same deterministic pass across every Workspace:
+
+```sh
+bin/rails runner 'Workspace.find_each { |workspace| AccountHealth.recalculate_due!(workspace:) }'
+```
+
+Each snapshot stores its score, risk band, renewal date, trigger, prior snapshot, and typed signals. Signals keep value, source locator, time range, weight, risk points, and a stable `health://` citation. A score or risk-band change opens a review only when it crosses the material threshold; a renewal inside 90 days and a human request also open one. Customer Success runs receive the deterministic snapshot as facts, must cite retained Account, conversation, knowledge, web, Memory, or health-signal evidence, and must state uncertainty. Their interventions remain proposals for a human owner and cannot send to a customer.
+
+The Crew task page polls its workspace-scoped run record while an attempt is active. Case tasks use the Support Crew; Account tasks use the Customer Success Crew. A writer can retry an unconfirmed admission with its original idempotency key or start a later attempt after a terminal result. The page keeps blocked, degraded, failed, canceled, and completed states distinct and exposes safe run IDs, event sequence, policy version, usage, and failure codes for operator checks. An active run blocks task cancellation until the runner records a terminal event.
 
 ## Checks
 

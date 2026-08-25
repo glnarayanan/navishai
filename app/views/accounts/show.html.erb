@@ -1,0 +1,103 @@
+<% content_for :title, "#{@account.name} health — NavishAI" %>
+
+<main class="account-health-page account-health-detail">
+  <header class="account-health-heading">
+    <div>
+      <%= link_to "All accounts", workspace_accounts_path(@workspace), class: "back-link" %>
+      <h1><%= @account.name %></h1>
+      <p>Deterministic account facts stay separate from crew analysis and proposed interventions.</p>
+    </div>
+    <div class="account-health-actions">
+      <%= link_to "Crew work", workspace_account_crew_tasks_path(@workspace, @account), class: "button button-secondary" %>
+      <% if @membership.can_write? %>
+        <%= button_to "Recalculate", recalculate_workspace_account_path(@workspace, @account), class: "button button-secondary" %>
+        <%= button_to "Open risk review", request_risk_review_workspace_account_path(@workspace, @account), class: "button button-primary" %>
+      <% end %>
+    </div>
+  </header>
+
+  <% if @command_error %>
+    <div class="inline-error" role="alert"><strong>Risk review not changed</strong><p><%= @command_error %></p></div>
+  <% end %>
+
+  <% if @assessment %>
+    <section class="health-overview" aria-labelledby="health-title">
+      <div class="health-score-panel health-score-panel-<%= @assessment.risk_level.dasherize %>">
+        <span>Current health</span>
+        <strong><%= @assessment.score %><small>/100</small></strong>
+        <b id="health-title"><%= @assessment.risk_level.humanize %></b>
+        <time datetime="<%= @assessment.calculated_at.iso8601 %>">Calculated <%= time_ago_in_words(@assessment.calculated_at) %> ago</time>
+      </div>
+      <dl class="health-context">
+        <div><dt>Renewal</dt><dd><%= @assessment.renewal_on&.to_fs(:long) || "Not supplied" %></dd></div>
+        <div><dt>Trigger</dt><dd><%= @assessment.trigger_kind.humanize %></dd></div>
+        <div><dt>Change</dt><dd><%= @assessment.material_change? ? "Material change" : "Below material threshold" %></dd></div>
+        <div><dt>Prior score</dt><dd><%= @assessment.previous_assessment&.score || "First snapshot" %></dd></div>
+      </dl>
+    </section>
+
+    <section class="health-signals" aria-labelledby="signals-title">
+      <header><div><h2 id="signals-title">Deterministic signals</h2><p>Risk points subtract from 100. Zero-weight rows add context without changing the score.</p></div></header>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Signal</th><th>Value</th><th>Source and range</th><th>Weight</th><th>Risk points</th></tr></thead>
+          <tbody>
+            <% @assessment.signals.each do |signal| %>
+              <tr>
+                <th scope="row"><%= signal.signal_key.humanize %></th>
+                <td><%= signal.value_kind == "date" ? signal.date_value.to_fs(:long) : number_with_delimiter(signal.numeric_value) %></td>
+                <td><span><%= signal.source_kind.humanize %></span><code><%= signal.source_locator %></code><small><%= signal.range_starts_at&.to_fs(:short) || "All retained history" %> – <%= signal.range_ends_at.to_fs(:short) %></small></td>
+                <td><%= signal.weight %></td>
+                <td><strong><%= signal.risk_points %></strong><small><%= signal.citation_uri %></small></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  <% else %>
+    <%= render "shared/empty_state", title: "Health has not been calculated",
+      description: "Recalculate now or import renewal and usage inputs to create a typed snapshot." %>
+  <% end %>
+
+  <section class="risk-workspace" id="risk-reviews" aria-labelledby="risk-reviews-title">
+    <header><div><h2 id="risk-reviews-title">Renewal-risk work</h2><p>Crew findings are bounded analysis, not score facts. Each finding must cite retained evidence and state uncertainty.</p></div></header>
+    <% if @investigations.any? %>
+      <ol class="risk-review-list">
+        <% @investigations.each do |investigation| %>
+          <li>
+            <div class="risk-review-summary">
+              <span class="risk-state risk-state-<%= investigation.account_health_assessment.risk_level.dasherize %>"><%= investigation.status.humanize %></span>
+              <div><strong><%= investigation.trigger_kind.humanize %></strong><p>Snapshot <%= investigation.account_health_assessment.score %>/100 · opened <%= investigation.opened_at.to_fs(:short) %></p></div>
+            </div>
+            <% if investigation.detected? && @membership.can_write? %>
+              <%= button_to "Start crew investigation", start_risk_review_workspace_account_path(@workspace, @account, investigation_id: investigation.id), class: "button button-primary" %>
+            <% elsif investigation.crew_task %>
+              <div class="risk-review-actions">
+                <%= link_to "Open #{investigation.crew_task.assigned_agent_profile.name} work", workspace_account_crew_task_path(@workspace, @account, investigation.crew_task), class: "button button-secondary" %>
+                <% if investigation.investigating? && investigation.crew_task.completed? && @membership.can_manage_work? %>
+                  <%= button_to "Resolve review", resolve_risk_review_workspace_account_path(@workspace, @account, investigation_id: investigation.id), class: "button button-primary" %>
+                <% end %>
+              </div>
+              <% investigation.crew_task.artifacts.each do |artifact| %>
+                <article class="risk-artifact">
+                  <header><strong><%= artifact.artifact_kind.humanize %></strong><span>AI analysis · v<%= artifact.version_number %></span></header>
+                  <div class="message-body"><%= simple_format(artifact.body) %></div>
+                  <p><strong>Uncertainty:</strong> <%= artifact.uncertainty %></p>
+                  <details><summary><%= pluralize(artifact.citations.size, "citation") %></summary><ul><% artifact.citations.each do |citation| %><li><code><%= citation.fetch("locator") %></code> — <%= citation.fetch("label") %></li><% end %></ul></details>
+                </article>
+              <% end %>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="read-only-notice">No material change, renewal-window trigger, or human-requested review is open.</p>
+    <% end %>
+  </section>
+
+  <div class="account-supporting-grid">
+    <section><h2>Contacts</h2><ul><% @contacts.each do |contact| %><li><strong><%= contact.name.presence || "Unnamed contact" %></strong></li><% end %></ul></section>
+    <section><h2>Score history</h2><ol><% @history.each do |assessment| %><li><time><%= assessment.calculated_at.to_fs(:short) %></time><strong><%= assessment.score %></strong><span><%= assessment.risk_level.humanize %></span></li><% end %></ol></section>
+  </div>
+</main>

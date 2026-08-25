@@ -65,6 +65,10 @@ class Workspace < ApplicationRecord
   has_many :intercom_sync_operations, dependent: :restrict_with_exception
   has_many :intercom_drafts, dependent: :restrict_with_exception
   has_many :intercom_outbound_deliveries, dependent: :restrict_with_exception
+  has_many :account_health_inputs, dependent: :restrict_with_exception
+  has_many :account_health_assessments, dependent: :restrict_with_exception
+  has_many :account_health_signals, dependent: :restrict_with_exception
+  has_many :account_risk_investigations, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

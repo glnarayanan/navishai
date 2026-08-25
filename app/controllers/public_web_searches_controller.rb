@@ -13,24 +13,34 @@ class PublicWebSearchesController < ApplicationController
       workspace: @workspace, membership: @membership, task: @task,
       query: params[:public_web_query], request_key: params[:request_key]
     )
-    redirect_to workspace_support_case_crew_task_path(@workspace, @support_case, @task),
+    redirect_to task_path,
       notice: search.completed? ? "Public-web results are ready for review." : "Public-web search recorded."
   rescue RunnerClient::AmbiguousResult
-    redirect_to workspace_support_case_crew_task_path(@workspace, @support_case, @task),
+    redirect_to task_path,
       alert: "The runner outcome is not yet known. Retry the same search to reconcile it."
   rescue RunnerClient::Error, PublicWebResearch::Error => error
-    redirect_to workspace_support_case_crew_task_path(@workspace, @support_case, @task), alert: error.message
+    redirect_to task_path, alert: error.message
   end
 
   private
     def set_context
       @workspace = Current.require_workspace!
       @membership = Current.require_membership!
-      @support_case = @workspace.support_cases.find(params[:support_case_id])
-      @task = @support_case.crew_tasks.find(params[:crew_task_id])
+      if params[:account_id]
+        @account = @workspace.accounts.find(params[:account_id])
+        @task = @account.crew_tasks.find(params[:crew_task_id])
+      else
+        @support_case = @workspace.support_cases.find(params[:support_case_id])
+        @task = @support_case.crew_tasks.find(params[:crew_task_id])
+      end
     end
 
     def forbidden
       render "shared/permission_denied", status: :forbidden
+    end
+
+    def task_path
+      @account ? workspace_account_crew_task_path(@workspace, @account, @task) :
+        workspace_support_case_crew_task_path(@workspace, @support_case, @task)
     end
 end

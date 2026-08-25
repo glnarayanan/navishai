@@ -14,7 +14,14 @@ class CaseSla < ApplicationRecord
   validates :paused_business_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :records_belong_to_workspace
 
+  after_update_commit :recalculate_account_health,
+    if: -> { saved_change_to_first_response_status? || saved_change_to_resolution_status? }
+
   private
+    def recalculate_account_health
+      AccountHealthRecalculationJob.enqueue_after_commit(support_case.conversation.contact.account)
+    end
+
     def records_belong_to_workspace
       errors.add(:support_case, "belongs to another workspace") if support_case && support_case.workspace_id != workspace_id
       errors.add(:sla_policy, "belongs to another workspace") if sla_policy && sla_policy.workspace_id != workspace_id

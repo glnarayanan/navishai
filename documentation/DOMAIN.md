@@ -6,6 +6,11 @@ Use these terms in product copy, code, tests, and design notes.
 - **Workspace:** the access, policy, and data-isolation boundary for daily work.
 - **User:** a person who signs in to NavishAI. A Membership gives a User one role in one Workspace.
 - **Account:** a customer company inside one Workspace. It is not a NavishAI User, Organisation, or login account.
+- **Account health input:** one retained typed renewal, contract, or usage fact supplied through a CSV or authenticated API import. Its source ID makes exact replay idempotent; a changed fact uses a new source ID.
+- **Account health assessment:** one append-only deterministic score snapshot for an Account. It keeps the prior snapshot, risk band, trigger, renewal date, and exact calculation time.
+- **Account health signal:** one typed input to an Account health assessment, with its value, source locator, time range, weight, risk points, and stable `health://` citation.
+- **Material health change:** a score change of at least ten points or any risk-band change between retained assessments.
+- **Risk investigation:** the retained review opened by a material health change, a renewal within 90 days, or a human request. Crew analysis stays separate from its deterministic assessment.
 - **Contact:** a customer person inside one Workspace, optionally linked to one Account.
 - **Source identity:** one stable record from one source namespace, linked to an Account or Contact after matching or review.
 - **Source namespace:** an opaque key for one connector instance. It is not a provider name.
@@ -62,4 +67,4 @@ Use these terms in product copy, code, tests, and design notes.
 - **Runtime profile:** a provider-neutral execution preference selected from the approved registry. It never stores an executable path, command, or subscription credential.
 - **Runtime installation:** one runner-detected adapter executable and version with reported capabilities, compatibility, non-secret account details, and one Workspace’s approval policy. Detection does not grant approval, and approval never stores the subscription credential.
 - **Execution run:** one immutable, numbered attempt to carry out a Crew task through the runner. It freezes the chosen Runtime installation, profile, routing reason, disclosed data classes, retrieved Memory selections, and unit caps. Its ordered events, input, usage, output, failure, and admission checks remain attributable to that attempt.
-- **Crew artifact:** one append-only, cited investigation, draft, or quality review published from a completed Execution run. A new version supersedes rather than edits prior output.
+- **Crew artifact:** one append-only, cited Support or Customer Success investigation, draft, intervention plan, or quality review published from a completed Execution run. It states uncertainty, and a new version supersedes rather than edits prior output.

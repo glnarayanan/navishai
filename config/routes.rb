@@ -30,6 +30,26 @@ Rails.application.routes.draw do
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
     end
+    resources :accounts, only: %i[ index show ] do
+      post :recalculate, on: :member
+      post :request_risk_review, on: :member
+      post "risk-reviews/:investigation_id/start", action: :start_risk_review, on: :member,
+        as: :start_risk_review
+      post "risk-reviews/:investigation_id/resolve", action: :resolve_risk_review, on: :member,
+        as: :resolve_risk_review
+      resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
+        post :command, on: :member
+        resources :public_web_searches, path: "public-web-searches", only: :create
+        resources :public_web_search_results, path: "public-web-results", only: [] do
+          resources :public_web_extractions, path: "extractions", only: :create
+        end
+        resources :execution_runs, path: "runs", only: %i[ index create ] do
+          post :reconcile, on: :member
+        end
+      end
+    end
+    post "account-imports", to: "account_imports#create", as: :account_imports
+    post "account-api-inputs", to: "account_imports#create_api", as: :account_api_inputs
     resources :support_cases, path: "cases", only: %i[ index show ] do
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member

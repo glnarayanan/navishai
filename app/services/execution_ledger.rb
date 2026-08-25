@@ -212,12 +212,54 @@ class ExecutionLedger
           }
           context << "\n\nCurrent draft to review:\n#{JSON.generate(review_input)}"
         end
+      when "success_strategist"
+        latest_plan = task.artifacts.where(artifact_kind: "intervention_plan").order(version_number: :desc).first
+        review = latest_plan && @workspace.crew_artifacts
+          .where(artifact_kind: "success_review", target_artifact: latest_plan, review_outcome: "changes_requested")
+          .order(created_at: :desc, id: :desc).first
+        if review
+          input_artifact = review
+          context << "\n\nRequired success-review changes:\n#{JSON.generate(change_requests: review.change_requests, conflicts: review.conflicts)}"
+        end
+      when "success_reviewer"
+        plan = @workspace.crew_artifacts.joins(:crew_task)
+          .where(artifact_kind: "intervention_plan", crew_tasks: {
+            scope_kind: task.scope_kind, support_case_id: task.support_case_id, account_id: task.account_id
+          }).order(created_at: :desc, id: :desc).first
+        if plan
+          input_artifact = plan
+          context << "\n\nCurrent intervention plan to review:\n#{JSON.generate(
+            artifact_key: plan.artifact_key, version: plan.version_number, body: plan.body,
+            uncertainty: plan.uncertainty, citations: plan.citations
+          )}"
+        end
       end
+      context << account_health_context(task)
       context << public_web_context(task)
       context << memory_context.text
       raise InvalidRun, "Execution context exceeds the runner protocol limit." if context.bytesize > 128.kilobytes
 
       [ context, input_artifact ]
+    end
+
+    def account_health_context(task)
+      return "" unless task.account
+
+      assessment = task.account.health_assessments.includes(:signals).first
+      return "\n\nNo deterministic account-health snapshot is available." unless assessment
+
+      payload = {
+        assessment_id: assessment.id, score: assessment.score, risk_level: assessment.risk_level,
+        renewal_on: assessment.renewal_on,
+        signals: assessment.signals.map do |signal|
+          {
+            key: signal.signal_key, value_kind: signal.value_kind, value: signal.value,
+            weight: signal.weight, risk_points: signal.risk_points,
+            source: signal.source_locator, citation: signal.citation_uri
+          }
+        end
+      }
+      "\n\nDeterministic account health (facts, not inference):\n#{JSON.generate(payload)}"
     end
 
     def public_web_context(task)

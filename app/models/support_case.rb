@@ -24,7 +24,13 @@ class SupportCase < ApplicationRecord
   validates :status_changed_at, presence: true
   validate :terminal_timestamps_match_status
 
+  after_update_commit :recalculate_account_health, if: -> { saved_change_to_status? || saved_change_to_priority? }
+
   private
+    def recalculate_account_health
+      AccountHealthRecalculationJob.enqueue_after_commit(conversation.contact.account)
+    end
+
     def terminal_timestamps_match_status
       expected_resolved_at = status == "resolved" || status == "closed"
       errors.add(:resolved_at, "does not match status") if expected_resolved_at != resolved_at.present?

@@ -213,12 +213,63 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     end
   end
 
+  test "publishes a cited Customer Success risk journey while keeping deterministic signals separate" do
+    account = accounts(:acme)
+    assessment = AccountHealth.recalculate!(workspace: @workspace, account:, trigger_kind: "human_request", membership: @owner)
+    health_citation = {
+      "kind" => "health_signal", "locator" => assessment.signals.first.citation_uri,
+      "label" => "Deterministic health signal"
+    }
+    account_conversation_citation = conversation_citation
+    risk_profile = @workspace.agent_profiles.find_by!(role_key: "risk_investigator")
+    strategy_profile = @workspace.agent_profiles.find_by!(role_key: "success_strategist")
+    review_profile = @workspace.agent_profiles.find_by!(role_key: "success_reviewer")
+    risk = create_account_task(account, risk_profile, "Investigate renewal risk")
+    strategy = create_account_task(account, strategy_profile, "Plan interventions", dependencies: [ risk ])
+    review = create_account_task(account, review_profile, "Review interventions", dependencies: [ risk ])
+
+    start(risk)
+    finding = publish(risk, artifact_payload(
+      kind: "risk_investigation", body: "Health declined and needs a bounded follow-up.",
+      uncertainty: "The retained record does not establish customer intent.",
+      citations: [ health_citation, account_conversation_citation ]
+    ))
+    review_and_approve(risk, "The evidence supports the bounded finding.")
+
+    start(strategy)
+    plan = publish(strategy, artifact_payload(
+      kind: "intervention_plan", body: "A human owner should review usage with the account team.",
+      uncertainty: "The customer has not confirmed a preferred intervention.", citations: [ health_citation ]
+    ))
+    start(review)
+    quality = publish(review, artifact_payload(
+      kind: "success_review", body: "The intervention stays within the evidence and requires human ownership.",
+      uncertainty: "Outcome remains unknown until the owner acts.", review_outcome: "approved",
+      citations: [ health_citation ]
+    ), target: plan)
+
+    assert_equal "risk_investigation", finding.artifact_kind
+    assert_equal plan, quality.target_artifact
+    assert_equal "approved", quality.review_outcome
+    assert_includes finding.execution_run.input_context, "Deterministic account health"
+    assert_includes finding.execution_run.input_context, health_citation.fetch("locator")
+    assert_equal account.id, finding.crew_task.account_id
+  end
+
   private
     def create_task(profile, title, dependencies: [])
       CrewWork.create!(
         workspace: @workspace, membership: @owner, scope: @support_case, profile:, title:,
         input_context: "Use the current conversation and approved knowledge.",
         expected_output: "Return strict v1 JSON with citations and uncertainty.", dependencies:
+      )
+    end
+
+    def create_account_task(account, profile, title, dependencies: [])
+      CrewWork.create!(
+        workspace: @workspace, membership: @owner, scope: account, profile:, title:,
+        input_context: "Use the current account facts and retained evidence.",
+        expected_output: "Return strict v1 JSON with citations, uncertainty, and bounded human-owned actions.", dependencies:
       )
     end
 

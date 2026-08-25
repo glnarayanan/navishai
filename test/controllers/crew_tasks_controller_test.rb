@@ -144,6 +144,33 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "account crew workspace uses Customer Success specialists and account-scoped run routes" do
+    account = accounts(:acme)
+    profile = @workspace.agent_profiles.find_by!(role_key: "risk_investigator")
+
+    get workspace_account_crew_tasks_path(@workspace, account)
+    assert_response :success
+    assert_select "h2", text: "Account plan"
+    assert_select "option", text: profile.name
+    assert_select "option", text: @profile.name, count: 0
+
+    post workspace_account_crew_tasks_path(@workspace, account), params: {
+      title: "Review renewal risk", input_context: "Use retained account evidence.",
+      expected_output: "Return a cited risk analysis with uncertainty.", agent_profile_id: profile.id
+    }
+    task = account.crew_tasks.find_by!(title: "Review renewal risk")
+    assert_redirected_to workspace_account_crew_task_path(@workspace, account, task)
+
+    post command_workspace_account_crew_task_path(@workspace, account, task), params: {
+      command_name: "start", expected_sequence: task.current_event.sequence_number
+    }
+    assert task.reload.in_progress?
+    get workspace_account_crew_task_path(@workspace, account, task)
+    assert_response :success
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-url-value=?]",
+      workspace_account_crew_task_execution_runs_path(@workspace, account, task)
+  end
+
   private
     def with_runner_client(client)
       original = RunnerClient.method(:new)
