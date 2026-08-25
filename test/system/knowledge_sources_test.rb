@@ -9,6 +9,7 @@ class KnowledgeSourcesTest < ApplicationSystemTestCase
     assert_text "Knowledge sources"
     assert_no_field "HTTPS source URL"
     assert_no_field "Intercom article ID"
+    reveal_setup "Add approved knowledge"
     select "Manual", from: "Source type"
     fill_in "Title", with: "Account recovery"
     fill_in "Approved source text", with: "Ask the account owner for the recovery code."

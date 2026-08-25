@@ -7,6 +7,7 @@ class OutboundWebhooksTest < ApplicationSystemTestCase
     click_link "Webhooks"
 
     assert_selector "h1", text: "Outbound webhooks"
+    reveal_setup "Add endpoint"
     fill_in "Name", with: "Ops"
     fill_in "Public HTTPS URL", with: "https://hooks.example.com/navishai"
     fill_in "Credential key", with: "ops"

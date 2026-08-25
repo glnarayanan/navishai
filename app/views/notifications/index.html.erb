@@ -11,6 +11,14 @@
     <% end %>
   </div>
 
+  <section class="route-status" aria-label="Notification status">
+    <dl>
+      <div><dt>Unread</dt><dd><%= @notifications.count { |notification| notification.read_at.blank? } %></dd></div>
+      <div><dt>Shown</dt><dd><%= @notifications.size %></dd></div>
+      <div><dt>Scope</dt><dd>Assignments, reviews, SLA alerts, failures, blocked work, and completions for you</dd></div>
+    </dl>
+  </section>
+
   <% if @notifications.any? %>
     <ol class="notification-list" aria-label="Notifications">
       <% @notifications.each do |notification| %>

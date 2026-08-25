@@ -13,6 +13,15 @@
     <% end %>
   </div>
 
+  <section class="route-status" aria-label="Knowledge library status">
+    <dl>
+      <div><dt>Sources</dt><dd><%= @sources.size %></dd></div>
+      <div><dt>Current</dt><dd><%= @sources.count { |source| !source.deleted? && !source.stale? } %></dd></div>
+      <div><dt>Stale or deleted</dt><dd><%= @sources.count { |source| source.deleted? || source.stale? } %></dd></div>
+      <div><dt>Your access</dt><dd><%= @can_manage ? "Can add and version sources" : "Read-only" %></dd></div>
+    </dl>
+  </section>
+
   <% if @query.present? %>
     <section class="section-block" aria-labelledby="search-results-title">
       <div class="section-heading-row">
@@ -63,15 +72,13 @@
     <% else %>
       <%= render "shared/empty_state",
         title: "No approved knowledge yet",
-        description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source.",
-        action_label: @can_manage ? "Add approved knowledge" : nil,
-        action_path: @can_manage ? "#add-source-title" : nil %>
+        description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source." %>
     <% end %>
   </section>
 
   <% if @can_manage %>
-    <section class="section-block config-panel" aria-labelledby="add-source-title">
-      <h2 id="add-source-title">Add approved knowledge</h2>
+    <details class="setup-disclosure" <%= "open" if @form_error.present? %>>
+      <summary>Add approved knowledge</summary>
       <p class="section-intro">URL sources fetch bounded public HTTPS text when the text box is blank. Paste reviewed text to store a snapshot without fetching.</p>
       <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
       <%= form_with url: workspace_knowledge_sources_path(Current.workspace), scope: :knowledge_source,
@@ -116,6 +123,6 @@
         </div>
         <%= form.submit "Add knowledge source", class: "button button-primary" %>
       <% end %>
-    </section>
+    </details>
   <% end %>
 </main>

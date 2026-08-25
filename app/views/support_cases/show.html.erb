@@ -333,7 +333,12 @@
               <%= form.submit "Update status", class: "button button-secondary" %>
             <% end %>
           <% end %>
+        <% end %>
+      </section>
 
+      <details class="record-disclosure">
+        <summary>Priority and assignment</summary>
+        <% if @membership.can_write? %>
           <%= form_with url: priority_workspace_support_case_path(@workspace, @support_case), method: :patch, class: "compact-form inline-control" do |form| %>
             <div class="field">
               <%= form.label :priority, "Priority" %>
@@ -352,8 +357,10 @@
             </div>
             <%= form.submit "Save", class: "button button-quiet" %>
           <% end %>
+        <% else %>
+          <p class="muted-copy"><%= @support_case.assigned_membership&.user&.email_address || "Unassigned" %> · <%= @support_case.priority.titleize %></p>
         <% end %>
-      </section>
+      </details>
 
       <details class="record-disclosure">
         <summary>Customer</summary>

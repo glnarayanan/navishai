@@ -6,6 +6,15 @@
     <p>Send signed, content-free work alerts to a public HTTPS endpoint.</p>
   </div>
 
+  <section class="route-status" aria-label="Webhook delivery status">
+    <dl>
+      <div><dt>Endpoints</dt><dd><%= @endpoints.size %></dd></div>
+      <div><dt>Delivered</dt><dd><%= @delivery_counts.select { |(_, status), _| status == "delivered" }.values.sum %></dd></div>
+      <div><dt>Failed</dt><dd><%= @delivery_counts.select { |(_, status), _| status == "failed" }.values.sum %></dd></div>
+      <div><dt>Payload</dt><dd>Signed, content-free alerts</dd></div>
+    </dl>
+  </section>
+
   <div class="integration-layout">
     <section class="config-panel" aria-labelledby="configured-webhooks-title">
       <h2 id="configured-webhooks-title">Configured endpoints</h2>
@@ -31,16 +40,13 @@
       <% else %>
         <%= render "shared/empty_state",
           title: "No webhook endpoints",
-          description: "Add one to send signed operational alerts.",
-          action_label: "Add endpoint",
-          action_path: "#new-webhook-title" %>
+          description: "Add one to send signed operational alerts." %>
       <% end %>
     </section>
 
-    <section class="config-panel" aria-labelledby="new-webhook-title">
-      <div class="section-heading">
-        <div><h2 id="new-webhook-title">Add endpoint</h2><p>The signing secret stays in deployment credentials, never in this form.</p></div>
-      </div>
+    <details class="setup-disclosure" <%= "open" if @new_endpoint.errors.any? %>>
+      <summary>Add endpoint</summary>
+      <p class="muted-copy">The signing secret stays in deployment credentials, never in this form.</p>
       <%= render "shared/form_errors", record: @new_endpoint %>
       <%= form_with model: @new_endpoint, url: workspace_outbound_webhook_endpoints_path(Current.workspace), class: "webhook-form" do |form| %>
         <div class="field"><%= form.label :name %><%= form.text_field :name, required: true, maxlength: 100 %></div>
@@ -53,6 +59,6 @@
         </fieldset>
         <%= form.submit "Add endpoint", class: "button button-primary" %>
       <% end %>
-    </section>
+    </details>
   </div>
 </main>

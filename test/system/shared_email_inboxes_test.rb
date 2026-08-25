@@ -7,6 +7,7 @@ class SharedEmailInboxesTest < ApplicationSystemTestCase
     click_on "Email"
 
     assert_text "Shared email inboxes"
+    reveal_setup "Add an inbox"
     fill_in "Inbox name", with: "Support"
     fill_in "Email address", with: "support@example.com"
     fill_in "Credential key", with: "support"
@@ -20,6 +21,7 @@ class SharedEmailInboxesTest < ApplicationSystemTestCase
     assert_text "Paused"
 
     page.current_window.resize_to(320, 844)
+    reveal_setup "Add an inbox"
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_selector "input, button", minimum: 4
     page.all("input, button").first(4).each do |control|

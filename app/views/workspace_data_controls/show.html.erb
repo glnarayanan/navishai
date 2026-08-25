@@ -26,7 +26,8 @@
       class: "button button-secondary" %>
   </section>
 
-  <section class="section-block data-policy-form-section" aria-labelledby="workspace-import-title">
+  <details class="data-task" <%= "open" if @import_error.present? %>>
+    <summary>Workspace import</summary>
     <div>
       <h2 id="workspace-import-title">Workspace import</h2>
       <p>Restore an export as a new Workspace in this Organization. Referenced users must already have verified local accounts. NavishAI gives the new Workspace fresh endpoint and ledger IDs and rebuilds its external Memory index.</p>
@@ -50,7 +51,7 @@
       <%= form.submit "Import as new Workspace", class: "button button-secondary",
         data: { turbo_confirm: "Import this archive as a new Workspace?" } %>
     <% end %>
-  </section>
+  </details>
 
   <section class="section-block data-policy-form-section" aria-labelledby="retention-policy-title">
     <div>
@@ -139,7 +140,8 @@
     <% end %>
   </section>
 
-  <section class="section-block data-policy-form-section danger-zone" aria-labelledby="workspace-deletion-title">
+  <details class="data-task danger-zone">
+    <summary>Delete Workspace</summary>
     <div>
       <h2 id="workspace-deletion-title">Delete Workspace</h2>
       <p>Deletion blocks access at once, removes attachment objects and external Memory entries, then erases this Workspace from PostgreSQL. A small immutable tombstone keeps the tenant, actor, time, and record counts. Export first. This cannot be undone.</p>
@@ -152,5 +154,5 @@
       <%= form.submit "Delete Workspace", class: "button button-danger",
         data: { turbo_confirm: "Delete #{Current.workspace.name}? Access will stop now and the data cannot be recovered." } %>
     <% end %>
-  </section>
+  </details>
 </main>

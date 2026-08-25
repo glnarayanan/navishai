@@ -10,10 +10,12 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Data controls"
     assert_text "No content expiry runs yet."
     assert_link "Download workspace export"
+    reveal_setup "Workspace import"
     assert_selector "h2", text: "Workspace import"
     assert_field "New Workspace name"
     assert_field "New Workspace slug"
     assert_field "Compressed Workspace archive"
+    reveal_setup "Delete Workspace"
     assert_selector "h2", text: "Delete Workspace"
     assert_field "Type support to confirm"
 

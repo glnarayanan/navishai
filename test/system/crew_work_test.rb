@@ -13,6 +13,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       click_on "Open"
     end
     assert_text "Crew work"
+    reveal_setup "Add a task"
     fill_in "Task title", with: "Investigate sign-in failure"
     fill_in "Input and scope", with: "Use the current case conversation and approved knowledge sources. Do not infer account facts."
     fill_in "Expected output", with: "Find the cause, cite the case record, and state every material uncertainty."

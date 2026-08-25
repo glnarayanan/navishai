@@ -32,12 +32,14 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     assert_text "Case status updated."
     assert_text "Triaged"
 
+    find("summary", text: "Priority and assignment").click
     select "High", from: "Priority"
     within find("form[action$='/priority']") do
       click_button "Save"
     end
     assert_text "Priority updated."
 
+    find("summary", text: "Priority and assignment").click
     select users(:owner).email_address, from: "Assignee"
     within find("form[action$='/assignment']") do
       click_button "Save"

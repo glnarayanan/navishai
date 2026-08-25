@@ -6,6 +6,15 @@
     <p>Mirror customer records and support work while Intercom stays the source for its conversations, notes, assignment, and tags.</p>
   </div>
 
+  <section class="route-status" aria-label="Intercom connection status">
+    <dl>
+      <div><dt>Connections</dt><dd><%= @connections.size %></dd></div>
+      <div><dt>Active</dt><dd><%= @connections.count { |connection| connection.active? && connection.ready? } %></dd></div>
+      <div><dt>Events to retry</dt><dd><%= @retry_counts.values.sum %></dd></div>
+      <div><dt>Last checked</dt><dd><%= @connections.filter_map(&:last_reconciled_at).max&.then { |at| "#{time_ago_in_words(at)} ago" } || "Not reconciled yet" %></dd></div>
+    </dl>
+  </section>
+
   <div class="integration-layout">
     <section class="config-panel" aria-labelledby="configured-intercom-title">
       <h2 id="configured-intercom-title">Configured connections</h2>
@@ -59,14 +68,12 @@
       <% else %>
         <%= render "shared/empty_state",
           title: "No Intercom connection",
-          description: "Add an Intercom app to begin signed webhook intake and reconciliation.",
-          action_label: "Add a connection",
-          action_path: "#add-intercom-title" %>
+          description: "Add an Intercom app to begin signed webhook intake and reconciliation." %>
       <% end %>
     </section>
 
-    <section class="config-panel" aria-labelledby="add-intercom-title">
-      <h2 id="add-intercom-title">Add a connection</h2>
+    <details class="setup-disclosure" <%= "open" if @connection.errors.any? %>>
+      <summary>Add a connection</summary>
       <%= render "shared/form_errors", record: @connection %>
       <%= form_with model: [ Current.workspace, @connection ], class: "inbox-form" do |form| %>
         <div class="field">
@@ -84,6 +91,6 @@
         </div>
         <%= form.submit "Add connection", class: "button button-primary" %>
       <% end %>
-    </section>
+    </details>
   </div>
 </main>

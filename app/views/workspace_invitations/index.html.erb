@@ -7,6 +7,14 @@
     <p>Invite people to <strong><%= Current.workspace.name %></strong> and set their starting role.</p>
   </div>
 
+  <section class="route-status" aria-label="Invitation permissions">
+    <dl>
+      <div><dt>Invitations</dt><dd><%= @invitations.size %></dd></div>
+      <div><dt>Pending</dt><dd><%= @invitations.count(&:pending?) %></dd></div>
+      <div><dt>Roles you can grant</dt><dd><%= @available_roles.map { |role| role_label(role) }.to_sentence %></dd></div>
+    </dl>
+  </section>
+
   <div class="integration-layout">
     <section class="config-panel" aria-labelledby="history-title">
       <h2 id="history-title">Invitation history</h2>
@@ -33,14 +41,12 @@
       <% else %>
         <%= render "shared/empty_state",
           title: "No invitations yet",
-          description: "Send an invitation to add the first teammate to this workspace.",
-          action_label: "Send an invitation",
-          action_path: "#invite-title" %>
+          description: "Send an invitation to add the first teammate to this workspace." %>
       <% end %>
     </section>
 
-    <section class="config-panel" aria-labelledby="invite-title">
-      <h2 id="invite-title">Send an invitation</h2>
+    <details class="setup-disclosure" <%= "open" if @invitation.errors.any? %>>
+      <summary>Send an invitation</summary>
       <%= render "shared/form_errors", record: @invitation %>
       <%= form_with model: [ Current.workspace, @invitation ], class: "invite-form" do |form| %>
         <div class="field">
@@ -53,6 +59,6 @@
         </div>
         <%= form.submit "Send invitation", class: "button button-primary" %>
       <% end %>
-    </section>
+    </details>
   </div>
 </main>
