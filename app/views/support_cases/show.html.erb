@@ -274,7 +274,7 @@
 
     <aside class="case-context decision-rail" aria-label="Case context">
       <% unless @membership.can_write? %>
-        <%= render "shared/notice", kind: "info", title: "Read-only access",
+        <%= render "shared/notice", kind: "info", css: "read-only-notice", title: "Read-only access",
           body: "You can review case work but cannot change it." %>
       <% end %>
       <div class="decision-next">
