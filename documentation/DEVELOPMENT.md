@@ -139,6 +139,8 @@ Each snapshot stores its score, risk band, renewal date, trigger, prior snapshot
 
 The Account health scorecard designer maps a human goal to selected retained signals, bounded weights, and two health-band thresholds. Each proposal is an immutable version with a plain rule explanation. Writers may preview and backtest a version against up to 500 retained assessments. Owners and Admins may publish a tested version or roll future scoring back to an earlier tested version. Publishing never rewrites prior assessments; each new assessment records the exact version it used.
 
+NavishAI creates in-app and email alerts for assignments, work that needs review, SLA thresholds, delivery and integration failures, blocked Crew work, and completed Crew work. Alert emails contain only the alert kind, workspace name, time, and a sign-in link; customer content stays inside NavishAI. Configure Action Mailer for the deployment as you would for verification, reset, and invitation mail.
+
 The Crew task page polls its workspace-scoped run record while an attempt is active. Case tasks use the Support Crew; Account tasks use the Customer Success Crew. A writer can retry an unconfirmed admission with its original idempotency key or start a later attempt after a terminal result. The page keeps blocked, degraded, failed, canceled, and completed states distinct and exposes safe run IDs, event sequence, policy version, usage, and failure codes for operator checks. An active run blocks task cancellation until the runner records a terminal event.
 
 ## Checks

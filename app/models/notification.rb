@@ -16,6 +16,8 @@ class Notification < ApplicationRecord
   scope :newest_first, -> { order(occurred_at: :desc, id: :desc) }
   scope :unread, -> { where(read_at: nil) }
 
+  after_create_commit -> { NotificationMailer.alert(self).deliver_later }
+
   private
     def read_time_follows_event
       errors.add(:read_at, "cannot predate the event") if read_at && occurred_at && read_at < occurred_at
