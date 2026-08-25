@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+secret='0123456789abcdef0123456789abcdef01234567'
+address='http://127.0.0.1:18081'
+state_path="tmp/runner-contract-$$.json"
+log_path="tmp/runner-contract-$$.log"
+
+cleanup() {
+  if [ -n "${runner_pid:-}" ]; then
+    kill "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+  fi
+  rm -f "$state_path" "$log_path"
+}
+trap cleanup EXIT INT TERM
+
+go build -o tmp/navishai-runner ./runner/cmd/navishai-runner
+NAVISHAI_RUNNER_BIND_ADDRESS=127.0.0.1:18081 \
+NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
+NAVISHAI_RUNNER_STATE_PATH="$state_path" \
+  tmp/navishai-runner >"$log_path" 2>&1 &
+runner_pid=$!
+
+attempt=0
+until NAVISHAI_RUNNER_ADDRESS="$address" NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
+  bin/rails runner 'abort unless RunnerClient.new.ready?' >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 50 ] || ! kill -0 "$runner_pid" 2>/dev/null; then
+    cat "$log_path" >&2
+    exit 1
+  fi
+  sleep 0.1
+done
+
+NAVISHAI_RUNNER_ADDRESS="$address" NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
+  bin/rails runner script/verify_runner_contract.rb

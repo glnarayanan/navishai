@@ -535,6 +535,22 @@ $$;
 
 
 --
+-- Name: protect_workspace_runner_key(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_workspace_runner_key() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.runner_key IS DISTINCT FROM NEW.runner_key THEN
+    RAISE EXCEPTION 'workspace runner key is durable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: require_current_agent_profile_version(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1358,13 +1374,13 @@ CREATE TABLE public.crew_task_events (
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT crew_task_events_actor CHECK ((((actor_membership_id IS NULL) AND (actor_user_id IS NULL)) OR ((actor_membership_id IS NOT NULL) AND (actor_user_id IS NOT NULL)))),
     CONSTRAINT crew_task_events_body CHECK (((body IS NULL) OR ((octet_length(body) >= 1) AND (octet_length(body) <= 20000)))),
-    CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY ((ARRAY['conversation'::character varying, 'case'::character varying, 'account'::character varying, 'knowledge'::character varying, 'public_web'::character varying, 'other'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY (ARRAY[('conversation'::character varying)::text, ('case'::character varying)::text, ('account'::character varying)::text, ('knowledge'::character varying)::text, ('public_web'::character varying)::text, ('other'::character varying)::text])))),
     CONSTRAINT crew_task_events_evidence_locator CHECK (((evidence_locator IS NULL) OR ((octet_length((evidence_locator)::text) >= 1) AND (octet_length((evidence_locator)::text) <= 2000)))),
-    CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY ((ARRAY['created'::character varying, 'status_changed'::character varying, 'handoff'::character varying, 'comment'::character varying, 'evidence_added'::character varying, 'review_requested'::character varying, 'review_resolved'::character varying, 'outcome_recorded'::character varying])::text[]))),
-    CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))),
-    CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY (ARRAY[('created'::character varying)::text, ('status_changed'::character varying)::text, ('handoff'::character varying)::text, ('comment'::character varying)::text, ('evidence_added'::character varying)::text, ('review_requested'::character varying)::text, ('review_resolved'::character varying)::text, ('outcome_recorded'::character varying)::text]))),
+    CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY (ARRAY[('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))),
+    CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
     CONSTRAINT crew_task_events_sequence CHECK ((sequence_number > 0)),
-    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'task'::character varying, 'runner'::character varying, 'system'::character varying])::text[])))
+    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('system'::character varying)::text])))
 );
 
 
@@ -1410,9 +1426,9 @@ CREATE TABLE public.crew_tasks (
     current_event_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT crew_tasks_content CHECK ((((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
+    CONSTRAINT crew_tasks_content CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
     CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
-    CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'in_progress'::character varying, 'blocked'::character varying, 'review_requested'::character varying, 'completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))
+    CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('in_progress'::character varying)::text, ('blocked'::character varying)::text, ('review_requested'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))
 );
 
 
@@ -2570,7 +2586,8 @@ CREATE TABLE public.workspaces (
     name character varying NOT NULL,
     slug character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    runner_key uuid DEFAULT gen_random_uuid() NOT NULL
 );
 
 
@@ -4436,6 +4453,13 @@ CREATE UNIQUE INDEX index_workspaces_on_organization_id_and_slug ON public.works
 
 
 --
+-- Name: index_workspaces_on_runner_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_workspaces_on_runner_key ON public.workspaces USING btree (runner_key);
+
+
+--
 -- Name: active_storage_attachments active_storage_attachments_no_stored_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4818,6 +4842,13 @@ CREATE TRIGGER support_case_status_changes_append_only BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER support_case_status_changes_no_truncate BEFORE TRUNCATE ON public.support_case_status_changes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: workspaces workspaces_protect_runner_key; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER workspaces_protect_runner_key BEFORE UPDATE ON public.workspaces FOR EACH ROW EXECUTE FUNCTION public.protect_workspace_runner_key();
 
 
 --
@@ -5939,6 +5970,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040010'),
 ('20260824040009'),
 ('20260824040008'),
 ('20260824040007'),

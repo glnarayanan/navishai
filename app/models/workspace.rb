@@ -1,4 +1,6 @@
 class Workspace < ApplicationRecord
+  attribute :runner_key, default: -> { SecureRandom.uuid }
+
   belongs_to :organization
 
   has_many :memberships, dependent: :restrict_with_exception
@@ -47,6 +49,7 @@ class Workspace < ApplicationRecord
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
 
   validates :name, presence: true, length: { maximum: 100 }
+  validates :runner_key, presence: true, uniqueness: true
   validates :slug,
     presence: true,
     length: { maximum: 63 },
