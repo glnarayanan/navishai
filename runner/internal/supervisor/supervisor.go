@@ -106,6 +106,14 @@ type resolvedEgressProfile struct {
 	environment      []string
 }
 
+type preparedRequest struct {
+	commandPath string
+	arguments   []string
+	workingDir  string
+	environment []string
+	extraFiles  []*os.File
+}
+
 func New(config Config) (*Supervisor, error) {
 	helper, err := approvedExecutable(config.HelperPath)
 	if err != nil || config.Limits.WallTime <= 0 || config.Limits.CPUSeconds < 1 ||
@@ -275,23 +283,143 @@ func approvedExecutable(path string) (string, error) {
 }
 
 func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result, error) {
+	prepared, err := supervisor.prepare(request)
+	if err != nil {
+		return Result{}, err
+	}
+	runContext, cancel := context.WithTimeout(ctx, supervisor.limits.WallTime)
+	defer cancel()
+	command := exec.Command(prepared.commandPath, prepared.arguments...)
+	command.Dir = prepared.workingDir
+	command.Env = prepared.environment
+	command.ExtraFiles = prepared.extraFiles
+	command.Stdin = bytes.NewReader(request.Input)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	output := newBoundedOutput(supervisor.limits.OutputBytes)
+	output.onOverflow = func() {
+		if command.Process != nil {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		}
+	}
+	command.Stdout = output
+	command.Stderr = output.stderr()
+	if err := command.Start(); err != nil {
+		return Result{}, fmt.Errorf("start supervised process: %w", err)
+	}
+	waitErr, timedOut, canceled := supervisor.wait(ctx, runContext, command)
+	result := processResult(command, output, timedOut, canceled)
+	if result.OutputExceeded {
+		return result, ErrOutputLimit
+	}
+	if waitErr != nil && !timedOut && !canceled {
+		var exitError *exec.ExitError
+		if !errors.As(waitErr, &exitError) {
+			return result, waitErr
+		}
+	}
+	return result, nil
+}
+
+func (supervisor *Supervisor) Interact(ctx context.Context, request Request, interact func(context.Context, io.ReadWriter) error) (Result, error) {
+	if interact == nil || len(request.Input) != 0 {
+		return Result{}, ErrInvalidRequest
+	}
+	prepared, err := supervisor.prepare(request)
+	if err != nil {
+		return Result{}, err
+	}
+	runContext, cancel := context.WithTimeout(ctx, supervisor.limits.WallTime)
+	defer cancel()
+	command := exec.Command(prepared.commandPath, prepared.arguments...)
+	command.Dir = prepared.workingDir
+	command.Env = prepared.environment
+	command.ExtraFiles = prepared.extraFiles
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		return Result{}, err
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return Result{}, err
+	}
+	output := newBoundedOutput(supervisor.limits.OutputBytes)
+	command.Stderr = output.stderr()
+	exchange := &boundedExchange{reader: stdout, writer: stdin, output: output, inputRemaining: maxInputBytes}
+	output.onOverflow = func() {
+		if command.Process != nil {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		}
+	}
+	if err := command.Start(); err != nil {
+		return Result{}, fmt.Errorf("start supervised process: %w", err)
+	}
+	interactionDone := make(chan error, 1)
+	go func() { interactionDone <- interact(runContext, exchange) }()
+	waited := make(chan error, 1)
+	go func() { waited <- command.Wait() }()
+	var interactionErr, waitErr error
+	timedOut, canceled := false, false
+	select {
+	case interactionErr = <-interactionDone:
+		_ = stdin.Close()
+		if interactionErr != nil {
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
+		}
+		select {
+		case waitErr = <-waited:
+		case <-runContext.Done():
+			timedOut = errors.Is(runContext.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+			canceled = !timedOut
+			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+			waitErr = <-waited
+		}
+	case waitErr = <-waited:
+		_ = stdin.Close()
+		interactionErr = <-interactionDone
+	case <-runContext.Done():
+		timedOut = errors.Is(runContext.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+		canceled = !timedOut
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		waitErr = <-waited
+		_ = stdin.Close()
+		interactionErr = <-interactionDone
+	}
+	_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+	result := processResult(command, output, timedOut, canceled)
+	if result.OutputExceeded {
+		return result, ErrOutputLimit
+	}
+	if interactionErr != nil && !timedOut && !canceled {
+		return result, interactionErr
+	}
+	if waitErr != nil && !timedOut && !canceled {
+		var exitError *exec.ExitError
+		if !errors.As(waitErr, &exitError) {
+			return result, waitErr
+		}
+	}
+	return result, nil
+}
+
+func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) {
 	executable, err := approvedFile(request.Executable, supervisor.executableRoots)
 	if err != nil || !supervisor.approvedExecutables[executable] {
-		return Result{}, ErrInvalidRequest
+		return preparedRequest{}, ErrInvalidRequest
 	}
 	workingDir, err := approvedDirectory(request.WorkingDir, supervisor.workingRoots)
 	if err != nil || len(request.Arguments) > maxArguments || len(request.Input) > maxInputBytes || len(request.Credentials) > maxCredentialKeys {
-		return Result{}, ErrInvalidRequest
+		return preparedRequest{}, ErrInvalidRequest
 	}
 	argumentBytes := 0
 	for _, argument := range request.Arguments {
 		if strings.ContainsRune(argument, 0) {
-			return Result{}, ErrInvalidRequest
+			return preparedRequest{}, ErrInvalidRequest
 		}
 		argumentBytes += len(argument)
 	}
 	if argumentBytes > maxArgumentBytes {
-		return Result{}, ErrInvalidRequest
+		return preparedRequest{}, ErrInvalidRequest
 	}
 	environment := []string{
 		"HOME=" + workingDir, "LANG=C.UTF-8",
@@ -308,7 +436,7 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 	} else {
 		profile, ok := supervisor.egressProfiles[request.EgressProfileKey]
 		if !ok || profile.executable != executable {
-			return Result{}, ErrInvalidRequest
+			return preparedRequest{}, ErrInvalidRequest
 		}
 		commandPath = supervisor.namespaceLauncher
 		commandArguments = append([]string{supervisor.helperPath, executable}, request.Arguments...)
@@ -318,40 +446,25 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 	}
 	readRoots, err := json.Marshal(append(supervisor.runtimeReadRoots, supervisor.executableRoots...))
 	if err != nil {
-		return Result{}, ErrInvalidRequest
+		return preparedRequest{}, ErrInvalidRequest
 	}
 	writeRoots, err := json.Marshal([]string{workingDir})
 	if err != nil {
-		return Result{}, ErrInvalidRequest
+		return preparedRequest{}, ErrInvalidRequest
 	}
 	environment = append(environment, "NAVISHAI_EXEC_READ_ROOTS="+string(readRoots), "NAVISHAI_EXEC_WRITE_ROOTS="+string(writeRoots))
 	for key, value := range request.Credentials {
 		if !credentialPattern.MatchString(key) || strings.HasPrefix(key, "NAVISHAI_") || allowedEgressEnvironment[key] ||
 			key == "HOME" || key == "LANG" || len(value) > 16*1024 || strings.ContainsRune(value, 0) {
-			return Result{}, ErrInvalidRequest
+			return preparedRequest{}, ErrInvalidRequest
 		}
 		environment = append(environment, key+"="+value)
 	}
 
-	runContext, cancel := context.WithTimeout(ctx, supervisor.limits.WallTime)
-	defer cancel()
-	command := exec.Command(commandPath, commandArguments...)
-	command.Dir = workingDir
-	command.Env = environment
-	command.ExtraFiles = extraFiles
-	command.Stdin = bytes.NewReader(request.Input)
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-	output := newBoundedOutput(supervisor.limits.OutputBytes)
-	output.onOverflow = func() {
-		if command.Process != nil {
-			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		}
-	}
-	command.Stdout = output
-	command.Stderr = output.stderr()
-	if err := command.Start(); err != nil {
-		return Result{}, fmt.Errorf("start supervised process: %w", err)
-	}
+	return preparedRequest{commandPath: commandPath, arguments: commandArguments, workingDir: workingDir, environment: environment, extraFiles: extraFiles}, nil
+}
+
+func (supervisor *Supervisor) wait(ctx, runContext context.Context, command *exec.Cmd) (error, bool, bool) {
 	waited := make(chan error, 1)
 	go func() { waited <- command.Wait() }()
 	var waitErr error
@@ -376,22 +489,15 @@ func (supervisor *Supervisor) Run(ctx context.Context, request Request) (Result,
 	// The approved process may exit after starting descendants. Clear the whole
 	// process group before returning so no run can outlive its durable attempt.
 	_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+	return waitErr, timedOut, canceled
+}
 
-	result := Result{
+func processResult(command *exec.Cmd, output *boundedOutput, timedOut, canceled bool) Result {
+	return Result{
 		ExitCode: command.ProcessState.ExitCode(), StandardOutput: output.stdoutString(),
 		StandardError: output.stderrString(), TimedOut: timedOut, Canceled: canceled,
 		OutputExceeded: output.exceeded(),
 	}
-	if result.OutputExceeded {
-		return result, ErrOutputLimit
-	}
-	if waitErr != nil && !timedOut && !canceled {
-		var exitError *exec.ExitError
-		if !errors.As(waitErr, &exitError) {
-			return result, waitErr
-		}
-	}
-	return result, nil
 }
 
 func realRoots(values []string) ([]string, error) {
@@ -511,4 +617,34 @@ type boundedOutputStream struct {
 
 func (stream *boundedOutputStream) Write(data []byte) (int, error) {
 	return stream.output.write(data, stream.stderr)
+}
+
+type boundedExchange struct {
+	reader         io.Reader
+	writer         io.Writer
+	output         *boundedOutput
+	inputMu        sync.Mutex
+	inputRemaining int
+}
+
+func (exchange *boundedExchange) Read(data []byte) (int, error) {
+	count, err := exchange.reader.Read(data)
+	if count > 0 {
+		kept, limitErr := exchange.output.Write(data[:count])
+		if limitErr != nil {
+			return kept, limitErr
+		}
+	}
+	return count, err
+}
+
+func (exchange *boundedExchange) Write(data []byte) (int, error) {
+	exchange.inputMu.Lock()
+	defer exchange.inputMu.Unlock()
+	if len(data) > exchange.inputRemaining {
+		return 0, ErrInvalidRequest
+	}
+	written, err := exchange.writer.Write(data)
+	exchange.inputRemaining -= written
+	return written, err
 }
