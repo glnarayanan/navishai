@@ -102,9 +102,11 @@ body.is-app {
 
 .sidebar-nav {
   display: grid;
-  gap: 1.15rem;
+  gap: 1rem;
   padding: 0.85rem 0.65rem 1rem;
   overflow: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar-group {

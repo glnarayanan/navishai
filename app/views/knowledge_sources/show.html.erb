@@ -12,10 +12,10 @@
   </div>
 
   <% if @source.deleted? %>
-    <%= render "shared/notice", kind: "blocked", title: "Deleted from current use",
+    <%= render "shared/notice", kind: "blocked", css: "knowledge-warning", title: "Deleted from current use",
       body: "This source no longer appears in search. Its versions and citation links remain for prior evidence." %>
   <% elsif @source.stale? %>
-    <%= render "shared/notice", kind: "warning", title: "Current version is stale",
+    <%= render "shared/notice", kind: "warning", css: "knowledge-warning", title: "Current version is stale",
       body: "Add a checked version before relying on this source for new work." %>
   <% end %>
 

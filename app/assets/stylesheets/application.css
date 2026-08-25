@@ -628,14 +628,16 @@ textarea {
 
 .inbox-form {
   display: grid;
-  grid-template-columns: minmax(10rem, 0.7fr) minmax(14rem, 1fr) minmax(14rem, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 1rem;
   margin-top: 1.25rem;
 }
 
 .inbox-form .button {
-  margin-top: 1.75rem;
+  margin-top: 0.25rem;
+  width: auto;
+  justify-self: start;
 }
 
 .endpoint {
@@ -3960,7 +3962,7 @@ td {
 }
 
 .webhook-page { max-width: 64rem; }
-.webhook-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.webhook-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .webhook-form .field { min-width: 0; }
 .webhook-form .field-hint { overflow-wrap: anywhere; }
 .webhook-form .webhook-categories,
@@ -3977,7 +3979,7 @@ td {
 .webhook-endpoint dl { display: flex; gap: 1rem; margin: 0; }
 .webhook-endpoint dl div { display: grid; text-align: center; }
 .webhook-endpoint dt { color: var(--muted); font-size: 0.75rem; }
-.webhook-endpoint dd { margin: 0; font-weight: 800; }
+.webhook-endpoint dd { margin: 0; font-weight: var(--weight-semibold); }
 
 @media (max-width: 48rem) {
   .webhook-form { grid-template-columns: 1fr; }
