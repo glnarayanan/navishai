@@ -6,9 +6,9 @@ export default class extends Controller {
 
   connect() {
     this.index = 0
+    this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    if (!this.reduced) this.start()
     this.show(0)
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    this.start()
   }
 
   disconnect() {
@@ -28,7 +28,7 @@ export default class extends Controller {
   select(event) {
     const index = Number(event.currentTarget.dataset.featureIndex)
     this.show(index)
-    this.start()
+    if (!this.reduced) this.start()
   }
 
   keyselect(event) {
@@ -47,17 +47,21 @@ export default class extends Controller {
       const selected = i === index
       item.classList.toggle("is-active", selected)
       item.setAttribute("aria-selected", selected ? "true" : "false")
+      item.tabIndex = selected ? 0 : -1
     })
     this.panelTargets.forEach((panel, i) => {
       panel.hidden = i !== index
     })
     this.lineTargets.forEach((line, i) => {
+      const selected = i === index
       line.style.animation = "none"
       line.offsetHeight
-      line.style.animation = i === index && this.timer
-        ? `feature-line ${this.intervalValue}ms linear`
-        : "none"
-      line.style.transform = i === index ? "scaleX(1)" : "scaleX(0)"
+      if (selected && this.timer) {
+        line.style.transform = "scaleX(0)"
+        line.style.animation = `feature-line ${this.intervalValue}ms linear forwards`
+      } else {
+        line.style.transform = selected ? "scaleX(1)" : "scaleX(0)"
+      }
     })
   }
 }

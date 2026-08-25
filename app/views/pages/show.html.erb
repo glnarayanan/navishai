@@ -162,6 +162,7 @@
         <% features.each_with_index do |(title, body), index| %>
           <li>
             <button type="button" class="feature-item<%= " is-active" if index.zero? %>" role="tab"
+              id="workflow-tab-<%= index %>" aria-controls="workflow-panel-<%= index %>"
               aria-selected="<%= index.zero? %>" data-feature-cycle-target="item" data-feature-index="<%= index %>"
               data-action="feature-cycle#select keydown->feature-cycle#keyselect">
               <h3><%= title %></h3>
@@ -171,12 +172,39 @@
           </li>
         <% end %>
       </ul>
-      <div>
+      <div class="feature-stage">
         <% features.each_with_index do |(title, body), index| %>
-          <article class="feature-panel" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
-            <span class="feature-kicker">Step <%= index + 1 %></span>
-            <h3><%= title %></h3>
-            <p><%= body %></p>
+          <article class="feature-panel" id="workflow-panel-<%= index %>" role="tabpanel"
+            aria-labelledby="workflow-tab-<%= index %>" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
+            <div class="feature-visual feature-visual-<%= index %>" aria-hidden="true">
+              <% if index.zero? %>
+                <span class="feature-chip">Shared email</span>
+                <span class="feature-chip">Intercom</span>
+                <div class="feature-inbox-row is-new"><strong>New case</strong><small>Invoice webhook retry</small></div>
+                <div class="feature-inbox-row"><strong>Account linked</strong><small>Acme · Maya Chen</small></div>
+              <% elsif index == 1 %>
+                <div class="feature-evidence-card"><strong>Knowledge</strong><small>Rotation runbook · current</small></div>
+                <div class="feature-evidence-card"><strong>Memory</strong><small>Prior 401 after secret change</small></div>
+                <div class="feature-evidence-card is-web"><strong>Public web</strong><small>Cited, untrusted until reviewed</small></div>
+              <% elsif index == 2 %>
+                <ul class="feature-review-list">
+                  <li class="is-ok">Evidence cited beside the draft</li>
+                  <li class="is-warn">Stale article flagged for review</li>
+                  <li class="is-ok">Send still requires a human</li>
+                </ul>
+              <% else %>
+                <div class="feature-send-card">
+                  <strong>Ready to send as you</strong>
+                  <span>The ledger will record the human, channel, and time. No agent can press this.</span>
+                  <span class="button button-primary">Send email</span>
+                </div>
+              <% end %>
+            </div>
+            <div class="feature-copy">
+              <span class="feature-kicker">Step <%= index + 1 %></span>
+              <h3><%= title %></h3>
+              <p><%= body %></p>
+            </div>
           </article>
         <% end %>
       </div>

@@ -3,6 +3,7 @@
   flex-direction: column;
   align-items: stretch;
   width: 100%;
+  overflow-x: clip;
   border-top: 1px solid var(--border);
 }
 
@@ -517,13 +518,16 @@
 .feature-cycle {
   display: grid;
   grid-template-columns: minmax(16rem, 0.9fr) minmax(20rem, 1.1fr);
+  align-items: stretch;
   gap: 1.5rem;
   width: min(100% - 3rem, 64rem);
+  min-height: 28rem;
   margin: 0 auto 4rem;
 }
 
 .feature-list {
   display: grid;
+  align-content: start;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -532,10 +536,12 @@
 .feature-item {
   display: grid;
   gap: 0.35rem;
-  padding: 1rem 0.25rem 1.15rem;
+  width: 100%;
+  min-height: 2.85rem;
+  padding: 0.85rem 0.25rem 0.95rem;
   border: 0;
   border-bottom: 1px solid var(--border);
-  color: inherit;
+  color: color-mix(in oklch, var(--foreground) 55%, transparent);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -543,13 +549,25 @@
 
 .feature-item h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .feature-item p {
+  display: none;
   max-width: none;
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.feature-item.is-active {
+  color: var(--foreground);
+}
+
+.feature-item.is-active p {
+  display: block;
 }
 
 .feature-item .feature-line {
@@ -560,22 +578,103 @@
   background: var(--secondary);
 }
 
-.feature-item.is-active {
-  color: var(--foreground);
+.feature-stage {
+  min-width: 0;
 }
 
 .feature-panel {
   display: grid;
-  align-content: start;
-  gap: 0.85rem;
-  min-height: 18rem;
-  padding: 1.5rem;
+  grid-template-rows: minmax(14rem, 1fr) auto;
+  overflow: hidden;
+  min-height: 100%;
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.feature-visual {
+  display: grid;
+  align-content: center;
+  gap: 0.65rem;
+  min-height: 16rem;
+  padding: 1.5rem;
+  background:
+    radial-gradient(120% 80% at 80% 0%, color-mix(in oklch, var(--secondary) 16%, transparent), transparent 55%),
+    var(--muted-surface);
+}
+
+.feature-chip,
+.feature-inbox-row,
+.feature-evidence-card,
+.feature-send-card {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+}
+
+.feature-chip {
+  width: fit-content;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.feature-inbox-row,
+.feature-evidence-card {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.875rem;
+}
+
+.feature-inbox-row.is-new,
+.feature-evidence-card.is-web {
+  box-shadow: inset 3px 0 var(--secondary);
+}
+
+.feature-inbox-row small,
+.feature-evidence-card small {
+  color: var(--muted-foreground);
+}
+
+.feature-review-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature-review-list li {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--card);
+  font-size: 0.875rem;
+}
+
+.feature-review-list .is-ok { box-shadow: inset 3px 0 var(--success); }
+.feature-review-list .is-warn { box-shadow: inset 3px 0 var(--warning); }
+
+.feature-send-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.1rem;
+}
+
+.feature-send-card .button {
+  width: fit-content;
+}
+
+.feature-copy {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.2rem 1.4rem 1.4rem;
 }
 
 .feature-panel h3 { margin: 0; }
+.feature-copy p { max-width: none; margin: 0; }
 .feature-kicker {
   color: var(--secondary);
   font-size: 0.75rem;
@@ -661,16 +760,21 @@
   display: grid;
   min-height: 22rem;
   place-items: center;
-  margin: 0;
+  width: min(100% - 2rem, 76rem);
+  margin: 1.5rem auto 0;
   padding: 3rem 1.5rem 4.5rem;
+  border: 1px solid color-mix(in oklch, var(--secondary) 35%, #111);
+  border-radius: 1rem;
   color: #fff;
   background:
     radial-gradient(120% 80% at 80% 20%, rgba(255, 255, 255, 0.16), transparent 45%),
     linear-gradient(160deg, #0b0d12 0%, #1a2744 48%, #2b7fff 140%);
+  box-shadow: var(--shadow-lg);
 }
 
 .cta-panel h2 {
   max-width: 12ch;
+  color: #fff;
   font-size: clamp(2.2rem, 6vw, 4.5rem);
   font-weight: 550;
   letter-spacing: -0.055em;
@@ -798,4 +902,5 @@
 
   .chart-line { stroke-dashoffset: 0; }
   .feature-item.is-active .feature-line { transform: scaleX(1); }
+  .feature-item.is-active p { display: block; }
 }

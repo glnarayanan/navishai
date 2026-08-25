@@ -18,6 +18,9 @@ class LandingPageTest < ApplicationSystemTestCase
     click_link "See how it works"
     assert_selector "#how-it-works"
 
+    click_button "Review the draft"
+    assert_selector ".feature-panel:not([hidden])", text: /Policy review/
+
     find("summary", text: "Does this replace Intercom on day one?").click
     assert_text "Intercom remains authoritative"
 
