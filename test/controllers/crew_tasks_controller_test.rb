@@ -4,6 +4,7 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
   setup do
     @workspace = workspaces(:acme_support)
     @owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
     CrewConfiguration.install_defaults!(workspace: @workspace)
     @support_case = create_support_case
     @profile = @workspace.agent_profiles.find_by!(role_key: "support_coordinator")

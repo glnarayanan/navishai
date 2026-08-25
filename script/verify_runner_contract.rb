@@ -6,6 +6,11 @@ Version = Data.define(
   :fallback_profile_keys, :timeout_seconds, :max_steps, :max_tool_calls, :review_policy
 )
 Workspace = Data.define(:runner_key)
+Run = Data.define(
+  :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
+  :runtime_selection_reason, :runtime_selection_detail, :disclosed_data_classes,
+  :max_input_units, :max_output_units
+)
 Task = Data.define(
   :workspace, :task_key, :title, :input_context, :expected_output,
   :assigned_agent_profile, :assigned_agent_profile_version
@@ -30,14 +35,19 @@ task = Task.new(
 )
 run_id = "3d07f334-88ef-4fe4-a640-421e3ba79921"
 idempotency_key = "admit:#{run_id}"
+run = Run.new(
+  "a" * 64, "scripted", "workspace_default", "primary",
+  "Selected the primary approved runtime.", %w[approved_knowledge case_content customer_identity],
+  100_000, 20_000
+)
 
-first = client.admit!(task:, run_id:, idempotency_key:, attempt: 1)
-replay = client.admit!(task:, run_id:, idempotency_key:, attempt: 1)
+first = client.admit!(task:, run:, run_id:, idempotency_key:, attempt: 1)
+replay = client.admit!(task:, run:, run_id:, idempotency_key:, attempt: 1)
 abort "runner changed its durable replay" unless first.attributes == replay.attributes
 
 changed = task.with(title: "A changed request")
 begin
-  client.admit!(task: changed, run_id:, idempotency_key:, attempt: 1)
+  client.admit!(task: changed, run:, run_id:, idempotency_key:, attempt: 1)
   abort "runner accepted a changed idempotent request"
 rescue RunnerClient::Conflict
 end

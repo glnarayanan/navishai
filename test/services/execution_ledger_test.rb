@@ -4,6 +4,7 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
   setup do
     @workspace = workspaces(:acme_support)
     @owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
     CrewConfiguration.install_defaults!(workspace: @workspace)
     @support_case = create_support_case
     @message = add_inbound_message(@support_case)
@@ -62,6 +63,13 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_equal 2, second.attempt_number
     assert_equal @task.assigned_agent_profile_version, second.agent_profile_version
     assert_equal @task.assigned_agent_profile_version.runtime_profile_key, second.runtime_profile_key
+    assert_equal runtime_installations(:acme_scripted), second.runtime_installation
+    assert_equal runtime_installations(:acme_scripted).detection_key, second.selected_runtime_detection_key
+    assert_equal "scripted", second.selected_adapter_key
+    assert_equal "primary", second.runtime_selection_reason
+    assert_equal %w[approved_knowledge case_content customer_identity public_web_query], second.disclosed_data_classes
+    assert_equal 100_000, second.max_input_units
+    assert_equal 25_000, second.max_output_units
 
     stale_attempt = event(1, "run.admitted",
       workspace_key: @workspace.runner_key, task_key: @task.task_key, attempt: 1)
@@ -80,6 +88,41 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     end
   end
 
+  test "incompatible routing leaves no partial run" do
+    installation = runtime_installations(:acme_scripted)
+    installation.update!(approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil)
+
+    assert_no_difference -> { @workspace.execution_runs.count } do
+      error = assert_raises(ExecutionLedger::InvalidRun) do
+        @ledger.prepare!(task: @task, request_key: "request:blocked")
+      end
+      assert_includes error.message, "No compatible runtime"
+    end
+  end
+
+  test "usage cannot exceed the frozen runtime budget" do
+    ingest(1, "run.admitted", workspace_key: @workspace.runner_key, task_key: @task.task_key, attempt: 1)
+    ingest(2, "run.started", adapter: "scripted", scenario: "budget", attempt: 1)
+
+    assert_raises(ExecutionLedger::EventConflict) do
+      ingest(3, "usage.observed", input_units: @run.max_input_units + 1, output_units: 0)
+    end
+    assert_equal 2, @run.reload.current_sequence
+    assert_equal 0, @run.input_units
+    assert_equal 2, @run.events.count
+  end
+
+  test "start event must match the frozen adapter" do
+    ingest(1, "run.admitted", workspace_key: @workspace.runner_key, task_key: @task.task_key, attempt: 1)
+
+    assert_raises(ExecutionLedger::EventConflict) do
+      ingest(2, "run.started", adapter: "claude_subscription", scenario: "wrong", attempt: 1)
+    end
+    assert_equal 1, @run.reload.current_sequence
+    assert @run.admitted?
+    assert_equal 1, @run.events.count
+  end
+
   test "admission retries reuse one run and retain ambiguous failure visibility" do
     failure_client = Object.new
     failure_client.define_singleton_method(:admit!) { |**| raise RunnerClient::AmbiguousResult, "unknown" }
@@ -94,7 +137,7 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     expected_task = @task
     expected_run_key = @run.run_key
     success_client = Object.new
-    success_client.define_singleton_method(:admit!) do |task:, run_id:, idempotency_key:, attempt:, input_context:|
+    success_client.define_singleton_method(:admit!) do |task:, run_id:, idempotency_key:, attempt:, input_context:, **|
       unless task == expected_task && run_id == expected_run_key && idempotency_key == "admit:#{expected_run_key}" && attempt == 1
         raise "wrong task"
       end
@@ -124,6 +167,11 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     end
     assert_raises(ActiveRecord::StatementInvalid) do
       ExecutionRun.transaction(requires_new: true) { ExecutionRun.where(id: @run.id).update_all(input_context: "Changed") }
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ExecutionRun.transaction(requires_new: true) do
+        ExecutionRun.where(id: @run.id).update_all(selected_runtime_detection_key: "f" * 64)
+      end
     end
 
     foreign = workspaces(:beta_support)

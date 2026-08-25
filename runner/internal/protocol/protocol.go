@@ -32,12 +32,13 @@ var (
 )
 
 type AdmissionRequest struct {
-	ProtocolVersion string      `json:"protocol_version"`
-	RunID           string      `json:"run_id"`
-	IdempotencyKey  string      `json:"idempotency_key"`
-	WorkspaceKey    string      `json:"workspace_key"`
-	Task            Task        `json:"task"`
-	Agent           AgentPolicy `json:"agent"`
+	ProtocolVersion string         `json:"protocol_version"`
+	RunID           string         `json:"run_id"`
+	IdempotencyKey  string         `json:"idempotency_key"`
+	WorkspaceKey    string         `json:"workspace_key"`
+	Task            Task           `json:"task"`
+	Agent           AgentPolicy    `json:"agent"`
+	Routing         RuntimeRouting `json:"routing"`
 }
 
 type Task struct {
@@ -59,6 +60,17 @@ type AgentPolicy struct {
 	MaxSteps            int      `json:"max_steps"`
 	MaxToolCalls        int      `json:"max_tool_calls"`
 	ReviewPolicy        string   `json:"review_policy"`
+}
+
+type RuntimeRouting struct {
+	DetectionKey    string   `json:"detection_key"`
+	AdapterKey      string   `json:"adapter_key"`
+	ProfileKey      string   `json:"profile_key"`
+	SelectionReason string   `json:"selection_reason"`
+	SelectionDetail string   `json:"selection_detail"`
+	DataClasses     []string `json:"data_classes"`
+	MaxInputUnits   int      `json:"max_input_units"`
+	MaxOutputUnits  int      `json:"max_output_units"`
 }
 
 type AdmissionResponse struct {
@@ -141,7 +153,26 @@ func (request AdmissionRequest) Validate() error {
 		contains(agent.FallbackProfileKeys, agent.RuntimeProfileKey) {
 		return ErrInvalidRequest
 	}
+	routing := request.Routing
+	if len(routing.DetectionKey) != 64 || !isLowerHex(routing.DetectionKey) ||
+		!runtimePattern.MatchString(routing.AdapterKey) || !runtimePattern.MatchString(routing.ProfileKey) ||
+		(routing.SelectionReason != "primary" && routing.SelectionReason != "fallback") ||
+		!byteLength(routing.SelectionDetail, 1, 500) ||
+		!validDistinctValues(routing.DataClasses, 8, runtimePattern) ||
+		routing.MaxInputUnits < 1 || routing.MaxInputUnits > 10_000_000 ||
+		routing.MaxOutputUnits < 1 || routing.MaxOutputUnits > 10_000_000 {
+		return ErrInvalidRequest
+	}
 	return nil
+}
+
+func isLowerHex(value string) bool {
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateSecret(secret []byte) error {

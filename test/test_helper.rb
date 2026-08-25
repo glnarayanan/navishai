@@ -13,6 +13,13 @@ module ActiveSupport
     fixtures :all
     include HelpdeskTestHelper
 
-    # Add more helper methods to be used by all tests here...
+    def approve_scripted_runtime(workspace:, membership:)
+      installation = runtime_installations(:acme_scripted)
+      installation.update!(
+        approved: true, approved_by_membership: membership, approved_by_user: membership.user,
+        approved_at: Time.current
+      )
+      installation
+    end
   end
 end

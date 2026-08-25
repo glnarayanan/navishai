@@ -71,6 +71,18 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	}
 }
 
+func TestExecuteFailsBeforeOutputWhenUsageExceedsBudget(t *testing.T) {
+	invocation := testInvocation()
+	invocation.Admission.Routing.MaxInputUnits = 119
+	events := make([]protocol.CanonicalEvent, 0)
+	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), invocation,
+		&fakeRunner{result: supervisor.Result{StandardOutput: successfulJSONL}},
+		func(event protocol.CanonicalEvent) error { events = append(events, event); return nil })
+	if err != nil || result.FailureCode != "runtime_unit_budget_exceeded" || len(events) != 2 || events[1].EventType != "run.failed" {
+		t.Fatalf("result=%#v events=%#v err=%v", result, events, err)
+	}
+}
+
 func TestExecuteFailsClosedForMalformedOutputAndProcessBounds(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -126,6 +138,7 @@ func testInvocation() Invocation {
 			Agent: protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1,
 				Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default",
 				TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
+			Routing: protocol.RuntimeRouting{MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000},
 		},
 		Executable: "/opt/codex", WorkingDir: "/work/run", CodexHome: "/runtime/codex",
 		Model: "gpt-5-codex", Prompt: "Investigate the case.", EgressProfileKey: "model_api",

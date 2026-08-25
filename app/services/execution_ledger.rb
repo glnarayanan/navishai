@@ -49,6 +49,7 @@ class ExecutionLedger
 
       attempt = task.execution_runs.maximum(:attempt_number).to_i + 1
       input_context, input_artifact = context_for(task)
+      selection = RuntimeRouter.resolve!(workspace: @workspace, profile_version: task.assigned_agent_profile_version)
       @workspace.execution_runs.create!(
         crew_task: task,
         agent_profile: task.assigned_agent_profile,
@@ -56,11 +57,22 @@ class ExecutionLedger
         request_key:,
         attempt_number: attempt,
         runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key,
+        runtime_installation: selection.installation,
+        selected_runtime_detection_key: selection.installation.detection_key,
+        selected_adapter_key: selection.installation.adapter_key,
+        selected_runtime_profile_key: selection.profile_key,
+        runtime_selection_reason: selection.reason,
+        runtime_selection_detail: selection.detail,
+        disclosed_data_classes: selection.data_classes,
+        max_input_units: selection.max_input_units,
+        max_output_units: selection.max_output_units,
         input_context:, input_artifact:
       )
     end
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidRun, error.record.errors.full_messages.to_sentence
+  rescue RuntimeRouter::NoCompatibleRuntime => error
+    raise InvalidRun, error.message
   end
 
   def admit!(run:, client: nil)
@@ -76,7 +88,7 @@ class ExecutionLedger
     end
 
     response = (client || RunnerClient.new).admit!(
-      task: run.crew_task,
+      task: run.crew_task, run: run,
       input_context: run.input_context,
       run_id: run.run_key,
       idempotency_key: "admit:#{run.run_key}",
@@ -190,13 +202,20 @@ class ExecutionLedger
         updates[:admitted_at] = event.occurred_at
         updates[:last_admission_error] = nil
       when "run.started"
-        raise EventConflict, "Start event does not match its attempt." unless data.fetch("attempt") == run.attempt_number
+        unless data.fetch("attempt") == run.attempt_number && data.fetch("adapter") == run.selected_adapter_key
+          raise EventConflict, "Start event does not match its frozen runtime or attempt."
+        end
         updates[:started_at] = event.occurred_at
       when "output.produced"
         updates[:output] = data.fetch("text")
       when "usage.observed"
-        updates[:input_units] = run.input_units + data.fetch("input_units")
-        updates[:output_units] = run.output_units + data.fetch("output_units")
+        input_units = run.input_units + data.fetch("input_units")
+        output_units = run.output_units + data.fetch("output_units")
+        if input_units > run.max_input_units || output_units > run.max_output_units
+          raise EventConflict, "Observed usage exceeds the frozen runtime budget."
+        end
+        updates[:input_units] = input_units
+        updates[:output_units] = output_units
       when "run.completed"
         updates[:finished_at] = event.occurred_at
       when "run.failed"

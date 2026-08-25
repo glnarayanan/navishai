@@ -10,18 +10,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 type Status string
 
 const (
-	Completed    Status = "completed"
-	Retryable    Status = "retryable_error"
-	TimedOut     Status = "timed_out"
-	Canceled     Status = "canceled"
-	PolicyDenied Status = "policy_denied"
-	Malformed    Status = "malformed_output"
+	Completed      Status = "completed"
+	Retryable      Status = "retryable_error"
+	TimedOut       Status = "timed_out"
+	Canceled       Status = "canceled"
+	PolicyDenied   Status = "policy_denied"
+	BudgetExceeded Status = "budget_exceeded"
+	Malformed      Status = "malformed_output"
 )
 
 var ErrAttemptMissing = errors.New("script has no matching attempt")
@@ -115,6 +117,12 @@ func (adapter *Adapter) Execute(ctx context.Context, request protocol.AdmissionR
 			return Result{}, emitErr
 		}
 		return Result{Status: Malformed}, nil
+	}
+	if !adapters.WithinUnitBudget(request, attempt.Usage.InputUnits, attempt.Usage.OutputUnits) {
+		if err := emitEvent("run.failed", map[string]any{"code": "runtime_unit_budget_exceeded", "retryable": false}); err != nil {
+			return Result{}, err
+		}
+		return Result{Status: BudgetExceeded}, nil
 	}
 	if err := emitEvent("output.produced", map[string]any{"text": output.Text}); err != nil {
 		return Result{}, err

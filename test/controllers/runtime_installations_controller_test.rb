@@ -76,7 +76,9 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     def approval_attributes
       {
         approved: "1", allowed_role_keys: [ "support_investigator" ], allowed_tools: [ "case_read" ],
-        allowed_data_classes: [ "case_content" ], max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20"
+        allowed_data_classes: [ "case_content" ], profile_keys: [ "workspace_default" ],
+        max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20",
+        max_input_units: "100000", max_output_units: "25000"
       }
     end
 end

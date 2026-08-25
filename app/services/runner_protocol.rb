@@ -21,13 +21,14 @@ module RunnerProtocol
   end
 
   class AdmissionRequest
-    KEYS = %w[protocol_version run_id idempotency_key workspace_key task agent].freeze
+    KEYS = %w[protocol_version run_id idempotency_key workspace_key task agent routing].freeze
     TASK_KEYS = %w[task_key attempt title input_context expected_output].freeze
     AGENT_KEYS = %w[role_key policy_version instructions allowed_tools runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy].freeze
+    ROUTING_KEYS = %w[detection_key adapter_key profile_key selection_reason selection_detail data_classes max_input_units max_output_units].freeze
 
     attr_reader :attributes
 
-    def self.for_task(task:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
+    def self.for_task(task:, run:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
       version = task.assigned_agent_profile_version
       new(
         "protocol_version" => VERSION,
@@ -52,6 +53,16 @@ module RunnerProtocol
           "max_steps" => version.max_steps,
           "max_tool_calls" => version.max_tool_calls,
           "review_policy" => version.review_policy
+        },
+        "routing" => {
+          "detection_key" => run.selected_runtime_detection_key,
+          "adapter_key" => run.selected_adapter_key,
+          "profile_key" => run.selected_runtime_profile_key,
+          "selection_reason" => run.runtime_selection_reason,
+          "selection_detail" => run.runtime_selection_detail,
+          "data_classes" => run.disclosed_data_classes,
+          "max_input_units" => run.max_input_units,
+          "max_output_units" => run.max_output_units
         }
       )
     end
@@ -109,6 +120,21 @@ module RunnerProtocol
       unless %w[required on_policy_flag].include?(agent["review_policy"])
         raise MalformedMessage, "agent.review_policy is invalid"
       end
+
+      routing = value["routing"]
+      object!(routing, ROUTING_KEYS, "routing")
+      unless routing["detection_key"].is_a?(String) && routing["detection_key"].match?(/\A[0-9a-f]{64}\z/)
+        raise MalformedMessage, "routing.detection_key is invalid"
+      end
+      policy_key!(routing["adapter_key"], "routing.adapter_key")
+      policy_key!(routing["profile_key"], "routing.profile_key")
+      unless %w[primary fallback].include?(routing["selection_reason"])
+        raise MalformedMessage, "routing.selection_reason is invalid"
+      end
+      string!(routing["selection_detail"], 500, "routing.selection_detail")
+      values!(routing["data_classes"], 8, "routing.data_classes")
+      integer!(routing["max_input_units"], 1, 10_000_000, "routing.max_input_units")
+      integer!(routing["max_output_units"], 1, 10_000_000, "routing.max_output_units")
     end
 
     def object!(value, keys, name)
