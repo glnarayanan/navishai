@@ -7,6 +7,8 @@ class EmailMessageLink < ApplicationRecord
 
   validates :message_id, presence: true, length: { maximum: 998 },
     uniqueness: { scope: :shared_email_inbox_id }
+  validates :reply_to_address, length: { maximum: 254 },
+    format: { with: URI::MailTo::EMAIL_REGEXP }, allow_nil: true
   validate :records_match
 
   def readonly?

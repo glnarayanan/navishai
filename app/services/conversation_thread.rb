@@ -108,6 +108,53 @@ class ConversationThread
     end
   end
 
+  def self.append_outbound!(workspace:, conversation:, membership:, body:, occurred_at:, source:)
+    raise ArgumentError, "unsupported source" unless AuditEvent::SOURCES.include?(source.to_s)
+
+    Conversation.transaction do
+      actor = authorized_membership!(workspace, membership)
+      current_conversation = workspace.conversations.lock.find(conversation.id)
+      persist_outbound!(workspace:, conversation: current_conversation, actor:, body:, occurred_at:, source:)
+    end
+  end
+
+  def self.append_confirmed_outbound!(workspace:, conversation:, author_membership:, reviewer_membership:, body:, occurred_at:, source:)
+    raise ArgumentError, "unsupported source" unless AuditEvent::SOURCES.include?(source.to_s)
+
+    Conversation.transaction do
+      memberships = workspace.memberships.where(id: [ author_membership.id, reviewer_membership.id ]).order(:id).lock.index_by(&:id)
+      author = memberships.fetch(author_membership.id)
+      reviewer = memberships.fetch(reviewer_membership.id)
+      raise Current::RoleAccessDenied unless reviewer.can_write?
+
+      current_conversation = workspace.conversations.lock.find(conversation.id)
+      persist_outbound!(workspace:, conversation: current_conversation, actor: author, body:, occurred_at:, source:)
+    end
+  end
+
+  def self.persist_outbound!(workspace:, conversation:, actor:, body:, occurred_at:, source:)
+    message = workspace.conversation_messages.create!(
+      conversation: conversation,
+      direction: :outbound,
+      author_kind: :user,
+      author_user: actor.user,
+      body: body,
+      occurred_at: occurred_at
+    )
+    conversation.update!(last_message_at: [ conversation.last_message_at, occurred_at ].compact.max)
+    SlaEngine.record_first_response!(
+      workspace: workspace,
+      support_case: conversation.support_case,
+      message: message
+    ) if conversation.support_case.case_sla
+    AuditEvent.record!(
+      action: "conversation.message_added", source: source, workspace: workspace,
+      actor: actor.user, subject: message, metadata: { direction: "outbound", author_kind: "user" }
+    )
+    message
+  end
+  private_class_method :persist_outbound!
+
   def self.authorized_membership!(workspace, membership)
     workspace.memberships.lock.find(membership.id).tap do |current_membership|
       raise Current::RoleAccessDenied unless current_membership.can_write?

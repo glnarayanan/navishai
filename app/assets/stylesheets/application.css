@@ -1008,6 +1008,81 @@ td {
   white-space: pre-wrap;
 }
 
+.email-reply {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.email-reply-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.recipient-review {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  background: var(--accent-soft);
+}
+
+.recipient-review > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.recipient-review strong,
+.delivery-review-facts dd,
+.delivery-review-facts code {
+  overflow-wrap: anywhere;
+}
+
+.recipient-review-warning {
+  background: var(--danger-soft);
+}
+
+.recipient-review-warning label {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.recipient-review-warning input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+.delivery-review-facts {
+  margin-top: 1rem;
+}
+
+.delivery-review-body {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.reply-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.reply-actions .button-primary {
+  width: auto;
+}
+
 .message-outbound {
   margin-inline: -1rem;
   padding-inline: 1rem;
