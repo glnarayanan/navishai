@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root/ops/compose/lib.sh"
+cd "$root"
+
+require_command docker
+archive="${1:-}"
+[[ -n "$archive" ]] || { printf 'Usage: %s BACKUP_DIRECTORY\n' "$0" >&2; exit 1; }
+require_archive "$archive"
+
+[[ "$(sed -n 's/^format=//p' "$archive/manifest")" == "navishai-backup-v1" ]] || {
+  printf 'Unsupported or missing backup format.\n' >&2
+  exit 1
+}
+
+(cd "$archive" && sha256sum --check --strict SHA256SUMS)
+postgres_image="$(grep -E '^pgvector/pgvector:' "$archive/images.txt" || true)"
+[[ -n "$postgres_image" && "$(printf '%s\n' "$postgres_image" | wc -l)" == 1 ]] || {
+  printf 'Backup must name exactly one pgvector PostgreSQL image.\n' >&2
+  exit 1
+}
+for database in navishai_production navishai_production_cache navishai_production_queue navishai_production_cable; do
+  docker run --rm --interactive --entrypoint pg_restore "$postgres_image" --list <"$archive/$database.dump" >/dev/null
+done
+for state in rails-storage runner-state supermemory-state; do
+  tar -tf "$archive/$state.tar" >/dev/null
+done
+
+printf 'Backup verified: %s\n' "$archive"

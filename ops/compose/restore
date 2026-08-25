@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root/ops/compose/lib.sh"
+cd "$root"
+
+require_command docker
+archive="${1:-}"
+confirmation="${2:-}"
+if [[ -z "$archive" || "$confirmation" != "--confirm-destroy" ]]; then
+  printf 'Usage: %s BACKUP_DIRECTORY --confirm-destroy\n' "$0" >&2
+  exit 1
+fi
+require_archive "$archive"
+
+compose up -d --wait postgres
+"$root/ops/compose/verify_backup" "$archive"
+restore_started=true
+trap 'if [[ "$restore_started" == true ]]; then stop_application || true; fi' EXIT
+stop_application
+
+for database in navishai_production navishai_production_cache navishai_production_queue navishai_production_cable; do
+  compose exec -T postgres dropdb --username navishai --if-exists --force "$database"
+  compose exec -T postgres createdb --username navishai "$database"
+  compose exec -T postgres pg_restore --username navishai --dbname "$database" \
+    --exit-on-error --no-owner --no-privileges <"$archive/$database.dump"
+done
+
+compose run --rm -T --no-deps --entrypoint sh supermemory -c \
+  'find /var/lib/supermemory -mindepth 1 -delete && tar -C /var/lib/supermemory -xf -' <"$archive/supermemory-state.tar"
+compose up -d supermemory
+compose run --rm -T --no-deps --entrypoint sh web -c \
+  'find /rails/storage -mindepth 1 -delete && tar -C /rails/storage -xf -' <"$archive/rails-storage.tar"
+compose run --rm -T --no-deps --entrypoint sh runner -c \
+  'find /var/lib/navishai -mindepth 1 -delete && tar -C /var/lib/navishai -xf -' <"$archive/runner-state.tar"
+
+start_application
+restore_started=false
+printf 'Backup restored from %s\n' "$archive"
