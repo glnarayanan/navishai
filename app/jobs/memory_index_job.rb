@@ -11,6 +11,7 @@ class MemoryIndexJob < ApplicationJob
 
   def perform(entry_id, force = false)
     entry = MemoryIndexEntry.find(entry_id)
+    return if entry.workspace.deletion_requested?
     return entry if !force && entry.workspace.memory_index_entries.where(status: %w[failed unknown]).exists?
 
     MemoryIndexer.perform!(entry:)

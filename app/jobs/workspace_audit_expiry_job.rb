@@ -9,6 +9,8 @@ class WorkspaceAuditExpiryJob < ApplicationJob
 
   def perform(policy_id)
     policy = WorkspaceDataPolicy.find(policy_id)
+    return if policy.workspace.deletion_requested?
+
     connection = ActiveRecord::Base.connection
     connection.execute("SELECT pg_advisory_lock(49, #{connection.quote(policy.workspace_id)})")
     policy.with_lock do

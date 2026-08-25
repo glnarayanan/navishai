@@ -4,7 +4,7 @@ class Webhooks::SharedEmailController < ActionController::API
   rate_limit to: 60, within: 1.minute, by: -> { request.remote_ip }, with: -> { head :too_many_requests }
 
   def create
-    inbox = SharedEmailInbox.active.find_by!(webhook_key: params[:webhook_key])
+    inbox = SharedEmailInbox.active.joins(:workspace).merge(Workspace.active).find_by!(webhook_key: params[:webhook_key])
     return head :content_too_large if request.content_length.to_i > InboundEmailDelivery::MAX_BYTES
 
     raw_email = request.body.read(InboundEmailDelivery::MAX_BYTES + 1).to_s.b

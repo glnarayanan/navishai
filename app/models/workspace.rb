@@ -78,6 +78,7 @@ class Workspace < ApplicationRecord
   has_many :notifications, dependent: :restrict_with_exception
   has_many :outbound_webhook_endpoints, dependent: :restrict_with_exception
   has_many :outbound_webhook_deliveries, dependent: :restrict_with_exception
+  has_one :workspace_deletion_request, dependent: :destroy
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
@@ -95,6 +96,11 @@ class Workspace < ApplicationRecord
   after_create :install_default_data_policy
 
   scope :accessible_to, ->(user) { joins(:memberships).where(memberships: { user: user }).distinct }
+  scope :active, -> { where(deletion_requested_at: nil) }
+
+  def deletion_requested?
+    deletion_requested_at.present?
+  end
 
   private
     def install_default_crew_configuration

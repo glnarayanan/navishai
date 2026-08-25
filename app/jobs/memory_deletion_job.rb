@@ -10,7 +10,10 @@ class MemoryDeletionJob < ApplicationJob
   end
 
   def perform(tombstone_id, wait_count = 0)
-    result = MemoryDeletion.perform!(tombstone: MemoryTombstone.find(tombstone_id))
+    tombstone = MemoryTombstone.find(tombstone_id)
+    return if tombstone.workspace.deletion_requested?
+
+    result = MemoryDeletion.perform!(tombstone:)
     if result.index_status_pending? && wait_count < 5
       self.class.set(wait: 30.seconds).perform_later(tombstone_id, wait_count + 1)
     end

@@ -137,6 +137,13 @@ class AuditEvent < ApplicationRecord
       "record_count" => Integer,
       "attachment_count" => Integer
     },
+    "workspace.deletion_requested" => {},
+    "workspace.deletion_failed" => { "failure_code" => String },
+    "workspace.deleted" => {
+      "record_count" => Integer,
+      "attachment_count" => Integer,
+      "memory_count" => Integer
+    },
     "webhook.endpoint_configured" => { "active" => %w[true false] }
   }.freeze
 

@@ -484,6 +484,31 @@ textarea {
   font-size: 0.875rem;
 }
 
+.workspace-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 0.25rem;
+}
+
+.workspace-status-row > span:first-child {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.workspace-status-row small {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 36rem) {
+  .workspace-status-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .empty-state {
   display: grid;
   justify-items: start;

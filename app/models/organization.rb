@@ -1,5 +1,6 @@
 class Organization < ApplicationRecord
   has_many :workspaces, dependent: :restrict_with_exception
+  has_many :workspace_tombstones, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
   normalizes :slug, with: ->(slug) { slug.strip.downcase }

@@ -4,7 +4,9 @@ class WorkspacesController < ApplicationController
   before_action :select_requested_workspace, only: :show
 
   def index
-    @workspaces = Current.user.workspaces.order(:name)
+    @workspaces = Current.user.workspaces.active.order(:name)
+    @deleting_workspaces = Current.user.workspaces.where.not(deletion_requested_at: nil)
+      .includes(:workspace_deletion_request, :organization, memberships: :user).order(:name)
   end
 
   def show

@@ -6,6 +6,7 @@ Rails.application.routes.draw do
   end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
+    resource :deletion, only: %i[ create update ], controller: "workspace_deletions"
     resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls" do
       post :expire
       post :expire_audit
