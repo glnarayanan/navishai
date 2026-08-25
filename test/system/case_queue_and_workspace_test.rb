@@ -44,11 +44,13 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     end
     assert_text "Assignment updated."
 
+    find("summary", text: "Tags").click
     fill_in "Create tag", with: "Access"
     click_button "Create"
     assert_text "Tag created and added."
     assert_text "Access"
 
+    find("summary", text: "Private notes").click
     fill_in "Add a private note", with: "Check the identity provider logs."
     click_button "Add note"
     assert_text "Private note added."
@@ -74,6 +76,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_operator find_field("Reason").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
 
+    find("summary", text: "Private notes").click
     fill_in "Add a private note", with: "Mobile note"
     click_button "Add note"
     assert_text "Mobile note"
@@ -109,6 +112,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
 
     visit workspace_support_case_path(support_case.workspace, support_case)
     assert_text "Read-only access"
+    find("summary", text: "Private notes").click
     assert_text "Private — staff only"
     refute_field "Reason"
     refute_field "Add a private note"
