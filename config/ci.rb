@@ -14,6 +14,7 @@ CI.run do
   step "Tests: Runner", "go vet ./... && go test ./... && go build -o tmp/navishai-runner ./runner/cmd/navishai-runner && go build -o tmp/navishai-exec ./runner/cmd/navishai-exec && cc -std=c11 -O2 -Wall -Wextra -Werror -o tmp/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c"
   step "Tests: Rails and Go runner contract", "script/runner_contract"
   step "Tests: Seeds", "env RAILS_ENV=test bin/rails db:seed:replant"
+  step "Supply chain: SBOM", "script/sbom --check"
 
   # Optional: set a green GitHub commit status to unblock PR merge.
   # Requires the `gh` CLI and `gh extension install basecamp/gh-signoff`.
