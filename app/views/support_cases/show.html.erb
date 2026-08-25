@@ -244,6 +244,23 @@
         <% end %>
       </section>
 
+      <section class="context-section case-crew-summary">
+        <div class="context-section-heading">
+          <h2>Crew work</h2>
+          <%= link_to "Open", workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "button button-quiet" %>
+        </div>
+        <% if @crew_tasks.any? %>
+          <dl class="case-facts">
+            <div><dt>Open tasks</dt><dd><%= @crew_tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
+            <div><dt>Needs review</dt><dd><%= @crew_tasks.count(&:review_requested?) %></dd></div>
+            <div><dt>Complete</dt><dd><%= @crew_tasks.count(&:completed?) %></dd></div>
+          </dl>
+          <p class="muted-copy"><strong><%= @crew_tasks.first.assigned_agent_profile.name %>:</strong> <%= @crew_tasks.first.title %></p>
+        <% else %>
+          <p class="muted-copy">No specialist work has been planned for this case.</p>
+        <% end %>
+      </section>
+
       <section class="context-section">
         <h2>Customer</h2>
         <dl class="case-facts">

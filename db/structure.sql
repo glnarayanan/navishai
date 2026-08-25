@@ -246,6 +246,129 @@ $$;
 
 
 --
+-- Name: protect_crew_task(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_crew_task() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE old_sequence integer; event_row crew_task_events%ROWTYPE;
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP <> 'UPDATE' OR
+     ROW(OLD.id, OLD.workspace_id, OLD.task_key, OLD.scope_kind, OLD.support_case_id, OLD.account_id,
+         OLD.crew_template_id, OLD.owner_membership_id, OLD.owner_user_id, OLD.title,
+         OLD.input_context, OLD.expected_output, OLD.created_at)
+       IS DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.task_key, NEW.scope_kind, NEW.support_case_id, NEW.account_id,
+         NEW.crew_template_id, NEW.owner_membership_id, NEW.owner_user_id, NEW.title,
+         NEW.input_context, NEW.expected_output, NEW.created_at) OR
+     NEW.current_event_id IS NOT DISTINCT FROM OLD.current_event_id THEN
+    RAISE EXCEPTION 'crew task identity and history are durable';
+  END IF;
+  SELECT * INTO event_row FROM crew_task_events WHERE id = NEW.current_event_id FOR UPDATE;
+  SELECT sequence_number INTO old_sequence FROM crew_task_events WHERE id = OLD.current_event_id;
+  IF event_row.id IS NULL OR event_row.workspace_id <> NEW.workspace_id OR event_row.crew_task_id <> NEW.id OR
+     event_row.sequence_number <> COALESCE(old_sequence, 0) + 1 OR
+     event_row.from_status IS DISTINCT FROM
+       (CASE WHEN OLD.current_event_id IS NULL THEN NULL ELSE OLD.status END) OR
+     event_row.to_status IS DISTINCT FROM NEW.status OR
+     event_row.from_agent_profile_id IS DISTINCT FROM
+       (CASE WHEN OLD.current_event_id IS NULL THEN NULL ELSE OLD.assigned_agent_profile_id END) OR
+     event_row.to_agent_profile_id IS DISTINCT FROM NEW.assigned_agent_profile_id THEN
+    RAISE EXCEPTION 'crew task update must advance its matching event';
+  END IF;
+  IF event_row.from_agent_profile_version_id IS DISTINCT FROM
+       (CASE WHEN OLD.current_event_id IS NULL THEN NULL ELSE OLD.assigned_agent_profile_version_id END) OR
+     event_row.to_agent_profile_version_id IS DISTINCT FROM NEW.assigned_agent_profile_version_id OR
+     NOT (CASE event_row.event_kind
+       WHEN 'created' THEN OLD.current_event_id IS NULL AND event_row.from_status IS NULL
+         AND event_row.body IS NULL AND event_row.evidence_kind IS NULL
+         AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'status_changed' THEN OLD.status <> NEW.status AND OLD.assigned_agent_profile_id = NEW.assigned_agent_profile_id
+         AND event_row.evidence_kind IS NULL AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'handoff' THEN OLD.status = NEW.status AND OLD.assigned_agent_profile_id <> NEW.assigned_agent_profile_id
+         AND event_row.body IS NOT NULL AND event_row.evidence_kind IS NULL
+         AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'comment' THEN OLD.status = NEW.status AND OLD.assigned_agent_profile_id = NEW.assigned_agent_profile_id
+         AND event_row.body IS NOT NULL AND event_row.evidence_kind IS NULL
+         AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'evidence_added' THEN OLD.status = NEW.status AND OLD.assigned_agent_profile_id = NEW.assigned_agent_profile_id
+         AND event_row.body IS NOT NULL AND event_row.evidence_kind IS NOT NULL AND event_row.evidence_locator IS NOT NULL
+         AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'review_requested' THEN OLD.status <> NEW.status AND NEW.status = 'review_requested'
+         AND event_row.body IS NOT NULL AND event_row.evidence_kind IS NULL
+         AND event_row.review_outcome IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'review_resolved' THEN OLD.status = 'review_requested' AND NEW.status = 'in_progress'
+         AND event_row.review_outcome = 'changes_requested' AND event_row.body IS NOT NULL
+         AND event_row.evidence_kind IS NULL AND event_row.outcome_kind IS NULL
+       WHEN 'outcome_recorded' THEN NEW.status IN ('completed', 'failed', 'canceled')
+         AND event_row.outcome_kind = NEW.status AND event_row.body IS NOT NULL
+         AND event_row.evidence_kind IS NULL AND (
+           (NEW.status = 'completed' AND OLD.status = 'review_requested' AND event_row.review_outcome = 'approved') OR
+           (NEW.status IN ('failed', 'canceled') AND event_row.review_outcome IS NULL)
+         )
+       ELSE false
+     END) THEN
+    RAISE EXCEPTION 'crew task event does not match its recorded change';
+  END IF;
+  IF OLD.current_event_id IS NOT NULL AND OLD.status <> NEW.status AND NOT (
+    (OLD.status = 'pending' AND NEW.status IN ('ready', 'blocked', 'canceled')) OR
+    (OLD.status = 'ready' AND NEW.status IN ('in_progress', 'blocked', 'canceled')) OR
+    (OLD.status = 'in_progress' AND NEW.status IN ('blocked', 'review_requested', 'completed', 'failed', 'canceled')) OR
+    (OLD.status = 'blocked' AND NEW.status IN ('ready', 'in_progress', 'failed', 'canceled')) OR
+    (OLD.status = 'review_requested' AND NEW.status IN ('in_progress', 'completed', 'failed')) OR
+    (OLD.status = 'failed' AND NEW.status IN ('ready', 'canceled'))
+  ) THEN
+    RAISE EXCEPTION 'invalid crew task transition';
+  END IF;
+  IF NEW.status IN ('ready', 'in_progress', 'review_requested', 'completed') AND EXISTS (
+    SELECT 1 FROM crew_task_dependencies dependency
+    JOIN crew_tasks prerequisite ON prerequisite.id = dependency.depends_on_task_id
+    WHERE dependency.crew_task_id = NEW.id AND prerequisite.status <> 'completed'
+  ) THEN
+    RAISE EXCEPTION 'crew task dependencies are incomplete';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_crew_task_dependency(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_crew_task_dependency() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'crew task dependencies are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_crew_task_event(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_crew_task_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'crew task events are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_crew_template(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -431,6 +554,25 @@ $$;
 
 
 --
+-- Name: require_current_crew_task_event(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.require_current_crew_task_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM crew_tasks
+    WHERE id = NEW.id AND workspace_id = NEW.workspace_id AND current_event_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'crew task must have a current event';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+
+--
 -- Name: require_current_knowledge_version(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -445,6 +587,26 @@ BEGIN
       AND current_version_id IS NOT NULL
   ) THEN
     RAISE EXCEPTION 'knowledge source must have a current version';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: require_linked_crew_task_event(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.require_linked_crew_task_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE current_sequence integer;
+BEGIN
+  SELECT event.sequence_number INTO current_sequence
+  FROM crew_tasks task JOIN crew_task_events event ON event.id = task.current_event_id
+  WHERE task.id = NEW.crew_task_id AND task.workspace_id = NEW.workspace_id;
+  IF current_sequence IS NULL OR current_sequence < NEW.sequence_number THEN
+    RAISE EXCEPTION 'crew task event must advance its task';
   END IF;
   RETURN NULL;
 END;
@@ -507,6 +669,43 @@ BEGIN
      jsonb_array_length(NEW.fallback_profile_keys) <>
        (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(NEW.fallback_profile_keys) values) THEN
     RAISE EXCEPTION 'agent profile exceeds its approved policy bounds';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_crew_task_dependency(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_crew_task_dependency() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE task_scope record; dependency_scope record;
+BEGIN
+  SELECT scope_kind, support_case_id, account_id INTO task_scope
+  FROM crew_tasks WHERE id = NEW.crew_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
+  SELECT scope_kind, support_case_id, account_id INTO dependency_scope
+  FROM crew_tasks WHERE id = NEW.depends_on_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
+  IF task_scope IS NULL OR dependency_scope IS NULL OR
+     ROW(task_scope.scope_kind, task_scope.support_case_id, task_scope.account_id)
+       IS DISTINCT FROM
+     ROW(dependency_scope.scope_kind, dependency_scope.support_case_id, dependency_scope.account_id) OR
+     EXISTS (
+       WITH RECURSIVE ancestors(id) AS (
+         SELECT depends_on_task_id FROM crew_task_dependencies
+         WHERE crew_task_id = NEW.depends_on_task_id
+         UNION
+         SELECT dependency.depends_on_task_id
+         FROM crew_task_dependencies dependency JOIN ancestors ON dependency.crew_task_id = ancestors.id
+       ) SELECT 1 FROM ancestors WHERE id = NEW.crew_task_id
+     ) OR EXISTS (
+       SELECT 1 FROM crew_tasks task
+       JOIN crew_tasks prerequisite ON prerequisite.id = NEW.depends_on_task_id
+       WHERE task.id = NEW.crew_task_id AND task.status <> 'pending' AND prerequisite.status <> 'completed'
+     ) THEN
+    RAISE EXCEPTION 'crew task dependency must share scope and cannot form a cycle';
   END IF;
   RETURN NEW;
 END;
@@ -709,11 +908,11 @@ CREATE TABLE public.agent_profile_versions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
-    CONSTRAINT agent_profile_versions_budget CHECK ((((timeout_seconds >= 30) AND (timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT agent_profile_versions_budget CHECK (((timeout_seconds >= 30) AND (timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
     CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
-    CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY ((ARRAY['required'::character varying, 'on_policy_flag'::character varying])::text[]))),
-    CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
+    CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY (ARRAY[('required'::character varying)::text, ('on_policy_flag'::character varying)::text]))),
+    CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
     CONSTRAINT agent_profile_versions_tools CHECK (((jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record"]'::jsonb)))
 );
 
@@ -751,7 +950,7 @@ CREATE TABLE public.agent_profiles (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT agent_profiles_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100))),
-    CONSTRAINT agent_profiles_role CHECK (((role_key)::text = ANY ((ARRAY['support_coordinator'::character varying, 'support_investigator'::character varying, 'resolution_drafter'::character varying, 'support_reviewer'::character varying, 'account_analyst'::character varying, 'risk_investigator'::character varying, 'success_strategist'::character varying, 'success_reviewer'::character varying])::text[])))
+    CONSTRAINT agent_profiles_role CHECK (((role_key)::text = ANY (ARRAY[('support_coordinator'::character varying)::text, ('support_investigator'::character varying)::text, ('resolution_drafter'::character varying)::text, ('support_reviewer'::character varying)::text, ('account_analyst'::character varying)::text, ('risk_investigator'::character varying)::text, ('success_strategist'::character varying)::text, ('success_reviewer'::character varying)::text])))
 );
 
 
@@ -1098,6 +1297,145 @@ ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
+-- Name: crew_task_dependencies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crew_task_dependencies (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    depends_on_task_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT crew_task_dependencies_not_self CHECK ((crew_task_id <> depends_on_task_id))
+);
+
+
+--
+-- Name: crew_task_dependencies_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.crew_task_dependencies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: crew_task_dependencies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.crew_task_dependencies_id_seq OWNED BY public.crew_task_dependencies.id;
+
+
+--
+-- Name: crew_task_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crew_task_events (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    sequence_number integer NOT NULL,
+    event_kind character varying NOT NULL,
+    source character varying NOT NULL,
+    actor_membership_id bigint,
+    actor_user_id bigint,
+    from_status character varying,
+    to_status character varying NOT NULL,
+    from_agent_profile_id bigint,
+    to_agent_profile_id bigint NOT NULL,
+    from_agent_profile_version_id bigint,
+    to_agent_profile_version_id bigint NOT NULL,
+    body text,
+    evidence_kind character varying,
+    evidence_locator character varying,
+    review_outcome character varying,
+    outcome_kind character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT crew_task_events_actor CHECK ((((actor_membership_id IS NULL) AND (actor_user_id IS NULL)) OR ((actor_membership_id IS NOT NULL) AND (actor_user_id IS NOT NULL)))),
+    CONSTRAINT crew_task_events_body CHECK (((body IS NULL) OR ((octet_length(body) >= 1) AND (octet_length(body) <= 20000)))),
+    CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY ((ARRAY['conversation'::character varying, 'case'::character varying, 'account'::character varying, 'knowledge'::character varying, 'public_web'::character varying, 'other'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_evidence_locator CHECK (((evidence_locator IS NULL) OR ((octet_length((evidence_locator)::text) >= 1) AND (octet_length((evidence_locator)::text) <= 2000)))),
+    CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY ((ARRAY['created'::character varying, 'status_changed'::character varying, 'handoff'::character varying, 'comment'::character varying, 'evidence_added'::character varying, 'review_requested'::character varying, 'review_resolved'::character varying, 'outcome_recorded'::character varying])::text[]))),
+    CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
+    CONSTRAINT crew_task_events_sequence CHECK ((sequence_number > 0)),
+    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'task'::character varying, 'runner'::character varying, 'system'::character varying])::text[])))
+);
+
+
+--
+-- Name: crew_task_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.crew_task_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: crew_task_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.crew_task_events_id_seq OWNED BY public.crew_task_events.id;
+
+
+--
+-- Name: crew_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crew_tasks (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    task_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    scope_kind character varying NOT NULL,
+    support_case_id bigint,
+    account_id bigint,
+    crew_template_id bigint NOT NULL,
+    assigned_agent_profile_id bigint NOT NULL,
+    assigned_agent_profile_version_id bigint NOT NULL,
+    owner_membership_id bigint NOT NULL,
+    owner_user_id bigint NOT NULL,
+    title character varying NOT NULL,
+    input_context text NOT NULL,
+    expected_output text NOT NULL,
+    status character varying NOT NULL,
+    current_event_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT crew_tasks_content CHECK ((((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
+    CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
+    CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'ready'::character varying, 'in_progress'::character varying, 'blocked'::character varying, 'review_requested'::character varying, 'completed'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))
+);
+
+
+--
+-- Name: crew_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.crew_tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: crew_tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.crew_tasks_id_seq OWNED BY public.crew_tasks.id;
+
+
+--
 -- Name: crew_templates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1108,7 +1446,7 @@ CREATE TABLE public.crew_templates (
     name character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT crew_templates_kind CHECK (((crew_kind)::text = ANY ((ARRAY['support'::character varying, 'customer_success'::character varying])::text[]))),
+    CONSTRAINT crew_templates_kind CHECK (((crew_kind)::text = ANY (ARRAY[('support'::character varying)::text, ('customer_success'::character varying)::text]))),
     CONSTRAINT crew_templates_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100)))
 );
 
@@ -2361,6 +2699,27 @@ ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: crew_task_dependencies id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_dependencies ALTER COLUMN id SET DEFAULT nextval('public.crew_task_dependencies_id_seq'::regclass);
+
+
+--
+-- Name: crew_task_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events ALTER COLUMN id SET DEFAULT nextval('public.crew_task_events_id_seq'::regclass);
+
+
+--
+-- Name: crew_tasks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks ALTER COLUMN id SET DEFAULT nextval('public.crew_tasks_id_seq'::regclass);
+
+
+--
 -- Name: crew_templates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2696,6 +3055,30 @@ ALTER TABLE ONLY public.conversation_messages
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crew_task_dependencies crew_task_dependencies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_dependencies
+    ADD CONSTRAINT crew_task_dependencies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crew_task_events crew_task_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT crew_task_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crew_tasks crew_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT crew_tasks_pkey PRIMARY KEY (id);
 
 
 --
@@ -3322,6 +3705,76 @@ CREATE UNIQUE INDEX index_conversations_on_workspace_id_and_id ON public.convers
 --
 
 CREATE INDEX index_conversations_on_workspace_id_and_last_message_at ON public.conversations USING btree (workspace_id, last_message_at);
+
+
+--
+-- Name: index_crew_task_dependencies_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_task_dependencies_on_workspace_id ON public.crew_task_dependencies USING btree (workspace_id);
+
+
+--
+-- Name: index_crew_task_dependencies_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_task_dependencies_unique ON public.crew_task_dependencies USING btree (crew_task_id, depends_on_task_id);
+
+
+--
+-- Name: index_crew_task_events_on_crew_task_id_and_sequence_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_task_events_on_crew_task_id_and_sequence_number ON public.crew_task_events USING btree (crew_task_id, sequence_number);
+
+
+--
+-- Name: index_crew_task_events_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_task_events_on_workspace_id ON public.crew_task_events USING btree (workspace_id);
+
+
+--
+-- Name: index_crew_task_events_on_workspace_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_task_events_on_workspace_task_id ON public.crew_task_events USING btree (workspace_id, crew_task_id, id);
+
+
+--
+-- Name: index_crew_tasks_on_account_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_account_and_status ON public.crew_tasks USING btree (workspace_id, account_id, status);
+
+
+--
+-- Name: index_crew_tasks_on_case_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_case_and_status ON public.crew_tasks USING btree (workspace_id, support_case_id, status);
+
+
+--
+-- Name: index_crew_tasks_on_task_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_tasks_on_task_key ON public.crew_tasks USING btree (task_key);
+
+
+--
+-- Name: index_crew_tasks_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_workspace_id ON public.crew_tasks USING btree (workspace_id);
+
+
+--
+-- Name: index_crew_tasks_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_tasks_on_workspace_id_and_id ON public.crew_tasks USING btree (workspace_id, id);
 
 
 --
@@ -4116,6 +4569,69 @@ CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conve
 
 
 --
+-- Name: crew_task_dependencies crew_task_dependencies_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_task_dependencies_append_only BEFORE DELETE OR UPDATE ON public.crew_task_dependencies FOR EACH ROW EXECUTE FUNCTION public.protect_crew_task_dependency();
+
+
+--
+-- Name: crew_task_dependencies crew_task_dependencies_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_task_dependencies_no_truncate BEFORE TRUNCATE ON public.crew_task_dependencies FOR EACH STATEMENT EXECUTE FUNCTION public.protect_crew_task_dependency();
+
+
+--
+-- Name: crew_task_dependencies crew_task_dependencies_validate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_task_dependencies_validate BEFORE INSERT ON public.crew_task_dependencies FOR EACH ROW EXECUTE FUNCTION public.validate_crew_task_dependency();
+
+
+--
+-- Name: crew_task_events crew_task_events_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_task_events_append_only BEFORE DELETE OR UPDATE ON public.crew_task_events FOR EACH ROW EXECUTE FUNCTION public.protect_crew_task_event();
+
+
+--
+-- Name: crew_task_events crew_task_events_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_task_events_no_truncate BEFORE TRUNCATE ON public.crew_task_events FOR EACH STATEMENT EXECUTE FUNCTION public.protect_crew_task_event();
+
+
+--
+-- Name: crew_task_events crew_task_events_require_link; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER crew_task_events_require_link AFTER INSERT ON public.crew_task_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_linked_crew_task_event();
+
+
+--
+-- Name: crew_tasks crew_tasks_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_tasks_no_truncate BEFORE TRUNCATE ON public.crew_tasks FOR EACH STATEMENT EXECUTE FUNCTION public.protect_crew_task();
+
+
+--
+-- Name: crew_tasks crew_tasks_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_tasks_protect_record BEFORE DELETE OR UPDATE ON public.crew_tasks FOR EACH ROW EXECUTE FUNCTION public.protect_crew_task();
+
+
+--
+-- Name: crew_tasks crew_tasks_require_current_event; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER crew_tasks_require_current_event AFTER INSERT OR UPDATE ON public.crew_tasks DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_current_crew_task_event();
+
+
+--
 -- Name: crew_templates crew_templates_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4353,6 +4869,62 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: crew_task_events fk_crew_task_events_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_crew_task_events_actor FOREIGN KEY (workspace_id, actor_membership_id, actor_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: crew_task_events fk_crew_task_events_from_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_crew_task_events_from_version FOREIGN KEY (workspace_id, from_agent_profile_id, from_agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
+-- Name: crew_task_events fk_crew_task_events_to_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_crew_task_events_to_version FOREIGN KEY (workspace_id, to_agent_profile_id, to_agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_assigned_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_assigned_profile FOREIGN KEY (workspace_id, crew_template_id, assigned_agent_profile_id) REFERENCES public.agent_profiles(workspace_id, crew_template_id, id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_assigned_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_assigned_version FOREIGN KEY (workspace_id, assigned_agent_profile_id, assigned_agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_current_event; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_current_event FOREIGN KEY (workspace_id, id, current_event_id) REFERENCES public.crew_task_events(workspace_id, crew_task_id, id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_owner; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_owner FOREIGN KEY (workspace_id, owner_membership_id, owner_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: knowledge_sources fk_knowledge_sources_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4366,6 +4938,14 @@ ALTER TABLE ONLY public.knowledge_sources
 
 ALTER TABLE ONLY public.account_merges
     ADD CONSTRAINT fk_rails_00215f0be3 FOREIGN KEY (unmerged_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: crew_task_dependencies fk_rails_00fd3c8c09; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_dependencies
+    ADD CONSTRAINT fk_rails_00fd3c8c09 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -4441,11 +5021,27 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: crew_task_events fk_rails_189fd006fb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_rails_189fd006fb FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
 -- Name: email_drafts fk_rails_1aceaa280f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.email_drafts
     ADD CONSTRAINT fk_rails_1aceaa280f FOREIGN KEY (workspace_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, id, conversation_id);
+
+
+--
+-- Name: crew_task_events fk_rails_25fca654f6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_rails_25fca654f6 FOREIGN KEY (actor_user_id) REFERENCES public.users(id);
 
 
 --
@@ -4462,6 +5058,14 @@ ALTER TABLE ONLY public.service_calendars
 
 ALTER TABLE ONLY public.conversation_messages
     ADD CONSTRAINT fk_rails_317b29f039 FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
+-- Name: crew_tasks fk_rails_3314bcee7d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_rails_3314bcee7d FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
 
 
 --
@@ -4486,6 +5090,14 @@ ALTER TABLE ONLY public.tags
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT fk_rails_3e6d59991e FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: crew_task_dependencies fk_rails_3ebdcac61d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_dependencies
+    ADD CONSTRAINT fk_rails_3ebdcac61d FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
 
 
 --
@@ -4558,6 +5170,14 @@ ALTER TABLE ONLY public.sla_escalation_tasks
 
 ALTER TABLE ONLY public.outbound_email_delivery_attachments
     ADD CONSTRAINT fk_rails_4d393bb9b0 FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
+-- Name: crew_tasks fk_rails_4d434544ba; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_rails_4d434544ba FOREIGN KEY (workspace_id, crew_template_id) REFERENCES public.crew_templates(workspace_id, id);
 
 
 --
@@ -4753,6 +5373,14 @@ ALTER TABLE ONLY public.account_merges
 
 
 --
+-- Name: crew_task_events fk_rails_74f0d28011; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_rails_74f0d28011 FOREIGN KEY (workspace_id, from_agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
 -- Name: sessions fk_rails_758836b4f0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4782,6 +5410,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.email_drafts
     ADD CONSTRAINT fk_rails_77812b41a4 FOREIGN KEY (workspace_id, support_case_id, conversation_id) REFERENCES public.support_cases(workspace_id, id, conversation_id);
+
+
+--
+-- Name: crew_task_events fk_rails_7baa24c856; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_rails_7baa24c856 FOREIGN KEY (workspace_id, to_agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
 
 
 --
@@ -4870,6 +5506,14 @@ ALTER TABLE ONLY public.support_case_status_changes
 
 ALTER TABLE ONLY public.support_case_taggings
     ADD CONSTRAINT fk_rails_8f572d50d0 FOREIGN KEY (workspace_id, tag_id) REFERENCES public.tags(workspace_id, id);
+
+
+--
+-- Name: crew_task_dependencies fk_rails_9030464aa5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_dependencies
+    ADD CONSTRAINT fk_rails_9030464aa5 FOREIGN KEY (workspace_id, depends_on_task_id) REFERENCES public.crew_tasks(workspace_id, id);
 
 
 --
@@ -5105,6 +5749,14 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: crew_task_events fk_rails_cae149d86b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_rails_cae149d86b FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: conversation_messages fk_rails_cd0fa9de6c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5113,11 +5765,27 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: crew_tasks fk_rails_cd8a5efbb3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_rails_cd8a5efbb3 FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
 -- Name: audit_events fk_rails_cdb00c0cbd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT fk_rails_cdb00c0cbd FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: crew_tasks fk_rails_d14d5b5554; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_rails_d14d5b5554 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -5158,6 +5826,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.email_message_links
     ADD CONSTRAINT fk_rails_de7eae5c16 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: crew_tasks fk_rails_e3cb7df8ab; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_rails_e3cb7df8ab FOREIGN KEY (owner_user_id) REFERENCES public.users(id);
 
 
 --
@@ -5263,6 +5939,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040009'),
 ('20260824040008'),
 ('20260824040007'),
 ('20260824040006'),

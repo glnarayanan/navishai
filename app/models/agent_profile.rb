@@ -4,6 +4,8 @@ class AgentProfile < ApplicationRecord
   belongs_to :current_version, class_name: "AgentProfileVersion", optional: true
   has_many :versions, -> { order(version_number: :desc) },
     class_name: "AgentProfileVersion", dependent: :restrict_with_exception
+  has_many :assigned_crew_tasks, class_name: "CrewTask", foreign_key: :assigned_agent_profile_id,
+    dependent: :restrict_with_exception
 
   validates :role_key, presence: true, inclusion: { in: AgentPolicy::ROLE_DEFINITIONS }
   validates :role_key, uniqueness: { scope: :crew_template_id }

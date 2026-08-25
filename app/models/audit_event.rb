@@ -11,6 +11,8 @@ class AuditEvent < ApplicationRecord
     "account.merged" => {},
     "account.unmerged" => {},
     "agent.profile_updated" => {},
+    "crew.task_created" => {},
+    "crew.task_event_recorded" => { "event_kind" => CrewTaskEvent::KINDS },
     "attachment.downloaded" => {},
     "attachment.removed" => { "attachment_id" => Integer },
     "attachment.uploaded" => { "scan_status" => StoredAttachment::SCAN_STATUSES },
