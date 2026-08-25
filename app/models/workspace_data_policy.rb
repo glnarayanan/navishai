@@ -1,12 +1,16 @@
 class WorkspaceDataPolicy < ApplicationRecord
   CONTENT_RETENTION_OPTIONS = [ 30, 90, 180, 365, 730, 1825 ].freeze
   AUDIT_RETENTION_OPTIONS = [ 365, 730, 1825, 2555, 3650 ].freeze
+  AUDIT_EXPIRY_STATUSES = %w[pending running completed failed].freeze
 
   belongs_to :workspace
 
   validates :workspace_id, uniqueness: true
   validates :content_retention_days, inclusion: { in: CONTENT_RETENTION_OPTIONS }, allow_nil: true
   validates :audit_retention_days, inclusion: { in: AUDIT_RETENTION_OPTIONS }, allow_nil: true
+  validates :audit_expiry_status, inclusion: { in: AUDIT_EXPIRY_STATUSES }, allow_nil: true
+  validates :audit_expired_event_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :audit_expiry_failure_code, format: { with: /\A[a-z][a-z0-9_]{0,99}\z/ }, allow_nil: true
   validate :audit_retention_covers_content
 
   def content_cutoff(at: Time.current)

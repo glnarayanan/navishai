@@ -2,7 +2,7 @@ class WorkspaceContentExpiry
   STALE_AFTER = 1.hour
 
   def self.request!(workspace:, membership: nil, source: :job, requested_at: Time.current)
-    run = WorkspaceContentExpiryRun.transaction do
+    run, enqueue = WorkspaceContentExpiryRun.transaction do
       policy = workspace.workspace_data_policy.lock!
       cutoff = policy.content_cutoff(at: requested_at)
       raise ArgumentError, "content retention is not enabled" unless cutoff
@@ -16,16 +16,17 @@ class WorkspaceContentExpiry
       stale = workspace.workspace_content_expiry_runs.lock.running.where("started_at < ?", requested_at - STALE_AFTER)
       stale.update_all(status: "failed", failure_code: "interrupted", completed_at: requested_at, updated_at: requested_at)
       current = workspace.workspace_content_expiry_runs.lock.where(status: %w[pending running]).first
-      next current if current
+      next [ current, false ] if current
 
-      workspace.workspace_content_expiry_runs.create!(cutoff_at: cutoff).tap do |created|
+      created = workspace.workspace_content_expiry_runs.create!(cutoff_at: cutoff).tap do |created|
         AuditEvent.record!(
           action: "workspace.content_expiry_requested", source:, workspace:, actor: actor&.user,
           actor_kind: actor ? nil : :system, subject: created, metadata: {}, occurred_at: requested_at
         )
       end
+      [ created, true ]
     end
-    WorkspaceContentExpiryJob.enqueue_after_commit(run) if run.pending?
+    WorkspaceContentExpiryJob.enqueue_after_commit(run) if enqueue
     run
   end
 
