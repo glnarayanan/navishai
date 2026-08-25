@@ -2965,7 +2965,7 @@ td {
 
   .app-header nav {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.35rem;
     width: 100%;
     min-width: 0;
@@ -2990,6 +2990,7 @@ td {
     justify-content: center;
     width: 100%;
     min-width: 3rem;
+    min-height: 3rem;
     padding-inline: 0.35rem;
     font-size: 0.8125rem;
   }
@@ -4063,6 +4064,14 @@ td {
 .app-header-bar .header-tools a,
 .app-header-bar .header-tools .button {
   min-height: 2.5rem;
+}
+
+@media (max-width: 42rem) {
+  .app-header-bar .header-tools a,
+  .app-header-bar .header-tools .button,
+  .app-header-bar .header-tools .theme-toggle {
+    min-height: 3rem;
+  }
 }
 
 .site-header nav {
