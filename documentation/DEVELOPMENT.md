@@ -12,6 +12,20 @@ bin/setup --skip-server
 
 The Amp orb setup script installs these system tools and prepares both databases.
 
+## First Owner and recovery access
+
+Set `NAVISHAI_BOOTSTRAP_TOKEN` to a random value of at least 32 bytes before the first start. Open `/setup/new` from the deployment host and enter that token to create the first organisation, workspace, and Owner. Setup closes for good after it succeeds.
+
+Create or reset the one local break-glass Admin with:
+
+```sh
+ORGANIZATION_SLUG=acme WORKSPACE_SLUG=support EMAIL=recovery@example.com PASSWORD='a-long-random-password' bin/rails navishai:break_glass:create
+```
+
+Set `NAVISHAI_BREAK_GLASS_TOKEN` to a separate random value of at least 32 bytes. The local-only `/break-glass/session/new` route requires that deployment token as well as the break-glass account password. Recovery sessions expire after 15 minutes. Normal sessions expire after 12 hours.
+
+Set `NAVISHAI_APP_HOST` to the public application host in production so password reset and invitation emails use valid HTTPS links.
+
 ## Checks
 
 Run the full local check suite with:

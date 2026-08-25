@@ -1,0 +1,24 @@
+<main class="auth-shell">
+  <section class="auth-panel recovery-panel" aria-labelledby="recovery-title">
+    <div class="page-heading">
+      <h1 id="recovery-title">Local recovery sign in</h1>
+      <p>This route only works from the NavishAI host. Use it when normal access is blocked.</p>
+    </div>
+
+    <%= form_with url: break_glass_session_path, class: "form-stack" do |form| %>
+      <div class="field">
+        <%= form.label :deployment_token, "Deployment recovery token" %>
+        <%= form.password_field :deployment_token, required: true, autocomplete: "off" %>
+      </div>
+      <div class="field">
+        <%= form.label :email_address, "Recovery email" %>
+        <%= form.email_field :email_address, required: true, autocomplete: "username" %>
+      </div>
+      <div class="field">
+        <%= form.label :password %>
+        <%= form.password_field :password, required: true, autocomplete: "current-password" %>
+      </div>
+      <%= form.submit "Sign in for recovery", class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>

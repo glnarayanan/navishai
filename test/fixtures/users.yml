@@ -2,9 +2,15 @@
 
 owner:
   email_address: owner@example.com
+  password_digest: <%= BCrypt::Password.create("password12345") %>
+  verified_at: <%= Time.current %>
 
 teammate:
   email_address: teammate@example.com
+  password_digest: <%= BCrypt::Password.create("password12345") %>
+  verified_at: <%= Time.current %>
 
 outsider:
   email_address: outsider@example.com
+  password_digest: <%= BCrypt::Password.create("password12345") %>
+  verified_at: <%= Time.current %>

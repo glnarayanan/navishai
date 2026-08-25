@@ -1,0 +1,23 @@
+<main class="auth-shell">
+  <section class="auth-panel" aria-labelledby="sign-in-title">
+    <div class="page-heading">
+      <h1 id="sign-in-title">Sign in</h1>
+      <p>Open your NavishAI workspace.</p>
+    </div>
+
+    <%= form_with url: session_path, class: "form-stack" do |form| %>
+      <div class="field">
+        <%= form.label :email_address, "Email address" %>
+        <%= form.email_field :email_address, required: true, autofocus: true, autocomplete: "username", value: params[:email_address] %>
+      </div>
+      <div class="field">
+        <div class="label-row">
+          <%= form.label :password %>
+          <%= link_to "Forgot password?", new_password_path %>
+        </div>
+        <%= form.password_field :password, required: true, autocomplete: "current-password", maxlength: 72 %>
+      </div>
+      <%= form.submit "Sign in", class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>

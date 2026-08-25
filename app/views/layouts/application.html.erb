@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <title><%= content_for(:title) || "Navishai" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -24,6 +24,27 @@
   </head>
 
   <body>
-    <%= yield %>
+    <header class="app-header">
+      <%= link_to root_path, class: "wordmark", aria: { label: "NavishAI home" } do %>
+        <span class="wordmark-mark" aria-hidden="true"></span>
+        <span>NavishAI</span>
+      <% end %>
+
+      <% if authenticated? %>
+        <nav aria-label="Account">
+          <%= link_to "Workspaces", workspaces_path %>
+          <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
+        </nav>
+      <% end %>
+    </header>
+
+    <div class="flash-region" aria-live="polite">
+      <%= tag.p(flash[:notice], class: "flash flash-notice") if flash[:notice] %>
+      <%= tag.p(flash[:alert], class: "flash flash-alert", role: "alert") if flash[:alert] %>
+    </div>
+
+    <div class="app-container">
+      <%= yield %>
+    </div>
   </body>
 </html>

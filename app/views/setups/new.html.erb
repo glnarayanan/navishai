@@ -1,0 +1,54 @@
+<main class="setup-shell" aria-labelledby="setup-title">
+  <section class="setup-panel" aria-labelledby="setup-title">
+    <div class="page-heading">
+      <h1 id="setup-title">Create the first Owner</h1>
+      <p>This one-time setup creates the first organisation, workspace, and verified Owner.</p>
+    </div>
+
+    <%= form_with url: setup_path, scope: :setup, class: "form-stack" do |form| %>
+      <fieldset>
+        <legend>Deployment access</legend>
+        <div class="field">
+          <%= label_tag :bootstrap_token, "Bootstrap token" %>
+          <%= password_field_tag :bootstrap_token, nil, required: true, autocomplete: "off" %>
+        </div>
+      </fieldset>
+      <fieldset class="field-grid">
+        <legend>Organisation and workspace</legend>
+        <div class="field">
+          <%= form.label :organization_name, "Organisation name" %>
+          <%= form.text_field :organization_name, required: true, autocomplete: "organization" %>
+        </div>
+        <div class="field">
+          <%= form.label :organization_slug, "Organisation slug" %>
+          <%= form.text_field :organization_slug, required: true, autocapitalize: "none", spellcheck: false %>
+        </div>
+        <div class="field">
+          <%= form.label :workspace_name, "Workspace name" %>
+          <%= form.text_field :workspace_name, required: true %>
+        </div>
+        <div class="field">
+          <%= form.label :workspace_slug, "Workspace slug" %>
+          <%= form.text_field :workspace_slug, required: true, autocapitalize: "none", spellcheck: false %>
+        </div>
+      </fieldset>
+      <fieldset class="field-grid">
+        <legend>Owner account</legend>
+        <div class="field field-wide">
+          <%= form.label :email_address, "Owner email" %>
+          <%= form.email_field :email_address, required: true, autocomplete: "email" %>
+        </div>
+        <div class="field">
+          <%= form.label :password %>
+          <%= form.password_field :password, required: true, minlength: 12, maxlength: 72, autocomplete: "new-password", aria: { describedby: "password-hint" } %>
+          <span id="password-hint" class="field-hint">At least 12 characters.</span>
+        </div>
+        <div class="field">
+          <%= form.label :password_confirmation, "Confirm password" %>
+          <%= form.password_field :password_confirmation, required: true, minlength: 12, maxlength: 72, autocomplete: "new-password" %>
+        </div>
+      </fieldset>
+      <%= form.submit "Create Owner workspace", class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>

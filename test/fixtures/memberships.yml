@@ -3,11 +3,14 @@
 owner_support:
   workspace: acme_support
   user: owner
+  role: owner
 
 teammate_success:
   workspace: acme_success
   user: teammate
+  role: manager
 
 outsider_beta:
   workspace: beta_support
   user: outsider
+  role: member

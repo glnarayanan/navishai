@@ -1,0 +1,27 @@
+<main class="auth-shell">
+  <section class="auth-panel" aria-labelledby="invitation-title">
+    <div class="page-heading">
+      <h1 id="invitation-title">Join <%= @invitation.workspace.name %></h1>
+      <p>You were invited as <strong><%= role_label(@invitation.role) %></strong>.</p>
+    </div>
+
+    <% if Current.user || !@existing_user %>
+      <%= form_with url: workspace_invitation_acceptance_path(params[:token]), class: "form-stack" do |form| %>
+        <% unless Current.user %>
+          <div class="field">
+            <%= form.label :password, "Create a password" %>
+            <%= form.password_field :password, required: true, minlength: 12, maxlength: 72, autocomplete: "new-password", aria: { describedby: "password-hint" } %>
+            <span id="password-hint" class="field-hint">At least 12 characters.</span>
+          </div>
+          <div class="field">
+            <%= form.label :password_confirmation, "Confirm password" %>
+            <%= form.password_field :password_confirmation, required: true, minlength: 12, maxlength: 72, autocomplete: "new-password" %>
+          </div>
+        <% end %>
+        <%= form.submit "Accept invitation", class: "button button-primary" %>
+      <% end %>
+    <% else %>
+      <%= link_to "Sign in to accept", new_session_path, class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>
