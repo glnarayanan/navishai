@@ -36,6 +36,7 @@
           </ul>
         </div>
       <% end %>
+      <%= render "execution_runs" %>
       <ol class="crew-event-list">
         <% @events.each do |event| %>
           <li>
@@ -103,7 +104,7 @@
             <% end %>
           </details>
 
-          <% if @task.in_progress? || @task.blocked? %>
+          <% if (@task.in_progress? || @task.blocked?) && @active_run.nil? %>
             <details class="crew-command-group">
               <summary>Handoff or outcome</summary>
               <%= form_with url: command_workspace_support_case_crew_task_path(@workspace, @support_case, @task), class: "crew-command-form" do |form| %>
@@ -129,9 +130,11 @@
             <% end %>
           <% end %>
           <% outcome_commands = [] %>
-          <% outcome_commands << ["Mark blocked", "block"] if @task.ready? || @task.in_progress? %>
-          <% outcome_commands << ["Record failure", "fail"] if @task.in_progress? || @task.blocked? || @task.review_requested? %>
-          <% outcome_commands << ["Cancel task", "cancel"] unless @task.completed? || @task.canceled? %>
+          <% if @active_run.nil? %>
+            <% outcome_commands << ["Mark blocked", "block"] if @task.ready? || @task.in_progress? %>
+            <% outcome_commands << ["Record failure", "fail"] if @task.in_progress? || @task.blocked? || @task.review_requested? %>
+            <% outcome_commands << ["Cancel task", "cancel"] unless @task.completed? || @task.canceled? %>
+          <% end %>
           <% if outcome_commands.any? %>
             <details class="crew-command-group">
               <summary>Record a block or stop</summary>

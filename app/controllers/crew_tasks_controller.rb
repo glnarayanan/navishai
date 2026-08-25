@@ -55,6 +55,10 @@ class CrewTasksController < ApplicationController
       @profiles = @workspace.agent_profiles.joins(:crew_template)
         .where(crew_templates: { crew_kind: :support }).includes(:current_version).order(:id)
       @events = @task&.events&.includes(:actor_user, :from_agent_profile, :to_agent_profile)&.order(sequence_number: :desc)
+      if @task
+        @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
+        @active_run = @runs.find(&:active?)
+      end
     end
 
     def command_attributes

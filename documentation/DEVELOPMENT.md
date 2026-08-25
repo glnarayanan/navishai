@@ -60,6 +60,8 @@ Runner events post to `/webhooks/runner-events` with the same HMAC headers plus 
 
 Completed Support Crew runs publish strict artifact schema `1` JSON with a role-bound `kind`, body, explicit uncertainty, one or more workspace-checked citations, conflicts, change requests, and review outcome. Investigation, draft, and quality-review artifacts are append-only and versioned. A quality review freezes the exact draft it saw. A rerun freezes the prior review and its requested changes into the next admission context, which is bounded at 128 KiB on both Rails and Go. Invalid or stale output rolls the completion event back instead of creating an uncited or mismatched result. These records propose work only; they cannot create or send an email draft.
 
+The Crew task page polls its workspace-scoped run record while an attempt is active. A writer can retry an unconfirmed admission with its original idempotency key or start a later attempt after a terminal result. The page keeps blocked, degraded, failed, canceled, and completed states distinct and exposes safe run IDs, event sequence, policy version, usage, and failure codes for operator checks. An active run blocks task cancellation until the runner records a terminal event.
+
 ## Checks
 
 Run the full local check suite with:

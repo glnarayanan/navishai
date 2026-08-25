@@ -91,4 +91,85 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     get workspace_support_case_crew_tasks_path(@workspace, foreign_case)
     assert_response :not_found
   end
+
+  test "run panel is tenant scoped and only writers can request or reconcile attempts" do
+    task = CrewWork.create!(workspace: @workspace, membership: @owner, scope: @support_case,
+      profile: @profile, title: "Run task", input_context: "Use current case facts.",
+      expected_output: "Keep progress visible.")
+    CrewWork.apply!(workspace: @workspace, membership: @owner, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number)
+    client = accepting_runner_client
+
+    with_runner_client(client) do
+      post workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+        params: { request_key: "web:controller" }
+    end
+    run = task.execution_runs.find_by!(request_key: "web:controller")
+    assert_redirected_to workspace_support_case_crew_task_path(@workspace, @support_case, task)
+    assert run.admitted?
+
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
+    assert_response :success
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
+    assert_select ".run-current", text: /Accepted by runner/
+
+    ledger = ExecutionLedger.new(workspace: @workspace)
+    base = run.current_event.occurred_at
+    ingest_run_event(ledger, run, 2, "run.started", base + 1.second,
+      adapter: "scripted", scenario: "failure", attempt: 1)
+    ingest_run_event(ledger, run, 3, "run.failed", base + 2.seconds,
+      code: "fixture_failure", retryable: true)
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='false']"
+    assert_select ".execution-alert-error", text: /Run did not complete/
+    assert_select "form[action='#{workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)}']",
+      text: /Run specialist again/
+
+    viewer = @workspace.memberships.create!(
+      user: User.create!(email_address: "run-panel-viewer@example.com", password: "password12345", verified_at: Time.current),
+      role: :viewer
+    )
+    sign_in_as viewer.user
+    assert_no_difference "ExecutionRun.count" do
+      post workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+        params: { request_key: "web:forged" }
+    end
+    assert_response :forbidden
+
+    foreign_case = create_support_case(
+      workspace: workspaces(:beta_support), contact: contacts(:bob), membership: memberships(:outsider_beta)
+    )
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, foreign_case, task)
+    assert_response :not_found
+  end
+
+  private
+    def with_runner_client(client)
+      original = RunnerClient.method(:new)
+      RunnerClient.define_singleton_method(:new) { client }
+      yield
+    ensure
+      RunnerClient.define_singleton_method(:new, original)
+    end
+
+    def accepting_runner_client
+      Object.new.tap do |client|
+        client.define_singleton_method(:admit!) do |task:, run_id:, attempt:, **|
+          event = {
+            "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run_id,
+            "sequence" => 1, "event_type" => "run.admitted", "occurred_at" => Time.current.iso8601(6),
+            "data" => { "workspace_key" => task.workspace.runner_key, "task_key" => task.task_key, "attempt" => attempt }
+          }
+          Struct.new(:event).new(event)
+        end
+      end
+    end
+
+    def ingest_run_event(ledger, run, sequence, type, occurred_at, **data)
+      ledger.ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => type, "occurred_at" => occurred_at.iso8601(6),
+        "data" => data.deep_stringify_keys
+      })
+    end
 end

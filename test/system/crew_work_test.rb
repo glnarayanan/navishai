@@ -61,6 +61,62 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     save_screenshot Rails.root.join(".amp/in/artifacts/crew-work-desktop.png") if ENV["CAPTURE_CREW_WORK"]
   end
 
+  test "a writer sees interrupted admission recover into cited live output" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    CrewConfiguration.install_defaults!(workspace: workspace)
+    support_case = create_support_case
+    message = add_inbound_message(support_case, body: "The reset link expired before I could use it.")
+    profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    task = CrewWork.create!(
+      workspace:, membership: owner, scope: support_case, profile:,
+      title: "Investigate reset failure", input_context: "Use the customer message.",
+      expected_output: "Return a cited finding and state uncertainty."
+    )
+    CrewWork.apply!(workspace:, membership: owner, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number)
+    assert_raises(RunnerClient::AmbiguousResult) do
+      ExecutionRecovery.request!(
+        workspace:, membership: owner, task:, request_key: "web:system-recovery",
+        client: rejecting_runner_client
+      )
+    end
+    run = task.execution_runs.find_by!(request_key: "web:system-recovery")
+
+    sign_in(users(:owner))
+    visit workspace_support_case_crew_task_path(workspace, support_case, task)
+    assert_text "Runner connection degraded"
+    assert_text "Retry runner connection"
+
+    ExecutionRecovery.reconcile!(workspace:, membership: owner, task:, run:, client: accepting_runner_client)
+    output = JSON.generate(
+      schema_version: 1, kind: "investigation", body: "The customer used an expired reset link.",
+      uncertainty: "The opening time is not available.", conflicts: [], change_requests: [], review_outcome: nil,
+      citations: [ {
+        kind: "conversation", locator: "conversation://#{support_case.conversation_id}/messages/#{message.id}",
+        label: "Customer report"
+      } ]
+    )
+    ledger = ExecutionLedger.new(workspace:)
+    base = run.reload.current_event.occurred_at
+    ingest_run_event(ledger, run, 2, "run.started", base + 1.second,
+      adapter: "scripted", scenario: "recovered", attempt: 1)
+    ingest_run_event(ledger, run, 3, "output.produced", base + 2.seconds, text: output)
+    ingest_run_event(ledger, run, 4, "run.completed", base + 3.seconds, outcome: "completed")
+
+    assert_text "The customer used an expired reset link.", wait: 8
+    assert_text "Customer report"
+    assert_text "The opening time is not available."
+    find("summary", text: "Operator details").click
+    assert_text run.run_key
+    save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-desktop.png") if ENV["CAPTURE_EXECUTION"]
+
+    page.current_window.resize_to(320, 844)
+    assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    assert_operator find_button("Run specialist again").rect.height, :>=, 48
+    save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-mobile.png") if ENV["CAPTURE_EXECUTION"]
+  end
+
   private
     def sign_in(user)
       visit new_session_path
@@ -68,5 +124,32 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       fill_in "Password", with: "password12345"
       click_on "Sign in"
       assert_selector "h1", text: "Choose a workspace", wait: 6
+    end
+
+    def accepting_runner_client
+      Object.new.tap do |client|
+        client.define_singleton_method(:admit!) do |task:, run_id:, attempt:, **|
+          event = {
+            "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run_id,
+            "sequence" => 1, "event_type" => "run.admitted", "occurred_at" => Time.current.iso8601(6),
+            "data" => { "workspace_key" => task.workspace.runner_key, "task_key" => task.task_key, "attempt" => attempt }
+          }
+          Struct.new(:event).new(event)
+        end
+      end
+    end
+
+    def rejecting_runner_client
+      Object.new.tap do |client|
+        client.define_singleton_method(:admit!) { |**| raise RunnerClient::AmbiguousResult, "unknown" }
+      end
+    end
+
+    def ingest_run_event(ledger, run, sequence, type, occurred_at, **data)
+      ledger.ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => type, "occurred_at" => occurred_at.iso8601(6),
+        "data" => data.deep_stringify_keys
+      })
     end
 end

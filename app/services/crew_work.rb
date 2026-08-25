@@ -78,6 +78,9 @@ class CrewWork
       raise StaleTask, "This task changed after the page loaded. Review the latest work record and try again." unless task.current_event.sequence_number == expected
 
       values = attributes.respond_to?(:to_h) ? attributes.to_h : attributes
+      if command.in?(%w[block handoff request_review fail cancel]) && task.execution_runs.active.exists?
+        raise InvalidCommand, "Wait for the active run to finish or confirm cancellation before changing this task."
+      end
       event = apply_command!(task, command, values.symbolize_keys)
       AuditEvent.record!(
         action: "crew.task_event_recorded", source: :web, workspace: @workspace,
