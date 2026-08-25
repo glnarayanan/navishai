@@ -518,10 +518,9 @@
 .feature-cycle {
   display: grid;
   grid-template-columns: minmax(16rem, 0.9fr) minmax(20rem, 1.1fr);
-  align-items: stretch;
+  align-items: start;
   gap: 1.5rem;
   width: min(100% - 3rem, 64rem);
-  min-height: 28rem;
   margin: 0 auto 4rem;
 }
 
@@ -584,13 +583,16 @@
 
 .feature-panel {
   display: grid;
-  grid-template-rows: minmax(14rem, 1fr) auto;
+  grid-template-rows: auto auto;
   overflow: hidden;
-  min-height: 100%;
   border: 1px solid var(--border);
   border-radius: 1rem;
   background: var(--card);
   box-shadow: var(--shadow);
+}
+
+.feature-panel[hidden] {
+  display: none;
 }
 
 .feature-visual {

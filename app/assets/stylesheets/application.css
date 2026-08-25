@@ -4411,6 +4411,36 @@ td {
   .site-rail { display: none; }
   .is-public .site-frame { border-inline: 0; }
   .theme-toggle { min-width: 3.25rem; padding-inline: 0.5rem; }
+
+  .is-app .app-header-bar,
+  .app-header-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .is-app .app-header-bar .header-tools,
+  .app-header-bar .header-tools {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .is-app .site-header nav,
+  .app-header nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .is-app .site-header nav a,
+  .app-header nav a {
+    justify-content: center;
+    width: 100%;
+    min-height: 3rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
