@@ -188,6 +188,31 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     end
   end
 
+  test "memory citations are limited to records selected for the exact run" do
+    selected = create_indexed_memory("selected-memory")
+    unrelated = create_indexed_memory("unrelated-memory")
+    engine = Object.new
+    engine.define_singleton_method(:search) do |query:|
+      [ MemoryEngine::Hit.new(memory_key: selected.memory_key, score: 0.9) ]
+    end
+    citation = { "kind" => "memory", "locator" => "memory://#{selected.memory_key}", "label" => "Selected memory" }
+
+    start(@investigation)
+    run = complete_run(@investigation, artifact_payload(
+      kind: "investigation", body: "The selected context supports the finding.", citations: [ citation ]
+    ), memory_engine: engine)
+    artifact = publish_run(@investigation, run)
+
+    assert_equal citation, artifact.citations.sole
+    assert_equal selected, run.execution_memory_selections.sole.memory_record
+    assert_raises(ExecutionLedger::InvalidRun) do
+      complete_run(@investigation, artifact_payload(
+        kind: "investigation", body: "Unselected context.",
+        citations: [ { "kind" => "memory", "locator" => "memory://#{unrelated.memory_key}", "label" => "Unselected" } ]
+      ), memory_engine: engine)
+    end
+  end
+
   private
     def create_task(profile, title, dependencies: [])
       CrewWork.create!(
@@ -220,16 +245,17 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       CrewArtifactPublisher.publish!(workspace: @workspace, task:, run:, target_artifact: target)
     end
 
-    def prepare_run(task, output)
+    def prepare_run(task, output, memory_engine: nil)
       @output_counter = @output_counter.to_i + 1
-      run = ExecutionLedger.new(workspace: @workspace).prepare!(task:, request_key: "artifact:#{task.id}:#{@output_counter}")
+      run = ExecutionLedger.new(workspace: @workspace, memory_engine:)
+        .prepare!(task:, request_key: "artifact:#{task.id}:#{@output_counter}")
       run.define_singleton_method(:pending_test_output) { output }
       run
     end
 
-    def complete_run(task, payload)
+    def complete_run(task, payload, memory_engine: nil)
       output = JSON.generate(payload)
-      run = prepare_run(task, output)
+      run = prepare_run(task, output, memory_engine:)
       ledger = ExecutionLedger.new(workspace: @workspace)
       events = [
         [ "run.admitted", { workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number } ],
@@ -267,5 +293,19 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
 
     def knowledge_citation
       { "kind" => "knowledge", "locator" => @knowledge.current_version.citation_uri, "label" => "Reset link policy" }
+    end
+
+    def create_indexed_memory(topic)
+      memory = @workspace.memory_records.create!(
+        memory_type: :episodic, scope_kind: :workspace, topic:, content: "Context for #{topic}",
+        authority: :source_record, origin_kind: :system, source_reference: "test://#{topic}",
+        source_digest: Digest::SHA256.hexdigest(topic), observed_at: 1.hour.ago, valid_from: 1.hour.ago,
+        confidence: 1, retention_policy: :indefinite
+      )
+      @workspace.memory_index_entries.create!(
+        memory_record: memory, status: :indexed, external_document_id: "document-#{memory.memory_key}",
+        external_status: "done", attempt_count: 1, last_attempted_at: Time.current, indexed_at: Time.current
+      )
+      memory
     end
 end

@@ -6,7 +6,8 @@ class RuntimeInstallation < ApplicationRecord
     "customer_identity" => "Customer identity",
     "account_context" => "Account context",
     "approved_knowledge" => "Approved knowledge",
-    "public_web_query" => "Public web query"
+    "public_web_query" => "Public web query",
+    "retrieved_memory" => "Retrieved memory"
   }.freeze
   SENSITIVE_METADATA_KEY = /passw|secret|token|credential|cookie|authorization|private|session/i
 

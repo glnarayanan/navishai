@@ -27,14 +27,20 @@ class ExecutionLedger
     new(workspace:).ingest!(event:)
   end
 
-  def initialize(workspace:)
+  def initialize(workspace:, memory_engine: nil)
     @workspace = workspace
+    @memory_engine = memory_engine
   end
 
   def prepare!(task:, request_key:)
     task = @workspace.crew_tasks.find(task.id)
     request_key = request_key.to_s
     raise InvalidRun, "Execution request key is invalid." if request_key.blank? || request_key.bytesize > 128
+    if (existing = @workspace.execution_runs.find_by(request_key:))
+      raise InvalidRun, "Execution request key belongs to another task." unless existing.crew_task_id == task.id
+      return existing
+    end
+    memory_context = MemoryContext.build(workspace: @workspace, task:, engine: @memory_engine)
 
     ExecutionRun.transaction do
       task.lock!
@@ -48,9 +54,13 @@ class ExecutionLedger
       end
 
       attempt = task.execution_runs.maximum(:attempt_number).to_i + 1
-      input_context, input_artifact = context_for(task)
-      selection = RuntimeRouter.resolve!(workspace: @workspace, profile_version: task.assigned_agent_profile_version)
-      @workspace.execution_runs.create!(
+      input_context, input_artifact = context_for(task, memory_context)
+      extra_data = memory_context.present? ? [ "retrieved_memory" ] : []
+      selection = RuntimeRouter.resolve!(
+        workspace: @workspace, profile_version: task.assigned_agent_profile_version,
+        additional_data_classes: extra_data
+      )
+      run = @workspace.execution_runs.create!(
         crew_task: task,
         agent_profile: task.assigned_agent_profile,
         agent_profile_version: task.assigned_agent_profile_version,
@@ -68,10 +78,18 @@ class ExecutionLedger
         max_output_units: selection.max_output_units,
         input_context:, input_artifact:
       )
+      memory_context.items.each do |item|
+        @workspace.execution_memory_selections.create!(
+          execution_run: run, memory_record: item.record, rank: item.rank, relevance_score: item.score
+        )
+      end
+      run
     end
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidRun, error.record.errors.full_messages.to_sentence
   rescue RuntimeRouter::NoCompatibleRuntime => error
+    raise InvalidRun, error.message
+  rescue MemoryContext::Unavailable => error
     raise InvalidRun, error.message
   end
 
@@ -151,7 +169,7 @@ class ExecutionLedger
   end
 
   private
-    def context_for(task)
+    def context_for(task, memory_context)
       context = task.input_context.dup
       input_artifact = nil
       case task.assigned_agent_profile.role_key
@@ -180,6 +198,7 @@ class ExecutionLedger
         end
       end
       context << public_web_context(task)
+      context << memory_context.text
       raise InvalidRun, "Execution context exceeds the runner protocol limit." if context.bytesize > 128.kilobytes
 
       [ context, input_artifact ]
