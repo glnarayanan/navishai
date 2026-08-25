@@ -28,7 +28,12 @@ compose up -d --wait postgres
 postgres_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command 'SHOW server_version_num')"
 [[ "$postgres_version" == 15* ]] || { printf 'PostgreSQL 15 is required; found %s.\n' "$postgres_version" >&2; exit 1; }
 vector_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command "SELECT extversion FROM pg_extension WHERE extname = 'vector'")"
-[[ "$vector_version" == "0.8.1" ]] || { printf 'pgvector 0.8.1 is required; found %s.\n' "${vector_version:-none}" >&2; exit 1; }
+case "$vector_version" in
+  0.8.1|0.8.6) ;;
+  *) printf 'Unsupported pgvector version %s; expected 0.8.1 or 0.8.6.\n' "${vector_version:-none}" >&2; exit 1 ;;
+esac
+available_vector_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command "SELECT version FROM pg_available_extension_versions WHERE name = 'vector' AND version = '0.8.6'")"
+[[ "$available_vector_version" == "0.8.6" ]] || { printf 'pgvector 0.8.6 is not available in the target PostgreSQL image.\n' >&2; exit 1; }
 
 compose run --rm -T --no-deps web bin/rails db:migrate:status
 printf 'Upgrade preflight passed with verified backup %s\n' "$archive"

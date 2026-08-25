@@ -11857,6 +11857,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260825220000'),
 ('20260824230700'),
 ('20260824230600'),
 ('20260824230500'),

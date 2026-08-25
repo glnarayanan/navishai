@@ -9,7 +9,7 @@ This inventory records the production dependencies approved for the repository b
 | Ruby | 4.0.6 | Rails control plane |
 | Rails | 8.1.3.1 | Web, jobs, mail, storage, and application framework |
 | PostgreSQL | 15 | Authoritative application, queue, cache, and cable state |
-| pgvector | 0.8.1 | PostgreSQL vector type and search support |
+| pgvector | 0.8.6 | PostgreSQL vector type and search support |
 | Go | 1.27.0 | Execution runner |
 
 ## Direct production gems
