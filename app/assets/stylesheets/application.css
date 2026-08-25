@@ -3348,6 +3348,7 @@ td {
   .public-web-form { grid-template-columns: 1fr; }
   .public-web-form .button { width: 100%; min-height: 48px; }
   .public-web-extraction .button { width: 100%; min-height: 48px; }
+  .public-web-result a { display: inline-flex; min-height: 1.5rem; align-items: center; }
   .public-web-search > header { flex-direction: column; gap: 0.25rem; }
   .public-web-results dl div { grid-template-columns: 1fr; gap: 0; }
 }

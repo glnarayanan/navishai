@@ -20,7 +20,9 @@ class OutboundWebhooksTest < ApplicationSystemTestCase
     assert_equal 320, page.evaluate_script("window.innerWidth")
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
     assert_operator find_button("Pause").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    open_workspace_nav
     assert_operator find_link("Webhooks").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    find("body").send_keys(:escape)
 
     click_button "Pause"
     assert_button "Resume"

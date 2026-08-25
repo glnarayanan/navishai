@@ -33,9 +33,11 @@ class KnowledgeSourcesTest < ApplicationSystemTestCase
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_operator find_field("Search current knowledge").rect.height, :>=, 48
     assert_operator find_button("Search").rect.height, :>=, 48
+    open_workspace_nav
     knowledge_link = find_link("Knowledge", match: :first)
     assert_operator knowledge_link.rect.width, :>=, 48
     assert_operator knowledge_link.rect.height, :>=, 48
+    find("body").send_keys(:escape)
     page.execute_script("window.scrollTo(0, 0)")
     save_screenshot Rails.root.join(".amp/in/artifacts/knowledge-sources-mobile.png") if ENV["CAPTURE_KNOWLEDGE"]
 

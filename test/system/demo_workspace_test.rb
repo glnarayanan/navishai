@@ -25,6 +25,7 @@ class DemoWorkspaceTest < ApplicationSystemTestCase
     page.current_window.resize_to(320, 844)
     overflow = page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_equal 0, overflow
+    open_workspace_nav
     assert_operator find_link("Cases", match: :first).rect.height, :>=, 48
     assert_operator find_link("Accounts", match: :first).rect.height, :>=, 48
   ensure

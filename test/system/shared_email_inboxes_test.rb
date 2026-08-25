@@ -26,6 +26,7 @@ class SharedEmailInboxesTest < ApplicationSystemTestCase
       assert_operator control.rect.height, :>=, 48
     end
     %w[Cases Email].each do |label|
+      open_workspace_nav
       link = find_link(label)
       assert_operator link.rect.width, :>=, 48
       assert_operator link.rect.height, :>=, 48

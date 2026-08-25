@@ -31,7 +31,9 @@ class MemoryRecordsTest < ApplicationSystemTestCase
 
     page.current_window.resize_to(320, 844)
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    open_workspace_nav
     assert_operator find_link("Memory", match: :first).rect.height, :>=, 48
+    find("body").send_keys(:escape)
     assert_operator find_field("Corrected context").rect.height, :>=, 48
     assert_operator find_button("Publish correction").rect.height, :>=, 48
     save_screenshot Rails.root.join(".amp/in/artifacts/memory-record-mobile.png") if ENV["CAPTURE_MEMORY"]

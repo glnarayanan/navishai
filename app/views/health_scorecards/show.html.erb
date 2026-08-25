@@ -150,9 +150,7 @@
           </dl>
         <% else %>
           <p class="muted-copy">Run a preview against retained snapshots before publishing.</p>
-          <% if @membership.can_write? %>
-            <%= button_to "Run preview and backtest", backtest_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id }, class: "button button-secondary" %>
-          <% end %>
+          <p><a href="#preview">See the preview stage</a></p>
         <% end %>
       </div>
     </aside>

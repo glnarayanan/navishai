@@ -33,9 +33,11 @@ class CrewConfigurationSystemTest < ApplicationSystemTestCase
 
     page.current_window.resize_to(320, 844)
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    open_workspace_nav
     crews_link = find_link("Crews", match: :first)
     assert_operator crews_link.rect.width, :>=, 48
     assert_operator crews_link.rect.height, :>=, 48
+    find("body").send_keys(:escape)
     assert_operator find("#profile-#{investigator.id} summary").rect.height, :>=, 48
     save_screenshot Rails.root.join(".amp/in/artifacts/crew-configuration-mobile.png") if ENV["CAPTURE_CREWS"]
     if ENV["CAPTURE_CREWS"]

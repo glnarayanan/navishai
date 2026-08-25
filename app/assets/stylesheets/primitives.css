@@ -286,6 +286,14 @@
   .is-app .conversation-thread {
     order: 1;
   }
+
+  .is-app input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]),
+  .is-app select,
+  .is-app textarea,
+  .is-app button,
+  .is-app .button {
+    min-height: 3rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

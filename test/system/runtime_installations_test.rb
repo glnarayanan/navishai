@@ -42,9 +42,11 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     page.current_window.resize_to(320, 844)
     page.execute_script("arguments[0].scrollIntoView()", find("#runtime-#{installation.id} .runtime-budget-grid"))
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    open_workspace_nav
     runtimes_link = find_link("Runtimes", match: :first)
     assert_operator runtimes_link.rect.width, :>=, 48
     assert_operator runtimes_link.rect.height, :>=, 48
+    find("body").send_keys(:escape)
     within "#runtime-#{installation.id}" do
       assert_operator find_button("Save runtime policy").rect.height, :>=, 48
     end

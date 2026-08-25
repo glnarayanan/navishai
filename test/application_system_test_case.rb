@@ -9,7 +9,13 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     options.binary = chrome_binary if chrome_binary
   end
 
+  setup do
+    page.current_window.resize_to(1400, 1400)
+  end
+
   def open_workspace_nav
-    click_button "Open navigation" if page.has_button?("Open navigation", wait: 0)
+    return unless page.has_button?("Open navigation", wait: 0)
+
+    click_button "Open navigation" unless page.has_selector?("dialog#app-nav-drawer[open]", wait: 0)
   end
 end
