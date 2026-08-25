@@ -62,4 +62,23 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     get workspace_support_cases_path(@workspace)
     assert_select "a", { text: "Data", count: 0 }
   end
+
+  test "owner can queue an irreversible content expiry run" do
+    @policy.update!(content_retention_days: 30, audit_retention_days: 365)
+    sign_in_as users(:owner)
+
+    assert_enqueued_with job: WorkspaceContentExpiryJob do
+      post expire_workspace_data_controls_path(@workspace)
+    end
+
+    assert_redirected_to workspace_data_controls_path(@workspace)
+    run = @workspace.workspace_content_expiry_runs.last
+    assert run.pending?
+    assert_equal 30.days.ago.to_date, run.cutoff_at.to_date
+
+    get workspace_data_controls_path(@workspace)
+    assert_select "h2", "Content expiry"
+    assert_select "form[action='#{expire_workspace_data_controls_path(@workspace)}']"
+    assert_select "td", "Pending"
+  end
 end

@@ -121,6 +121,9 @@ class AuditEvent < ApplicationRecord
       "content_retention_days" => Integer,
       "audit_retention_days" => Integer
     },
+    "workspace.content_expiry_requested" => {},
+    "workspace.content_expiry_completed" => { "record_count" => Integer },
+    "workspace.content_expiry_failed" => { "failure_code" => String },
     "webhook.endpoint_configured" => { "active" => %w[true false] }
   }.freeze
 

@@ -94,6 +94,283 @@ $$;
 
 
 --
+-- Name: expire_workspace_content(bigint, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  affected integer;
+  total integer := 0;
+  table_name text;
+  expiry_tables text[] := ARRAY[
+    'account_health_assessments', 'account_health_inputs', 'account_health_signals', 'accounts',
+    'active_storage_attachments', 'active_storage_blobs',
+    'case_notes', 'contacts', 'conversation_messages', 'conversations', 'crew_artifacts',
+    'crew_task_events', 'crew_tasks', 'email_drafts', 'email_message_links', 'email_threads',
+    'execution_events', 'execution_runs', 'health_scorecard_backtests',
+    'health_scorecard_design_turns', 'health_scorecard_versions', 'inbound_email_deliveries',
+    'intercom_conversation_links', 'intercom_drafts', 'intercom_outbound_deliveries', 'intercom_part_links',
+    'intercom_sync_operations', 'intercom_webhook_deliveries', 'knowledge_source_versions',
+    'knowledge_sources', 'memory_correction_proposals', 'memory_index_entries',
+    'memory_proposals', 'memory_records', 'outbound_email_deliveries', 'public_web_extractions',
+    'public_web_search_results', 'public_web_searches', 'source_identities',
+    'source_identity_keys', 'stored_attachments', 'support_case_status_changes'
+  ];
+BEGIN
+  IF target_workspace_id IS NULL OR cutoff IS NULL THEN
+    RAISE EXCEPTION 'workspace and cutoff are required';
+  END IF;
+
+  FOREACH table_name IN ARRAY expiry_tables LOOP
+    EXECUTE format('LOCK TABLE %I IN ACCESS EXCLUSIVE MODE', table_name);
+  END LOOP;
+  FOREACH table_name IN ARRAY expiry_tables LOOP
+    EXECUTE format('ALTER TABLE %I DISABLE TRIGGER USER', table_name);
+  END LOOP;
+
+  UPDATE accounts SET name = 'Expired account ' || id, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND name NOT LIKE 'Expired account %';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE contacts SET name = 'Expired contact ' || id, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND name NOT LIKE 'Expired contact %';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE source_identities
+  SET source_record_id = 'expired-' || id, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND source_record_id NOT LIKE 'expired-%';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE source_identity_keys
+  SET normalized_value = 'expired-' || id || '@invalid.example', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND normalized_value NOT LIKE 'expired-%@invalid.example';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE conversations SET subject = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND started_at < cutoff AND subject <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE conversation_messages
+  SET body = '[Expired by retention policy]', external_author_name = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND occurred_at < cutoff AND
+    (body <> '[Expired by retention policy]' OR external_author_name IS NOT NULL);
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE case_notes SET body = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE support_case_status_changes SET reason = '[Expired by retention policy]'
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND reason IS NOT NULL AND reason <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE inbound_email_deliveries
+  SET source_message_id = '<expired-' || id || '@navishai.invalid>', content_sha256 = repeat('0', 64),
+      raw_email = ''::bytea, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND received_at < cutoff AND octet_length(raw_email) > 0;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE email_threads SET thread_key = '<expired-thread-' || id || '@navishai.invalid>', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND thread_key NOT LIKE '<expired-thread-%@navishai.invalid>';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE email_message_links
+  SET message_id = '<expired-link-' || id || '@navishai.invalid>', reply_to_address = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND message_id NOT LIKE '<expired-link-%@navishai.invalid>';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE email_drafts SET body = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE outbound_email_deliveries
+  SET message_id = '<expired-outbound-' || id || '@navishai.invalid>', in_reply_to_message_id = NULL,
+      from_address = 'expired@invalid.example', to_address = 'expired@invalid.example',
+      subject = '[Expired by retention policy]', body = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE stored_attachments
+  SET filename = 'expired-' || id || '.bin', content_sha256 = repeat('0', 64),
+      detected_content_type = 'application/octet-stream', scan_status = 'rejected',
+      scan_result_code = 'retention_expired', scanned_at = COALESCE(scanned_at, CURRENT_TIMESTAMP),
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND scan_result_code <> 'retention_expired';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE active_storage_blobs blobs
+  SET filename = 'expired-' || blobs.id || '.bin', content_type = 'application/octet-stream',
+      metadata = '{}', checksum = '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=', byte_size = 0
+  FROM active_storage_attachments attachments, stored_attachments stored
+  WHERE attachments.record_type = 'StoredAttachment' AND attachments.name = 'file'
+    AND attachments.record_id = stored.id AND attachments.blob_id = blobs.id
+    AND stored.workspace_id = target_workspace_id AND stored.created_at < cutoff
+    AND blobs.filename NOT LIKE 'expired-%.bin';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE knowledge_sources
+  SET title = '[Expired by retention policy]',
+      canonical_url = CASE WHEN source_kind = 'url' THEN 'https://expired.invalid/' || id ELSE NULL END,
+      external_id = CASE WHEN source_kind = 'intercom_help_center' THEN 'expired-' || id ELSE NULL END,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND title <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE knowledge_source_versions
+  SET content = '[Expired by retention policy]', content_sha256 = repeat('0', 64),
+      retrieved_from_url = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND content <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE crew_tasks SET title = '[Expired task]', input_context = '[Expired by retention policy]',
+      expected_output = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND input_context <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE crew_task_events SET body = '[Expired by retention policy]', evidence_locator = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND
+    (body IS DISTINCT FROM '[Expired by retention policy]' OR evidence_locator IS NOT NULL);
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE execution_runs
+  SET input_context = '[Expired by retention policy]', output = CASE WHEN output IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      last_admission_error = NULL, runtime_selection_detail = NULL, memory_context_detail = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND
+    (input_context IS DISTINCT FROM '[Expired by retention policy]' OR
+     (output IS NOT NULL AND output <> '[Expired by retention policy]') OR
+     last_admission_error IS NOT NULL OR runtime_selection_detail IS NOT NULL OR memory_context_detail IS NOT NULL);
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE execution_events SET data = '{}'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND occurred_at < cutoff AND data <> '{}'::jsonb;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE crew_artifacts
+  SET body = '[Expired by retention policy]', uncertainty = '[Expired by retention policy]', citations = '[]'::jsonb,
+      conflicts = '[]'::jsonb, change_requests = '[]'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE public_web_searches SET query = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND COALESCE(retrieved_at, created_at) < cutoff AND query <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE public_web_search_results
+  SET title = '[Expired by retention policy]', url = 'https://expired.invalid/' || id,
+      excerpt = '[Expired by retention policy]', content_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND COALESCE(retrieved_at, created_at) < cutoff AND title <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE public_web_extractions
+  SET source_url = 'https://expired.invalid/' || id, final_url = 'https://expired.invalid/' || id,
+      content = '[Expired by retention policy]', content_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND COALESCE(retrieved_at, created_at) < cutoff AND content <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE memory_records
+  SET topic = '[Expired memory]', content = '[Expired by retention policy]', content_digest = repeat('0', 64),
+      source_reference = 'retention-expired://' || memory_key, source_digest = repeat('0', 64),
+      retention_policy = 'time_bound', retention_until = cutoff, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND observed_at < cutoff AND content <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE memory_proposals
+  SET topic = '[Expired memory]', content = '[Expired by retention policy]', content_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND content <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE memory_correction_proposals
+  SET content = '[Expired by retention policy]', content_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND content <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE memory_index_entries
+  SET status = 'failed', external_document_id = NULL, external_status = NULL,
+      failure_code = 'retention_expired', indexed_at = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND external_document_id IS NOT NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_webhook_deliveries
+  SET notification_id = 'expired-' || id, topic = 'expired', content_sha256 = repeat('0', 64),
+      raw_payload = '{}'::bytea, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND received_at < cutoff AND octet_length(raw_payload) > 2;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_conversation_links
+  SET remote_conversation_id = 'expired-' || id, remote_assignee_id = NULL, remote_assignee_name = NULL,
+      source_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND remote_updated_at < cutoff AND remote_conversation_id NOT LIKE 'expired-%';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_part_links
+  SET remote_part_id = 'expired-' || id, author_name = NULL, body = '[Expired by retention policy]',
+      source_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND remote_created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_sync_operations
+  SET payload = '{}'::jsonb, remote_object_id = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND payload <> '{}'::jsonb;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_drafts SET body = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE intercom_outbound_deliveries
+  SET remote_conversation_id = 'expired-' || id, source_part_id = NULL,
+      remote_part_id = CASE WHEN status = 'sent' THEN 'expired-part-' || id ELSE NULL END,
+      admin_id = NULL, body = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE account_health_inputs
+  SET source_key = 'expired-' || id, source_locator = '[Expired by retention policy]',
+      numeric_value = CASE WHEN value_kind = 'number' THEN 0 ELSE NULL END,
+      date_value = CASE WHEN value_kind = 'date' THEN DATE '1970-01-01' ELSE NULL END,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND observed_at < cutoff AND source_key NOT LIKE 'expired-%';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE account_health_signals
+  SET source_locator = '[Expired by retention policy]',
+      numeric_value = CASE WHEN value_kind = 'number' THEN 0 ELSE NULL END,
+      date_value = CASE WHEN value_kind = 'date' THEN DATE '1970-01-01' ELSE NULL END,
+      risk_points = 0, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND range_ends_at < cutoff AND source_locator <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE account_health_assessments
+  SET score = 0, risk_level = 'healthy', renewal_on = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND calculated_at < cutoff AND (score <> 0 OR risk_level <> 'healthy' OR renewal_on IS NOT NULL);
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE health_scorecard_design_turns
+  SET prompt = '[Expired by retention policy]', response = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND prompt <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE health_scorecard_versions
+  SET design_prompt = '[Expired by retention policy]', explanation = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND design_prompt <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE health_scorecard_backtests SET results = '[]'::jsonb, source_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND results <> '[]'::jsonb;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  FOREACH table_name IN ARRAY expiry_tables LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE TRIGGER USER', table_name);
+  END LOOP;
+  RETURN total;
+END;
+$$;
+
+
+--
 -- Name: prevent_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4722,6 +4999,46 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
+-- Name: workspace_content_expiry_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_content_expiry_runs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    cutoff_at timestamp(6) without time zone NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    expired_record_count integer DEFAULT 0 NOT NULL,
+    failure_code character varying,
+    started_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT workspace_content_expiry_runs_count CHECK ((expired_record_count >= 0)),
+    CONSTRAINT workspace_content_expiry_runs_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))),
+    CONSTRAINT workspace_content_expiry_runs_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: workspace_content_expiry_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_content_expiry_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workspace_content_expiry_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workspace_content_expiry_runs_id_seq OWNED BY public.workspace_content_expiry_runs.id;
+
+
+--
 -- Name: workspace_data_policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5376,6 +5693,13 @@ ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: workspace_content_expiry_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_content_expiry_runs ALTER COLUMN id SET DEFAULT nextval('public.workspace_content_expiry_runs_id_seq'::regclass);
 
 
 --
@@ -6040,6 +6364,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: workspace_content_expiry_runs workspace_content_expiry_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_content_expiry_runs
+    ADD CONSTRAINT workspace_content_expiry_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: workspace_data_policies workspace_data_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6152,6 +6484,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_conversation_id_f80281e8e7 ON public.intercom_conversation_links USING btree (workspace_id, conversation_id);
+
+
+--
+-- Name: idx_on_workspace_id_created_at_06382063c0; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_created_at_06382063c0 ON public.workspace_content_expiry_runs USING btree (workspace_id, created_at);
 
 
 --
@@ -8217,6 +8556,13 @@ CREATE UNIQUE INDEX index_users_on_lower_email_address ON public.users USING btr
 --
 
 CREATE UNIQUE INDEX index_users_on_unique_break_glass ON public.users USING btree (break_glass) WHERE break_glass;
+
+
+--
+-- Name: index_workspace_content_expiry_runs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_workspace_content_expiry_runs_on_workspace_id ON public.workspace_content_expiry_runs USING btree (workspace_id);
 
 
 --
@@ -10312,6 +10658,14 @@ ALTER TABLE ONLY public.execution_memory_selections
 
 
 --
+-- Name: workspace_content_expiry_runs fk_rails_84778dd97f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_content_expiry_runs
+    ADD CONSTRAINT fk_rails_84778dd97f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: execution_memory_selections fk_rails_87dc9e2226; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11174,6 +11528,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824230400'),
 ('20260824230300'),
 ('20260824230100'),
 ('20260824230000'),
