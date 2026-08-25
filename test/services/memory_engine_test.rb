@@ -28,10 +28,16 @@ class MemoryEngineTest < ActiveSupport::TestCase
     assert_equal workspace.id.to_s, document.scope_key
     assert_equal memory.content, document.content
     assert_raises(ArgumentError) do
-      MemoryEngine::Query.new(workspace_key: workspace.runner_key, text: "", scope_filters: [], limit: 10)
+      MemoryEngine::Query.new(
+        organization_key: workspace.organization_id.to_s, workspace_key: workspace.runner_key,
+        text: "", scope_filters: [ MemoryEngine::ScopeFilter.new(kind: "workspace", key: workspace.id) ], limit: 10
+      )
     end
     assert_raises(ArgumentError) do
-      MemoryEngine::Query.new(workspace_key: workspace.runner_key, text: "support", scope_filters: [], limit: 51)
+      MemoryEngine::Query.new(
+        organization_key: workspace.organization_id.to_s, workspace_key: workspace.runner_key,
+        text: "support", scope_filters: [ MemoryEngine::ScopeFilter.new(kind: "workspace", key: workspace.id) ], limit: 51
+      )
     end
   end
 end
