@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAdmissionContractFixture(t *testing.T) {
@@ -65,6 +66,20 @@ func TestSharedSignatureVector(t *testing.T) {
 	}
 	if Verify([]byte(vector.Secret), vector.Timestamp, vector.Method, vector.Path, []byte(vector.Body+" "), signature) {
 		t.Fatal("changed body must not verify")
+	}
+}
+
+func TestCanonicalEventValidationIsStrict(t *testing.T) {
+	event, err := NewCanonicalEvent(
+		"3d07f334-88ef-4fe4-a640-421e3ba79921", 2, "run.started", time.Now(),
+		map[string]any{"adapter": "scripted", "scenario": "success", "attempt": 1},
+	)
+	if err != nil || event.Validate() != nil {
+		t.Fatalf("expected canonical event, event=%#v err=%v", event, err)
+	}
+	event.Data["unexpected"] = true
+	if event.Validate() == nil {
+		t.Fatal("expected unknown event data to fail")
 	}
 }
 

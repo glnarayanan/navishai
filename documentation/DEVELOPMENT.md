@@ -54,6 +54,8 @@ Protocol `v1` signs the Unix timestamp, uppercase HTTP method, canonical path, a
 
 The deterministic scripted adapter under `runner/internal/scripted` proves success, retry, timeout, cancellation, malformed-output, and policy-denial behavior without a model or network access. Its bounded JSON fixtures are test and demo inputs, not a live runtime.
 
+Runner events post to `/webhooks/runner-events` with the same HMAC headers plus `X-NavishAI-Workspace-Key`. PostgreSQL stores each run attempt and ordered event. Exact event replay is idempotent; changed, out-of-order, cross-workspace, and invalid terminal events fail closed.
+
 ## Checks
 
 Run the full local check suite with:

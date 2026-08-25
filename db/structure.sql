@@ -385,6 +385,154 @@ $$;
 
 
 --
+-- Name: protect_execution_event(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'execution events are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_execution_run(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_run() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE event_row execution_events%ROWTYPE;
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP <> 'UPDATE' OR
+     ROW(OLD.id, OLD.workspace_id, OLD.crew_task_id, OLD.agent_profile_id,
+         OLD.agent_profile_version_id, OLD.run_key, OLD.request_key, OLD.attempt_number,
+         OLD.runtime_profile_key, OLD.created_at)
+       IS DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.crew_task_id, NEW.agent_profile_id,
+         NEW.agent_profile_version_id, NEW.run_key, NEW.request_key, NEW.attempt_number,
+         NEW.runtime_profile_key, NEW.created_at) THEN
+    RAISE EXCEPTION 'execution run identity is durable';
+  END IF;
+
+  IF NEW.current_sequence = OLD.current_sequence AND NEW.current_event_id IS NOT DISTINCT FROM OLD.current_event_id THEN
+    IF OLD.status <> 'admitting' OR NEW.status <> OLD.status OR
+       ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.failure_code, OLD.retryable,
+           OLD.admitted_at, OLD.started_at, OLD.finished_at)
+         IS DISTINCT FROM
+       ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.failure_code, NEW.retryable,
+           NEW.admitted_at, NEW.started_at, NEW.finished_at) OR
+       NEW.admission_attempt_count < OLD.admission_attempt_count OR
+       NEW.admission_attempt_count > OLD.admission_attempt_count + 1 THEN
+      RAISE EXCEPTION 'execution admission update is invalid';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.current_sequence <> OLD.current_sequence + 1 OR NEW.current_event_id IS NULL THEN
+    RAISE EXCEPTION 'execution run events must be ordered';
+  END IF;
+  SELECT * INTO event_row FROM execution_events WHERE id = NEW.current_event_id FOR UPDATE;
+  IF event_row.id IS NULL OR event_row.workspace_id <> NEW.workspace_id OR
+     event_row.execution_run_id <> NEW.id OR event_row.sequence_number <> NEW.current_sequence THEN
+    RAISE EXCEPTION 'execution run event does not match';
+  END IF;
+  IF NEW.admission_attempt_count <> OLD.admission_attempt_count OR
+     NEW.admission_attempted_at IS DISTINCT FROM OLD.admission_attempted_at OR
+     (event_row.event_type <> 'run.admitted' AND NEW.last_admission_error IS DISTINCT FROM OLD.last_admission_error) OR
+     (event_row.event_type = 'run.admitted' AND NEW.last_admission_error IS NOT NULL) OR
+     (OLD.current_event_id IS NOT NULL AND event_row.occurred_at <
+       (SELECT occurred_at FROM execution_events WHERE id = OLD.current_event_id)) THEN
+    RAISE EXCEPTION 'execution event changed admission history or time order';
+  END IF;
+  IF (CASE event_row.event_type
+    WHEN 'run.admitted' THEN OLD.status = 'admitting' AND NEW.status = 'admitted'
+      AND NEW.admitted_at = event_row.occurred_at AND OLD.admitted_at IS NULL
+      AND event_row.data->>'workspace_key' = (SELECT runner_key::text FROM workspaces WHERE id = NEW.workspace_id)
+      AND event_row.data->>'task_key' = (SELECT task_key::text FROM crew_tasks WHERE id = NEW.crew_task_id)
+      AND (event_row.data->>'attempt')::integer = NEW.attempt_number
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.failure_code, NEW.retryable,
+              NEW.started_at, NEW.finished_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.failure_code, OLD.retryable,
+              OLD.started_at, OLD.finished_at)
+    WHEN 'run.started' THEN OLD.status = 'admitted' AND NEW.status = 'running'
+      AND NEW.started_at = event_row.occurred_at AND OLD.started_at IS NULL
+      AND octet_length(event_row.data->>'adapter') BETWEEN 1 AND 64
+      AND octet_length(event_row.data->>'scenario') BETWEEN 1 AND 100
+      AND (event_row.data->>'attempt')::integer = NEW.attempt_number
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.failure_code, NEW.retryable,
+              NEW.admitted_at, NEW.finished_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.failure_code, OLD.retryable,
+              OLD.admitted_at, OLD.finished_at)
+    WHEN 'tool.completed' THEN OLD.status = 'running' AND NEW.status = OLD.status
+      AND octet_length(event_row.data->>'tool') BETWEEN 1 AND 64
+      AND octet_length(event_row.data->>'result') BETWEEN 1 AND 100
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.failure_code, NEW.retryable,
+              NEW.admitted_at, NEW.started_at, NEW.finished_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.failure_code, OLD.retryable,
+              OLD.admitted_at, OLD.started_at, OLD.finished_at)
+    WHEN 'output.produced' THEN OLD.status = 'running' AND NEW.status = OLD.status
+      AND NEW.output = event_row.data->>'text'
+      AND ROW(NEW.input_units, NEW.output_units, NEW.failure_code, NEW.retryable,
+              NEW.admitted_at, NEW.started_at, NEW.finished_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.input_units, OLD.output_units, OLD.failure_code, OLD.retryable,
+              OLD.admitted_at, OLD.started_at, OLD.finished_at)
+    WHEN 'usage.observed' THEN OLD.status = 'running' AND NEW.status = OLD.status
+      AND NEW.input_units = OLD.input_units + (event_row.data->>'input_units')::bigint
+      AND NEW.output_units = OLD.output_units + (event_row.data->>'output_units')::bigint
+      AND ROW(NEW.output, NEW.failure_code, NEW.retryable, NEW.admitted_at, NEW.started_at, NEW.finished_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.output, OLD.failure_code, OLD.retryable, OLD.admitted_at, OLD.started_at, OLD.finished_at)
+    WHEN 'run.completed' THEN OLD.status = 'running' AND NEW.status = 'completed'
+      AND NEW.finished_at = event_row.occurred_at AND event_row.data->>'outcome' = 'completed'
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.failure_code, NEW.retryable,
+              NEW.admitted_at, NEW.started_at)
+        IS NOT DISTINCT FROM
+          ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.failure_code, OLD.retryable,
+              OLD.admitted_at, OLD.started_at)
+    WHEN 'run.failed' THEN OLD.status = 'running' AND NEW.status = 'failed'
+      AND NEW.failure_code = event_row.data->>'code'
+      AND NEW.retryable = (event_row.data->>'retryable')::boolean AND NEW.finished_at = event_row.occurred_at
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.admitted_at, NEW.started_at)
+        IS NOT DISTINCT FROM ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.admitted_at, OLD.started_at)
+    WHEN 'run.timed_out' THEN OLD.status = 'running' AND NEW.status = 'timed_out'
+      AND NEW.failure_code = 'timed_out' AND NEW.retryable = false AND NEW.finished_at = event_row.occurred_at
+      AND octet_length(event_row.data->>'reason') BETWEEN 1 AND 500
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.admitted_at, NEW.started_at)
+        IS NOT DISTINCT FROM ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.admitted_at, OLD.started_at)
+    WHEN 'run.canceled' THEN OLD.status = 'running' AND NEW.status = 'canceled'
+      AND NEW.failure_code = 'canceled' AND NEW.retryable = false AND NEW.finished_at = event_row.occurred_at
+      AND octet_length(event_row.data->>'reason') BETWEEN 1 AND 500
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.admitted_at, NEW.started_at)
+        IS NOT DISTINCT FROM ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.admitted_at, OLD.started_at)
+    WHEN 'run.policy_denied' THEN OLD.status = 'running' AND NEW.status = 'policy_denied'
+      AND NEW.failure_code = event_row.data->>'code' AND NEW.retryable = false AND NEW.finished_at = event_row.occurred_at
+      AND octet_length(event_row.data->>'code') BETWEEN 1 AND 100
+      AND octet_length(event_row.data->>'tool') BETWEEN 1 AND 64
+      AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.admitted_at, NEW.started_at)
+        IS NOT DISTINCT FROM ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.admitted_at, OLD.started_at)
+    ELSE false
+  END) IS NOT TRUE THEN
+    RAISE EXCEPTION 'invalid execution run transition';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -623,6 +771,26 @@ BEGIN
   WHERE task.id = NEW.crew_task_id AND task.workspace_id = NEW.workspace_id;
   IF current_sequence IS NULL OR current_sequence < NEW.sequence_number THEN
     RAISE EXCEPTION 'crew task event must advance its task';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: require_linked_execution_event(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.require_linked_execution_event() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM execution_runs
+    WHERE id = NEW.execution_run_id AND workspace_id = NEW.workspace_id
+      AND current_event_id = NEW.id AND current_sequence = NEW.sequence_number
+  ) THEN
+    RAISE EXCEPTION 'execution event must advance its run';
   END IF;
   RETURN NULL;
 END;
@@ -1629,6 +1797,104 @@ CREATE SEQUENCE public.email_threads_id_seq
 --
 
 ALTER SEQUENCE public.email_threads_id_seq OWNED BY public.email_threads.id;
+
+
+--
+-- Name: execution_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.execution_events (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    execution_run_id bigint NOT NULL,
+    event_key uuid NOT NULL,
+    sequence_number integer NOT NULL,
+    event_type character varying NOT NULL,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    payload_digest character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT execution_events_payload CHECK (((octet_length((data)::text) <= 131072) AND ((payload_digest)::text ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT execution_events_sequence CHECK ((sequence_number > 0)),
+    CONSTRAINT execution_events_type CHECK (((event_type)::text = ANY ((ARRAY['run.admitted'::character varying, 'run.started'::character varying, 'tool.completed'::character varying, 'output.produced'::character varying, 'usage.observed'::character varying, 'run.completed'::character varying, 'run.failed'::character varying, 'run.timed_out'::character varying, 'run.canceled'::character varying, 'run.policy_denied'::character varying])::text[])))
+);
+
+
+--
+-- Name: execution_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.execution_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: execution_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.execution_events_id_seq OWNED BY public.execution_events.id;
+
+
+--
+-- Name: execution_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.execution_runs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    agent_profile_id bigint NOT NULL,
+    agent_profile_version_id bigint NOT NULL,
+    run_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    request_key character varying NOT NULL,
+    attempt_number integer NOT NULL,
+    runtime_profile_key character varying NOT NULL,
+    status character varying DEFAULT 'admitting'::character varying NOT NULL,
+    current_sequence integer DEFAULT 0 NOT NULL,
+    current_event_id bigint,
+    admission_attempt_count integer DEFAULT 0 NOT NULL,
+    admission_attempted_at timestamp(6) without time zone,
+    last_admission_error character varying,
+    input_units bigint DEFAULT 0 NOT NULL,
+    output_units bigint DEFAULT 0 NOT NULL,
+    output text,
+    failure_code character varying,
+    retryable boolean,
+    admitted_at timestamp(6) without time zone,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
+    CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
+    CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
+    CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
+    CONSTRAINT execution_runs_status CHECK (((status)::text = ANY ((ARRAY['admitting'::character varying, 'admitted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'timed_out'::character varying, 'canceled'::character varying, 'policy_denied'::character varying])::text[])))
+);
+
+
+--
+-- Name: execution_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.execution_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: execution_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.execution_runs_id_seq OWNED BY public.execution_runs.id;
 
 
 --
@@ -2772,6 +3038,20 @@ ALTER TABLE ONLY public.email_threads ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: execution_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_events ALTER COLUMN id SET DEFAULT nextval('public.execution_events_id_seq'::regclass);
+
+
+--
+-- Name: execution_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs ALTER COLUMN id SET DEFAULT nextval('public.execution_runs_id_seq'::regclass);
+
+
+--
 -- Name: identity_match_candidates id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3136,6 +3416,22 @@ ALTER TABLE ONLY public.email_message_links
 
 ALTER TABLE ONLY public.email_threads
     ADD CONSTRAINT email_threads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: execution_events execution_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_events
+    ADD CONSTRAINT execution_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: execution_runs execution_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT execution_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -3928,6 +4224,69 @@ CREATE UNIQUE INDEX index_email_threads_on_workspace_thread_conversation ON publ
 
 
 --
+-- Name: index_execution_events_on_event_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_events_on_event_key ON public.execution_events USING btree (event_key);
+
+
+--
+-- Name: index_execution_events_on_execution_run_id_and_sequence_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_events_on_execution_run_id_and_sequence_number ON public.execution_events USING btree (execution_run_id, sequence_number);
+
+
+--
+-- Name: index_execution_events_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_events_on_workspace_id ON public.execution_events USING btree (workspace_id);
+
+
+--
+-- Name: index_execution_events_on_workspace_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_events_on_workspace_run_id ON public.execution_events USING btree (workspace_id, execution_run_id, id);
+
+
+--
+-- Name: index_execution_runs_on_crew_task_id_and_attempt_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_on_crew_task_id_and_attempt_number ON public.execution_runs USING btree (crew_task_id, attempt_number);
+
+
+--
+-- Name: index_execution_runs_on_run_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_on_run_key ON public.execution_runs USING btree (run_key);
+
+
+--
+-- Name: index_execution_runs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_workspace_id ON public.execution_runs USING btree (workspace_id);
+
+
+--
+-- Name: index_execution_runs_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_id ON public.execution_runs USING btree (workspace_id, id);
+
+
+--
+-- Name: index_execution_runs_on_workspace_id_and_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_request_key ON public.execution_runs USING btree (workspace_id, request_key);
+
+
+--
 -- Name: index_identity_candidates_on_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4698,6 +5057,41 @@ CREATE TRIGGER email_threads_no_truncate BEFORE TRUNCATE ON public.email_threads
 
 
 --
+-- Name: execution_events execution_events_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_events_append_only BEFORE DELETE OR UPDATE ON public.execution_events FOR EACH ROW EXECUTE FUNCTION public.protect_execution_event();
+
+
+--
+-- Name: execution_events execution_events_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_events_no_truncate BEFORE TRUNCATE ON public.execution_events FOR EACH STATEMENT EXECUTE FUNCTION public.protect_execution_event();
+
+
+--
+-- Name: execution_events execution_events_require_link; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER execution_events_require_link AFTER INSERT ON public.execution_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_linked_execution_event();
+
+
+--
+-- Name: execution_runs execution_runs_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_no_truncate BEFORE TRUNCATE ON public.execution_runs FOR EACH STATEMENT EXECUTE FUNCTION public.protect_execution_run();
+
+
+--
+-- Name: execution_runs execution_runs_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_protect_record BEFORE DELETE OR UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_run();
+
+
+--
 -- Name: inbound_email_deliveries inbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4956,6 +5350,14 @@ ALTER TABLE ONLY public.crew_tasks
 
 
 --
+-- Name: execution_runs fk_execution_runs_current_event; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_current_event FOREIGN KEY (workspace_id, id, current_event_id) REFERENCES public.execution_events(workspace_id, execution_run_id, id);
+
+
+--
 -- Name: knowledge_sources fk_knowledge_sources_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5001,6 +5403,14 @@ ALTER TABLE ONLY public.agent_profile_versions
 
 ALTER TABLE ONLY public.agent_profile_versions
     ADD CONSTRAINT fk_rails_0a8ca6adb2 FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: execution_runs fk_rails_0b449bceac; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_rails_0b449bceac FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
 
 
 --
@@ -5180,6 +5590,14 @@ ALTER TABLE ONLY public.case_slas
 
 
 --
+-- Name: execution_events fk_rails_491af79ea7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_events
+    ADD CONSTRAINT fk_rails_491af79ea7 FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id);
+
+
+--
 -- Name: stored_attachments fk_rails_49367e49f1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5217,6 +5635,14 @@ ALTER TABLE ONLY public.crew_tasks
 
 ALTER TABLE ONLY public.account_merges
     ADD CONSTRAINT fk_rails_4f29f8ae3c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: execution_events fk_rails_4f443f1b0c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_events
+    ADD CONSTRAINT fk_rails_4f443f1b0c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -5428,6 +5854,14 @@ ALTER TABLE ONLY public.workspace_invitations
 
 
 --
+-- Name: execution_runs fk_rails_75a3606ffc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_rails_75a3606ffc FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: inbound_email_deliveries fk_rails_7716af08ad; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5556,6 +5990,14 @@ ALTER TABLE ONLY public.contact_merges
 
 
 --
+-- Name: execution_runs fk_rails_96f8646048; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_rails_96f8646048 FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
 -- Name: case_notes fk_rails_971560bd73; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5577,6 +6019,14 @@ ALTER TABLE ONLY public.memberships
 
 ALTER TABLE ONLY public.active_storage_variant_records
     ADD CONSTRAINT fk_rails_993965df05 FOREIGN KEY (blob_id) REFERENCES public.active_storage_blobs(id);
+
+
+--
+-- Name: execution_runs fk_rails_9e0c3380dc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_rails_9e0c3380dc FOREIGN KEY (workspace_id, agent_profile_id, agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
 
 
 --
@@ -5970,6 +6420,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040011'),
 ('20260824040010'),
 ('20260824040009'),
 ('20260824040008'),

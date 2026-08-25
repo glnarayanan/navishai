@@ -1,6 +1,7 @@
 Rails.application.routes.draw do
   namespace :webhooks do
     post "shared-email/:webhook_key", to: "shared_email#create", as: :shared_email
+    post "runner-events", to: "runner_events#create", as: :runner_events
   end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
