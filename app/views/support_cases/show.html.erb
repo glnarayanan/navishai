@@ -365,7 +365,7 @@
         </dl>
       </details>
 
-      <details class="record-disclosure" id="tags" open>
+      <details class="record-disclosure" id="tags">
         <summary>Tags</summary>
         <% if @support_case.tags.any? %>
           <ul class="tag-list" role="list">
@@ -403,7 +403,7 @@
         <% end %>
       </details>
 
-      <details class="record-disclosure" id="notes" open>
+      <details class="record-disclosure" id="notes">
         <summary>Private notes</summary>
         <p class="muted-copy">Private — staff only</p>
         <% if @membership.can_write? %>

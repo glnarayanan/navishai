@@ -7,46 +7,52 @@
     <p>Invite people to <strong><%= Current.workspace.name %></strong> and set their starting role.</p>
   </div>
 
-  <section class="section-block" aria-labelledby="invite-title">
-    <h2 id="invite-title">Send an invitation</h2>
-    <%= render "shared/form_errors", record: @invitation %>
-    <%= form_with model: [ Current.workspace, @invitation ], class: "invite-form" do |form| %>
-      <div class="field">
-        <%= form.label :email_address, "Email address" %>
-        <%= form.email_field :email_address, required: true, autocomplete: "email" %>
-      </div>
-      <div class="field">
-        <%= form.label :role %>
-        <%= form.select :role, @available_roles.map { |role| [ role_label(role), role ] } %>
-      </div>
-      <%= form.submit "Send invitation", class: "button button-primary" %>
-    <% end %>
-  </section>
+  <div class="integration-layout">
+    <section class="config-panel" aria-labelledby="history-title">
+      <h2 id="history-title">Invitation history</h2>
+      <% if @invitations.any? %>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Email</th><th>Role</th><th>Status</th><th><span class="visually-hidden">Action</span></th></tr></thead>
+            <tbody>
+              <% @invitations.each do |invitation| %>
+                <tr>
+                  <td><%= invitation.email_address %></td>
+                  <td><%= role_label(invitation.role) %></td>
+                  <td><span class="status-badge status-<%= invitation.status %>"><%= invitation.status.titleize %></span></td>
+                  <td>
+                    <% if invitation.pending? %>
+                      <%= button_to "Revoke", workspace_workspace_invitation_path(Current.workspace, invitation), method: :delete, class: "button button-quiet" %>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No invitations yet",
+          description: "Send an invitation to add the first teammate to this workspace.",
+          action_label: "Send an invitation",
+          action_path: "#invite-title" %>
+      <% end %>
+    </section>
 
-  <section class="section-block" aria-labelledby="history-title">
-    <h2 id="history-title">Invitation history</h2>
-    <% if @invitations.any? %>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th><span class="visually-hidden">Action</span></th></tr></thead>
-          <tbody>
-            <% @invitations.each do |invitation| %>
-              <tr>
-                <td><%= invitation.email_address %></td>
-                <td><%= role_label(invitation.role) %></td>
-                <td><span class="status-badge status-<%= invitation.status %>"><%= invitation.status.titleize %></span></td>
-                <td>
-                  <% if invitation.pending? %>
-                    <%= button_to "Revoke", workspace_workspace_invitation_path(Current.workspace, invitation), method: :delete, class: "button button-quiet" %>
-                  <% end %>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-    <% else %>
-      <p class="muted-copy">No invitations have been sent.</p>
-    <% end %>
-  </section>
+    <section class="config-panel" aria-labelledby="invite-title">
+      <h2 id="invite-title">Send an invitation</h2>
+      <%= render "shared/form_errors", record: @invitation %>
+      <%= form_with model: [ Current.workspace, @invitation ], class: "invite-form" do |form| %>
+        <div class="field">
+          <%= form.label :email_address, "Email address" %>
+          <%= form.email_field :email_address, required: true, autocomplete: "email" %>
+        </div>
+        <div class="field">
+          <%= form.label :role %>
+          <%= form.select :role, @available_roles.map { |role| [ role_label(role), role ] } %>
+        </div>
+        <%= form.submit "Send invitation", class: "button button-primary" %>
+      <% end %>
+    </section>
+  </div>
 </main>
