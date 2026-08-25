@@ -40,4 +40,21 @@ class RunnerClientTest < ActiveSupport::TestCase
       client.send(:parse_admission, " " * (RunnerProtocol::MAX_BODY_BYTES + 1), "3d07f334-88ef-4fe4-a640-421e3ba79921")
     end
   end
+
+  test "parses strict runtime detection reports" do
+    report = {
+      detection_key: "a" * 64, adapter_key: "fixture", protocol_version: "v1",
+      executable_path: "/opt/fixture", executable_version: "fixture 1.0.0",
+      account_metadata: { authentication: "managed_on_runner" }, capabilities: [ "structured_output" ],
+      minimum_version: "1.0.0", maximum_version: "1.x", compatibility_status: "compatible",
+      incompatibility_reason: "", health_status: "available", checked_at: "2026-08-24T12:00:00Z"
+    }
+    parsed = RunnerProtocol::RuntimeDetectionResponse.parse(JSON.generate(protocol_version: "v1", installations: [ report ]))
+    assert_equal "/opt/fixture", parsed.installations.sole.fetch("executable_path")
+
+    report[:account_metadata] = { access_token: "secret" }
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::RuntimeDetectionResponse.parse(JSON.generate(protocol_version: "v1", installations: [ report ]))
+    end
+  end
 end

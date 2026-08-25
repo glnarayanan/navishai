@@ -3,6 +3,7 @@ require "openssl"
 module RunnerProtocol
   VERSION = "v1"
   ADMISSION_PATH = "/v1/runs/admit"
+  RUNTIME_DETECTION_PATH = "/v1/runtimes/detect"
   MAX_BODY_BYTES = 256.kilobytes
   UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
   KEY_PATTERN = /\A[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}\z/
@@ -212,6 +213,87 @@ module RunnerProtocol
     rescue ArgumentError
       raise MalformedMessage, "#{name} is invalid"
     end
+  end
+
+  class RuntimeDetectionResponse
+    KEYS = %w[protocol_version installations].freeze
+    INSTALLATION_KEYS = %w[
+      detection_key adapter_key protocol_version executable_path executable_version account_metadata
+      capabilities minimum_version maximum_version compatibility_status incompatibility_reason health_status checked_at
+    ].freeze
+
+    attr_reader :installations
+
+    def self.parse(body)
+      raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body))
+    rescue JSON::ParserError
+      raise MalformedMessage, "response body is not valid JSON"
+    end
+
+    def initialize(attributes)
+      object!(attributes, KEYS, "response")
+      equal!(attributes["protocol_version"], VERSION, "protocol_version")
+      values = attributes["installations"]
+      raise MalformedMessage, "installations is invalid" unless values.is_a?(Array) && values.size <= 32
+
+      values.each_with_index { |installation, index| validate_installation!(installation, index) }
+      keys = values.map { |installation| installation["detection_key"] }
+      raise MalformedMessage, "installations contains duplicates" unless keys.uniq.size == keys.size
+
+      @installations = values.deep_dup.freeze
+    end
+
+    private
+      def validate_installation!(installation, index)
+        name = "installations[#{index}]"
+        object!(installation, INSTALLATION_KEYS, name)
+        string!(installation["detection_key"], 64, "#{name}.detection_key", /\A[0-9a-f]{64}\z/)
+        string!(installation["adapter_key"], 64, "#{name}.adapter_key", POLICY_KEY_PATTERN)
+        string!(installation["protocol_version"], 16, "#{name}.protocol_version", /\Av[1-9][0-9]*\z/)
+        string!(installation["executable_path"], 4_096, "#{name}.executable_path", /\A\//)
+        string!(installation["executable_version"], 8.kilobytes, "#{name}.executable_version")
+        metadata = installation["account_metadata"]
+        sensitive_key = /passw|secret|token|credential|cookie|authorization|private|session/i
+        unless metadata.is_a?(Hash) && metadata.size <= 16 && metadata.all? { |key, value| key.is_a?(String) && key.match?(POLICY_KEY_PATTERN) && !key.match?(sensitive_key) && value.is_a?(String) && value.bytesize <= 500 }
+          raise MalformedMessage, "#{name}.account_metadata is invalid"
+        end
+        values!(installation["capabilities"], 32, "#{name}.capabilities")
+        string!(installation["minimum_version"], 100, "#{name}.minimum_version", nil, allow_empty: true)
+        string!(installation["maximum_version"], 100, "#{name}.maximum_version", nil, allow_empty: true)
+        unless RuntimeInstallation::COMPATIBILITY_STATUSES.include?(installation["compatibility_status"])
+          raise MalformedMessage, "#{name}.compatibility_status is invalid"
+        end
+        string!(installation["incompatibility_reason"], 1_000, "#{name}.incompatibility_reason", nil, allow_empty: true)
+        unless RuntimeInstallation::HEALTH_STATUSES.first(2).include?(installation["health_status"])
+          raise MalformedMessage, "#{name}.health_status is invalid"
+        end
+        Time.iso8601(installation["checked_at"])
+      rescue ArgumentError, TypeError
+        raise MalformedMessage, "#{name}.checked_at is invalid"
+      end
+
+      def object!(value, keys, name)
+        raise MalformedMessage, "#{name} must be an object" unless value.is_a?(Hash)
+        raise MalformedMessage, "#{name} has unexpected fields" unless value.keys.sort == keys.sort
+      end
+
+      def equal!(value, expected, name)
+        raise MalformedMessage, "#{name} does not match" unless value == expected
+      end
+
+      def string!(value, maximum, name, pattern = nil, allow_empty: false)
+        valid = value.is_a?(String) && value.bytesize <= maximum && (allow_empty || value.present?)
+        valid &&= value.match?(pattern) if pattern
+        raise MalformedMessage, "#{name} is invalid" unless valid
+      end
+
+      def values!(value, maximum, name)
+        valid = value.is_a?(Array) && value.size <= maximum && value == value.uniq.sort &&
+          value.all? { |item| item.is_a?(String) && item.match?(POLICY_KEY_PATTERN) }
+        raise MalformedMessage, "#{name} is invalid" unless valid
+      end
   end
 
   class CanonicalEvent

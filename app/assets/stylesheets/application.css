@@ -950,6 +950,173 @@ textarea {
   cursor: pointer;
 }
 
+.runtime-shell {
+  padding-bottom: 5rem;
+}
+
+.runtime-heading,
+.runtime-installation-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.runtime-heading > div,
+.runtime-installation-heading > div {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.runtime-safety-note {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1.5rem;
+  padding: 1rem 1.125rem;
+  border-left: 0.25rem solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.runtime-safety-note span,
+.runtime-status-note,
+.runtime-metadata span,
+.runtime-readonly-policy span {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.runtime-empty {
+  margin-top: 2rem;
+}
+
+.runtime-list {
+  display: grid;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.runtime-installation {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.runtime-installation code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.runtime-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding-block: 1rem;
+  border-block: 1px solid var(--line);
+}
+
+.runtime-facts dt,
+.runtime-metadata h3 {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.runtime-facts dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+.runtime-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.runtime-metadata > div,
+.runtime-readonly-policy {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.runtime-metadata h3 {
+  margin: 0;
+}
+
+.runtime-policy-form {
+  display: grid;
+  gap: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.runtime-approval-toggle,
+.runtime-policy-groups label {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 3rem;
+  cursor: pointer;
+}
+
+.runtime-approval-toggle span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.runtime-approval-toggle small {
+  color: var(--muted);
+}
+
+.runtime-policy-form input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  min-height: 0;
+  accent-color: var(--accent);
+}
+
+.runtime-policy-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+
+.runtime-policy-groups fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.runtime-policy-groups legend {
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.runtime-policy-groups label {
+  min-height: 2.5rem;
+  font-size: 0.8125rem;
+}
+
+.runtime-budget-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .agent-tool-options input {
   width: 1.125rem;
   height: 1.125rem;
@@ -2555,7 +2722,9 @@ td {
   }
 
   .crew-heading,
-  .agent-profile-body {
+  .agent-profile-body,
+  .runtime-heading,
+  .runtime-installation-heading {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2568,7 +2737,11 @@ td {
   }
 
   .agent-policy-grid,
-  .agent-tool-options {
+  .agent-tool-options,
+  .runtime-facts,
+  .runtime-metadata,
+  .runtime-policy-groups,
+  .runtime-budget-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

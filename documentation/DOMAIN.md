@@ -40,5 +40,6 @@ Use these terms in product copy, code, tests, and design notes.
 - **Agent profile:** the stable identity and bounded authority for one specialist role in a Crew template. It is separate from a runtime, provider account, task, run, or model session.
 - **Agent profile version:** one immutable set of role instructions, approved tools, runtime preferences, budgets, and review policy. A new version replaces current policy without changing prior task evidence.
 - **Runtime profile:** a provider-neutral execution preference selected from the approved registry. It never stores an executable path, command, or subscription credential.
+- **Runtime installation:** one runner-detected adapter executable and version with reported capabilities, compatibility, non-secret account details, and one Workspace’s approval policy. Detection does not grant approval, and approval never stores the subscription credential.
 - **Execution run:** one immutable, numbered attempt to carry out a Crew task through the runner. Its ordered events, frozen input, usage, output, failure, and admission checks remain attributable to that attempt.
 - **Crew artifact:** one append-only, cited investigation, draft, or quality review published from a completed Execution run. A new version supersedes rather than edits prior output.
