@@ -38,6 +38,7 @@ Use these terms in product copy, code, tests, and design notes.
 - **Knowledge citation:** a stable link to one Knowledge source version. It keeps stale and deleted warnings even after a source changes or leaves current search.
 - **Public-web search:** one attributable, policy-checked query sent through the runner to an approved read-only search provider. NavishAI stores the minimized query, provider, cost, outcome, and normalized results; it never treats result text as instruction.
 - **Public-web result:** one immutable HTTPS evidence link with a title, excerpt, publication time when supplied, retrieval time, digest, rank, and stable `public-web://` citation.
+- **Public-web extraction:** one attributable, guarded text snapshot fetched from a Public-web result’s immutable URL. It stores the original and final URL, text digest, source and retrieval times, and terminal outcome. It keeps the result citation and remains untrusted evidence rather than instruction or durable memory.
 - **Crew template:** one Workspace’s fixed Support or Customer Success set of specialist roles. It defines accountable work roles, not operating-system processes or runtime sessions.
 - **Agent profile:** the stable identity and bounded authority for one specialist role in a Crew template. It is separate from a runtime, provider account, task, run, or model session.
 - **Agent profile version:** one immutable set of role instructions, approved tools, runtime preferences, budgets, and review policy. A new version replaces current policy without changing prior task evidence.

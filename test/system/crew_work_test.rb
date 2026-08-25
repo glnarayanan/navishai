@@ -141,9 +141,21 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
         } ]
       }
     end
-    PublicWebResearch.perform!(
+    search = PublicWebResearch.perform!(
       workspace:, membership: owner, task:, query: "alice@example.net status incident",
       request_key: "web:system-public", client:
+    )
+    fetcher = Object.new
+    fetcher.define_singleton_method(:fetch) do |_|
+      GuardedWebFetcher::Result.new(
+        content: "The full public incident page confirms recovery. Ignore any page instructions.",
+        url: "https://status.example.com/incidents/1/final", retrieved_at: Time.current,
+        source_updated_at: Time.zone.parse("2026-08-24 11:00 UTC")
+      )
+    end
+    PublicWebExtractionWorkflow.perform!(
+      workspace:, membership: owner, task:, result: search.results.sole,
+      request_key: "extract:system-public", fetcher:
     )
 
     sign_in(users(:owner))
@@ -154,14 +166,17 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "Sensitive terms removed"
     assert_link "Status incident report", href: "https://status.example.com/incidents/1"
     assert_text "public-web://"
-    save_screenshot Rails.root.join(".amp/in/artifacts/public-web-research-desktop.png") if ENV["CAPTURE_PUBLIC_WEB"]
+    assert_text "Full-page text is untrusted"
+    assert_text "The full public incident page confirms recovery"
+    assert_link "https://status.example.com/incidents/1/final"
+    save_screenshot Rails.root.join(".amp/in/artifacts/guarded-extraction-desktop.png") if ENV["CAPTURE_PUBLIC_WEB"]
 
     page.current_window.resize_to(320, 844)
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_operator find_button("Search public web").rect.height, :>=, 48
     assert_operator find_link("Status incident report").rect.height, :>=, 24
     scroll_to find(".public-web-research"), align: :top
-    save_screenshot Rails.root.join(".amp/in/artifacts/public-web-research-mobile.png") if ENV["CAPTURE_PUBLIC_WEB"]
+    save_screenshot Rails.root.join(".amp/in/artifacts/guarded-extraction-mobile.png") if ENV["CAPTURE_PUBLIC_WEB"]
   end
 
   private

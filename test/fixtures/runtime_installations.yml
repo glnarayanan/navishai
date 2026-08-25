@@ -35,6 +35,7 @@ acme_scripted:
     - note_propose
     - public_web_search
     - review_record
+    - web_extract
   allowed_data_classes:
     - account_context
     - approved_knowledge

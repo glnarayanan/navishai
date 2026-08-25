@@ -52,7 +52,7 @@ class RuntimeInstallation < ApplicationRecord
     def policy_is_bounded
       validate_values(:capabilities, capabilities, 32, nil)
       validate_values(:allowed_role_keys, allowed_role_keys, 8, AgentPolicy::ROLE_DEFINITIONS.keys)
-      validate_values(:allowed_tools, allowed_tools, 8, AgentPolicy::TOOLS.keys)
+      validate_values(:allowed_tools, allowed_tools, AgentPolicy::TOOLS.size, AgentPolicy::TOOLS.keys)
       validate_values(:allowed_data_classes, allowed_data_classes, 8, DATA_CLASSES.keys)
       validate_values(:profile_keys, profile_keys, AgentPolicy::RUNTIME_PROFILES.size, AgentPolicy::RUNTIME_PROFILES.keys)
     end

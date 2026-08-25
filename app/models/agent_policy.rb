@@ -5,6 +5,7 @@ class AgentPolicy
     "account_read" => "Read accounts",
     "knowledge_search" => "Search approved knowledge",
     "public_web_search" => "Search the public web",
+    "web_extract" => "Extract a public web page",
     "draft_propose" => "Propose a customer draft",
     "note_propose" => "Propose an internal note",
     "review_record" => "Record a policy review"
@@ -27,7 +28,7 @@ class AgentPolicy
     "support_investigator" => {
       crew_kind: "support", name: "Investigator",
       instructions: "Investigate the case against current conversation facts and approved evidence. State uncertainty and do not invent facts.",
-      tools: %w[case_read conversation_read knowledge_search public_web_search]
+      tools: %w[case_read conversation_read knowledge_search public_web_search web_extract]
     },
     "resolution_drafter" => {
       crew_kind: "support", name: "Resolution Drafter",
@@ -47,7 +48,7 @@ class AgentPolicy
     "risk_investigator" => {
       crew_kind: "customer_success", name: "Risk Investigator",
       instructions: "Investigate material risk changes, likely causes, evidence, and uncertainty within the account scope.",
-      tools: %w[account_read conversation_read knowledge_search public_web_search]
+      tools: %w[account_read conversation_read knowledge_search public_web_search web_extract]
     },
     "success_strategist" => {
       crew_kind: "customer_success", name: "Success Strategist",

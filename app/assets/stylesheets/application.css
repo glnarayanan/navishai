@@ -2963,11 +2963,18 @@ td {
 .public-web-results dt { color: var(--muted); }
 .public-web-results dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .public-web-results code { font-size: 0.78rem; }
+.public-web-extraction { margin-top: 0.85rem; padding-top: 0.85rem; border-top: 1px solid var(--line); }
+.public-web-extraction-warning { padding: 0.75rem; border: 1px solid var(--line); border-radius: calc(var(--radius) * 0.7); background: var(--danger-soft); }
+.public-web-extraction blockquote { max-height: 12rem; overflow: auto; margin: 0.75rem 0 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 0.5rem; white-space: pre-wrap; }
+.public-web-extraction .button { margin-top: 0.5rem; }
+.public-web-extraction dd a,
+.public-web-extraction code { overflow-wrap: anywhere; word-break: break-word; }
 
 @media (max-width: 40rem) {
   .public-web-research { margin: 1rem 0.75rem; padding: 0.8rem; }
   .public-web-form { grid-template-columns: 1fr; }
   .public-web-form .button { width: 100%; min-height: 48px; }
+  .public-web-extraction .button { width: 100%; min-height: 48px; }
   .public-web-search > header { flex-direction: column; gap: 0.25rem; }
   .public-web-results dl div { grid-template-columns: 1fr; gap: 0; }
 }
