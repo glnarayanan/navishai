@@ -11,6 +11,11 @@ html {
   scroll-behavior: smooth;
 }
 
+.turbo-progress-bar {
+  height: 0.125rem;
+  background: var(--secondary);
+}
+
 body {
   min-height: 100vh;
   min-height: 100dvh;
@@ -1071,7 +1076,7 @@ textarea {
 }
 
 .button-danger:hover {
-  background: #7f2d25;
+  background: color-mix(in oklch, var(--destructive) 82%, black);
 }
 
 .crew-heading {
@@ -1658,7 +1663,7 @@ td {
 .case-row:hover,
 .case-row[aria-current="page"] {
   color: var(--ink);
-  background: rgba(18, 99, 79, 0.07);
+  background: var(--accent-soft);
 }
 
 .case-row[aria-current="page"] {
@@ -1719,13 +1724,13 @@ td {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: #74807b;
+  background: var(--muted-foreground);
 }
 
 .status-new,
 .status-triaged {
-  --status-color: #8a5b1f;
-  --status-surface: #f6ead7;
+  --status-color: var(--status-new);
+  --status-surface: var(--status-new-soft);
 }
 
 .status-investigating,
@@ -1737,8 +1742,8 @@ td {
 
 .status-waiting-customer,
 .status-waiting-internal {
-  --status-color: #6b5793;
-  --status-surface: #eee9f6;
+  --status-color: var(--status-wait);
+  --status-surface: var(--status-wait-soft);
 }
 
 .status-resolved {
@@ -1752,7 +1757,7 @@ td {
 }
 
 .status-dot[class*="status-"] {
-  background: var(--status-color, #74807b);
+  background: var(--status-color, var(--muted-foreground));
 }
 
 .status-badge[class*="status-"] {
@@ -2020,7 +2025,7 @@ td {
 .message-outbound {
   margin-inline: -1rem;
   padding-inline: 1rem;
-  background: rgba(18, 99, 79, 0.045);
+  background: var(--accent-soft);
 }
 
 .case-context {
@@ -2986,7 +2991,8 @@ td {
   }
 
   .app-header nav a,
-  .app-header nav .button {
+  .app-header nav .button,
+  .is-app .site-header nav a {
     justify-content: center;
     width: 100%;
     min-width: 3rem;
@@ -3468,7 +3474,7 @@ td {
 }
 
 .risk-state-healthy { color: var(--success); background: var(--success-soft); }
-.risk-state-watch { color: #725200; background: #fff1c2; }
+.risk-state-watch { color: var(--warning-foreground); background: var(--warning-soft); }
 .risk-state-at-risk { color: var(--danger); background: var(--danger-soft); }
 
 .health-overview {
@@ -3490,8 +3496,8 @@ td {
   background: var(--accent);
 }
 
-.health-score-panel-watch { background: #765d13; }
-.health-score-panel-at-risk { background: #873b32; }
+.health-score-panel-watch { background: color-mix(in oklch, var(--warning) 70%, black); }
+.health-score-panel-at-risk { background: color-mix(in oklch, var(--destructive) 80%, black); }
 .health-score-panel span,
 .health-score-panel time { color: rgba(255, 255, 255, 0.78); }
 .health-score-panel strong { color: #fff; font-size: 4rem; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -3859,7 +3865,7 @@ td {
   justify-content: space-between;
   gap: 1rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(18, 99, 79, 0.22);
+  border-bottom: 1px solid var(--line);
 }
 
 .data-policy-summary dt {
@@ -3974,6 +3980,7 @@ td {
 .is-public .site-frame {
   width: min(100%, 80rem);
   margin-inline: auto;
+  overflow-x: clip;
   border-inline: 1px solid var(--border);
 }
 
@@ -4043,6 +4050,23 @@ td {
   background: color-mix(in oklch, var(--background) 78%, transparent);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
+}
+
+.is-app .site-header nav {
+  justify-content: flex-start;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+}
+
+.is-app .site-header nav a {
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-pill);
+}
+
+.is-app .site-header nav a[aria-current="page"] {
+  color: var(--foreground);
+  background: var(--accent-soft);
+  box-shadow: none;
 }
 
 .app-header-bar {
