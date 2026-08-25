@@ -27,6 +27,7 @@ class MembershipTest < ActiveSupport::TestCase
 
     assert_not membership.can_write?
     assert_not membership.can_manage_work?
+    assert_not membership.can_configure_agents?
   end
 
   test "does not destroy the last owner" do

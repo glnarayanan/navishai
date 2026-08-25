@@ -10,6 +10,7 @@ class AuditEvent < ApplicationRecord
     "account.created" => {},
     "account.merged" => {},
     "account.unmerged" => {},
+    "agent.profile_updated" => {},
     "attachment.downloaded" => {},
     "attachment.removed" => { "attachment_id" => Integer },
     "attachment.uploaded" => { "scan_status" => StoredAttachment::SCAN_STATUSES },

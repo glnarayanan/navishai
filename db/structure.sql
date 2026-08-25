@@ -189,6 +189,50 @@ $$;
 
 
 --
+-- Name: protect_agent_profile(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_agent_profile() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE old_number integer; new_number integer;
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.crew_template_id, OLD.role_key, OLD.name, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.crew_template_id, NEW.role_key, NEW.name, NEW.created_at) AND
+     OLD.current_version_id IS DISTINCT FROM NEW.current_version_id THEN
+    SELECT version_number INTO old_number FROM agent_profile_versions WHERE id = OLD.current_version_id;
+    SELECT version_number INTO new_number FROM agent_profile_versions WHERE id = NEW.current_version_id;
+    IF NEW.current_version_id IS NOT NULL AND (OLD.current_version_id IS NULL OR new_number > old_number) THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+  RAISE EXCEPTION 'agent profile identity and history are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_agent_profile_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_agent_profile_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'agent profile versions are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_attachment_join(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -197,6 +241,22 @@ CREATE FUNCTION public.protect_attachment_join() RETURNS trigger
     AS $$
 BEGIN
   RAISE EXCEPTION 'attachment history is append only';
+END;
+$$;
+
+
+--
+-- Name: protect_crew_template(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_crew_template() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'crew template identity is durable';
 END;
 $$;
 
@@ -352,6 +412,25 @@ $$;
 
 
 --
+-- Name: require_current_agent_profile_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.require_current_agent_profile_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM agent_profiles
+    WHERE id = NEW.id AND workspace_id = NEW.workspace_id AND current_version_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'agent profile must have a current version';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+
+--
 -- Name: require_current_knowledge_version(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -368,6 +447,68 @@ BEGIN
     RAISE EXCEPTION 'knowledge source must have a current version';
   END IF;
   RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: validate_agent_profile_identity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_agent_profile_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE kind text;
+BEGIN
+  SELECT crew_kind INTO kind FROM crew_templates
+  WHERE id = NEW.crew_template_id AND workspace_id = NEW.workspace_id;
+  IF (kind = 'support' AND NEW.role_key NOT IN (
+        'support_coordinator', 'support_investigator', 'resolution_drafter', 'support_reviewer'
+      )) OR
+     (kind = 'customer_success' AND NEW.role_key NOT IN (
+        'account_analyst', 'risk_investigator', 'success_strategist', 'success_reviewer'
+      )) OR kind IS NULL THEN
+    RAISE EXCEPTION 'agent role does not belong to its crew';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_agent_profile_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_agent_profile_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  role text;
+  maximum_tools jsonb;
+BEGIN
+  SELECT role_key INTO role FROM agent_profiles
+  WHERE id = NEW.agent_profile_id AND workspace_id = NEW.workspace_id
+  FOR UPDATE;
+  maximum_tools := CASE role
+    WHEN 'support_coordinator' THEN '["conversation_read", "case_read"]'::jsonb
+    WHEN 'support_investigator' THEN '["conversation_read", "case_read", "knowledge_search", "public_web_search"]'::jsonb
+    WHEN 'resolution_drafter' THEN '["conversation_read", "case_read", "knowledge_search", "draft_propose"]'::jsonb
+    WHEN 'support_reviewer' THEN '["conversation_read", "case_read", "knowledge_search", "review_record"]'::jsonb
+    WHEN 'account_analyst' THEN '["account_read", "conversation_read"]'::jsonb
+    WHEN 'risk_investigator' THEN '["account_read", "conversation_read", "knowledge_search", "public_web_search"]'::jsonb
+    WHEN 'success_strategist' THEN '["account_read", "knowledge_search", "note_propose"]'::jsonb
+    WHEN 'success_reviewer' THEN '["account_read", "knowledge_search", "review_record"]'::jsonb
+  END;
+  IF role IS NULL OR NOT (NEW.allowed_tools <@ maximum_tools) OR
+     NEW.allowed_tools <> (SELECT jsonb_agg(value ORDER BY value) FROM (
+       SELECT DISTINCT value FROM jsonb_array_elements(NEW.allowed_tools)
+     ) values) OR
+     NEW.runtime_profile_key IN (SELECT jsonb_array_elements_text(NEW.fallback_profile_keys)) OR
+     jsonb_array_length(NEW.fallback_profile_keys) <>
+       (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(NEW.fallback_profile_keys) values) THEN
+    RAISE EXCEPTION 'agent profile exceeds its approved policy bounds';
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
@@ -544,6 +685,93 @@ CREATE SEQUENCE public.active_storage_variant_records_id_seq
 --
 
 ALTER SEQUENCE public.active_storage_variant_records_id_seq OWNED BY public.active_storage_variant_records.id;
+
+
+--
+-- Name: agent_profile_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_profile_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    agent_profile_id bigint NOT NULL,
+    version_number integer NOT NULL,
+    instructions text NOT NULL,
+    allowed_tools jsonb DEFAULT '[]'::jsonb NOT NULL,
+    runtime_profile_key character varying NOT NULL,
+    fallback_profile_keys jsonb DEFAULT '[]'::jsonb NOT NULL,
+    timeout_seconds integer NOT NULL,
+    max_steps integer NOT NULL,
+    max_tool_calls integer NOT NULL,
+    review_policy character varying NOT NULL,
+    created_by_membership_id bigint,
+    created_by_user_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
+    CONSTRAINT agent_profile_versions_budget CHECK ((((timeout_seconds >= 30) AND (timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
+    CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
+    CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY ((ARRAY['required'::character varying, 'on_policy_flag'::character varying])::text[]))),
+    CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
+    CONSTRAINT agent_profile_versions_tools CHECK (((jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 8) AND (allowed_tools <@ '["conversation_read", "case_read", "account_read", "knowledge_search", "public_web_search", "draft_propose", "note_propose", "review_record"]'::jsonb)))
+);
+
+
+--
+-- Name: agent_profile_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_profile_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_profile_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_profile_versions_id_seq OWNED BY public.agent_profile_versions.id;
+
+
+--
+-- Name: agent_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_profiles (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_template_id bigint NOT NULL,
+    role_key character varying NOT NULL,
+    name character varying NOT NULL,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT agent_profiles_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100))),
+    CONSTRAINT agent_profiles_role CHECK (((role_key)::text = ANY ((ARRAY['support_coordinator'::character varying, 'support_investigator'::character varying, 'resolution_drafter'::character varying, 'support_reviewer'::character varying, 'account_analyst'::character varying, 'risk_investigator'::character varying, 'success_strategist'::character varying, 'success_reviewer'::character varying])::text[])))
+);
+
+
+--
+-- Name: agent_profiles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.agent_profiles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_profiles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_profiles_id_seq OWNED BY public.agent_profiles.id;
 
 
 --
@@ -867,6 +1095,41 @@ CREATE SEQUENCE public.conversations_id_seq
 --
 
 ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
+
+
+--
+-- Name: crew_templates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crew_templates (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_kind character varying NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT crew_templates_kind CHECK (((crew_kind)::text = ANY ((ARRAY['support'::character varying, 'customer_success'::character varying])::text[]))),
+    CONSTRAINT crew_templates_name CHECK ((((name)::text <> ''::text) AND (length((name)::text) <= 100)))
+);
+
+
+--
+-- Name: crew_templates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.crew_templates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: crew_templates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.crew_templates_id_seq OWNED BY public.crew_templates.id;
 
 
 --
@@ -1202,8 +1465,8 @@ CREATE TABLE public.knowledge_sources (
     CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
     CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
-    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'url'::character varying, 'upload'::character varying, 'intercom_help_center'::character varying])::text[]))),
-    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'upload'::character varying])::text[])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
+    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('url'::character varying)::text, ('upload'::character varying)::text, ('intercom_help_center'::character varying)::text]))),
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
 );
 
 
@@ -2028,6 +2291,20 @@ ALTER TABLE ONLY public.active_storage_variant_records ALTER COLUMN id SET DEFAU
 
 
 --
+-- Name: agent_profile_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions ALTER COLUMN id SET DEFAULT nextval('public.agent_profile_versions_id_seq'::regclass);
+
+
+--
+-- Name: agent_profiles id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profiles ALTER COLUMN id SET DEFAULT nextval('public.agent_profiles_id_seq'::regclass);
+
+
+--
 -- Name: audit_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2081,6 +2358,13 @@ ALTER TABLE ONLY public.conversation_messages ALTER COLUMN id SET DEFAULT nextva
 --
 
 ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('public.conversations_id_seq'::regclass);
+
+
+--
+-- Name: crew_templates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_templates ALTER COLUMN id SET DEFAULT nextval('public.crew_templates_id_seq'::regclass);
 
 
 --
@@ -2327,6 +2611,22 @@ ALTER TABLE ONLY public.active_storage_variant_records
 
 
 --
+-- Name: agent_profile_versions agent_profile_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions
+    ADD CONSTRAINT agent_profile_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_profiles agent_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profiles
+    ADD CONSTRAINT agent_profiles_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2396,6 +2696,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crew_templates crew_templates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_templates
+    ADD CONSTRAINT crew_templates_pkey PRIMARY KEY (id);
 
 
 --
@@ -2765,6 +3073,62 @@ CREATE UNIQUE INDEX index_active_storage_variant_records_uniqueness ON public.ac
 
 
 --
+-- Name: index_agent_profile_versions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_profile_versions_on_workspace_id ON public.agent_profile_versions USING btree (workspace_id);
+
+
+--
+-- Name: index_agent_profile_versions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_profile_versions_on_workspace_id_and_id ON public.agent_profile_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_agent_profiles_on_crew_template_id_and_role_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_profiles_on_crew_template_id_and_role_key ON public.agent_profiles USING btree (crew_template_id, role_key);
+
+
+--
+-- Name: index_agent_profiles_on_workspace_crew_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_profiles_on_workspace_crew_id ON public.agent_profiles USING btree (workspace_id, crew_template_id, id);
+
+
+--
+-- Name: index_agent_profiles_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_agent_profiles_on_workspace_id ON public.agent_profiles USING btree (workspace_id);
+
+
+--
+-- Name: index_agent_profiles_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_profiles_on_workspace_id_and_id ON public.agent_profiles USING btree (workspace_id, id);
+
+
+--
+-- Name: index_agent_versions_on_profile_and_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_versions_on_profile_and_number ON public.agent_profile_versions USING btree (agent_profile_id, version_number);
+
+
+--
+-- Name: index_agent_versions_on_workspace_profile_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_agent_versions_on_workspace_profile_id ON public.agent_profile_versions USING btree (workspace_id, agent_profile_id, id);
+
+
+--
 -- Name: index_audit_events_on_action_and_occurred_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2958,6 +3322,27 @@ CREATE UNIQUE INDEX index_conversations_on_workspace_id_and_id ON public.convers
 --
 
 CREATE INDEX index_conversations_on_workspace_id_and_last_message_at ON public.conversations USING btree (workspace_id, last_message_at);
+
+
+--
+-- Name: index_crew_templates_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_templates_on_workspace_id ON public.crew_templates USING btree (workspace_id);
+
+
+--
+-- Name: index_crew_templates_on_workspace_id_and_crew_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_templates_on_workspace_id_and_crew_kind ON public.crew_templates USING btree (workspace_id, crew_kind);
+
+
+--
+-- Name: index_crew_templates_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_templates_on_workspace_id_and_id ON public.crew_templates USING btree (workspace_id, id);
 
 
 --
@@ -3626,6 +4011,55 @@ CREATE TRIGGER active_storage_blobs_protect_stored BEFORE DELETE OR UPDATE ON pu
 
 
 --
+-- Name: agent_profile_versions agent_profile_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profile_versions_append_only BEFORE DELETE OR UPDATE ON public.agent_profile_versions FOR EACH ROW EXECUTE FUNCTION public.protect_agent_profile_version();
+
+
+--
+-- Name: agent_profile_versions agent_profile_versions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profile_versions_no_truncate BEFORE TRUNCATE ON public.agent_profile_versions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_agent_profile_version();
+
+
+--
+-- Name: agent_profile_versions agent_profile_versions_validate_policy; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profile_versions_validate_policy BEFORE INSERT ON public.agent_profile_versions FOR EACH ROW EXECUTE FUNCTION public.validate_agent_profile_version();
+
+
+--
+-- Name: agent_profiles agent_profiles_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profiles_no_truncate BEFORE TRUNCATE ON public.agent_profiles FOR EACH STATEMENT EXECUTE FUNCTION public.protect_agent_profile();
+
+
+--
+-- Name: agent_profiles agent_profiles_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profiles_protect_record BEFORE DELETE OR UPDATE ON public.agent_profiles FOR EACH ROW EXECUTE FUNCTION public.protect_agent_profile();
+
+
+--
+-- Name: agent_profiles agent_profiles_require_current_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER agent_profiles_require_current_version AFTER INSERT OR UPDATE ON public.agent_profiles DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_current_agent_profile_version();
+
+
+--
+-- Name: agent_profiles agent_profiles_validate_identity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER agent_profiles_validate_identity BEFORE INSERT ON public.agent_profiles FOR EACH ROW EXECUTE FUNCTION public.validate_agent_profile_identity();
+
+
+--
 -- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3679,6 +4113,20 @@ CREATE TRIGGER conversation_messages_append_only BEFORE DELETE OR UPDATE ON publ
 --
 
 CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conversation_messages FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: crew_templates crew_templates_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_templates_no_truncate BEFORE TRUNCATE ON public.crew_templates FOR EACH STATEMENT EXECUTE FUNCTION public.protect_crew_template();
+
+
+--
+-- Name: crew_templates crew_templates_protect_record; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_templates_protect_record BEFORE DELETE OR UPDATE ON public.crew_templates FOR EACH ROW EXECUTE FUNCTION public.protect_crew_template();
 
 
 --
@@ -3873,6 +4321,14 @@ ALTER TABLE ONLY public.account_merges
 
 
 --
+-- Name: agent_profiles fk_agent_profiles_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profiles
+    ADD CONSTRAINT fk_agent_profiles_current_version FOREIGN KEY (workspace_id, id, current_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
 -- Name: contact_merges fk_contact_merges_source; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3918,6 +4374,22 @@ ALTER TABLE ONLY public.account_merges
 
 ALTER TABLE ONLY public.case_slas
     ADD CONSTRAINT fk_rails_048a2ba7c7 FOREIGN KEY (workspace_id, sla_policy_id) REFERENCES public.sla_policies(workspace_id, id);
+
+
+--
+-- Name: agent_profile_versions fk_rails_0584ef2f1b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions
+    ADD CONSTRAINT fk_rails_0584ef2f1b FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: agent_profile_versions fk_rails_0a8ca6adb2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions
+    ADD CONSTRAINT fk_rails_0a8ca6adb2 FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
 
 
 --
@@ -4022,6 +4494,14 @@ ALTER TABLE ONLY public.workspaces
 
 ALTER TABLE ONLY public.service_calendar_holidays
     ADD CONSTRAINT fk_rails_3efa0e2453 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: agent_profiles fk_rails_406e779092; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profiles
+    ADD CONSTRAINT fk_rails_406e779092 FOREIGN KEY (workspace_id, crew_template_id) REFERENCES public.crew_templates(workspace_id, id);
 
 
 --
@@ -4185,6 +4665,14 @@ ALTER TABLE ONLY public.contacts
 
 
 --
+-- Name: crew_templates fk_rails_665cdc9b64; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_templates
+    ADD CONSTRAINT fk_rails_665cdc9b64 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: case_slas fk_rails_667d0037a5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4214,6 +4702,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.conversation_messages
     ADD CONSTRAINT fk_rails_69e4535daa FOREIGN KEY (workspace_id, author_contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
+-- Name: agent_profile_versions fk_rails_6acb52efde; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions
+    ADD CONSTRAINT fk_rails_6acb52efde FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -4326,6 +4822,14 @@ ALTER TABLE ONLY public.source_identities
 
 ALTER TABLE ONLY public.support_cases
     ADD CONSTRAINT fk_rails_7f25fe210e FOREIGN KEY (workspace_id, assigned_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: agent_profiles fk_rails_89533dda30; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profiles
+    ADD CONSTRAINT fk_rails_89533dda30 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -4745,12 +5249,21 @@ ALTER TABLE ONLY public.email_draft_attachments
 
 
 --
+-- Name: agent_profile_versions fk_rails_ff1fbc8992; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_profile_versions
+    ADD CONSTRAINT fk_rails_ff1fbc8992 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824040008'),
 ('20260824040007'),
 ('20260824040006'),
 ('20260824040005'),

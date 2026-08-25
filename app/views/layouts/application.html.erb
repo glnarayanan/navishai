@@ -39,6 +39,8 @@
               aria: { current: controller_name.in?(%w[support_cases support_case_commands]) ? "page" : nil } %>
             <%= link_to "Knowledge", workspace_knowledge_sources_path(Current.workspace),
               aria: { current: controller_name == "knowledge_sources" ? "page" : nil } %>
+            <%= link_to "Crews", workspace_crew_templates_path(Current.workspace),
+              aria: { current: controller_name.in?(%w[crew_templates agent_profiles]) ? "page" : nil } %>
             <% if Current.require_membership!.can_configure_integrations? %>
               <%= link_to "Email", workspace_shared_email_inboxes_path(Current.workspace),
                 aria: { current: controller_name == "shared_email_inboxes" ? "page" : nil } %>

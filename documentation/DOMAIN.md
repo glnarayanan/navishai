@@ -36,3 +36,7 @@ Use these terms in product copy, code, tests, and design notes.
 - **Knowledge source:** one Workspace-owned body of approved support knowledge from maintained text, an HTTPS URL snapshot, an uploaded text file, or an Intercom Help Center article. Deletion removes it from current use without erasing cited history.
 - **Knowledge source version:** one immutable content snapshot with its digest, retrieval time, source update time, expiry, author, and optional retained upload. Only a source’s current active version appears in search.
 - **Knowledge citation:** a stable link to one Knowledge source version. It keeps stale and deleted warnings even after a source changes or leaves current search.
+- **Crew template:** one Workspace’s fixed Support or Customer Success set of specialist roles. It defines accountable work roles, not operating-system processes or runtime sessions.
+- **Agent profile:** the stable identity and bounded authority for one specialist role in a Crew template. It is separate from a runtime, provider account, task, run, or model session.
+- **Agent profile version:** one immutable set of role instructions, approved tools, runtime preferences, budgets, and review policy. A new version replaces current policy without changing prior task evidence.
+- **Runtime profile:** a provider-neutral execution preference selected from the approved registry. It never stores an executable path, command, or subscription credential.
