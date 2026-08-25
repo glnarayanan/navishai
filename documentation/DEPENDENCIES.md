@@ -33,4 +33,4 @@ These gems come from the Rails 8.1 application generator and are approved by the
 | `bootsnap` | Ruby boot cache |
 | `image_processing` | Active Storage image variants |
 
-Development and test gems are isolated to their Bundler groups. GitHub Dependabot tracks the Bundler lockfile, Go modules, and GitHub Actions. `script/sbom` emits the locked production gem graph as CycloneDX 1.6 JSON. The release review and patch rules are in [RELEASE.md](./RELEASE.md). Any later direct production gem, Go module, browser pin, service, or package needs owner approval unless the build brief already approves it.
+Development and test gems are isolated to their Bundler groups. GitHub Dependabot tracks the Bundler lockfile and Go modules. GitHub Actions updates are paused while repository workflows remain manual-only. `script/sbom` emits the locked production gem graph as CycloneDX 1.6 JSON. The release review and patch rules are in [RELEASE.md](./RELEASE.md). Any later direct production gem, Go module, browser pin, service, or package needs owner approval unless the build brief already approves it.
