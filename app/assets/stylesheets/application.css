@@ -103,9 +103,19 @@ h2 {
 
 p {
   max-width: 68ch;
-  color: var(--muted);
-  line-height: 1.6;
+  color: var(--foreground);
+  line-height: var(--leading-body);
   text-wrap: pretty;
+}
+
+.page-heading p,
+.section-header p,
+.section-intro,
+.queue-heading p,
+.thread-heading p,
+.scorecard-heading p,
+.account-health-heading p {
+  color: var(--muted-foreground);
 }
 
 strong {
@@ -518,7 +528,7 @@ textarea {
   color: var(--accent);
   background: var(--accent-soft);
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .workspace-list {
@@ -1487,7 +1497,7 @@ td:last-child {
 th {
   color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 td {
@@ -1547,9 +1557,10 @@ td {
 .queue-index-grid {
   display: grid;
   grid-template-columns: minmax(17rem, 22rem) minmax(0, 1fr);
-  min-height: 34rem;
   margin-top: 1.5rem;
-  border-block: 1px solid var(--line);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: var(--surface);
 }
 
@@ -1585,7 +1596,8 @@ td {
 .empty-selection {
   display: grid;
   place-items: center;
-  padding: 3rem;
+  min-width: 0;
+  padding: 2rem 1.5rem;
   text-align: center;
 }
 
@@ -1769,7 +1781,7 @@ td {
   margin-left: auto;
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .priority-urgent {
@@ -1805,10 +1817,10 @@ td {
 
 .case-workspace-grid {
   display: grid;
-  grid-template-columns: 17rem minmax(24rem, 1fr) 20rem;
-  min-height: calc(100dvh - 13rem);
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  grid-template-columns: minmax(15.5rem, 17rem) minmax(0, 1fr) minmax(18rem, 21rem);
+  min-height: calc(100dvh - 8rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   background: var(--surface);
 }
 
@@ -2801,9 +2813,11 @@ td {
   }
 }
 
-@media (max-width: 60rem) {
+@media (max-width: 1023px) {
   .case-workspace-grid {
-    grid-template-columns: minmax(0, 1fr) 20rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .queue-rail {
@@ -2812,6 +2826,9 @@ td {
 
   .queue-index-grid {
     grid-template-columns: minmax(0, 1fr);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .queue-index-rail {
@@ -2820,6 +2837,11 @@ td {
 
   .empty-selection {
     display: none;
+  }
+
+  .case-context {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 }
 
@@ -2924,15 +2946,6 @@ td {
 
   .run-history time {
     grid-column: 1 / -1;
-  }
-
-  .case-workspace-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .case-context {
-    border-top: 1px solid var(--line);
-    border-left: 0;
   }
 
   .case-row {
@@ -3471,7 +3484,7 @@ td {
   padding: 0.35rem 0.625rem;
   border-radius: 999px;
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .risk-state-healthy { color: var(--success); background: var(--success-soft); }
@@ -3526,7 +3539,7 @@ td {
 .health-context > div:nth-child(odd) { border-right: 1px solid var(--line); }
 .health-context > div:nth-last-child(-n + 2) { border-bottom: 0; }
 .health-context dt { color: var(--muted); font-size: 0.8125rem; }
-.health-context dd { margin: 0; font-weight: 650; }
+.health-context dd { margin: 0; font-weight: var(--weight-semibold); }
 
 .health-signals,
 .risk-workspace,
@@ -3735,7 +3748,7 @@ td {
 .scorecard-goal textarea { width: 100%; resize: vertical; }
 .scorecard-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 
-.scorecard-form legend { margin-bottom: 0.75rem; font-weight: 700; }
+.scorecard-form legend { margin-bottom: 0.75rem; font-weight: var(--weight-semibold); }
 
 .scorecard-signal-map { display: grid; border-top: 1px solid var(--line) !important; }
 .scorecard-signal {
@@ -3757,7 +3770,7 @@ td {
 
 .scorecard-bands { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
 .scorecard-bands legend { width: 100%; }
-.scorecard-bands label { display: grid; gap: 0.3rem; font-size: 0.875rem; font-weight: 650; }
+.scorecard-bands label { display: grid; gap: 0.3rem; font-size: 0.875rem; font-weight: var(--weight-semibold); }
 .scorecard-bands input { width: 7rem; min-height: 3rem; }
 
 .scorecard-proposal-head {
@@ -3774,7 +3787,7 @@ td {
 .scorecard-proposal-head h3 { margin: 0.25rem 0; font-size: 1.5rem; }
 .scorecard-rule-summary { display: grid; margin: 1rem 0 0; }
 .scorecard-rule-summary div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.85rem; border-bottom: 1px solid var(--line); }
-.scorecard-rule-summary dt { font-weight: 650; }
+.scorecard-rule-summary dt { font-weight: var(--weight-semibold); }
 .scorecard-rule-summary dd { margin: 0; color: var(--muted); text-align: right; }
 
 .scorecard-preview-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 1px solid var(--line); }
@@ -3953,7 +3966,7 @@ td {
 .webhook-form .webhook-categories,
 .webhook-form .button { grid-column: 1 / -1; }
 .webhook-categories { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0; padding: 0; border: 0; }
-.webhook-categories legend { width: 100%; margin-bottom: 0.5rem; font-weight: 700; }
+.webhook-categories legend { width: 100%; margin-bottom: 0.5rem; font-weight: var(--weight-semibold); }
 .webhook-categories label { display: flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
 .webhook-categories input { width: 1.25rem; height: 1.25rem; }
 .webhook-endpoint-list { display: grid; margin-top: 1rem; border-top: 1px solid var(--line); }
@@ -4211,9 +4224,9 @@ td {
 
 .eyebrow {
   color: var(--secondary);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 
@@ -4362,8 +4375,9 @@ td {
 
   .is-public .nav-mobile-trigger {
     display: grid;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 3rem;
+    min-width: 3rem;
+    height: 3rem;
     place-items: center;
     border: 1px solid var(--border);
     border-radius: 0.5rem;

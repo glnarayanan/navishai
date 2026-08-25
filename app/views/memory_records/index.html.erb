@@ -1,7 +1,6 @@
 <% content_for :title, "Memory · #{@workspace.name} — NavishAI" %>
 
 <main class="page-shell memory-shell page-family-collection">
-  <%= link_to "Back to cases", workspace_support_cases_path(@workspace), class: "back-link" %>
   <div class="page-heading memory-heading">
     <div>
       <h1>Workspace memory</h1>
@@ -104,9 +103,11 @@
         <% end %>
       </ol>
     <% else %>
-      <%= render "shared/empty_state",
-        title: "No memory matches",
-        description: @access_scope == "all" ? "Change the filters or wait for a source event to create memory." : "No memory has been disclosed to one of your execution runs." %>
+    <%= render "shared/empty_state",
+      title: "No memory matches",
+      description: @access_scope == "all" ? "Change the filters or wait for a source event to create memory." : "No memory has been disclosed to one of your execution runs.",
+      action_label: @access_scope == "all" ? "Open knowledge library" : nil,
+      action_path: @access_scope == "all" ? workspace_knowledge_sources_path(@workspace) : nil %>
     <% end %>
   </section>
 </main>

@@ -1,10 +1,7 @@
 <% content_for :title, "Health scorecard — NavishAI" %>
 <% definition = @selected_version.definition %>
-<% content_for :page_actions do %>
-  <%= link_to "Accounts", workspace_accounts_path(@workspace), class: "back-link" %>
-<% end %>
 
-<main class="scorecard-page page-family-staged">
+<main class="scorecard-page">
   <header class="scorecard-heading">
     <div>
       <%= link_to "Accounts", workspace_accounts_path(@workspace), class: "back-link" %>
@@ -26,15 +23,19 @@
     <div class="scorecard-flow">
 
   <% if @membership.can_write? %>
-    <section class="scorecard-designer" aria-labelledby="designer-title">
-      <header><span class="section-number">01</span><div><h2 id="designer-title">Describe and map</h2><p>Tell the designer what should drive risk. Choose only facts NavishAI retains and set their maximum risk points.</p></div></header>
-      <%= form_with url: propose_workspace_health_scorecard_path(@workspace), class: "scorecard-form" do |form| %>
+    <%= form_with url: propose_workspace_health_scorecard_path(@workspace), class: "scorecard-form" do |form| %>
+      <section class="scorecard-designer" aria-labelledby="intent-title">
+        <header><span class="section-number">01</span><div><h2 id="intent-title">Intent</h2><p>Record what should drive risk. This text is the design prompt, not the score.</p></div></header>
         <div class="field scorecard-goal">
           <%= form.label :goal_prompt, "Scoring goal" %>
           <%= form.text_area :goal_prompt, value: @selected_version.design_prompt, required: true, minlength: 10, maxlength: 500, rows: 3,
             placeholder: "Flag accounts with near renewals, low use, unresolved cases, and SLA breaches." %>
-          <span class="field-hint">This text records your intent. The mapped rules below do the scoring.</span>
+          <span class="field-hint">Keep this specific. The mapped signals below do the scoring.</span>
         </div>
+      </section>
+
+      <section class="scorecard-designer" aria-labelledby="mapping-title">
+        <header><span class="section-number">02</span><div><h2 id="mapping-title">Signal mapping</h2><p>Choose only facts NavishAI retains and set their maximum risk points.</p></div></header>
         <fieldset class="scorecard-signal-map">
           <legend>Signal map</legend>
           <% @catalog.each do |key, item| %>
@@ -57,12 +58,12 @@
           <span class="field-hint">Scores below the watch threshold are At risk.</span>
         </fieldset>
         <%= form.submit "Create proposal", class: "button button-primary" %>
-      <% end %>
-    </section>
+      </section>
+    <% end %>
   <% end %>
 
   <section class="scorecard-proposal" aria-labelledby="proposal-title">
-    <header><span class="section-number">02</span><div><h2 id="proposal-title">Review proposal</h2><p>The proposal is immutable. Edit by creating another version.</p></div></header>
+    <header><div><h2 id="proposal-title">Current proposal</h2><p>This version is immutable. Edit by creating another proposal.</p></div></header>
     <div class="scorecard-proposal-head">
       <div><span class="version-label"><%= @scorecard.current_version_id == @selected_version.id ? "Published" : "Proposal" %></span><h3>Version <%= @selected_version.version_number %></h3><p><%= @selected_version.explanation %></p></div>
     </div>

@@ -18,7 +18,7 @@
   </header>
 
   <% if @command_error %>
-    <div class="inline-error" role="alert"><strong>Risk review not changed</strong><p><%= @command_error %></p></div>
+    <%= render "shared/notice", kind: "destructive", title: "Risk review not changed", body: @command_error %>
   <% end %>
 
   <% if @assessment %>
@@ -95,7 +95,7 @@
         <% end %>
       </ol>
     <% else %>
-      <p class="read-only-notice">No material change, renewal-window trigger, or human-requested review is open.</p>
+      <p class="muted-copy">No material change, renewal-window trigger, or human-requested review is open.</p>
     <% end %>
   </section>
 

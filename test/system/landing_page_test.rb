@@ -32,5 +32,6 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_link "How it works", visible: true
     find("body").send_keys(:escape)
     assert_no_selector "dialog[open]"
+    assert_includes page.evaluate_script("getComputedStyle(document.body).fontFamily"), "Geist"
   end
 end

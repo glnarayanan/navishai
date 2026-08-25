@@ -28,6 +28,7 @@
     <section class="empty-state">
       <h2>No notifications</h2>
       <p>New work that needs your attention will appear here.</p>
+      <%= link_to "Open case queue", workspace_support_cases_path(Current.workspace), class: "button button-secondary" %>
     </section>
   <% end %>
 </main>

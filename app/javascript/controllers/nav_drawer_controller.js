@@ -12,7 +12,7 @@ export default class extends Controller {
   }
 
   disconnect() {
-    this.dialogTarget?.removeEventListener("close", this.onClose)
+    if (this.hasDialogTarget) this.dialogTarget.removeEventListener("close", this.onClose)
     document.documentElement.classList.remove("is-nav-open")
   }
 

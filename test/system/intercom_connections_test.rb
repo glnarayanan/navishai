@@ -4,7 +4,7 @@ class IntercomConnectionsTest < ApplicationSystemTestCase
   test "owner configures an Intercom connection on desktop and mobile" do
     sign_in(users(:owner))
     visit workspace_shared_email_inboxes_path(workspaces(:acme_support))
-    click_on "Manage Intercom sync"
+    click_on "Intercom", match: :first
 
     assert_selector "h1", text: "Intercom sync"
     fill_in "Connection name", with: "Support Intercom"

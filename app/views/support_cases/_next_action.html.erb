@@ -1,0 +1,18 @@
+<h2>Next action</h2>
+<% if @policy_reviews.any? %>
+  <p>Review crew output before sending.</p>
+<% elsif @email_thread || @intercom_link %>
+  <p>Review the draft in the conversation column, then press Send.</p>
+<% else %>
+  <p>Update status when the investigation has a clear next step.</p>
+<% end %>
+<dl class="case-facts">
+  <div><dt>Evidence</dt><dd><%= @cited_evidence.any? ? pluralize(@cited_evidence.size, "citation") : "None cited yet" %></dd></div>
+  <div><dt>Blockers</dt><dd>
+    <% blockers = [] %>
+    <% blockers << "Policy review" if @policy_reviews.any? %>
+    <% blockers << "Memory degraded" if @memory_degraded %>
+    <% blockers << "Read-only" unless @membership.can_write? %>
+    <%= blockers.any? ? blockers.to_sentence : "None" %>
+  </dd></div>
+</dl>

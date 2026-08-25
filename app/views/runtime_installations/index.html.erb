@@ -1,7 +1,6 @@
 <% content_for :title, "Runtimes · #{Current.workspace.name} — NavishAI" %>
 
 <main class="page-shell runtime-shell page-family-config">
-  <%= link_to "Back to crews", workspace_crew_templates_path(Current.workspace), class: "back-link" %>
   <div class="page-heading runtime-heading">
     <div>
       <h1>Runtime approvals</h1>
@@ -13,10 +12,8 @@
     <% end %>
   </div>
 
-  <div class="runtime-safety-note">
-    <strong>Credentials stay on the runner</strong>
-    <span>NavishAI stores the resolved executable, reported version, capabilities, and non-secret account details. Approval never copies a login token.</span>
-  </div>
+  <%= render "shared/notice", kind: "info", css: "runtime-safety-note", title: "Credentials stay on the runner",
+    body: "NavishAI stores the resolved executable, reported version, capabilities, and non-secret account details. Approval never copies a login token." %>
 
   <% if @runtime_error %>
     <p class="inline-error" role="alert"><%= @runtime_error %></p>
