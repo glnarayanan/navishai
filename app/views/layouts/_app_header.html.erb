@@ -1,17 +1,26 @@
 <div class="site-header-wrap is-app">
   <header class="site-header app-header">
-    <%= render "layouts/wordmark" %>
-    <nav aria-label="Account">
+    <div class="app-header-bar">
+      <%= render "layouts/wordmark" %>
       <% if Current.workspace %>
-        <% membership = Current.require_membership! %>
         <span class="current-workspace"><%= Current.workspace.name %></span>
+      <% end %>
+      <div class="header-tools">
+        <%= nav_link "Workspaces", workspaces_path, "workspaces", "workspace_invitations" %>
+        <%= render "layouts/theme_control" %>
+        <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
+      </div>
+    </div>
+    <% if Current.workspace %>
+      <% membership = Current.require_membership! %>
+      <nav aria-label="Account">
         <%= nav_link "Cases", workspace_support_cases_path(Current.workspace), "support_cases", "support_case_commands" %>
         <%= nav_link "Accounts", workspace_accounts_path(Current.workspace), "accounts", "account_imports" %>
         <%= nav_link "Knowledge", workspace_knowledge_sources_path(Current.workspace), "knowledge_sources" %>
         <% if membership.can_inspect_memory? %>
           <%= nav_link "Memory", workspace_memory_records_path(Current.workspace), "memory_records", "memory_corrections" %>
         <% end %>
-        <%= nav_link "Crews", workspace_crew_templates_path(Current.workspace), "crew_templates", "agent_profiles" %>
+        <%= nav_link "Crews", workspace_crew_templates_path(Current.workspace), "crew_templates", "agent_profiles", "crew_tasks" %>
         <%= nav_link "Runtimes", workspace_runtime_installations_path(Current.workspace), "runtime_installations" %>
         <%= nav_link "Scorecard", workspace_health_scorecard_path(Current.workspace), "health_scorecards" %>
         <% if membership.can_configure_integrations? %>
@@ -28,10 +37,7 @@
           <% unread_notifications = membership.notifications.unread.count %>
           <span class="nav-count" aria-label="<%= pluralize(unread_notifications, "unread notification") %>"><%= unread_notifications %></span>
         <% end %>
-      <% end %>
-      <%= nav_link "Workspaces", workspaces_path, "workspaces", "workspace_invitations" %>
-      <%= render "layouts/theme_control" %>
-      <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
-    </nav>
+      </nav>
+    <% end %>
   </header>
 </div>
