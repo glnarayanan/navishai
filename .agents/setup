@@ -3,7 +3,7 @@
 # Idempotent: safe to re-run on a warm snapshot.
 set -euo pipefail
 
-RUBY_VERSION="${RUBY_VERSION:-3.4.10}"
+RUBY_VERSION="${RUBY_VERSION:-4.0.6}"
 GO_VERSION="${GO_VERSION:-1.27.0}"
 PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
 PGVECTOR_VERSION="0.8.6"

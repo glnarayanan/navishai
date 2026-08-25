@@ -1,10 +1,16 @@
 # Development
 
-NavishAI uses Ruby 3.4.10, Rails 8.1.3.1, PostgreSQL 15 with pgvector 0.8.6, and Go 1.27.0.
+NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 15 with pgvector 0.8.6, and Go 1.27.0.
 
 ## First setup
 
-Install the pinned Ruby and Go versions, PostgreSQL 15, and pgvector 0.8.6. Create `navishai_development` and `navishai_test`, then run:
+Install the pinned Ruby and Go versions, PostgreSQL 15, pgvector 0.8.6, and libvips. The project-level `mise.toml` is the quickest supported way to install the language toolchains:
+
+```sh
+mise install
+```
+
+Containers and other version managers are also supported; `.ruby-version`, `.go-version`, and the container definitions carry the same pins. Create `navishai_development` and `navishai_test`, then run:
 
 ```sh
 bin/setup --skip-server
@@ -165,6 +171,8 @@ bin/ci
 ```
 
 The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails and system tests, vets and tests the Go runner, and runs the Rails-to-Go protocol contract.
+
+The Rails control plane supports local development on macOS and Linux. The execution runner's supervisor and helper require Linux on amd64 because their isolation boundary uses Landlock, seccomp, namespaces, and Linux resource controls. Run the complete `bin/ci` suite in that target environment; on macOS, use a local Linux container backend for the Go runner stages.
 
 GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
 
