@@ -1,12 +1,16 @@
 Rails.application.routes.draw do
   namespace :webhooks do
     post "shared-email/:webhook_key", to: "shared_email#create", as: :shared_email
+    post "intercom/:webhook_key", to: "intercom#create", as: :intercom
     post "runner-events", to: "runner_events#create", as: :runner_events
   end
   root "workspaces#index"
   resources :workspaces, only: %i[ index show ] do
     resources :workspace_invitations, only: %i[ index create destroy ]
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
+      post :reconcile, on: :member
+    end
+    resources :intercom_connections, path: "intercom", only: %i[ index create update ] do
       post :reconcile, on: :member
     end
     resources :attachments, only: :show, controller: "attachment_downloads"

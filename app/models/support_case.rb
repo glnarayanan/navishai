@@ -15,6 +15,7 @@ class SupportCase < ApplicationRecord
   has_one :email_draft, dependent: :restrict_with_exception
   has_many :memory_records, dependent: :restrict_with_exception
   has_many :memory_proposals, dependent: :restrict_with_exception
+  has_one :intercom_conversation_link, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true, prefix: true
   enum :priority, PRIORITIES.index_by(&:itself), validate: true

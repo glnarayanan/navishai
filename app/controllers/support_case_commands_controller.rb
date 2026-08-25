@@ -15,13 +15,23 @@ class SupportCaseCommandsController < SupportCasesController
 
   def assignment
     assignee = Current.workspace.memberships.find(params[:assigned_membership_id]) if params[:assigned_membership_id].present?
-    CaseWorkflow.assign!(
-      workspace: Current.workspace,
-      support_case: @support_case,
-      membership: Current.require_membership!,
-      assignee: assignee
-    )
-    redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Assignment updated."
+    operation = IntercomSyncOperation.transaction do
+      previous_id = @support_case.reload.assigned_membership_id
+      changed_case = CaseWorkflow.assign!(
+        workspace: Current.workspace,
+        support_case: @support_case,
+        membership: Current.require_membership!,
+        assignee: assignee
+      )
+      if previous_id != changed_case.assigned_membership_id
+        IntercomOutboundSync.enqueue!(
+          workspace: Current.workspace, support_case: changed_case,
+          membership: Current.require_membership!, operation_kind: :assign,
+          payload: { email: assignee&.user&.email_address }
+        )
+      end
+    end
+    redirect_after_sync(operation, "Assignment updated.")
   end
 
   def priority
@@ -36,38 +46,53 @@ class SupportCaseCommandsController < SupportCasesController
 
   def tag
     selected_tag = Current.workspace.tags.find(params[:tag_id])
-    CaseWorkflow.tag!(
-      workspace: Current.workspace,
-      support_case: @support_case,
-      membership: Current.require_membership!,
-      tag: selected_tag
-    )
-    redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Tag added."
+    operation = IntercomSyncOperation.transaction do
+      existed = @support_case.tags.exists?(selected_tag.id)
+      CaseWorkflow.tag!(
+        workspace: Current.workspace,
+        support_case: @support_case,
+        membership: Current.require_membership!,
+        tag: selected_tag
+      )
+      enqueue_tag_sync(:tag, selected_tag) unless existed
+    end
+    redirect_after_sync(operation, "Tag added.")
   end
 
   def untag
     selected_tag = Current.workspace.tags.find(params[:tag_id])
-    CaseWorkflow.untag!(
-      workspace: Current.workspace,
-      support_case: @support_case,
-      membership: Current.require_membership!,
-      tag: selected_tag
-    )
-    redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Tag removed."
+    operation = IntercomSyncOperation.transaction do
+      existed = @support_case.tags.exists?(selected_tag.id)
+      CaseWorkflow.untag!(
+        workspace: Current.workspace,
+        support_case: @support_case,
+        membership: Current.require_membership!,
+        tag: selected_tag
+      )
+      enqueue_tag_sync(:untag, selected_tag) if existed
+    end
+    redirect_after_sync(operation, "Tag removed.")
   end
 
   def add_note
-    CaseWorkflow.add_note!(
-      workspace: Current.workspace,
-      support_case: @support_case,
-      membership: Current.require_membership!,
-      body: params[:body]
-    )
-    redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "notes"), notice: "Private note added."
+    operation = IntercomSyncOperation.transaction do
+      note = CaseWorkflow.add_note!(
+        workspace: Current.workspace,
+        support_case: @support_case,
+        membership: Current.require_membership!,
+        body: params[:body]
+      )
+      IntercomOutboundSync.enqueue!(
+        workspace: Current.workspace, support_case: @support_case,
+        membership: Current.require_membership!, operation_kind: :note,
+        payload: { body: note.body }
+      )
+    end
+    redirect_after_sync(operation, "Private note added.", anchor: "notes")
   end
 
   def create_tag
-    Tag.transaction do
+    operation = Tag.transaction do
       tag = CaseWorkflow.create_tag!(
         workspace: Current.workspace,
         membership: Current.require_membership!,
@@ -79,11 +104,30 @@ class SupportCaseCommandsController < SupportCasesController
         membership: Current.require_membership!,
         tag: tag
       )
+      enqueue_tag_sync(:tag, tag)
     end
-    redirect_to workspace_support_case_path(Current.workspace, @support_case), notice: "Tag created and added."
+    redirect_after_sync(operation, "Tag created and added.")
   end
 
   private
+    def enqueue_tag_sync(kind, tag)
+      IntercomOutboundSync.enqueue!(
+        workspace: Current.workspace, support_case: @support_case,
+        membership: Current.require_membership!, operation_kind: kind,
+        payload: { tag_id: tag.id, name: tag.name }
+      )
+    end
+
+    def redirect_after_sync(operation, notice, anchor: nil)
+      result = IntercomOutboundSync.deliver!(operation)
+      path = workspace_support_case_path(Current.workspace, @support_case, anchor: anchor)
+      if result && !result.completed?
+        redirect_to path, alert: "#{notice} Intercom sync needs review."
+      else
+        redirect_to path, notice: notice
+      end
+    end
+
     def forbidden
       render "shared/permission_denied", status: :forbidden
     end

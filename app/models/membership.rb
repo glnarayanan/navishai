@@ -8,6 +8,7 @@ class Membership < ApplicationRecord
     dependent: :restrict_with_exception
   has_many :proposed_memory_corrections, class_name: "MemoryCorrectionProposal",
     foreign_key: :proposed_by_membership_id, dependent: :restrict_with_exception
+  has_many :intercom_sync_operations, dependent: :restrict_with_exception
 
   enum :role, ROLES.index_by(&:itself), validate: true
 

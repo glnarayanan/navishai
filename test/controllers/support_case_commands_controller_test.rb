@@ -46,6 +46,28 @@ class SupportCaseCommandsControllerTest < ActionDispatch::IntegrationTest
     assert_nil @support_case.reload.assigned_membership
   end
 
+  test "an Intercom-backed private note enqueues a human-attributed remote change" do
+    connection = @workspace.intercom_connections.create!(
+      name: "Support Intercom", remote_workspace_id: "app_123", credential_key: "support"
+    )
+    connection.intercom_conversation_links.create!(
+      workspace: @workspace, conversation: @support_case.conversation, support_case: @support_case,
+      remote_conversation_id: "conversation_1", remote_state: "open", source_digest: "a" * 64,
+      remote_updated_at: Time.current, synced_at: Time.current
+    )
+
+    assert_difference [ "CaseNote.count", "IntercomSyncOperation.count" ], 1 do
+      post notes_workspace_support_case_path(@workspace, @support_case), params: { body: "Check in Intercom." }
+    end
+
+    operation = @workspace.intercom_sync_operations.sole
+    assert_equal "note", operation.operation_kind
+    assert_equal({ "body" => "Check in Intercom." }, operation.payload)
+    assert_equal @membership, operation.membership
+    assert_equal "configuration_error", operation.failure_code
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "notes")
+  end
+
   test "invalid and blank changes render inline errors and roll back" do
     assert_no_difference [ "SupportCaseStatusChange.count", "AuditEvent.count" ] do
       patch transition_workspace_support_case_path(@workspace, @support_case), params: { status: "closed", reason: "Skip the workflow" }

@@ -2,6 +2,7 @@ class Tag < ApplicationRecord
   belongs_to :workspace
   has_many :support_case_taggings, dependent: :restrict_with_exception
   has_many :support_cases, through: :support_case_taggings
+  has_many :intercom_tag_links, dependent: :restrict_with_exception
 
   normalizes :name, with: ->(name) { name.strip }
 

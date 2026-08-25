@@ -126,6 +126,62 @@ $$;
 
 
 --
+-- Name: prevent_intercom_sync_operation_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_intercom_sync_operation_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     OLD.id IS NOT DISTINCT FROM NEW.id AND
+     OLD.workspace_id IS NOT DISTINCT FROM NEW.workspace_id AND
+     OLD.intercom_connection_id IS NOT DISTINCT FROM NEW.intercom_connection_id AND
+     OLD.intercom_conversation_link_id IS NOT DISTINCT FROM NEW.intercom_conversation_link_id AND
+     OLD.membership_id IS NOT DISTINCT FROM NEW.membership_id AND
+     OLD.user_id IS NOT DISTINCT FROM NEW.user_id AND
+     OLD.operation_key IS NOT DISTINCT FROM NEW.operation_key AND
+     OLD.operation_kind IS NOT DISTINCT FROM NEW.operation_kind AND
+     OLD.payload IS NOT DISTINCT FROM NEW.payload AND
+     OLD.created_at IS NOT DISTINCT FROM NEW.created_at AND
+     ((OLD.status = 'pending' AND NEW.status = 'sending') OR
+      (OLD.status = 'sending' AND NEW.status IN ('completed', 'failed', 'unknown')) OR
+      (OLD.status = 'failed' AND NEW.status = 'sending')) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Intercom sync operations are durable';
+END;
+$$;
+
+
+--
+-- Name: prevent_intercom_webhook_source_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_intercom_webhook_source_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     OLD.id IS NOT DISTINCT FROM NEW.id AND
+     OLD.workspace_id IS NOT DISTINCT FROM NEW.workspace_id AND
+     OLD.intercom_connection_id IS NOT DISTINCT FROM NEW.intercom_connection_id AND
+     OLD.notification_id IS NOT DISTINCT FROM NEW.notification_id AND
+     OLD.topic IS NOT DISTINCT FROM NEW.topic AND
+     OLD.content_sha256 IS NOT DISTINCT FROM NEW.content_sha256 AND
+     OLD.raw_payload IS NOT DISTINCT FROM NEW.raw_payload AND
+     OLD.received_at IS NOT DISTINCT FROM NEW.received_at AND
+     OLD.created_at IS NOT DISTINCT FROM NEW.created_at AND
+     ((OLD.status = 'received' AND NEW.status IN ('received', 'processed', 'failed')) OR
+      (OLD.status = 'failed' AND NEW.status IN ('failed', 'processed'))) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Intercom webhook source records are durable';
+END;
+$$;
+
+
+--
 -- Name: prevent_used_sla_configuration_change(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1891,10 +1947,10 @@ CREATE TABLE public.crew_artifacts (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
-    CONSTRAINT crew_artifacts_content CHECK ((((octet_length(body) >= 1) AND (octet_length(body) <= 51200)) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
+    CONSTRAINT crew_artifacts_content CHECK (((octet_length(body) >= 1) AND (octet_length(body) <= 51200) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
     CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY ((ARRAY['investigation'::character varying, 'draft'::character varying, 'quality_review'::character varying])::text[]))),
-    CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
+    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY (ARRAY[('investigation'::character varying)::text, ('draft'::character varying)::text, ('quality_review'::character varying)::text]))),
+    CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
     CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = 'quality_review'::text) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> 'quality_review'::text) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
     CONSTRAINT crew_artifacts_version CHECK ((version_number > 0))
 );
@@ -2256,7 +2312,7 @@ CREATE TABLE public.execution_events (
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT execution_events_payload CHECK (((octet_length((data)::text) <= 131072) AND ((payload_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT execution_events_sequence CHECK ((sequence_number > 0)),
-    CONSTRAINT execution_events_type CHECK (((event_type)::text = ANY ((ARRAY['run.admitted'::character varying, 'run.started'::character varying, 'tool.completed'::character varying, 'output.produced'::character varying, 'usage.observed'::character varying, 'run.completed'::character varying, 'run.failed'::character varying, 'run.timed_out'::character varying, 'run.canceled'::character varying, 'run.policy_denied'::character varying])::text[])))
+    CONSTRAINT execution_events_type CHECK (((event_type)::text = ANY (ARRAY[('run.admitted'::character varying)::text, ('run.started'::character varying)::text, ('tool.completed'::character varying)::text, ('output.produced'::character varying)::text, ('usage.observed'::character varying)::text, ('run.completed'::character varying)::text, ('run.failed'::character varying)::text, ('run.timed_out'::character varying)::text, ('run.canceled'::character varying)::text, ('run.policy_denied'::character varying)::text])))
 );
 
 
@@ -2292,7 +2348,7 @@ CREATE TABLE public.execution_memory_selections (
     relevance_score numeric(6,5) NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT execution_memory_selections_bounds CHECK ((((rank >= 1) AND (rank <= 8)) AND ((relevance_score >= 0.00000) AND (relevance_score <= 1.00000))))
+    CONSTRAINT execution_memory_selections_bounds CHECK (((rank >= 1) AND (rank <= 8) AND ((relevance_score >= 0.00000) AND (relevance_score <= 1.00000))))
 );
 
 
@@ -2359,16 +2415,16 @@ CREATE TABLE public.execution_runs (
     memory_context_status character varying DEFAULT 'not_applicable'::character varying NOT NULL,
     memory_context_detail character varying,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
-    CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
+    CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
-    CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY ((ARRAY['not_applicable'::character varying, 'available'::character varying, 'degraded'::character varying])::text[])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
+    CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
-    CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY ((ARRAY['workspace_default'::character varying, 'thorough'::character varying, 'fast'::character varying])::text[])) AND ((runtime_selection_reason)::text = ANY ((ARRAY['primary'::character varying, 'fallback'::character varying])::text[])))),
+    CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND ((runtime_selection_reason)::text = ANY (ARRAY[('primary'::character varying)::text, ('fallback'::character varying)::text])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
-    CONSTRAINT execution_runs_status CHECK (((status)::text = ANY ((ARRAY['admitting'::character varying, 'admitted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'timed_out'::character varying, 'canceled'::character varying, 'policy_denied'::character varying])::text[])))
+    CONSTRAINT execution_runs_status CHECK (((status)::text = ANY (ARRAY[('admitting'::character varying)::text, ('admitted'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('timed_out'::character varying)::text, ('canceled'::character varying)::text, ('policy_denied'::character varying)::text])))
 );
 
 
@@ -2508,6 +2564,263 @@ CREATE SEQUENCE public.installation_states_id_seq
 --
 
 ALTER SEQUENCE public.installation_states_id_seq OWNED BY public.installation_states.id;
+
+
+--
+-- Name: intercom_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_connections (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    remote_workspace_id character varying NOT NULL,
+    credential_key character varying NOT NULL,
+    webhook_key character varying NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    reconciliation_cursor character varying,
+    last_reconciled_at timestamp(6) without time zone,
+    last_error_code character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: intercom_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_connections_id_seq OWNED BY public.intercom_connections.id;
+
+
+--
+-- Name: intercom_conversation_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_conversation_links (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    remote_conversation_id character varying NOT NULL,
+    remote_state character varying NOT NULL,
+    remote_assignee_id character varying,
+    remote_assignee_name character varying,
+    source_digest character varying NOT NULL,
+    remote_updated_at timestamp(6) without time zone NOT NULL,
+    synced_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_conversation_links_digest CHECK (((source_digest)::text ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: intercom_conversation_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_conversation_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_conversation_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_conversation_links_id_seq OWNED BY public.intercom_conversation_links.id;
+
+
+--
+-- Name: intercom_part_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_part_links (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    intercom_conversation_link_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    conversation_message_id bigint,
+    remote_part_id character varying NOT NULL,
+    part_type character varying NOT NULL,
+    author_name character varying,
+    body text NOT NULL,
+    source_digest character varying NOT NULL,
+    remote_created_at timestamp(6) without time zone NOT NULL,
+    redacted_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_part_links_digest CHECK (((source_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT intercom_part_links_message CHECK (((((part_type)::text = 'note'::text) AND (conversation_message_id IS NULL)) OR (((part_type)::text <> 'note'::text) AND (conversation_message_id IS NOT NULL)))),
+    CONSTRAINT intercom_part_links_type CHECK (((part_type)::text = ANY ((ARRAY['contact_reply'::character varying, 'admin_reply'::character varying, 'note'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_part_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_part_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_part_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_part_links_id_seq OWNED BY public.intercom_part_links.id;
+
+
+--
+-- Name: intercom_sync_operations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_sync_operations (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    intercom_conversation_link_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    operation_key character varying NOT NULL,
+    operation_kind character varying NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    failure_code character varying,
+    remote_object_id character varying,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_attempted_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_sync_operations_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['configuration_error'::character varying, 'remote_rejected'::character varying, 'outcome_unknown'::character varying])::text[])))),
+    CONSTRAINT intercom_sync_operations_kind CHECK (((operation_kind)::text = ANY ((ARRAY['note'::character varying, 'assign'::character varying, 'tag'::character varying, 'untag'::character varying])::text[]))),
+    CONSTRAINT intercom_sync_operations_payload CHECK ((octet_length((payload)::text) <= 65536)),
+    CONSTRAINT intercom_sync_operations_state CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (last_attempted_at IS NULL) AND (failure_code IS NULL) AND (completed_at IS NULL)) OR (((status)::text = 'sending'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (failure_code IS NULL) AND (completed_at IS NULL)) OR (((status)::text = 'completed'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (failure_code IS NULL) AND (completed_at IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (failure_code IS NOT NULL) AND (completed_at IS NULL)))),
+    CONSTRAINT intercom_sync_operations_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sending'::character varying, 'completed'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_sync_operations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_sync_operations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_sync_operations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_sync_operations_id_seq OWNED BY public.intercom_sync_operations.id;
+
+
+--
+-- Name: intercom_tag_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_tag_links (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    remote_tag_id character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: intercom_tag_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_tag_links_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_tag_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_tag_links_id_seq OWNED BY public.intercom_tag_links.id;
+
+
+--
+-- Name: intercom_webhook_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_webhook_deliveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    notification_id character varying NOT NULL,
+    topic character varying NOT NULL,
+    content_sha256 character varying NOT NULL,
+    raw_payload bytea NOT NULL,
+    status character varying DEFAULT 'received'::character varying NOT NULL,
+    failure_code character varying,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    received_at timestamp(6) without time zone NOT NULL,
+    last_attempted_at timestamp(6) without time zone,
+    processed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_webhook_deliveries_attempts CHECK ((((attempt_count = 0) AND (last_attempted_at IS NULL)) OR ((attempt_count > 0) AND (last_attempted_at IS NOT NULL)))),
+    CONSTRAINT intercom_webhook_deliveries_digest CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT intercom_webhook_deliveries_failure_code CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['invalid_payload'::character varying, 'unsupported_topic'::character varying, 'identity_ambiguous'::character varying, 'remote_unavailable'::character varying, 'persistence_error'::character varying])::text[])))),
+    CONSTRAINT intercom_webhook_deliveries_size CHECK ((octet_length(raw_payload) <= 1048576)),
+    CONSTRAINT intercom_webhook_deliveries_state CHECK (((((status)::text = 'received'::text) AND (failure_code IS NULL) AND (processed_at IS NULL)) OR (((status)::text = 'processed'::text) AND (failure_code IS NULL) AND (processed_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (failure_code IS NOT NULL) AND (processed_at IS NOT NULL)))),
+    CONSTRAINT intercom_webhook_deliveries_status CHECK (((status)::text = ANY ((ARRAY['received'::character varying, 'processed'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_webhook_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_webhook_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_webhook_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_webhook_deliveries_id_seq OWNED BY public.intercom_webhook_deliveries.id;
 
 
 --
@@ -2660,8 +2973,8 @@ CREATE TABLE public.memory_correction_proposals (
     reviewed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT memory_corrections_content CHECK ((((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
-    CONSTRAINT memory_corrections_retention CHECK ((((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying])::text[])) AND ((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL)) OR (((retention_policy)::text = 'indefinite'::text) AND (retention_until IS NULL))))),
+    CONSTRAINT memory_corrections_content CHECK (((octet_length(content) >= 1) AND (octet_length(content) <= 32768) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_corrections_retention CHECK ((((retention_policy)::text = ANY (ARRAY[('indefinite'::character varying)::text, ('time_bound'::character varying)::text])) AND ((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL)) OR (((retention_policy)::text = 'indefinite'::text) AND (retention_until IS NULL))))),
     CONSTRAINT memory_corrections_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL))))
 );
 
@@ -2703,10 +3016,10 @@ CREATE TABLE public.memory_index_entries (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT memory_index_entries_document CHECK (((external_document_id IS NULL) OR ((octet_length((external_document_id)::text) >= 1) AND (octet_length((external_document_id)::text) <= 200)))),
-    CONSTRAINT memory_index_entries_external_status CHECK (((external_status IS NULL) OR ((external_status)::text = ANY ((ARRAY['queued'::character varying, 'extracting'::character varying, 'chunking'::character varying, 'embedding'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))),
+    CONSTRAINT memory_index_entries_external_status CHECK (((external_status IS NULL) OR ((external_status)::text = ANY (ARRAY[('queued'::character varying)::text, ('extracting'::character varying)::text, ('chunking'::character varying)::text, ('embedding'::character varying)::text, ('done'::character varying)::text, ('failed'::character varying)::text])))),
     CONSTRAINT memory_index_entries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))),
-    CONSTRAINT memory_index_entries_result CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (external_document_id IS NULL) AND (external_status IS NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexing'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'queued'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND (external_status IS NOT NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexed'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND ((external_status)::text = 'done'::text) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)))),
-    CONSTRAINT memory_index_entries_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'indexing'::character varying, 'queued'::character varying, 'indexed'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count >= 0)))
+    CONSTRAINT memory_index_entries_result CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (external_document_id IS NULL) AND (external_status IS NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexing'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'queued'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND (external_status IS NOT NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexed'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND ((external_status)::text = 'done'::text) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NOT NULL)) OR (((status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)))),
+    CONSTRAINT memory_index_entries_state CHECK ((((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('indexing'::character varying)::text, ('queued'::character varying)::text, ('indexed'::character varying)::text, ('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count >= 0)))
 );
 
 
@@ -2755,7 +3068,7 @@ CREATE TABLE public.memory_proposals (
     reviewed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT memory_proposals_content CHECK ((((memory_type)::text = ANY ((ARRAY['semantic'::character varying, 'profile'::character varying])::text[])) AND ((scope_kind)::text = ANY ((ARRAY['account'::character varying, 'contact'::character varying, 'support_case'::character varying])::text[])) AND ((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_proposals_content CHECK ((((memory_type)::text = ANY (ARRAY[('semantic'::character varying)::text, ('profile'::character varying)::text])) AND ((scope_kind)::text = ANY (ARRAY[('account'::character varying)::text, ('contact'::character varying)::text, ('support_case'::character varying)::text])) AND ((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
     CONSTRAINT memory_proposals_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL)))),
     CONSTRAINT memory_proposals_scope CHECK (((((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL))))
 );
@@ -2817,24 +3130,24 @@ CREATE TABLE public.memory_records (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     capture_key character varying,
-    CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY ((ARRAY['inference'::character varying, 'source_record'::character varying, 'human_correction'::character varying])::text[]))),
+    CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY (ARRAY[('inference'::character varying)::text, ('source_record'::character varying)::text, ('human_correction'::character varying)::text]))),
     CONSTRAINT memory_records_capture_key CHECK (((capture_key IS NULL) OR ((octet_length((capture_key)::text) >= 1) AND (octet_length((capture_key)::text) <= 200)))),
     CONSTRAINT memory_records_confidence CHECK (((confidence >= 0.000) AND (confidence <= 1.000))),
-    CONSTRAINT memory_records_content CHECK ((((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
+    CONSTRAINT memory_records_content CHECK (((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
     CONSTRAINT memory_records_correction_authority CHECK ((((authority)::text <> 'human_correction'::text) OR ((origin_kind)::text = 'human'::text))),
     CONSTRAINT memory_records_digests CHECK ((((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT memory_records_inference_authority CHECK ((((authority)::text <> 'inference'::text) OR ((origin_kind)::text = 'agent'::text))),
     CONSTRAINT memory_records_no_self_supersession CHECK (((supersedes_memory_record_id IS NULL) OR (supersedes_memory_record_id <> id))),
-    CONSTRAINT memory_records_origin_kind CHECK (((origin_kind)::text = ANY ((ARRAY['system'::character varying, 'agent'::character varying, 'human'::character varying])::text[]))),
+    CONSTRAINT memory_records_origin_kind CHECK (((origin_kind)::text = ANY (ARRAY[('system'::character varying)::text, ('agent'::character varying)::text, ('human'::character varying)::text]))),
     CONSTRAINT memory_records_origin_shape CHECK (((((origin_kind)::text = 'system'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'agent'::text) AND (source_agent_profile_id IS NOT NULL) AND (source_membership_id IS NULL) AND (source_user_id IS NULL)) OR (((origin_kind)::text = 'human'::text) AND (source_agent_profile_id IS NULL) AND (source_membership_id IS NOT NULL) AND (source_user_id IS NOT NULL)))),
     CONSTRAINT memory_records_procedural_authority CHECK ((((memory_type)::text <> 'procedural'::text) OR ((authority)::text = 'human_correction'::text))),
-    CONSTRAINT memory_records_retention_policy CHECK (((retention_policy)::text = ANY ((ARRAY['indefinite'::character varying, 'time_bound'::character varying, 'source_lifetime'::character varying])::text[]))),
+    CONSTRAINT memory_records_retention_policy CHECK (((retention_policy)::text = ANY (ARRAY[('indefinite'::character varying)::text, ('time_bound'::character varying)::text, ('source_lifetime'::character varying)::text]))),
     CONSTRAINT memory_records_retention_shape CHECK (((((retention_policy)::text = 'time_bound'::text) AND (retention_until IS NOT NULL) AND (retention_until > observed_at)) OR (((retention_policy)::text <> 'time_bound'::text) AND (retention_until IS NULL)))),
-    CONSTRAINT memory_records_scope_kind CHECK (((scope_kind)::text = ANY ((ARRAY['organization'::character varying, 'workspace'::character varying, 'account'::character varying, 'contact'::character varying, 'support_case'::character varying, 'crew'::character varying, 'agent'::character varying, 'user'::character varying])::text[]))),
+    CONSTRAINT memory_records_scope_kind CHECK (((scope_kind)::text = ANY (ARRAY[('organization'::character varying)::text, ('workspace'::character varying)::text, ('account'::character varying)::text, ('contact'::character varying)::text, ('support_case'::character varying)::text, ('crew'::character varying)::text, ('agent'::character varying)::text, ('user'::character varying)::text]))),
     CONSTRAINT memory_records_scope_shape CHECK (((((scope_kind)::text = 'organization'::text) AND (organization_id IS NOT NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'workspace'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (organization_id IS NULL) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'crew'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NOT NULL) AND (agent_profile_id IS NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'agent'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NOT NULL) AND (user_id IS NULL)) OR (((scope_kind)::text = 'user'::text) AND (organization_id IS NULL) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL) AND (crew_template_id IS NULL) AND (agent_profile_id IS NULL) AND (user_id IS NOT NULL)))),
     CONSTRAINT memory_records_source_authority CHECK ((((authority)::text <> 'source_record'::text) OR ((origin_kind)::text <> 'agent'::text))),
     CONSTRAINT memory_records_source_reference CHECK (((octet_length((source_reference)::text) >= 1) AND (octet_length((source_reference)::text) <= 2048))),
-    CONSTRAINT memory_records_type CHECK (((memory_type)::text = ANY ((ARRAY['episodic'::character varying, 'semantic'::character varying, 'profile'::character varying, 'procedural'::character varying])::text[]))),
+    CONSTRAINT memory_records_type CHECK (((memory_type)::text = ANY (ARRAY[('episodic'::character varying)::text, ('semantic'::character varying)::text, ('profile'::character varying)::text, ('procedural'::character varying)::text]))),
     CONSTRAINT memory_records_valid_time CHECK (((valid_until IS NULL) OR (valid_until > valid_from)))
 );
 
@@ -2877,7 +3190,7 @@ CREATE TABLE public.memory_tombstones (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT memory_tombstones_reason CHECK (((octet_length((reason)::text) >= 1) AND (octet_length((reason)::text) <= 500))),
-    CONSTRAINT memory_tombstones_state CHECK (((((index_status)::text = 'pending'::text) AND (attempt_count = 0) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removing'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removed'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NOT NULL)) OR (((index_status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL))))
+    CONSTRAINT memory_tombstones_state CHECK (((((index_status)::text = 'pending'::text) AND (attempt_count = 0) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removing'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL)) OR (((index_status)::text = 'removed'::text) AND (attempt_count > 0) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NOT NULL)) OR (((index_status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (removed_at IS NULL))))
 );
 
 
@@ -3038,7 +3351,7 @@ CREATE TABLE public.public_web_extractions (
     source_updated_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT public_web_extractions_identity CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((status)::text = ANY ((ARRAY['extracting'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((octet_length(source_url) >= 9) AND (octet_length(source_url) <= 2048)) AND (source_url ~ '^https://'::text))),
+    CONSTRAINT public_web_extractions_identity CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((status)::text = ANY (ARRAY[('extracting'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((octet_length(source_url) >= 9) AND (octet_length(source_url) <= 2048)) AND (source_url ~ '^https://'::text))),
     CONSTRAINT public_web_extractions_result CHECK (((((status)::text = 'extracting'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((octet_length(final_url) >= 9) AND (octet_length(final_url) <= 2048)) AND (final_url ~ '^https://'::text) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 1048576)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (final_url IS NULL) AND (content IS NULL) AND (content_digest IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL) AND (source_updated_at IS NULL))))
 );
 
@@ -3080,7 +3393,7 @@ CREATE TABLE public.public_web_search_results (
     content_digest character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT public_web_search_results_content CHECK ((((rank >= 1) AND (rank <= 10)) AND ((citation_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text) AND ((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 500)) AND ((octet_length(url) >= 9) AND (octet_length(url) <= 2048)) AND (url ~ '^https://'::text) AND (octet_length(excerpt) <= 4000) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+    CONSTRAINT public_web_search_results_content CHECK (((rank >= 1) AND (rank <= 10) AND ((citation_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text) AND ((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 500)) AND ((octet_length(url) >= 9) AND (octet_length(url) <= 2048)) AND (url ~ '^https://'::text) AND (octet_length(excerpt) <= 4000) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text)))
 );
 
 
@@ -3124,7 +3437,7 @@ CREATE TABLE public.public_web_searches (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT public_web_searches_result CHECK (((((status)::text = 'searching'::text) AND (provider_key IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (provider_key IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL)))),
-    CONSTRAINT public_web_searches_state CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY ((ARRAY['searching'::character varying, 'completed'::character varying, 'failed'::character varying])::text[])) AND ((policy_decision)::text = ANY ((ARRAY['allowed'::character varying, 'redacted'::character varying])::text[])) AND (cost_units >= 0)))
+    CONSTRAINT public_web_searches_state CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY (ARRAY[('searching'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((policy_decision)::text = ANY (ARRAY[('allowed'::character varying)::text, ('redacted'::character varying)::text])) AND (cost_units >= 0)))
 );
 
 
@@ -3183,14 +3496,14 @@ CREATE TABLE public.runtime_installations (
     max_input_units bigint DEFAULT 100000 NOT NULL,
     max_output_units bigint DEFAULT 25000 NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
-    CONSTRAINT runtime_installations_budgets CHECK ((((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900)) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
     CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 9) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
     CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
-    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY ((ARRAY['compatible'::character varying, 'warning'::character varying, 'incompatible'::character varying, 'unknown'::character varying])::text[])) AND ((health_status)::text = ANY ((ARRAY['available'::character varying, 'unhealthy'::character varying, 'missing'::character varying])::text[])))),
-    CONSTRAINT runtime_installations_unit_budgets CHECK ((((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
+    CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
+    CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
 
@@ -3624,7 +3937,8 @@ CREATE TABLE public.support_case_taggings (
     support_case_id bigint NOT NULL,
     tag_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    source_intercom_connection_id bigint
 );
 
 
@@ -4037,6 +4351,48 @@ ALTER TABLE ONLY public.inbound_email_deliveries ALTER COLUMN id SET DEFAULT nex
 --
 
 ALTER TABLE ONLY public.installation_states ALTER COLUMN id SET DEFAULT nextval('public.installation_states_id_seq'::regclass);
+
+
+--
+-- Name: intercom_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_connections ALTER COLUMN id SET DEFAULT nextval('public.intercom_connections_id_seq'::regclass);
+
+
+--
+-- Name: intercom_conversation_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links ALTER COLUMN id SET DEFAULT nextval('public.intercom_conversation_links_id_seq'::regclass);
+
+
+--
+-- Name: intercom_part_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links ALTER COLUMN id SET DEFAULT nextval('public.intercom_part_links_id_seq'::regclass);
+
+
+--
+-- Name: intercom_sync_operations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations ALTER COLUMN id SET DEFAULT nextval('public.intercom_sync_operations_id_seq'::regclass);
+
+
+--
+-- Name: intercom_tag_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_tag_links ALTER COLUMN id SET DEFAULT nextval('public.intercom_tag_links_id_seq'::regclass);
+
+
+--
+-- Name: intercom_webhook_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_webhook_deliveries ALTER COLUMN id SET DEFAULT nextval('public.intercom_webhook_deliveries_id_seq'::regclass);
 
 
 --
@@ -4505,6 +4861,54 @@ ALTER TABLE ONLY public.installation_states
 
 
 --
+-- Name: intercom_connections intercom_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_connections
+    ADD CONSTRAINT intercom_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_conversation_links intercom_conversation_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links
+    ADD CONSTRAINT intercom_conversation_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_part_links intercom_part_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links
+    ADD CONSTRAINT intercom_part_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_sync_operations intercom_sync_operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations
+    ADD CONSTRAINT intercom_sync_operations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_tag_links intercom_tag_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_tag_links
+    ADD CONSTRAINT intercom_tag_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_webhook_deliveries intercom_webhook_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_webhook_deliveries
+    ADD CONSTRAINT intercom_webhook_deliveries_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: knowledge_source_versions knowledge_source_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4768,6 +5172,20 @@ CREATE UNIQUE INDEX idx_on_email_draft_id_stored_attachment_id_e495be539b ON pub
 
 
 --
+-- Name: idx_on_intercom_connection_id_remote_part_id_61d69c288c; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_intercom_connection_id_remote_part_id_61d69c288c ON public.intercom_part_links USING btree (intercom_connection_id, remote_part_id);
+
+
+--
+-- Name: idx_on_intercom_connection_id_remote_tag_id_1e0b48db33; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_intercom_connection_id_remote_tag_id_1e0b48db33 ON public.intercom_tag_links USING btree (intercom_connection_id, remote_tag_id);
+
+
+--
 -- Name: idx_on_public_web_search_id_rank_c0f5f4d15a; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4803,6 +5221,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public
 
 
 --
+-- Name: idx_on_workspace_id_conversation_id_f80281e8e7; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_conversation_id_f80281e8e7 ON public.intercom_conversation_links USING btree (workspace_id, conversation_id);
+
+
+--
 -- Name: idx_on_workspace_id_memory_record_id_43806d3363; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4810,10 +5235,24 @@ CREATE UNIQUE INDEX idx_on_workspace_id_memory_record_id_43806d3363 ON public.me
 
 
 --
+-- Name: idx_on_workspace_id_remote_workspace_id_3dd6f8847c; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_remote_workspace_id_3dd6f8847c ON public.intercom_connections USING btree (workspace_id, remote_workspace_id);
+
+
+--
 -- Name: idx_on_workspace_id_source_agent_profile_id_94fb4dc643; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_on_workspace_id_source_agent_profile_id_94fb4dc643 ON public.memory_records USING btree (workspace_id, source_agent_profile_id) WHERE (source_agent_profile_id IS NOT NULL);
+
+
+--
+-- Name: idx_on_workspace_id_status_created_at_52affea5f4; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_status_created_at_52affea5f4 ON public.intercom_sync_operations USING btree (workspace_id, status, created_at);
 
 
 --
@@ -5059,6 +5498,13 @@ CREATE UNIQUE INDEX index_case_slas_on_workspace_id_and_id ON public.case_slas U
 --
 
 CREATE UNIQUE INDEX index_case_slas_on_workspace_id_and_support_case_id ON public.case_slas USING btree (workspace_id, support_case_id);
+
+
+--
+-- Name: index_case_taggings_on_intercom_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_case_taggings_on_intercom_source ON public.support_case_taggings USING btree (workspace_id, source_intercom_connection_id);
 
 
 --
@@ -5584,6 +6030,160 @@ CREATE UNIQUE INDEX index_inbound_email_deliveries_on_workspace_id_and_id ON pub
 --
 
 CREATE UNIQUE INDEX index_installation_states_on_singleton ON public.installation_states USING btree (singleton);
+
+
+--
+-- Name: index_intercom_connections_on_webhook_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_connections_on_webhook_key ON public.intercom_connections USING btree (webhook_key);
+
+
+--
+-- Name: index_intercom_connections_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_connections_on_workspace_id ON public.intercom_connections USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_connections_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_connections_on_workspace_id_and_id ON public.intercom_connections USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_conversation_links_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_conversation_links_on_workspace_id ON public.intercom_conversation_links USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_conversation_links_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversation_links_on_workspace_id_and_id ON public.intercom_conversation_links USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_conversations_on_remote_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversations_on_remote_id ON public.intercom_conversation_links USING btree (intercom_connection_id, remote_conversation_id);
+
+
+--
+-- Name: index_intercom_conversations_on_tenant_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_chain ON public.intercom_conversation_links USING btree (workspace_id, intercom_connection_id, id, conversation_id, support_case_id);
+
+
+--
+-- Name: index_intercom_conversations_on_tenant_conversation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_conversation ON public.intercom_conversation_links USING btree (workspace_id, intercom_connection_id, id, conversation_id);
+
+
+--
+-- Name: index_intercom_conversations_on_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_conversations_on_tenant_id ON public.intercom_conversation_links USING btree (workspace_id, intercom_connection_id, id);
+
+
+--
+-- Name: index_intercom_part_links_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_part_links_on_workspace_id ON public.intercom_part_links USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_part_links_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_part_links_on_workspace_id_and_id ON public.intercom_part_links USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_parts_on_conversation_message; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_parts_on_conversation_message ON public.intercom_part_links USING btree (workspace_id, conversation_id, conversation_message_id) WHERE (conversation_message_id IS NOT NULL);
+
+
+--
+-- Name: index_intercom_sync_operations_on_operation_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_sync_operations_on_operation_key ON public.intercom_sync_operations USING btree (operation_key);
+
+
+--
+-- Name: index_intercom_sync_operations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_sync_operations_on_workspace_id ON public.intercom_sync_operations USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_sync_operations_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_sync_operations_on_workspace_id_and_id ON public.intercom_sync_operations USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_tag_links_on_intercom_connection_id_and_tag_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_tag_links_on_intercom_connection_id_and_tag_id ON public.intercom_tag_links USING btree (intercom_connection_id, tag_id);
+
+
+--
+-- Name: index_intercom_tag_links_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_tag_links_on_workspace_id ON public.intercom_tag_links USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_tag_links_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_tag_links_on_workspace_id_and_id ON public.intercom_tag_links USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_webhook_deliveries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_webhook_deliveries_on_workspace_id ON public.intercom_webhook_deliveries USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_webhook_deliveries_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_webhook_deliveries_on_workspace_id_and_id ON public.intercom_webhook_deliveries USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_webhooks_on_notification; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_webhooks_on_notification ON public.intercom_webhook_deliveries USING btree (intercom_connection_id, notification_id);
+
+
+--
+-- Name: index_intercom_webhooks_on_visibility; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_webhooks_on_visibility ON public.intercom_webhook_deliveries USING btree (workspace_id, status, received_at);
 
 
 --
@@ -6763,6 +7363,34 @@ CREATE TRIGGER inbound_email_deliveries_protect_source BEFORE DELETE OR UPDATE O
 
 
 --
+-- Name: intercom_sync_operations intercom_sync_operations_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_sync_operations_no_truncate BEFORE TRUNCATE ON public.intercom_sync_operations FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_intercom_sync_operation_mutation();
+
+
+--
+-- Name: intercom_sync_operations intercom_sync_operations_protect_source; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_sync_operations_protect_source BEFORE DELETE OR UPDATE ON public.intercom_sync_operations FOR EACH ROW EXECUTE FUNCTION public.prevent_intercom_sync_operation_mutation();
+
+
+--
+-- Name: intercom_webhook_deliveries intercom_webhook_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_webhook_deliveries_no_truncate BEFORE TRUNCATE ON public.intercom_webhook_deliveries FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_intercom_webhook_source_mutation();
+
+
+--
+-- Name: intercom_webhook_deliveries intercom_webhook_deliveries_protect_source; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER intercom_webhook_deliveries_protect_source BEFORE DELETE OR UPDATE ON public.intercom_webhook_deliveries FOR EACH ROW EXECUTE FUNCTION public.prevent_intercom_webhook_source_mutation();
+
+
+--
 -- Name: knowledge_source_versions knowledge_source_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7397,6 +8025,14 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: intercom_part_links fk_rails_1f0e1f209b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links
+    ADD CONSTRAINT fk_rails_1f0e1f209b FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: memory_proposals fk_rails_23d39be37f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7421,6 +8057,14 @@ ALTER TABLE ONLY public.memory_proposals
 
 
 --
+-- Name: intercom_webhook_deliveries fk_rails_285c5efc52; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_webhook_deliveries
+    ADD CONSTRAINT fk_rails_285c5efc52 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
 -- Name: service_calendars fk_rails_28a2d1884f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7434,6 +8078,14 @@ ALTER TABLE ONLY public.service_calendars
 
 ALTER TABLE ONLY public.runtime_installations
     ADD CONSTRAINT fk_rails_2d6bafe6cf FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: intercom_conversation_links fk_rails_2d83c7a76e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links
+    ADD CONSTRAINT fk_rails_2d83c7a76e FOREIGN KEY (workspace_id, conversation_id, support_case_id) REFERENCES public.support_cases(workspace_id, conversation_id, id);
 
 
 --
@@ -7474,6 +8126,30 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT fk_rails_3633c0c202 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: intercom_sync_operations fk_rails_3699c733a4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations
+    ADD CONSTRAINT fk_rails_3699c733a4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: intercom_tag_links fk_rails_36b994f919; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_tag_links
+    ADD CONSTRAINT fk_rails_36b994f919 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
+-- Name: intercom_connections fk_rails_3a3160e258; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_connections
+    ADD CONSTRAINT fk_rails_3a3160e258 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -7669,6 +8345,22 @@ ALTER TABLE ONLY public.memory_proposals
 
 
 --
+-- Name: intercom_conversation_links fk_rails_57869e5e2b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links
+    ADD CONSTRAINT fk_rails_57869e5e2b FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id);
+
+
+--
+-- Name: intercom_sync_operations fk_rails_5a9c8244a7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations
+    ADD CONSTRAINT fk_rails_5a9c8244a7 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
 -- Name: memory_correction_proposals fk_rails_5d140239d8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7786,6 +8478,14 @@ ALTER TABLE ONLY public.case_slas
 
 ALTER TABLE ONLY public.identity_match_candidates
     ADD CONSTRAINT fk_rails_687f013be7 FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: intercom_conversation_links fk_rails_690bd262a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links
+    ADD CONSTRAINT fk_rails_690bd262a9 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
 
 
 --
@@ -7954,6 +8654,14 @@ ALTER TABLE ONLY public.email_draft_attachments
 
 ALTER TABLE ONLY public.conversation_messages
     ADD CONSTRAINT fk_rails_7c459f2c0a FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: intercom_tag_links fk_rails_7d6d79490f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_tag_links
+    ADD CONSTRAINT fk_rails_7d6d79490f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -8157,6 +8865,14 @@ ALTER TABLE ONLY public.memory_records
 
 
 --
+-- Name: intercom_sync_operations fk_rails_a45d2aa602; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations
+    ADD CONSTRAINT fk_rails_a45d2aa602 FOREIGN KEY (workspace_id, membership_id, user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: crew_artifacts fk_rails_a5798990c4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8221,6 +8937,14 @@ ALTER TABLE ONLY public.runtime_installations
 
 
 --
+-- Name: intercom_part_links fk_rails_ae8e54f273; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links
+    ADD CONSTRAINT fk_rails_ae8e54f273 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
 -- Name: source_identities fk_rails_b04720ccd3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8250,6 +8974,14 @@ ALTER TABLE ONLY public.identity_match_candidates
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT fk_rails_b44b6eb8c4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: intercom_sync_operations fk_rails_b4af67e2ba; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_sync_operations
+    ADD CONSTRAINT fk_rails_b4af67e2ba FOREIGN KEY (workspace_id, intercom_connection_id, intercom_conversation_link_id) REFERENCES public.intercom_conversation_links(workspace_id, intercom_connection_id, id);
 
 
 --
@@ -8341,6 +9073,14 @@ ALTER TABLE ONLY public.execution_memory_selections
 
 
 --
+-- Name: intercom_conversation_links fk_rails_c5d76feb3f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_conversation_links
+    ADD CONSTRAINT fk_rails_c5d76feb3f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: public_web_extractions fk_rails_c6f2785e1f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8402,6 +9142,14 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 ALTER TABLE ONLY public.crew_task_events
     ADD CONSTRAINT fk_rails_cae149d86b FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: support_case_taggings fk_rails_ccfa3c71c0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_taggings
+    ADD CONSTRAINT fk_rails_ccfa3c71c0 FOREIGN KEY (workspace_id, source_intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
 
 
 --
@@ -8541,11 +9289,35 @@ ALTER TABLE ONLY public.public_web_searches
 
 
 --
+-- Name: intercom_part_links fk_rails_eb6f32a090; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links
+    ADD CONSTRAINT fk_rails_eb6f32a090 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: intercom_tag_links fk_rails_ed77a1dddb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_tag_links
+    ADD CONSTRAINT fk_rails_ed77a1dddb FOREIGN KEY (workspace_id, tag_id) REFERENCES public.tags(workspace_id, id);
+
+
+--
 -- Name: email_message_links fk_rails_edb13a72d9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.email_message_links
     ADD CONSTRAINT fk_rails_edb13a72d9 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: intercom_webhook_deliveries fk_rails_ef28c0b16b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_webhook_deliveries
+    ADD CONSTRAINT fk_rails_ef28c0b16b FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -8570,6 +9342,14 @@ ALTER TABLE ONLY public.conversation_message_attachments
 
 ALTER TABLE ONLY public.outbound_email_deliveries
     ADD CONSTRAINT fk_rails_f29673b049 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: intercom_part_links fk_rails_f74cdd9944; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_links
+    ADD CONSTRAINT fk_rails_f74cdd9944 FOREIGN KEY (workspace_id, intercom_connection_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_conversation_links(workspace_id, intercom_connection_id, id, conversation_id);
 
 
 --
@@ -8619,6 +9399,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824190000'),
 ('20260824180000'),
 ('20260824170000'),
 ('20260824160000'),
