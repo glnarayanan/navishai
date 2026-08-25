@@ -39,6 +39,8 @@ Use these terms in product copy, code, tests, and design notes.
 - **Intercom part link:** the source-owned mapping for one remote customer reply, teammate reply, or private note. Redaction hides linked content from current case views without rewriting source history.
 - **Intercom tag link:** the source-owned mapping from one remote tag to one Workspace Tag. Reconciliation may remove only tags owned by that Intercom connection.
 - **Intercom sync operation:** one frozen, human-attributed local note, assignment, tag, or untag change sent to Intercom. Definite rejection may retry; an uncertain outcome stops for review so NavishAI does not duplicate a remote write.
+- **Intercom draft:** the latest plain-text customer reply that a workspace writer can edit. A new customer part opens the next draft after a sent reply. The draft does not grant send authority.
+- **Intercom outbound delivery:** one frozen remote conversation, source part, body, Intercom admin, human actor, and result for a fresh Send command. An uncertain result blocks resend until a signed-in writer verifies the exact remote part or marks it not sent.
 - **Knowledge source:** one Workspace-owned body of approved support knowledge from maintained text, an HTTPS URL snapshot, an uploaded text file, or an Intercom Help Center article. Deletion removes it from current use without erasing cited history.
 - **Knowledge source version:** one immutable content snapshot with its digest, retrieval time, source update time, expiry, author, and optional retained upload. Only a source’s current active version appears in search.
 - **Knowledge citation:** a stable link to one Knowledge source version. It keeps stale and deleted warnings even after a source changes or leaves current search.

@@ -56,6 +56,10 @@ Rails.application.routes.draw do
         post :email_attachments, controller: "email_attachments", action: :create
         delete "email_attachments/:attachment_id", controller: "email_attachments", action: :destroy,
           as: :email_attachment
+        post :intercom_draft, controller: "intercom_replies", action: :save_draft
+        post :intercom_send, controller: "intercom_replies", action: :send_reply
+        post "intercom_deliveries/:delivery_id/review", controller: "intercom_replies", action: :review_delivery,
+          as: :intercom_delivery_review
       end
     end
   end

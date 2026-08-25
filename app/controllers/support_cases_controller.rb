@@ -43,6 +43,16 @@ class SupportCasesController < ApplicationController
         .includes(:intercom_connection, :intercom_part_links)
         .find_by(conversation_id: @support_case.conversation_id)
       @intercom_operations = @intercom_link ? @intercom_link.intercom_sync_operations.where.not(status: :completed).order(created_at: :desc) : []
+      if @intercom_link
+        @intercom_source_part_id = HumanIntercomSend.source_part_id(workspace: @workspace, support_case: @support_case)
+        @intercom_draft = @support_case.intercom_draft || @workspace.intercom_drafts.new(
+          support_case: @support_case, intercom_conversation_link: @intercom_link,
+          conversation: @support_case.conversation
+        )
+        @intercom_follow_up_available = IntercomDraftWorkflow.follow_up_available?(@intercom_draft)
+        @intercom_delivery = @intercom_draft.persisted? ? @intercom_draft.intercom_outbound_deliveries.order(created_at: :desc).first : nil
+        @intercom_send_token ||= SecureRandom.uuid
+      end
       @email_recipient = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: @support_case) if @email_thread
       @email_draft = @support_case.email_draft || @workspace.email_drafts.new(
         support_case: @support_case, email_thread: @email_thread, conversation: @support_case.conversation

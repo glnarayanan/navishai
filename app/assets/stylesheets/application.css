@@ -2897,6 +2897,16 @@ td {
     display: none;
   }
 
+  .reply-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reply-actions .button,
+  .reply-actions .button-primary {
+    width: 100%;
+  }
+
   .auth-shell,
   .setup-shell {
     min-height: calc(100dvh - 4rem);

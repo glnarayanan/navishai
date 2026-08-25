@@ -44,6 +44,17 @@ class IntercomClientTest < ActiveSupport::TestCase
     }, JSON.parse(assignment.body))
   end
 
+  test "sends a customer-facing reply as the named Intercom admin" do
+    @client.reply(conversation_id: "conversation_1", admin_id: "admin_1", body: "Human answer")
+
+    reply = @requests.sole
+    assert_equal "POST", reply.method
+    assert_equal "/conversations/conversation_1/reply", reply.path
+    assert_equal({
+      "message_type" => "comment", "type" => "admin", "admin_id" => "admin_1", "body" => "Human answer"
+    }, JSON.parse(reply.body))
+  end
+
   test "lists teams with the pinned API version" do
     @client.teams
 

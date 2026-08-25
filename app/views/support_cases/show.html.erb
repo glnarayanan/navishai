@@ -199,6 +199,75 @@
           <% end %>
         </section>
       <% end %>
+
+      <% if @intercom_link %>
+        <section class="email-reply intercom-reply" id="intercom-reply" aria-labelledby="intercom-reply-title">
+          <div>
+            <h2 id="intercom-reply-title">Intercom reply</h2>
+            <% if @intercom_delivery&.unknown? || @intercom_delivery&.sending? %>
+              <p>Review the frozen Intercom attempt before recording its outcome.</p>
+            <% elsif @intercom_draft.sent? && !@intercom_follow_up_available %>
+              <p>The sent reply is locked. A new customer message will open a fresh draft.</p>
+            <% else %>
+              <p>Review the exact message, then press Send. Agents and jobs cannot send it.</p>
+            <% end %>
+          </div>
+
+          <% if @intercom_delivery&.unknown? || @intercom_delivery&.sending? %>
+            <div class="inline-error" role="status">
+              <strong>Delivery outcome needs review</strong>
+              <p>Check Intercom for this exact reply. Do not resend before checking.</p>
+              <dl class="case-facts delivery-review-facts">
+                <div><dt>Conversation</dt><dd><code><%= @intercom_delivery.remote_conversation_id %></code></dd></div>
+                <div><dt>Admin</dt><dd><code><%= @intercom_delivery.admin_id %></code></dd></div>
+                <div><dt>Source part</dt><dd><code><%= @intercom_delivery.source_part_id %></code></dd></div>
+                <div><dt>Attempted</dt><dd><time datetime="<%= @intercom_delivery.started_at.iso8601 %>"><%= @intercom_delivery.started_at.to_fs(:long) %></time></dd></div>
+              </dl>
+              <div class="message-body delivery-review-body"><%= simple_format(@intercom_delivery.body) %></div>
+              <% if @membership.can_write? %>
+                <%= form_with url: intercom_delivery_review_workspace_support_case_path(@workspace, @support_case, @intercom_delivery), class: "compact-form" do |form| %>
+                  <div class="field">
+                    <%= form.label :remote_part_id, "Intercom part ID for an accepted reply" %>
+                    <%= form.text_field :remote_part_id, autocomplete: "off" %>
+                    <span class="field-hint">Required only when marking the reply accepted.</span>
+                  </div>
+                  <div class="reply-actions">
+                    <%= form.button "Mark accepted", name: :outcome, value: "accepted", class: "button button-primary",
+                      data: { turbo_confirm: "Confirm that Intercom accepted this exact reply?" } %>
+                    <%= form.button "Mark not sent", name: :outcome, value: "rejected", class: "button button-secondary",
+                      data: { turbo_confirm: "Confirm that Intercom did not accept this reply? A fresh send will be allowed." } %>
+                  </div>
+                <% end %>
+              <% end %>
+            </div>
+          <% elsif @intercom_draft.sent? && !@intercom_follow_up_available %>
+            <p class="muted-copy">This reply was sent by <%= @intercom_delivery.actor_user.email_address %> at <%= @intercom_delivery.sent_at.to_fs(:short) %>.</p>
+          <% elsif @membership.can_write? %>
+            <%= form_with url: intercom_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
+              <%= form.hidden_field :idempotency_key, value: @intercom_send_token %>
+              <%= form.hidden_field :draft_version, value: @intercom_draft.persisted? ? @intercom_draft.lock_version : "new" %>
+              <%= form.hidden_field :expected_source_part_id, value: @intercom_source_part_id %>
+              <div class="recipient-review">
+                <span>To</span>
+                <strong>Intercom conversation <%= @intercom_link.remote_conversation_id %></strong>
+              </div>
+              <div class="field">
+                <%= form.label :body, "Message" %>
+                <%= form.text_area :body, value: @submitted_intercom_body || (@intercom_draft.sent? ? "" : @intercom_draft.body),
+                  required: true, rows: 8, maxlength: IntercomDraft::MAX_BODY_BYTES %>
+                <span class="field-hint">Plain text. The signed-in human sends this reply as their matching Intercom admin.</span>
+              </div>
+              <div class="reply-actions">
+                <%= form.submit "Save draft", formaction: intercom_draft_workspace_support_case_path(@workspace, @support_case), class: "button button-secondary" %>
+                <%= form.submit "Send to Intercom", class: "button button-primary",
+                  data: { turbo_confirm: "Send this exact reply to the customer in Intercom now?" } %>
+              </div>
+            <% end %>
+          <% else %>
+            <p class="muted-copy">Read-only access. You cannot draft or send an Intercom reply.</p>
+          <% end %>
+        </section>
+      <% end %>
     </section>
 
     <aside class="case-context" aria-label="Case context">

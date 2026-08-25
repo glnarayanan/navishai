@@ -40,6 +40,12 @@ class IntercomClient
     })
   end
 
+  def reply(conversation_id:, admin_id:, body:)
+    request(:post, "/conversations/#{path_segment(conversation_id)}/reply", body: {
+      message_type: "comment", type: "admin", admin_id: admin_id.to_s, body: body.to_s
+    })
+  end
+
   def assign(conversation_id:, admin_id:, assignee_id:)
     request(:post, "/conversations/#{path_segment(conversation_id)}/parts", body: {
       message_type: "assignment", type: "admin", admin_id: admin_id.to_s,
