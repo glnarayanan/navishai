@@ -1,16 +1,18 @@
-require "base64"
 require "digest"
 require "json"
+require "rubygems/package"
 require "set"
 require "stringio"
+require "tempfile"
 require "zlib"
 
 class WorkspacePortability
-  FORMAT = "navishai-workspace-v1"
-  MAX_COMPRESSED_BYTES = 8.megabytes
+  FORMAT = "navishai-workspace-v2"
+  MAX_ARCHIVE_BYTES = 60.megabytes
   MAX_UNCOMPRESSED_BYTES = 64.megabytes
+  MAX_ATTACHMENT_BYTES = 50.megabytes
   USER_ATTRIBUTES = %w[id email_address verified_at].freeze
-  ARCHIVE_KEYS = %w[format exported_at organization workspace users tables attachment_objects].freeze
+  ARCHIVE_KEYS = %w[format exported_at organization workspace users tables].freeze
   GLOBAL_KEY_COLUMNS = {
     "crew_artifacts" => "artifact_key",
     "crew_tasks" => "task_key",
@@ -40,7 +42,7 @@ class WorkspacePortability
     actor = workspace.memberships.find(membership.id)
     raise Current::RoleAccessDenied unless actor.owner?
 
-    archive = nil
+    output = Tempfile.new([ "navishai-workspace", ".tar.gz" ], binmode: true)
     record_count = 0
     attachment_count = 0
     Workspace.transaction(isolation: :repeatable_read) do
@@ -50,44 +52,65 @@ class WorkspacePortability
         [ table, rows ]
       end
       users = referenced_users(tables)
-      attachments = workspace.stored_attachments.includes(file_attachment: :blob).order(:id).map do |attachment|
-        next unless attachment.file.attached?
-
-        attachment_count += 1
-        {
-          "stored_attachment_id" => attachment.id,
-          "content_sha256" => attachment.content_sha256,
-          "data" => Base64.strict_encode64(attachment.download_verified!)
-        }
-      end.compact
+      attachments = workspace.stored_attachments.includes(file_attachment: :blob).order(:id).to_a
+      raise InvalidArchive, "Workspace attachments exceed the 50 MiB archive limit." if attachments.sum(&:byte_size) > MAX_ATTACHMENT_BYTES
       archive = {
         "format" => FORMAT,
         "exported_at" => exported_at.iso8601(6),
         "organization" => workspace.organization.attributes.slice("name", "slug"),
         "workspace" => workspace.attributes,
         "users" => users,
-        "tables" => tables,
-        "attachment_objects" => attachments
+        "tables" => tables
       }
+      gzip = Zlib::GzipWriter.new(output)
+      begin
+        Gem::Package::TarWriter.new(gzip) do |tar|
+          manifest = JSON.generate(archive)
+          tar.add_file_simple("manifest.json", 0o600, manifest.bytesize) { |entry| entry.write(manifest) }
+          attachments.each do |attachment|
+            raise InvalidArchive, "Stored attachment #{attachment.id} has no object." unless attachment.file.attached?
+
+            attachment.file.blob.open do |file|
+              digest = Digest::SHA256.new
+              tar.add_file_simple("attachment_objects/#{attachment.id}", 0o600, attachment.byte_size) do |entry|
+                while (chunk = file.read(64.kilobytes))
+                  digest.update(chunk)
+                  entry.write(chunk)
+                end
+              end
+              raise InvalidArchive, "Stored attachment #{attachment.id} digest does not match." unless
+                ActiveSupport::SecurityUtils.secure_compare(digest.hexdigest, attachment.content_sha256)
+            end
+            attachment_count += 1
+          end
+        end
+      ensure
+        gzip.finish
+      end
+      raise InvalidArchive, "Workspace archive exceeds the 60 MiB limit." if output.size > MAX_ARCHIVE_BYTES
       AuditEvent.record!(
         action: "workspace.exported", source: :web, workspace:, actor: actor.user, subject: workspace,
         metadata: { table_count: tables.size, record_count:, attachment_count: }, occurred_at: exported_at
       )
     end
-    gzip(JSON.generate(archive))
+    output.rewind
+    output
+  rescue StandardError
+    output&.close!
+    raise
   end
 
   def self.import(workspace:, membership:, archive_io:, name:, slug:, imported_at: Time.current)
     actor = workspace.memberships.find(membership.id)
     raise Current::RoleAccessDenied unless actor.owner?
 
-    archive = parse_archive(archive_io)
+    archive, attachment_files = parse_archive(archive_io)
     validate_archive!(archive, workspace.organization)
     target = build_target(workspace.organization, name, slug)
     users = imported_users(archive.fetch("users"))
     tables = archive.fetch("tables")
     key_replacements = global_key_replacements(tables)
-    attachment_objects = validate_attachment_objects!(archive.fetch("attachment_objects"), tables)
+    attachment_objects = validate_attachment_objects!(attachment_files, tables)
     record_count = tables.sum { |_table, rows| rows.size }
 
     Workspace.transaction do
@@ -110,9 +133,11 @@ class WorkspacePortability
     target
   rescue ActiveRecord::StatementInvalid
     raise InvalidArchive, "Workspace archive data does not satisfy this release."
-  rescue Zlib::GzipFile::Error, JSON::ParserError, KeyError, TypeError, ArgumentError,
+  rescue Zlib::GzipFile::Error, Gem::Package::TarInvalidError, JSON::ParserError, KeyError, TypeError, ArgumentError,
     ActiveRecord::RecordInvalid => error
     raise InvalidArchive, "Workspace archive is invalid: #{error.message}"
+  ensure
+    attachment_files&.each_value { |object| object.close! }
   end
 
   def self.workspace_tables
@@ -127,18 +152,62 @@ class WorkspacePortability
   private_class_method :workspace_tables
 
   def self.parse_archive(io)
-    compressed = io.read(MAX_COMPRESSED_BYTES + 1).to_s.b
-    raise InvalidArchive, "Workspace archive exceeds the 8 MiB compressed limit." if compressed.bytesize > MAX_COMPRESSED_BYTES
-
-    reader = Zlib::GzipReader.new(StringIO.new(compressed))
-    json = reader.read(MAX_UNCOMPRESSED_BYTES + 1)
-    raise InvalidArchive, "Workspace archive exceeds the 64 MiB expanded limit." if json.bytesize > MAX_UNCOMPRESSED_BYTES
-
-    JSON.parse(json)
-  ensure
-    reader&.close
+    archive = nil
+    attachment_metadata = nil
+    objects = {}
+    gzip = Zlib::GzipReader.new(BoundedReader.new(io, MAX_ARCHIVE_BYTES))
+    Gem::Package::TarReader.new(gzip) do |tar|
+      tar.each do |entry|
+        if entry.full_name == "manifest.json"
+          raise InvalidArchive, "Workspace archive has a duplicate manifest." if archive
+          raise InvalidArchive, "Workspace archive manifest exceeds the 64 MiB expanded limit." if entry.size > MAX_UNCOMPRESSED_BYTES
+          archive = JSON.parse(entry.read)
+          attachment_metadata = attachment_metadata!(archive)
+        elsif (match = entry.full_name.match(%r{\Aattachment_objects/(\d+)\z}))
+          raise InvalidArchive, "Workspace archive manifest must be the first entry." unless archive
+          id = Integer(match[1])
+          raise InvalidArchive, "Workspace archive has a duplicate attachment object." if objects.key?(id)
+          row = attachment_metadata.fetch(id) { raise InvalidArchive, "Workspace archive attachment object has no metadata." }
+          expected_size = row.fetch("byte_size")
+          raise InvalidArchive, "Workspace archive attachment size does not match." unless entry.size == expected_size
+          file = Tempfile.new([ "workspace-attachment", ".object" ], binmode: true)
+          objects[id] = file
+          IO.copy_stream(entry, file)
+          file.rewind
+        else
+          raise InvalidArchive, "Workspace archive contains an unexpected entry."
+        end
+      end
+    end
+    raise InvalidArchive, "Workspace archive has no manifest." unless archive
+    [ archive, objects ]
+  rescue StandardError
+    objects&.each_value { |object| object.close! }
+    raise
   end
   private_class_method :parse_archive
+
+  def self.attachment_metadata!(archive)
+    rows = archive.fetch("tables").fetch("stored_attachments")
+    raise InvalidArchive, "Workspace archive attachment metadata is invalid." unless rows.is_a?(Array)
+
+    result = {}
+    total = 0
+    rows.each do |row|
+      id = row.fetch("id")
+      size = row.fetch("byte_size")
+      unless id.is_a?(Integer) && size.is_a?(Integer) && size.in?(1..StoredAttachment::MAX_BYTES) && !result.key?(id)
+        raise InvalidArchive, "Workspace archive attachment metadata is invalid."
+      end
+      total += size
+      raise InvalidArchive, "Workspace attachments exceed the 50 MiB archive limit." if total > MAX_ATTACHMENT_BYTES
+      result[id] = row
+    end
+    result
+  rescue KeyError
+    raise InvalidArchive, "Workspace archive attachment metadata is invalid."
+  end
+  private_class_method :attachment_metadata!
 
   def self.validate_archive!(archive, organization)
     raise InvalidArchive, "Workspace archive fields do not match this format." unless archive.is_a?(Hash) && archive.keys.sort == ARCHIVE_KEYS.sort
@@ -147,8 +216,6 @@ class WorkspacePortability
     raise InvalidArchive, "Workspace archive organization fields are invalid." unless archive.fetch("organization").keys.sort == %w[name slug]
     raise InvalidArchive, "Workspace archive tables do not match this release." unless archive.fetch("tables").keys == workspace_tables
     raise InvalidArchive, "Workspace archive user list is invalid." unless archive.fetch("users").is_a?(Array)
-    raise InvalidArchive, "Workspace archive attachment list is invalid." unless archive.fetch("attachment_objects").is_a?(Array)
-
     workspace_columns = ActiveRecord::Base.connection.columns("workspaces").map(&:name).sort
     raise InvalidArchive, "Workspace archive identity is invalid." unless archive.fetch("workspace").keys.sort == workspace_columns
     archive.fetch("tables").each do |table, rows|
@@ -193,21 +260,19 @@ class WorkspacePortability
   private_class_method :global_key_replacements
 
   def self.validate_attachment_objects!(objects, tables)
-    attachment_rows = tables.fetch("stored_attachments").index_by { |row| row.fetch("id") }
-    seen = Set.new
-    objects.map do |object|
-      unless object.is_a?(Hash) && object.keys.sort == %w[content_sha256 data stored_attachment_id] &&
-          seen.add?(object.fetch("stored_attachment_id"))
-        raise InvalidArchive, "Workspace archive attachment fields are invalid."
-      end
-      row = attachment_rows.fetch(object.fetch("stored_attachment_id"))
-      bytes = Base64.strict_decode64(object.fetch("data"))
-      raise InvalidArchive, "Workspace archive attachment digest does not match." unless
-        ActiveSupport::SecurityUtils.secure_compare(Digest::SHA256.hexdigest(bytes), row.fetch("content_sha256"))
+    attachment_rows = attachment_metadata!({ "tables" => tables })
+    raise InvalidArchive, "Workspace archive attachment objects do not match metadata." unless objects.keys.to_set == attachment_rows.keys.to_set
 
-      [ row, bytes ]
+    objects.map do |id, file|
+      row = attachment_rows.fetch(id)
+      digest = Digest::SHA256.file(file.path).hexdigest
+      raise InvalidArchive, "Workspace archive attachment digest does not match." unless
+        ActiveSupport::SecurityUtils.secure_compare(digest, row.fetch("content_sha256"))
+      raise InvalidArchive, "Workspace archive attachment size does not match." unless file.size == row.fetch("byte_size")
+
+      [ row, file ]
     end
-  rescue KeyError, ArgumentError
+  rescue KeyError
     raise InvalidArchive, "Workspace archive attachment is invalid."
   end
   private_class_method :validate_attachment_objects!
@@ -377,10 +442,11 @@ class WorkspacePortability
   private_class_method :replace_key_references
 
   def self.attach_objects!(target, objects, attachment_mapping)
-    objects.each do |row, bytes|
+    objects.each do |row, file|
       attachment = target.stored_attachments.find(attachment_mapping.fetch(row.fetch("id")))
+      file.rewind
       attachment.file.attach(
-        io: StringIO.new(bytes), filename: row.fetch("filename"), content_type: row.fetch("detected_content_type")
+        io: file, filename: row.fetch("filename"), content_type: row.fetch("detected_content_type")
       )
     end
   end
@@ -421,10 +487,30 @@ class WorkspacePortability
   end
   private_class_method :referenced_users
 
-  def self.gzip(json)
-    output = StringIO.new
-    Zlib::GzipWriter.wrap(output) { |gzip| gzip.write(json) }
-    output.string
+  class BoundedReader
+    def initialize(io, maximum)
+      @io = io
+      @remaining = maximum
+    end
+
+    def read(length = nil, output = nil)
+      requested = [ length || @remaining + 1, @remaining + 1 ].min
+      consume(@io.read(requested, output))
+    end
+
+    def readpartial(length, output = nil)
+      consume(@io.readpartial([ length, @remaining + 1 ].min, output))
+    end
+
+    private
+      def consume(data)
+        return data unless data
+
+        @remaining -= data.bytesize
+        raise InvalidArchive, "Workspace archive exceeds the 60 MiB limit." if @remaining.negative?
+
+        data
+      end
   end
-  private_class_method :gzip
+  private_constant :BoundedReader
 end

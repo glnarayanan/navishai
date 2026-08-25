@@ -28,6 +28,8 @@ jobs:
   replicas: 1
 runner:
   replicas: 1
+  # Optional Secret containing an execution.json key. The image default disables every live adapter.
+  executionConfigSecret: ""
 
 storage:
   rails:

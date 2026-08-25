@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -133,5 +134,47 @@ func TestNewRejectsAmbiguousAccountValidatorsAndUnsafeEnvironmentNames(t *testin
 		if _, err := New([]Definition{definition}, time.Now); !errors.Is(err, ErrInvalidDefinition) {
 			t.Fatalf("expected invalid definition error for %#v, got %v", definition, err)
 		}
+	}
+}
+
+func TestNewRejectsInvalidStaticInstallation(t *testing.T) {
+	installation := Installation{
+		DetectionKey: strings.Repeat("a", 64), AdapterKey: "scripted", ProtocolVersion: "v1",
+		ExecutablePath: "/tmp/fixture.json", ExecutableVersion: "scripted 1.0.0",
+		AccountMetadata: map[string]string{"authentication": "built_in"}, Capabilities: []string{"tool_calling"},
+		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
+		HealthStatus: "available", CheckedAt: "not-a-time",
+	}
+	if _, err := NewWithInstallations(nil, []Installation{installation}, time.Now); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("expected invalid static installation rejection, got %v", err)
+	}
+}
+
+func TestResolveApprovedRejectsChangedBytesBeforeRunningProbe(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "fixture-runtime")
+	marker := filepath.Join(directory, "probed")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nprintf 'fixture 1.0.0\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	catalog, err := New([]Definition{{
+		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture-runtime"},
+		VersionArguments: []string{"--version"}, Capabilities: []string{"structured_output"},
+		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
+	}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvedKey := detectionKey("fixture", executable)
+	changed := "#!/bin/sh\ntouch " + marker + "\nprintf 'fixture 1.0.0\\n'\n"
+	if err := os.WriteFile(executable, []byte(changed), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := catalog.ResolveApproved(context.Background(), approvedKey, []string{executable}); ok {
+		t.Fatal("changed executable was resolved")
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("changed executable ran before its detection key was checked: %v", err)
 	}
 }

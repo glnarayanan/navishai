@@ -5,20 +5,50 @@ secret='0123456789abcdef0123456789abcdef01234567'
 address='http://127.0.0.1:18081'
 state_path="tmp/runner-contract-$$.json"
 log_path="tmp/runner-contract-$$.log"
+rails_log_path="tmp/runner-contract-rails-$$.log"
+config_path="tmp/runner-contract-$$.config.json"
+fixture_path="$PWD/tmp/runner-contract-$$.fixture.json"
 
 cleanup() {
   if [ -n "${runner_pid:-}" ]; then
     kill "$runner_pid" 2>/dev/null || true
     wait "$runner_pid" 2>/dev/null || true
   fi
-  rm -f "$state_path" "$log_path"
+  if [ -n "${rails_pid:-}" ]; then
+    kill "$rails_pid" 2>/dev/null || true
+    wait "$rails_pid" 2>/dev/null || true
+  fi
+  rm -f "$state_path" "$log_path" "$rails_log_path" "$config_path" "$fixture_path"
+  if [ "${contract_started:-0}" = 1 ]; then
+    RAILS_ENV=test bin/rails db:test:purge db:test:prepare >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
+cat >"$fixture_path" <<'JSON'
+{"scenario":"runner contract","attempts":[{"number":1,"result":"success","delay_millis":0,"tool_calls":["case_read","conversation_read"],"output_json":"{\"text\":\"The scripted runner completed this task.\"}","usage":{"input_units":10,"output_units":8}}]}
+JSON
+fixture_digest=$(ruby -rdigest -e 'path = ARGV.fetch(0); real = File.realpath(path); digest = Digest::SHA256.new; digest << "scripted\0#{real}\0"; File.open(real, "rb") { |file| digest << file.read(16_384) until file.eof? }; puts digest.hexdigest' "$fixture_path")
+cat >"$config_path" <<JSON
+{
+  "work_root":"$PWD/tmp",
+  "scripted_fixtures":{"workspace_default":"$fixture_path"},
+  "adapters":{"scripted":{"enabled":true,"home_dir":"","model":"","egress_profile_key":"","profiles":["workspace_default"],"roles":["support_coordinator"],"tools":["case_read","conversation_read"],"data_classes":["case_content","customer_identity"],"max_timeout_seconds":900,"max_steps":20,"max_tool_calls":50,"max_input_units":100000,"max_output_units":25000}},
+  "supervisor":{"helper_path":"","namespace_launcher_path":"","allowed_executable_roots":[],"approved_executables":[],"allowed_working_roots":[],"allowed_home_roots":[],"runtime_read_roots":[],"egress_profiles":[],"limits":{"wall_time_seconds":0,"cpu_seconds":0,"memory_bytes":0,"open_files":0,"processes":0,"output_bytes":0,"kill_grace_millis":0}}
+}
+JSON
+
 go build -o tmp/navishai-runner ./runner/cmd/navishai-runner
+RAILS_ENV=test bin/rails db:test:purge db:test:prepare
+contract_started=1
+RAILS_ENV=test NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
+  bin/rails server -b 127.0.0.1 -p 18082 >"$rails_log_path" 2>&1 &
+rails_pid=$!
 NAVISHAI_RUNNER_BIND_ADDRESS=127.0.0.1:18081 \
 NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
 NAVISHAI_RUNNER_STATE_PATH="$state_path" \
+NAVISHAI_RUNNER_EXECUTION_CONFIG="$config_path" \
+NAVISHAI_CONTROL_PLANE_ADDRESS=http://127.0.0.1:18082 \
   tmp/navishai-runner >"$log_path" 2>&1 &
 runner_pid=$!
 
@@ -26,12 +56,14 @@ attempt=0
 until NAVISHAI_RUNNER_ADDRESS="$address" NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
   bin/rails runner 'abort unless RunnerClient.new.ready?' >/dev/null 2>&1; do
   attempt=$((attempt + 1))
-  if [ "$attempt" -ge 50 ] || ! kill -0 "$runner_pid" 2>/dev/null; then
+  if [ "$attempt" -ge 100 ] || ! kill -0 "$runner_pid" 2>/dev/null || ! kill -0 "$rails_pid" 2>/dev/null; then
     cat "$log_path" >&2
+    cat "$rails_log_path" >&2
     exit 1
   fi
   sleep 0.1
 done
 
 NAVISHAI_RUNNER_ADDRESS="$address" NAVISHAI_RUNNER_SHARED_SECRET="$secret" \
-  bin/rails runner script/verify_runner_contract.rb
+NAVISHAI_RUNNER_CONTRACT_DETECTION_KEY="$fixture_digest" \
+  RAILS_ENV=test bin/rails runner script/verify_runner_contract.rb

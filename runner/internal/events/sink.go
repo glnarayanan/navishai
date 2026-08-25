@@ -32,7 +32,7 @@ type Sink struct {
 	now      func() time.Time
 }
 
-func New(address string, secret []byte, now func() time.Time) (*Sink, error) {
+func New(address string, secret []byte, allowPrivateHTTP bool, now func() time.Time) (*Sink, error) {
 	if err := protocol.ValidateSecret(secret); err != nil {
 		return nil, ErrConfiguration
 	}
@@ -41,7 +41,7 @@ func New(address string, secret []byte, now func() time.Time) (*Sink, error) {
 		(base.Scheme != "http" && base.Scheme != "https") || (base.Path != "" && base.Path != "/") {
 		return nil, ErrConfiguration
 	}
-	if base.Scheme != "https" && !isLoopback(base.Hostname()) {
+	if base.Scheme != "https" && !isLoopback(base.Hostname()) && !allowPrivateHTTP {
 		return nil, ErrConfiguration
 	}
 	if now == nil {

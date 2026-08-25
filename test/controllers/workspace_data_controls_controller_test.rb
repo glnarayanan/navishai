@@ -109,16 +109,20 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_equal "application/gzip", response.media_type
-    assert_match(/navishai-workspace-support-.*\.json\.gz/, response.headers.fetch("Content-Disposition"))
-    archive = JSON.parse(Zlib::GzipReader.new(StringIO.new(response.body)).read)
-    assert_equal "navishai-workspace-v1", archive.fetch("format")
+    assert_match(/navishai-workspace-support-.*\.tar\.gz/, response.headers.fetch("Content-Disposition"))
+    gzip = Zlib::GzipReader.new(StringIO.new(response.body))
+    archive = nil
+    Gem::Package::TarReader.new(gzip) do |tar|
+      archive = JSON.parse(tar.find { |entry| entry.full_name == "manifest.json" }.read)
+    end
+    assert_equal "navishai-workspace-v2", archive.fetch("format")
     assert_equal @workspace.runner_key, archive.dig("workspace", "runner_key")
   end
 
   test "owner imports an archive as a new workspace" do
     archive = WorkspacePortability.export(workspace: @workspace, membership: memberships(:owner_support))
-    file = Tempfile.new([ "workspace", ".json.gz" ], binmode: true)
-    file.write(archive)
+    file = Tempfile.new([ "workspace", ".tar.gz" ], binmode: true)
+    IO.copy_stream(archive, file)
     file.rewind
     sign_in_as users(:owner)
 

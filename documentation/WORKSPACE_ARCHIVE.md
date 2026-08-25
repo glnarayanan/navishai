@@ -1,6 +1,6 @@
 # Workspace archive
 
-NavishAI exports one Workspace as gzip-compressed UTF-8 JSON with format key `navishai-workspace-v1`. The archive contains:
+NavishAI exports one Workspace as a gzip-compressed tar archive with format key `navishai-workspace-v2`. `manifest.json` contains metadata and database rows; `attachment_objects/<stored attachment ID>` entries contain attachment bytes without base64 expansion. The archive contains:
 
 - the source Organisation name and slug;
 - the full Workspace row, including its stable runner key;
@@ -12,4 +12,4 @@ The archive excludes password digests, sessions, Rails credentials, environment 
 
 Only an Owner can download a full Workspace export. NavishAI records table, row, and attachment counts in the audit event without copying archive content. Treat the file as customer data: encrypt it at rest, limit access, and remove it under the same retention policy as its source Workspace.
 
-An Owner can import an archive from **Data controls** as a new Workspace in the same Organisation. Every user named by the archive must already have a verified local account. Import checks the format, tenant boundary, full table set, attachment digests, compressed size, and expanded size before it writes. It assigns fresh globally unique endpoint and ledger IDs, preserves internal links, restores verified attachment bytes, and queues current Memory records for external indexing. The limits are 8 MiB compressed and 64 MiB expanded.
+An Owner can import an archive from **Data controls** as a new Workspace in the same Organisation. Every user named by the archive must already have a verified local account. Import checks the format, tenant boundary, full table set, and exact attachment-object ID set, size, and digest before it writes. Duplicate, missing, extra, or tampered objects are rejected. It assigns fresh globally unique endpoint and ledger IDs, preserves internal links, restores verified attachment bytes, and queues current Memory records for external indexing. The compressed archive is limited to 60 MiB and its expanded JSON manifest to 64 MiB. Attachment objects stream through temporary files and retain the 5 MiB per-file and 50 MiB per-archive limits. Export enforces the same limits, so it never creates an archive this release cannot import.

@@ -40,7 +40,7 @@ func TestSinkAuthenticatesCanonicalEventDelivery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sink, err := New(server.URL, secret, func() time.Time { return now })
+	sink, err := New(server.URL, secret, false, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +51,13 @@ func TestSinkAuthenticatesCanonicalEventDelivery(t *testing.T) {
 
 func TestSinkRejectsUnsafeConfigurationAndMapsConflict(t *testing.T) {
 	secret := []byte("runner-event-secret-that-is-at-least-32-bytes")
-	if _, err := New("http://control-plane.internal", secret, time.Now); err != ErrConfiguration {
+	if _, err := New("http://control-plane.internal", secret, false, time.Now); err != ErrConfiguration {
 		t.Fatalf("expected cleartext non-loopback rejection, got %v", err)
 	}
-	if _, err := New("https://user@example.com", secret, time.Now); err != ErrConfiguration {
+	if _, err := New("http://control-plane.internal", secret, true, time.Now); err != nil {
+		t.Fatalf("expected explicit private HTTP opt-in, got %v", err)
+	}
+	if _, err := New("https://user@example.com", secret, false, time.Now); err != ErrConfiguration {
 		t.Fatalf("expected credential-bearing URL rejection, got %v", err)
 	}
 
@@ -62,7 +65,7 @@ func TestSinkRejectsUnsafeConfigurationAndMapsConflict(t *testing.T) {
 		response.WriteHeader(http.StatusConflict)
 	}))
 	defer server.Close()
-	sink, err := New(server.URL, secret, time.Now)
+	sink, err := New(server.URL, secret, false, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

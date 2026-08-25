@@ -75,7 +75,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		Status:          "accepted",
 		Event:           event,
 	}
-	result, replayed, err := handler.store.Admit(admission.IdempotencyKey, protocol.Digest(body), result)
+	result, replayed, err := handler.store.Admit(admission, protocol.Digest(body), result)
 	if errors.Is(err, ErrConflict) {
 		handler.writeError(response, http.StatusConflict, "idempotency_conflict", "Idempotency key belongs to another request.")
 		return

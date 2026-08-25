@@ -12,6 +12,7 @@ RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certific
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 1000 --create-home --shell /usr/sbin/nologin navishai
 COPY --from=build /out/* /usr/local/bin/
+COPY ops/runner/execution.example.json /etc/navishai/execution.json
 RUN mkdir -p /var/lib/navishai /var/lib/navishai/runs && chown -R navishai:navishai /var/lib/navishai
 USER 1000:1000
 WORKDIR /var/lib/navishai

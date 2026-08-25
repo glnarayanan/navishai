@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,6 +14,8 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/admission"
+	"github.com/glnarayanan/navishai/runner/internal/events"
+	"github.com/glnarayanan/navishai/runner/internal/execution"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/websearch"
@@ -36,10 +39,41 @@ func main() {
 	if searchStatePath == "" {
 		searchStatePath = statePath + ".web-search"
 	}
-	handler, err := newHandler(secret, store, searchStatePath, time.Now)
+	executionConfigPath := os.Getenv("NAVISHAI_RUNNER_EXECUTION_CONFIG")
+	controlPlaneAddress := os.Getenv("NAVISHAI_CONTROL_PLANE_ADDRESS")
+	if executionConfigPath == "" || controlPlaneAddress == "" {
+		log.Fatal("NAVISHAI_RUNNER_EXECUTION_CONFIG and NAVISHAI_CONTROL_PLANE_ADDRESS are required")
+	}
+	executionConfig, err := execution.LoadConfig(executionConfigPath)
+	if err != nil {
+		log.Fatalf("load runner execution config: %v", err)
+	}
+	catalog, err := configuredRuntimeCatalog(executionConfig, time.Now)
+	if err != nil {
+		log.Fatalf("configure runtime catalog: %v", err)
+	}
+	handler, err := newHandlerWithCatalog(secret, store, searchStatePath, catalog, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner protocol: %v", err)
 	}
+	registry, err := execution.NewRegistry(executionConfig, catalog, time.Now)
+	if err != nil {
+		log.Fatalf("configure runner execution: %v", err)
+	}
+	allowPrivateControlPlaneHTTP := os.Getenv("NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP") == "true"
+	eventSink, err := events.New(controlPlaneAddress, secret, allowPrivateControlPlaneHTTP, time.Now)
+	if err != nil {
+		log.Fatalf("configure runner event delivery: %v", err)
+	}
+	dispatcher, err := execution.NewDispatcher(store, eventSink, registry, time.Now)
+	if err != nil {
+		log.Fatalf("configure runner dispatcher: %v", err)
+	}
+	go func() {
+		if err := dispatcher.Run(context.Background()); err != nil {
+			log.Fatalf("runner dispatcher stopped: %v", err)
+		}
+	}()
 
 	server := &http.Server{
 		Addr:              address,
@@ -72,13 +106,39 @@ func tlsFiles(getenv func(string) string) (string, string, error) {
 }
 
 func newHandler(secret []byte, store *admission.Store, searchStatePath string, now func() time.Time) (http.Handler, error) {
+	catalog, err := runtimeCatalog(now, nil)
+	if err != nil {
+		return nil, err
+	}
+	return newHandlerWithCatalog(secret, store, searchStatePath, catalog, now)
+}
+
+func runtimeCatalog(now func() time.Time, installations []runtimecatalog.Installation) (*runtimecatalog.Catalog, error) {
+	return runtimecatalog.NewWithInstallations([]runtimecatalog.Definition{
+		codex.Definition(), claude.Definition(), grok.Definition(), cursor.Definition(),
+	}, installations, now)
+}
+
+func configuredRuntimeCatalog(config execution.Config, now func() time.Time) (*runtimecatalog.Catalog, error) {
+	definitions := []runtimecatalog.Definition{}
+	available := map[string]runtimecatalog.Definition{
+		codex.AdapterKey: codex.Definition(), claude.AdapterKey: claude.Definition(),
+		grok.AdapterKey: grok.Definition(), cursor.AdapterKey: cursor.Definition(),
+	}
+	for key, definition := range available {
+		if config.Adapters[key].Enabled {
+			definitions = append(definitions, definition)
+		}
+	}
+	return runtimecatalog.NewWithInstallations(
+		definitions, execution.ScriptedInstallations(config, now()), now,
+	)
+}
+
+func newHandlerWithCatalog(secret []byte, store *admission.Store, searchStatePath string, catalog *runtimecatalog.Catalog, now func() time.Time) (http.Handler, error) {
 	admissionHandler, err := admission.NewHandler(secret, store, now)
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
-	}
-	catalog, err := runtimecatalog.New([]runtimecatalog.Definition{codex.Definition(), claude.Definition(), grok.Definition(), cursor.Definition()}, now)
-	if err != nil {
-		return nil, fmt.Errorf("create runtime catalog: %w", err)
 	}
 	runtimeHandler, err := runtimecatalog.NewHandler(secret, catalog, now)
 	if err != nil {

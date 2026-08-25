@@ -8,6 +8,8 @@
 /.env*
 !/.env.example
 /ops/secrets/
+/ops/runtime-state/
+/ops/runtime-executables/
 /backups/
 
 # Ignore runtime output while retaining directory placeholders.
