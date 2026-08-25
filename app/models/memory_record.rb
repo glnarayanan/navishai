@@ -19,6 +19,9 @@ class MemoryRecord < ApplicationRecord
   belongs_to :supersedes_memory_record, class_name: "MemoryRecord", optional: true
   has_many :revisions, class_name: "MemoryRecord", foreign_key: :supersedes_memory_record_id,
     dependent: :restrict_with_exception, inverse_of: :supersedes_memory_record
+  has_one :memory_index_entry, dependent: :restrict_with_exception
+  has_one :accepted_memory_proposal, class_name: "MemoryProposal", foreign_key: :published_memory_record_id,
+    dependent: :restrict_with_exception, inverse_of: :published_memory_record
 
   enum :memory_type, MEMORY_TYPES.index_by(&:itself), validate: true, prefix: true
   enum :scope_kind, SCOPE_KINDS.index_by(&:itself), validate: true, prefix: true
@@ -35,6 +38,7 @@ class MemoryRecord < ApplicationRecord
   validates :observed_at, :valid_from, presence: true
   validates :confidence, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 1 }
   validates :content_digest, :source_digest, format: { with: /\A[0-9a-f]{64}\z/ }
+  validates :capture_key, length: { maximum: 200 }, allow_nil: true
   validate :supersession_keeps_contract
   validate :supersession_keeps_authority
   validate :human_correction_is_authorized

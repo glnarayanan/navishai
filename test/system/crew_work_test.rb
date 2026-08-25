@@ -93,6 +93,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     output = JSON.generate(
       schema_version: 1, kind: "investigation", body: "The customer used an expired reset link.",
       uncertainty: "The opening time is not available.", conflicts: [], change_requests: [], review_outcome: nil,
+      memory_proposals: [],
       citations: [ {
         kind: "conversation", locator: "conversation://#{support_case.conversation_id}/messages/#{message.id}",
         label: "Customer report"

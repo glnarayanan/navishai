@@ -27,7 +27,11 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     investigation = publish(@investigation, artifact_payload(
       kind: "investigation", body: "The customer used an expired reset link.",
       uncertainty: "The audit record does not show when the link was opened.",
-      citations: [ conversation_citation, knowledge_citation ]
+      citations: [ conversation_citation, knowledge_citation ],
+      memory_proposals: [ {
+        "memory_type" => "semantic", "scope_kind" => "support_case", "topic" => "suspected-cause",
+        "content" => "The customer used an expired reset link.", "confidence" => 0.8
+      } ]
     ))
     review_and_approve(@investigation, "The cited sources support the finding.")
     assert @draft.reload.ready?
@@ -76,6 +80,9 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert @draft.reload.completed?
     assert @review.reload.completed?
     assert_equal 5, @workspace.crew_artifacts.count
+    assert_equal 1, @workspace.memory_proposals.count
+    assert @workspace.memory_proposals.sole.proposed?
+    assert_nil @workspace.memory_proposals.sole.published_memory_record
     assert_equal 5, AuditEvent.where(action: "crew.artifact_published", workspace: @workspace).count
     assert_not EmailDraft.exists?(support_case: @support_case)
   end
@@ -242,11 +249,11 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     end
 
     def artifact_payload(kind:, body:, uncertainty: "No uncertainty identified.", citations: nil, conflicts: [],
-      change_requests: [], review_outcome: nil)
+      change_requests: [], review_outcome: nil, memory_proposals: [])
       {
         "schema_version" => 1, "kind" => kind, "body" => body, "uncertainty" => uncertainty,
         "citations" => citations || [ conversation_citation ], "conflicts" => conflicts, "change_requests" => change_requests,
-        "review_outcome" => review_outcome
+        "review_outcome" => review_outcome, "memory_proposals" => memory_proposals
       }
     end
 

@@ -6,6 +6,8 @@ class AgentProfile < ApplicationRecord
     class_name: "AgentProfileVersion", dependent: :restrict_with_exception
   has_many :assigned_crew_tasks, class_name: "CrewTask", foreign_key: :assigned_agent_profile_id,
     dependent: :restrict_with_exception
+  has_many :memory_proposals, foreign_key: :source_agent_profile_id, dependent: :restrict_with_exception,
+    inverse_of: :source_agent_profile
 
   validates :role_key, presence: true, inclusion: { in: AgentPolicy::ROLE_DEFINITIONS }
   validates :role_key, uniqueness: { scope: :crew_template_id }

@@ -637,6 +637,67 @@ $$;
 
 
 --
+-- Name: protect_memory_index_entry(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_memory_index_entry() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'memory index entries cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'DELETE' OR ROW(OLD.id, OLD.workspace_id, OLD.memory_record_id, OLD.created_at)
+    IS DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.memory_record_id, NEW.created_at) THEN
+    RAISE EXCEPTION 'memory index entry identity is immutable';
+  END IF;
+  IF NOT ((OLD.status IN ('pending', 'queued', 'failed', 'unknown', 'indexing') AND NEW.status = 'indexing') OR
+          (OLD.status = 'indexing' AND NEW.status IN ('queued', 'indexed', 'failed', 'unknown'))) THEN
+    RAISE EXCEPTION 'memory index entry transition is invalid';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_memory_proposal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_memory_proposal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'memory proposals cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'memory proposals cannot be deleted';
+  END IF;
+  IF ROW(OLD.id, OLD.workspace_id, OLD.source_crew_artifact_id, OLD.source_agent_profile_id,
+    OLD.account_id, OLD.contact_id, OLD.support_case_id, OLD.proposal_key, OLD.memory_type,
+    OLD.scope_kind, OLD.topic, OLD.content, OLD.content_digest, OLD.confidence, OLD.created_at)
+    IS DISTINCT FROM
+    ROW(NEW.id, NEW.workspace_id, NEW.source_crew_artifact_id, NEW.source_agent_profile_id,
+    NEW.account_id, NEW.contact_id, NEW.support_case_id, NEW.proposal_key, NEW.memory_type,
+    NEW.scope_kind, NEW.topic, NEW.content, NEW.content_digest, NEW.confidence, NEW.created_at) THEN
+    RAISE EXCEPTION 'memory proposal identity is immutable';
+  END IF;
+  IF OLD.status <> 'proposed' OR NEW.status NOT IN ('accepted', 'rejected') THEN
+    RAISE EXCEPTION 'memory proposal review is terminal';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_memory_record(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2444,6 +2505,101 @@ ALTER SEQUENCE public.memberships_id_seq OWNED BY public.memberships.id;
 
 
 --
+-- Name: memory_index_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_index_entries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    memory_record_id bigint NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    external_document_id character varying,
+    external_status character varying,
+    failure_code character varying,
+    last_attempted_at timestamp(6) without time zone,
+    indexed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT memory_index_entries_document CHECK (((external_document_id IS NULL) OR ((octet_length((external_document_id)::text) >= 1) AND (octet_length((external_document_id)::text) <= 200)))),
+    CONSTRAINT memory_index_entries_external_status CHECK (((external_status IS NULL) OR ((external_status)::text = ANY ((ARRAY['queued'::character varying, 'extracting'::character varying, 'chunking'::character varying, 'embedding'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))),
+    CONSTRAINT memory_index_entries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))),
+    CONSTRAINT memory_index_entries_result CHECK (((((status)::text = 'pending'::text) AND (attempt_count = 0) AND (external_document_id IS NULL) AND (external_status IS NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexing'::text) AND (attempt_count > 0) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'queued'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND (external_status IS NOT NULL) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)) OR (((status)::text = 'indexed'::text) AND (attempt_count > 0) AND (external_document_id IS NOT NULL) AND ((external_status)::text = 'done'::text) AND (failure_code IS NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count > 0) AND (failure_code IS NOT NULL) AND (last_attempted_at IS NOT NULL) AND (indexed_at IS NULL)))),
+    CONSTRAINT memory_index_entries_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'indexing'::character varying, 'queued'::character varying, 'indexed'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (attempt_count >= 0)))
+);
+
+
+--
+-- Name: memory_index_entries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.memory_index_entries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: memory_index_entries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.memory_index_entries_id_seq OWNED BY public.memory_index_entries.id;
+
+
+--
+-- Name: memory_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.memory_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    source_crew_artifact_id bigint NOT NULL,
+    source_agent_profile_id bigint NOT NULL,
+    account_id bigint,
+    contact_id bigint,
+    support_case_id bigint,
+    reviewed_by_membership_id bigint,
+    reviewed_by_user_id bigint,
+    published_memory_record_id bigint,
+    proposal_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    memory_type character varying NOT NULL,
+    scope_kind character varying NOT NULL,
+    topic character varying NOT NULL,
+    content text NOT NULL,
+    content_digest character varying NOT NULL,
+    confidence numeric(4,3) NOT NULL,
+    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+    reviewed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT memory_proposals_content CHECK ((((memory_type)::text = ANY ((ARRAY['semantic'::character varying, 'profile'::character varying])::text[])) AND ((scope_kind)::text = ANY ((ARRAY['account'::character varying, 'contact'::character varying, 'support_case'::character varying])::text[])) AND ((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)) AND ((content_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((confidence >= 0.000) AND (confidence <= 1.000)))),
+    CONSTRAINT memory_proposals_review CHECK (((((status)::text = 'proposed'::text) AND (reviewed_by_membership_id IS NULL) AND (reviewed_by_user_id IS NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NULL)) OR (((status)::text = 'accepted'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NOT NULL) AND (reviewed_at IS NOT NULL)) OR (((status)::text = 'rejected'::text) AND (reviewed_by_membership_id IS NOT NULL) AND (reviewed_by_user_id IS NOT NULL) AND (published_memory_record_id IS NULL) AND (reviewed_at IS NOT NULL)))),
+    CONSTRAINT memory_proposals_scope CHECK (((((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (contact_id IS NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'contact'::text) AND (account_id IS NULL) AND (contact_id IS NOT NULL) AND (support_case_id IS NULL)) OR (((scope_kind)::text = 'support_case'::text) AND (account_id IS NULL) AND (contact_id IS NULL) AND (support_case_id IS NOT NULL))))
+);
+
+
+--
+-- Name: memory_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.memory_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: memory_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.memory_proposals_id_seq OWNED BY public.memory_proposals.id;
+
+
+--
 -- Name: memory_records; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2479,7 +2635,9 @@ CREATE TABLE public.memory_records (
     retention_until timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    capture_key character varying,
     CONSTRAINT memory_records_authority CHECK (((authority)::text = ANY ((ARRAY['inference'::character varying, 'source_record'::character varying, 'human_correction'::character varying])::text[]))),
+    CONSTRAINT memory_records_capture_key CHECK (((capture_key IS NULL) OR ((octet_length((capture_key)::text) >= 1) AND (octet_length((capture_key)::text) <= 200)))),
     CONSTRAINT memory_records_confidence CHECK (((confidence >= 0.000) AND (confidence <= 1.000))),
     CONSTRAINT memory_records_content CHECK ((((octet_length((topic)::text) >= 1) AND (octet_length((topic)::text) <= 200)) AND ((octet_length(content) >= 1) AND (octet_length(content) <= 32768)))),
     CONSTRAINT memory_records_correction_authority CHECK ((((authority)::text <> 'human_correction'::text) OR ((origin_kind)::text = 'human'::text))),
@@ -3673,6 +3831,20 @@ ALTER TABLE ONLY public.memberships ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: memory_index_entries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_index_entries ALTER COLUMN id SET DEFAULT nextval('public.memory_index_entries_id_seq'::regclass);
+
+
+--
+-- Name: memory_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals ALTER COLUMN id SET DEFAULT nextval('public.memory_proposals_id_seq'::regclass);
+
+
+--
 -- Name: memory_records id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4105,6 +4277,22 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: memory_index_entries memory_index_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_index_entries
+    ADD CONSTRAINT memory_index_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: memory_proposals memory_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT memory_proposals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: memory_records memory_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4344,6 +4532,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public
 --
 
 CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public.outbound_email_deliveries USING btree (shared_email_inbox_id, message_id);
+
+
+--
+-- Name: idx_on_workspace_id_memory_record_id_43806d3363; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_memory_record_id_43806d3363 ON public.memory_index_entries USING btree (workspace_id, memory_record_id);
 
 
 --
@@ -5194,6 +5389,83 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_id_user_id ON public.membe
 
 
 --
+-- Name: index_memory_index_entries_on_memory_record_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_index_entries_on_memory_record_id ON public.memory_index_entries USING btree (memory_record_id);
+
+
+--
+-- Name: index_memory_index_entries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_index_entries_on_workspace_id ON public.memory_index_entries USING btree (workspace_id);
+
+
+--
+-- Name: index_memory_index_entries_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_index_entries_on_workspace_id_and_id ON public.memory_index_entries USING btree (workspace_id, id);
+
+
+--
+-- Name: index_memory_index_entries_on_workspace_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_index_entries_on_workspace_id_and_status ON public.memory_index_entries USING btree (workspace_id, status);
+
+
+--
+-- Name: index_memory_proposals_on_proposal_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_proposals_on_proposal_key ON public.memory_proposals USING btree (proposal_key);
+
+
+--
+-- Name: index_memory_proposals_on_source_agent_profile_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_proposals_on_source_agent_profile_id ON public.memory_proposals USING btree (source_agent_profile_id);
+
+
+--
+-- Name: index_memory_proposals_on_source_and_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_proposals_on_source_and_digest ON public.memory_proposals USING btree (workspace_id, source_crew_artifact_id, content_digest);
+
+
+--
+-- Name: index_memory_proposals_on_source_crew_artifact_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_proposals_on_source_crew_artifact_id ON public.memory_proposals USING btree (source_crew_artifact_id);
+
+
+--
+-- Name: index_memory_proposals_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_proposals_on_workspace_id ON public.memory_proposals USING btree (workspace_id);
+
+
+--
+-- Name: index_memory_proposals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_proposals_on_workspace_id_and_id ON public.memory_proposals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_memory_proposals_on_workspace_id_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_proposals_on_workspace_id_and_status ON public.memory_proposals USING btree (workspace_id, status);
+
+
+--
 -- Name: index_memory_records_on_memory_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5233,6 +5505,13 @@ CREATE INDEX index_memory_records_on_workspace_id_and_account_id ON public.memor
 --
 
 CREATE INDEX index_memory_records_on_workspace_id_and_agent_profile_id ON public.memory_records USING btree (workspace_id, agent_profile_id) WHERE (agent_profile_id IS NOT NULL);
+
+
+--
+-- Name: index_memory_records_on_workspace_id_and_capture_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_memory_records_on_workspace_id_and_capture_key ON public.memory_records USING btree (workspace_id, capture_key) WHERE (capture_key IS NOT NULL);
 
 
 --
@@ -6125,6 +6404,34 @@ CREATE CONSTRAINT TRIGGER knowledge_sources_require_current_version AFTER INSERT
 
 
 --
+-- Name: memory_index_entries memory_index_entries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_index_entries_no_truncate BEFORE TRUNCATE ON public.memory_index_entries FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_index_entry();
+
+
+--
+-- Name: memory_index_entries memory_index_entries_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_index_entries_protect BEFORE DELETE OR UPDATE ON public.memory_index_entries FOR EACH ROW EXECUTE FUNCTION public.protect_memory_index_entry();
+
+
+--
+-- Name: memory_proposals memory_proposals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_proposals_no_truncate BEFORE TRUNCATE ON public.memory_proposals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_memory_proposal();
+
+
+--
+-- Name: memory_proposals memory_proposals_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER memory_proposals_protect BEFORE DELETE OR UPDATE ON public.memory_proposals FOR EACH ROW EXECUTE FUNCTION public.protect_memory_proposal();
+
+
+--
 -- Name: memory_records memory_records_contract; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6629,11 +6936,27 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: memory_proposals fk_rails_23d39be37f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_23d39be37f FOREIGN KEY (workspace_id, contact_id) REFERENCES public.contacts(workspace_id, id);
+
+
+--
 -- Name: crew_task_events fk_rails_25fca654f6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.crew_task_events
     ADD CONSTRAINT fk_rails_25fca654f6 FOREIGN KEY (actor_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: memory_proposals fk_rails_26f020daae; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_26f020daae FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
 
 
 --
@@ -6690,6 +7013,14 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT fk_rails_3633c0c202 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: memory_proposals fk_rails_3c71138a19; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_3c71138a19 FOREIGN KEY (workspace_id, source_crew_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
 
 
 --
@@ -6789,6 +7120,14 @@ ALTER TABLE ONLY public.stored_attachments
 
 
 --
+-- Name: memory_proposals fk_rails_4a0f4103ec; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_4a0f4103ec FOREIGN KEY (workspace_id, published_memory_record_id) REFERENCES public.memory_records(workspace_id, id);
+
+
+--
 -- Name: sla_escalation_tasks fk_rails_4c05045338; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6829,6 +7168,14 @@ ALTER TABLE ONLY public.execution_events
 
 
 --
+-- Name: memory_index_entries fk_rails_4f557f0f42; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_index_entries
+    ADD CONSTRAINT fk_rails_4f557f0f42 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: memory_records fk_rails_522a4d29cb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6842,6 +7189,14 @@ ALTER TABLE ONLY public.memory_records
 
 ALTER TABLE ONLY public.conversation_message_attachments
     ADD CONSTRAINT fk_rails_5474042175 FOREIGN KEY (workspace_id, conversation_id, conversation_message_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: memory_proposals fk_rails_56739cb9bd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_56739cb9bd FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -7010,6 +7365,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 ALTER TABLE ONLY public.public_web_extractions
     ADD CONSTRAINT fk_rails_714893ef9b FOREIGN KEY (workspace_id, requested_by_membership_id, requested_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: memory_proposals fk_rails_71ef40da68; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_71ef40da68 FOREIGN KEY (workspace_id, reviewed_by_membership_id, reviewed_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
 
 
 --
@@ -7485,6 +7848,14 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: memory_index_entries fk_rails_c8546818c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_index_entries
+    ADD CONSTRAINT fk_rails_c8546818c4 FOREIGN KEY (workspace_id, memory_record_id) REFERENCES public.memory_records(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_c98bb924c2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7581,6 +7952,14 @@ ALTER TABLE ONLY public.public_web_extractions
 
 
 --
+-- Name: memory_proposals fk_rails_d54615fe35; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_d54615fe35 FOREIGN KEY (workspace_id, source_agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
 -- Name: audit_events fk_rails_dd1f3a471a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7618,6 +7997,14 @@ ALTER TABLE ONLY public.sla_policies
 
 ALTER TABLE ONLY public.memberships
     ADD CONSTRAINT fk_rails_e7b442f67c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: memory_proposals fk_rails_ea109a1c9b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.memory_proposals
+    ADD CONSTRAINT fk_rails_ea109a1c9b FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
 
 
 --
@@ -7715,6 +8102,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824150000'),
 ('20260824140000'),
 ('20260824130000'),
 ('20260824120000'),

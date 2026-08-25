@@ -3,7 +3,7 @@ class CrewArtifactPublisher
   class Conflict < InvalidOutput; end
 
   SCHEMA_KEYS = %w[
-    schema_version kind body uncertainty citations conflicts change_requests review_outcome
+    schema_version kind body uncertainty citations conflicts change_requests review_outcome memory_proposals
   ].sort.freeze
   ROLE_KINDS = {
     "support_investigator" => "investigation",
@@ -70,6 +70,7 @@ class CrewArtifactPublisher
         actor_kind: :system, subject: artifact,
         metadata: { "artifact_kind" => kind, "version" => artifact.version_number }
       )
+      publish_memory_proposals!(task, artifact, payload.fetch("memory_proposals"))
       artifact
     end
   rescue JSON::ParserError, TypeError, KeyError
@@ -88,7 +89,8 @@ class CrewArtifactPublisher
       unless payload.is_a?(Hash) && payload.keys.sort == SCHEMA_KEYS && payload.fetch("schema_version") == 1
         raise InvalidOutput, "Run output does not match artifact schema."
       end
-      unless %w[citations conflicts change_requests].all? { |key| payload[key].is_a?(Array) && payload[key].size <= 20 }
+      unless %w[citations conflicts change_requests].all? { |key| payload[key].is_a?(Array) && payload[key].size <= 20 } &&
+          payload["memory_proposals"].is_a?(Array) && payload["memory_proposals"].size <= 10
         raise InvalidOutput, "Run output collections are invalid."
       end
       payload
@@ -210,6 +212,37 @@ class CrewArtifactPublisher
         raise InvalidOutput, "#{name} is required and must be at most #{maximum} bytes."
       end
       text
+    end
+
+    def publish_memory_proposals!(task, artifact, values)
+      values.each do |value|
+        unless value.is_a?(Hash) && value.keys.sort == %w[confidence content memory_type scope_kind topic]
+          raise InvalidOutput, "A memory proposal does not match the schema."
+        end
+        scope = proposal_scope!(task, value.fetch("scope_kind"))
+        MemoryPublication.propose!(
+          workspace: @workspace, artifact:, memory_type: value.fetch("memory_type"), scope:,
+          topic: bounded_text(value.fetch("topic"), 200, "Memory topic"),
+          content: bounded_text(value.fetch("content"), 32_768, "Memory content"),
+          confidence: value.fetch("confidence")
+        )
+      end
+    rescue ActiveRecord::RecordInvalid, ArgumentError => error
+      raise InvalidOutput, error.message
+    end
+
+    def proposal_scope!(task, kind)
+      case kind
+      when "support_case"
+        task.support_case || raise(InvalidOutput, "Case memory is unavailable for this task.")
+      when "contact"
+        task.support_case&.conversation&.contact || raise(InvalidOutput, "Contact memory is unavailable for this task.")
+      when "account"
+        task.account || task.support_case&.conversation&.contact&.account ||
+          raise(InvalidOutput, "Account memory is unavailable for this task.")
+      else
+        raise InvalidOutput, "Memory proposal scope is unsupported."
+      end
     end
 
     def same_scope?(left, right)
