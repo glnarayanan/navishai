@@ -20,4 +20,15 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to workspaces_path
   end
+
+  test "public pages keep style-src self and host Geist from the asset pipeline" do
+    get root_path
+
+    assert_response :success
+    csp = response.headers["Content-Security-Policy"].to_s
+    assert_match(/style-src 'self'/, csp)
+    refute_match(/style-src[^;]*'unsafe-inline'/, csp)
+    assert Rails.application.assets.load_path.find("fonts/Geist-Variable.woff2")
+    assert Rails.application.assets.load_path.find("fonts/GeistMono-Variable.woff2")
+  end
 end

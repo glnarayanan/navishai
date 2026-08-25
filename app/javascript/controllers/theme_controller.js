@@ -48,7 +48,6 @@ export default class extends Controller {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
     const resolved = theme === "dark" || (theme === "system" && prefersDark) ? "dark" : "light"
     document.documentElement.classList.toggle("dark", resolved === "dark")
-    document.documentElement.style.colorScheme = resolved
   }
 
   sync() {
