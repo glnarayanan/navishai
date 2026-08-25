@@ -1,6 +1,6 @@
 <% content_for :title, "Memory · #{@workspace.name} — NavishAI" %>
 
-<main class="page-shell memory-shell">
+<main class="page-shell memory-shell page-family-collection">
   <%= link_to "Back to cases", workspace_support_cases_path(@workspace), class: "back-link" %>
   <div class="page-heading memory-heading">
     <div>
@@ -23,10 +23,8 @@
         <p>PostgreSQL stays authoritative. Export a complete archive or rebuild the external index from current records.</p>
       </div>
       <% if @degraded_index_count.positive? %>
-        <div class="execution-alert execution-alert-warning" role="status">
-          <strong>Memory indexing is degraded</strong>
-          <p><%= pluralize(@degraded_index_count, "record") %> failed or has an unknown result. Source work remains saved.</p>
-        </div>
+        <%= render "shared/notice", kind: "degraded", title: "Memory indexing is degraded",
+          body: "#{pluralize(@degraded_index_count, "record")} failed or has an unknown result. Source work remains saved." %>
       <% end %>
       <div class="memory-operation-actions">
         <%= link_to "Export memory", export_workspace_memory_records_path(@workspace), class: "button button-secondary" %>

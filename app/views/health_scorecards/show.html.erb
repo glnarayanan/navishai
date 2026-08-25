@@ -1,7 +1,10 @@
 <% content_for :title, "Health scorecard — NavishAI" %>
 <% definition = @selected_version.definition %>
+<% content_for :page_actions do %>
+  <%= link_to "Accounts", workspace_accounts_path(@workspace), class: "back-link" %>
+<% end %>
 
-<main class="scorecard-page">
+<main class="scorecard-page page-family-staged">
   <header class="scorecard-heading">
     <div>
       <%= link_to "Accounts", workspace_accounts_path(@workspace), class: "back-link" %>
@@ -16,8 +19,11 @@
   </header>
 
   <% if @command_error %>
-    <div class="inline-error" role="alert"><strong>Scorecard not changed</strong><p><%= @command_error %></p></div>
+    <%= render "shared/notice", kind: "destructive", title: "Scorecard not changed", body: @command_error %>
   <% end %>
+
+  <div class="scorecard-layout">
+    <div class="scorecard-flow">
 
   <% if @membership.can_write? %>
     <section class="scorecard-designer" aria-labelledby="designer-title">
@@ -125,4 +131,30 @@
       <% end %>
     </ol>
   </section>
+    </div>
+    <aside class="stage-rail scorecard-sticky-preview" aria-label="Deterministic preview">
+      <div class="stage-card">
+        <p class="text-label">Saved state</p>
+        <p><strong>Version <%= @selected_version.version_number %></strong></p>
+        <p class="muted-copy"><%= @scorecard.current_version_id == @selected_version.id ? "Published for future snapshots" : "Proposal — not yet published" %></p>
+      </div>
+      <div class="stage-card" id="sticky-preview">
+        <p class="text-label">Preview</p>
+        <% if @backtest %>
+          <% summary = @backtest.results.fetch("summary") %>
+          <dl class="case-facts">
+            <div><dt>Snapshots</dt><dd><%= @backtest.sample_count %></dd></div>
+            <div><dt>Scores changed</dt><dd><%= summary.fetch("changed_count") %></dd></div>
+            <div><dt>Bands changed</dt><dd><%= summary.fetch("band_changed_count") %></dd></div>
+            <div><dt>At risk</dt><dd><%= summary.fetch("at_risk_count") %></dd></div>
+          </dl>
+        <% else %>
+          <p class="muted-copy">Run a preview against retained snapshots before publishing.</p>
+          <% if @membership.can_write? %>
+            <%= button_to "Run preview and backtest", backtest_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id }, class: "button button-secondary" %>
+          <% end %>
+        <% end %>
+      </div>
+    </aside>
+  </div>
 </main>

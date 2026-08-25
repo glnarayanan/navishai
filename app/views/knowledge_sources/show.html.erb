@@ -1,7 +1,7 @@
 <% content_for :title, "#{@source.title} · Knowledge — NavishAI" %>
 <% status, status_class = knowledge_source_status(@source) %>
 
-<main class="page-shell knowledge-shell">
+<main class="page-shell knowledge-shell page-family-record">
   <%= link_to "Back to knowledge", workspace_knowledge_sources_path(Current.workspace), class: "back-link" %>
   <div class="workspace-heading knowledge-source-heading">
     <div class="page-heading">

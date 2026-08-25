@@ -1,0 +1,15 @@
+<header class="app-mobile-bar">
+  <button type="button" class="app-nav-trigger" aria-expanded="false" aria-controls="app-nav-drawer" data-nav-drawer-target="trigger" data-action="nav-drawer#open">
+    <span class="visually-hidden">Open navigation</span>
+    <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 3.5h12v1.5H2zm0 3.75h12v1.5H2zM2 11h12v1.5H2z"/></svg>
+  </button>
+  <div class="app-mobile-identity">
+    <span class="app-mobile-kicker"><%= current_nav_section %></span>
+    <span class="app-mobile-title" title="<%= Current.workspace&.name || "NavishAI" %>"><%= Current.workspace&.name || "NavishAI" %></span>
+  </div>
+  <% if Current.workspace && unread_notification_count.positive? %>
+    <%= link_to workspace_notifications_path(Current.workspace), class: "app-mobile-status", aria: { label: "#{pluralize(unread_notification_count, "unread notification")}" } do %>
+      <span class="nav-count"><%= unread_notification_count %></span>
+    <% end %>
+  <% end %>
+</header>

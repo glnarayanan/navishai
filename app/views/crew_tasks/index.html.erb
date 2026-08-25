@@ -1,6 +1,6 @@
 <% content_for :title, "Crew work · #{@account&.name || @support_case.conversation.subject.presence || "Case"} — NavishAI" %>
 
-<main class="crew-work-page">
+<main class="crew-work-page page-family-record">
   <header class="crew-work-header">
     <%= link_to @account ? "Back to account" : "Back to case",
       @account ? workspace_account_path(@workspace, @account) : workspace_support_case_path(@workspace, @support_case),

@@ -1,0 +1,9 @@
+<dialog class="app-drawer" id="app-nav-drawer" data-nav-drawer-target="dialog" data-action="click->nav-drawer#backdrop">
+  <div class="app-drawer-panel" data-nav-drawer-target="panel">
+    <div class="app-drawer-toolbar">
+      <p class="text-label">Navigation</p>
+      <button type="button" class="button button-quiet" data-action="nav-drawer#close">Close</button>
+    </div>
+    <%= render "layouts/app_nav_panel", variant: "drawer" %>
+  </div>
+</dialog>

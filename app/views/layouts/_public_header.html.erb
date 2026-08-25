@@ -1,4 +1,4 @@
-<div class="site-header-wrap<%= " is-marketing" if landing_page? %>"<%= %( data-controller="nav-drawer") if landing_page? %>>
+<div class="site-header-wrap<%= " is-marketing" if landing_page? %>">
   <header class="site-header">
     <%= render "layouts/wordmark" %>
     <% if landing_page? %>
@@ -15,7 +15,7 @@
       <% end %>
       <%= render "layouts/theme_control" %>
       <% if landing_page? %>
-        <button type="button" class="nav-mobile-trigger" aria-expanded="false" aria-controls="public-nav-drawer" data-action="nav-drawer#open">
+        <button type="button" class="nav-mobile-trigger" aria-expanded="false" aria-controls="public-nav-drawer" data-nav-drawer-target="trigger" data-action="nav-drawer#open">
           <span class="visually-hidden">Open menu</span>
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 4h12v1.4H2zm0 3.3h12v1.4H2zM2 10.6h12V12H2z"/></svg>
         </button>
@@ -31,6 +31,7 @@
         <a href="#self-host" data-action="landing-header#jump nav-drawer#close">Self-hosting</a>
         <a href="#faq" data-action="landing-header#jump nav-drawer#close">FAQ</a>
         <%= link_to "Sign in", new_session_path, class: "button button-primary" %>
+        <button type="button" class="button button-quiet" data-action="nav-drawer#close">Close</button>
       </div>
     </dialog>
   <% end %>

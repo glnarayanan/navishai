@@ -1,0 +1,116 @@
+/* Geist is bundled under the SIL Open Font License. See app/assets/fonts/OFL.txt. */
+
+@font-face {
+  font-family: "Geist";
+  src: url("Geist-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("GeistMono-Variable.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 100%;
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-body);
+  line-height: var(--leading-body);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  color: var(--foreground);
+}
+
+.text-display,
+.landing h1 {
+  font-size: var(--text-display);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+}
+
+.text-page,
+.page-bar-title,
+.is-app h1 {
+  max-width: 40ch;
+  font-size: var(--text-page);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-page);
+  line-height: var(--leading-page);
+}
+
+.text-section,
+.is-app h2,
+.section-heading-row h2 {
+  font-size: var(--text-section);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-section);
+  line-height: var(--leading-section);
+}
+
+.text-record,
+.is-app h3 {
+  font-size: var(--text-record);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-section);
+  line-height: 1.3;
+}
+
+.text-body,
+.is-app p {
+  color: var(--foreground);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-body);
+  line-height: var(--leading-body);
+}
+
+.text-meta,
+.muted-copy,
+.field-hint,
+time,
+small {
+  font-size: var(--text-meta);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-body);
+  line-height: var(--leading-meta);
+}
+
+.text-label,
+label,
+.eyebrow,
+.feature-kicker,
+.page-bar-kicker,
+.sidebar-group-label {
+  font-size: var(--text-label);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  line-height: 1.3;
+}
+
+.text-code,
+code,
+pre,
+.endpoint,
+.citation-uri {
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+}
+
+strong {
+  font-weight: var(--weight-semibold);
+}

@@ -1,6 +1,6 @@
 <% content_for :title, "Knowledge · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell knowledge-shell">
+<main class="page-shell knowledge-shell page-family-collection">
   <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
   <div class="page-heading knowledge-heading">
     <div>
@@ -112,7 +112,9 @@
     <% else %>
       <%= render "shared/empty_state",
         title: "No approved knowledge yet",
-        description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source." %>
+        description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source.",
+        action_label: @can_manage ? "Add approved knowledge" : nil,
+        action_path: @can_manage ? "#add-source-title" : nil %>
     <% end %>
   </section>
 </main>

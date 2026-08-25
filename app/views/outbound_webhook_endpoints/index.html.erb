@@ -1,6 +1,6 @@
 <% content_for :title, "Webhooks · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell webhook-page">
+<main class="page-shell webhook-page page-family-integration">
   <div class="page-heading">
     <h1>Outbound webhooks</h1>
     <p>Send signed, content-free work alerts to a public HTTPS endpoint.</p>
@@ -46,7 +46,11 @@
         <% end %>
       </div>
     <% else %>
-      <div class="empty-state"><h3>No webhook endpoints</h3><p>Add one to send signed operational alerts.</p></div>
+      <%= render "shared/empty_state",
+        title: "No webhook endpoints",
+        description: "Add one to send signed operational alerts.",
+        action_label: "Add endpoint",
+        action_path: "#new-webhook-title" %>
     <% end %>
   </section>
 </main>

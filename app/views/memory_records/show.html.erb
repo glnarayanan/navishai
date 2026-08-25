@@ -1,7 +1,7 @@
 <% content_for :title, "#{memory_topic_label(@memory_record)} · Memory — NavishAI" %>
 <% state, state_class = memory_state(@memory_record) %>
 
-<main class="page-shell memory-shell">
+<main class="page-shell memory-shell page-family-record">
   <%= link_to "Back to memory", workspace_memory_records_path(@workspace), class: "back-link" %>
   <div class="page-heading memory-detail-heading">
     <div>

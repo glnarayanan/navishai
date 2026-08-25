@@ -62,7 +62,7 @@ textarea:focus-visible {
   border-radius: var(--radius);
   color: var(--secondary-foreground);
   background: var(--secondary);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   transform: translateY(-200%);
 }
 
@@ -90,15 +90,15 @@ h2 {
 
 h1 {
   max-width: 30ch;
-  font-size: clamp(1.75rem, 4vw, 2.25rem);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
+  font-size: var(--text-page);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-page);
+  line-height: var(--leading-page);
 }
 
 h2 {
   font-size: 1.125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 p {
@@ -110,7 +110,7 @@ p {
 
 strong {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .is-public .app-container {
@@ -158,7 +158,7 @@ strong {
   overflow: hidden;
   color: var(--muted);
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -173,8 +173,8 @@ strong {
   gap: 0.625rem;
   color: var(--ink);
   font-size: 1.0625rem;
-  font-weight: 720;
-  letter-spacing: -0.025em;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-section);
   text-decoration: none;
 }
 
@@ -323,7 +323,7 @@ legend {
   margin-bottom: 1rem;
   padding-bottom: 0.625rem;
   border-bottom: 1px solid var(--line);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .field-grid {
@@ -341,7 +341,7 @@ label,
 .label-row {
   color: var(--ink);
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .label-row {
@@ -351,7 +351,7 @@ label,
 }
 
 .label-row a {
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 input,
@@ -414,7 +414,7 @@ textarea {
   border-radius: var(--radius-pill);
   font: inherit;
   font-size: 0.875rem;
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   letter-spacing: 0.01em;
   line-height: 1.25;
   text-align: center;
@@ -498,7 +498,7 @@ textarea {
 .back-link {
   display: inline-flex;
   margin-bottom: 2rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .workspace-heading {
@@ -738,7 +738,7 @@ textarea {
 
 .knowledge-result-heading > a {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .citation-uri {
@@ -817,7 +817,7 @@ textarea {
 .citation-block > span {
   color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .knowledge-metadata dd {
@@ -1012,7 +1012,7 @@ textarea {
 .memory-metadata dt {
   color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .memory-metadata dd {
@@ -1185,7 +1185,7 @@ textarea {
 .agent-policy-overview dt {
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .agent-policy-overview dd {
@@ -1209,7 +1209,7 @@ textarea {
   color: var(--accent);
   background: var(--accent-soft);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .agent-policy-editor {
@@ -1240,7 +1240,7 @@ textarea {
 .agent-tool-fieldset legend {
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .agent-tool-options {
@@ -1335,7 +1335,7 @@ textarea {
 .runtime-metadata h3 {
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1411,7 +1411,7 @@ textarea {
 .runtime-policy-groups legend {
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .runtime-policy-groups label {
@@ -1857,7 +1857,7 @@ td {
 .thread-heading > span {
   color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .message-list {
@@ -1889,7 +1889,7 @@ td {
   margin-left: auto;
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .message-body p {
@@ -1922,7 +1922,7 @@ td {
 .recipient-review > span {
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1943,7 +1943,7 @@ td {
   align-items: center;
   gap: 0.625rem;
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .recipient-review-warning input {
@@ -2075,7 +2075,7 @@ td {
 
 .case-facts dt {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
 
@@ -2128,7 +2128,7 @@ td {
   color: var(--accent);
   background: var(--accent-soft);
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .tag-list form {
@@ -2180,7 +2180,7 @@ td {
 
 .audit-list span {
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .context-section-heading,
@@ -2241,14 +2241,14 @@ td {
 .crew-progress dt {
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .crew-progress dd {
   margin: 0.2rem 0 0;
   font-size: 1.35rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 720;
+  font-weight: var(--weight-bold);
 }
 
 .crew-work-index-grid,
@@ -2287,7 +2287,7 @@ td {
   color: var(--muted);
   font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .crew-task-list {
@@ -2346,7 +2346,7 @@ td {
   color: var(--muted);
   background: var(--muted-surface);
   font-size: 0.72rem;
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   white-space: nowrap;
 }
 
@@ -2389,7 +2389,7 @@ td {
 
 .crew-dependencies legend {
   margin-bottom: 0.5rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .crew-dependencies legend span,
@@ -2448,7 +2448,7 @@ td {
   margin: 0;
   color: var(--ink);
   font-size: 1rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   line-height: 1.35;
 }
 
@@ -2471,7 +2471,7 @@ td {
   color: var(--muted);
   background: var(--muted-surface);
   font-size: 0.72rem;
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   white-space: nowrap;
 }
 
@@ -2570,7 +2570,7 @@ td {
 .run-diagnostics dt {
   color: var(--ink);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .run-artifact-facts dd,
@@ -2654,7 +2654,7 @@ td {
   padding-top: 0.9rem;
   color: var(--ink);
   font-size: 0.8125rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 
@@ -2735,7 +2735,7 @@ td {
 .crew-evidence-ref span {
   color: var(--accent-hover);
   font-size: 0.72rem;
-  font-weight: 720;
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
 }
 
@@ -2776,7 +2776,7 @@ td {
   min-height: 3rem;
   padding-top: 0.9rem;
   color: var(--ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 
@@ -3174,7 +3174,7 @@ td {
     content: attr(data-label);
     color: var(--muted);
     font-size: 0.875rem;
-    font-weight: 650;
+    font-weight: var(--weight-semibold);
   }
 
   .endpoint {
@@ -3871,12 +3871,12 @@ td {
 .data-policy-summary dt {
   color: var(--muted);
   font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .data-policy-summary dd {
   margin: 0;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   text-align: right;
 }
 
@@ -4161,7 +4161,7 @@ td {
   color: var(--foreground);
   background: var(--card);
   font-size: 0.75rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
 }
 

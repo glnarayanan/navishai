@@ -31,20 +31,31 @@
     <%= javascript_importmap_tags %>
   </head>
 
-  <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="theme<%= " landing-header" if landing_page? %>">
+  <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="<%= body_controllers %>">
     <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
-    <div class="site-frame">
-      <% unless authenticated? %>
+    <% if authenticated? %>
+      <div class="app-shell">
+        <%= render "layouts/app_sidebar" %>
+        <div class="app-canvas">
+          <%= render "layouts/app_mobile_bar" %>
+          <%= render "layouts/app_pagebar" %>
+          <%= render "shared/flash_messages" %>
+          <div class="app-content" id="main-content" tabindex="-1">
+            <%= yield %>
+          </div>
+        </div>
+      </div>
+      <%= render "layouts/app_nav_drawer" %>
+    <% else %>
+      <div class="site-frame">
         <div class="site-rail site-rail-start" aria-hidden="true"></div>
         <div class="site-rail site-rail-end" aria-hidden="true"></div>
-      <% end %>
-
-      <%= render authenticated? ? "layouts/app_header" : "layouts/public_header" %>
-      <%= render "shared/flash_messages" %>
-
-      <div class="app-container" id="main-content" tabindex="-1">
-        <%= yield %>
+        <%= render "layouts/public_header" %>
+        <%= render "shared/flash_messages" %>
+        <div class="app-container" id="main-content" tabindex="-1">
+          <%= yield %>
+        </div>
       </div>
-    </div>
+    <% end %>
   </body>
 </html>

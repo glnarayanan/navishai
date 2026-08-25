@@ -1,6 +1,6 @@
 <% content_for :title, "Runtimes · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell runtime-shell">
+<main class="page-shell runtime-shell page-family-config">
   <%= link_to "Back to crews", workspace_crew_templates_path(Current.workspace), class: "back-link" %>
   <div class="page-heading runtime-heading">
     <div>
@@ -26,6 +26,9 @@
     <section class="empty-state runtime-empty">
       <h2>No runtime installations detected</h2>
       <p>Ask an Owner or Admin to check the connected runner after an adapter is installed.</p>
+      <% if @can_configure %>
+        <%= button_to "Check runner", detect_workspace_runtime_installations_path(Current.workspace), class: "button button-primary" %>
+      <% end %>
     </section>
   <% else %>
     <div class="runtime-list">

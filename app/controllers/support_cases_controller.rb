@@ -34,6 +34,9 @@ class SupportCasesController < ApplicationController
       @assignable_memberships = @workspace.memberships.where.not(role: :viewer).includes(:user).order("users.email_address")
       @activity_items = case_activity
       @crew_tasks = @support_case.crew_tasks.includes(:assigned_agent_profile).order(created_at: :desc, id: :desc)
+      @cited_evidence = CrewTaskEvent.where(crew_task_id: @crew_tasks.map(&:id)).where.not(evidence_locator: [ nil, "" ]).order(created_at: :desc).limit(8)
+      @memory_degraded = ExecutionRun.where(crew_task_id: @crew_tasks.map(&:id), memory_context_status: "degraded").exists?
+      @policy_reviews = @crew_tasks.select(&:review_requested?)
       contact = @support_case.conversation.contact.canonical
       account = contact.account&.canonical
       @contact_emails = identity_values(contact, :email)

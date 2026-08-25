@@ -1,6 +1,6 @@
 <% content_for :title, "Accounts — NavishAI" %>
 
-<main class="account-health-page">
+<main class="account-health-page page-family-collection">
   <header class="account-health-heading">
     <div>
       <h1>Accounts</h1>
@@ -44,6 +44,8 @@
     </div>
   <% else %>
     <%= render "shared/empty_state", title: "No accounts yet",
-      description: "Sync Intercom or import account data to create the first health record." %>
+      description: "Sync Intercom or import account data to create the first health record.",
+      action_label: "Open scorecard designer",
+      action_path: workspace_health_scorecard_path(@workspace) %>
   <% end %>
 </main>

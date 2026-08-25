@@ -41,37 +41,27 @@
         </header>
 
         <% if latest_run.admitting? && latest_run.last_admission_error.present? %>
-          <div class="execution-alert execution-alert-warning">
-            <strong>Runner connection degraded</strong>
-            <p>The request is durable, but the runner did not confirm it. Retrying uses the same key and cannot create a second attempt.</p>
-          </div>
+          <%= render "shared/notice", kind: "degraded", title: "Runner connection degraded",
+            body: "The request is durable, but the runner did not confirm it. Retrying uses the same key and cannot create a second attempt." %>
         <% elsif latest_run.admitted? %>
-          <div class="execution-alert">
-            <strong>Accepted by runner</strong>
-            <p>The run is queued. This panel refreshes while events arrive.</p>
-          </div>
+          <%= render "shared/notice", kind: "info", title: "Accepted by runner",
+            body: "The run is queued. This panel refreshes while events arrive." %>
         <% elsif latest_run.running? %>
-          <div class="execution-alert">
-            <strong>Work in progress</strong>
-            <p>Sequence <%= latest_run.current_sequence %> is saved. You can leave this page without losing the record.</p>
-          </div>
+          <%= render "shared/notice", kind: "info", title: "Work in progress",
+            body: "Sequence #{latest_run.current_sequence} is saved. You can leave this page without losing the record." %>
         <% elsif latest_run.failed? || latest_run.timed_out? || latest_run.policy_denied? %>
-          <div class="execution-alert execution-alert-error">
-            <strong><%= latest_run.policy_denied? ? "Blocked by policy" : "Run did not complete" %></strong>
-            <p><%= latest_run.failure_code.to_s.humanize.presence || "The runner recorded a terminal failure." %> Review the event record before starting another attempt.</p>
-          </div>
+          <%= render "shared/notice", kind: latest_run.policy_denied? ? "blocked" : "destructive",
+            css: "execution-alert-error",
+            title: latest_run.policy_denied? ? "Blocked by policy" : "Run did not complete",
+            body: latest_run.failure_code.to_s.humanize.presence || "The runner recorded a terminal failure. Review the event record before starting another attempt." %>
         <% elsif latest_run.canceled? %>
-          <div class="execution-alert execution-alert-warning">
-            <strong>Cancellation confirmed</strong>
-            <p>The runner stopped this attempt. Its saved events remain available for review.</p>
-          </div>
+          <%= render "shared/notice", kind: "warning", title: "Cancellation confirmed",
+            body: "The runner stopped this attempt. Its saved events remain available for review." %>
         <% end %>
 
         <% if latest_run.memory_degraded? %>
-          <div class="execution-alert execution-alert-warning" role="status">
-            <strong>Memory unavailable for this attempt</strong>
-            <p>The specialist ran without recalled memory. Current case data and deterministic work remain available; no managed fallback was used.</p>
-          </div>
+          <%= render "shared/notice", kind: "degraded", title: "Memory unavailable for this attempt",
+            body: "The specialist ran without recalled memory. Current case data and deterministic work remain available; no managed fallback was used." %>
         <% end %>
 
         <% if latest_run.crew_artifact %>

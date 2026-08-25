@@ -1,0 +1,58 @@
+<div class="investigation-stack">
+  <% if @email_thread || @intercom_link %>
+    <section class="send-gate" aria-label="Human send">
+      <h2>Human send</h2>
+      <p>Review the draft, then press Send. Agents and jobs cannot send it.</p>
+    </section>
+  <% end %>
+
+  <% if @cited_evidence.any? %>
+    <section class="evidence-panel" aria-labelledby="cited-evidence-title">
+      <h2 id="cited-evidence-title">Cited evidence</h2>
+      <ul class="evidence-list">
+        <% @cited_evidence.each do |event| %>
+          <li class="evidence-item">
+            <strong><%= event.evidence_kind.humanize %></strong>
+            <code><%= event.evidence_locator %></code>
+            <% if event.body.present? %><p><%= truncate(event.body, length: 160) %></p><% end %>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
+
+  <% if @memory_degraded %>
+    <%= render "shared/notice", kind: "degraded", title: "Memory used is degraded",
+      body: "Source work remains on the case. Crew runs continued without a live memory index." %>
+  <% else %>
+    <section class="citation-item" aria-labelledby="memory-used-title">
+      <h2 id="memory-used-title">Memory used</h2>
+      <p class="muted-copy">Eligible memory stays scoped to this workspace. Open the memory library to inspect citations.</p>
+      <% if @membership.can_inspect_memory? %>
+        <%= link_to "Open memory", workspace_memory_records_path(@workspace), class: "button button-quiet" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="crew-progress-card" aria-labelledby="crew-progress-title">
+    <div class="context-section-heading">
+      <h2 id="crew-progress-title">Crew progress</h2>
+      <%= link_to "Open", workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "button button-quiet" %>
+    </div>
+    <% if @crew_tasks.any? %>
+      <dl class="case-facts">
+        <div><dt>Open tasks</dt><dd><%= @crew_tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
+        <div><dt>Needs review</dt><dd><%= @crew_tasks.count(&:review_requested?) %></dd></div>
+        <div><dt>Complete</dt><dd><%= @crew_tasks.count(&:completed?) %></dd></div>
+      </dl>
+      <p class="muted-copy"><strong><%= @crew_tasks.first.assigned_agent_profile.name %>:</strong> <%= @crew_tasks.first.title %></p>
+    <% else %>
+      <p class="muted-copy">No specialist work has been planned for this case.</p>
+    <% end %>
+  </section>
+
+  <% if @policy_reviews.any? %>
+    <%= render "shared/notice", kind: "review", title: "Policy review required",
+      body: "#{pluralize(@policy_reviews.size, "task")} needs a human decision before work can continue." %>
+  <% end %>
+</div>

@@ -1,0 +1,19 @@
+<div class="page-bar">
+  <nav class="page-bar-crumbs" aria-label="Location">
+    <% if Current.workspace %>
+      <span title="<%= Current.workspace.organization.name %>"><%= Current.workspace.organization.name %></span>
+      <span aria-hidden="true">/</span>
+      <span title="<%= Current.workspace.name %>"><%= Current.workspace.name %></span>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page"><%= current_nav_section %></span>
+    <% else %>
+      <span aria-current="page">Workspaces</span>
+    <% end %>
+  </nav>
+  <% if content_for?(:page_status) %>
+    <div class="page-bar-status"><%= yield :page_status %></div>
+  <% end %>
+  <% if content_for?(:page_actions) %>
+    <div class="page-bar-actions"><%= yield :page_actions %></div>
+  <% end %>
+</div>
