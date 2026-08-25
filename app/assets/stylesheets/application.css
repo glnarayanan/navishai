@@ -624,8 +624,8 @@ textarea {
 
 .invite-form {
   display: grid;
-  grid-template-columns: minmax(14rem, 1fr) minmax(10rem, 0.4fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
   gap: 1rem;
   margin-top: 1.25rem;
 }
