@@ -246,6 +246,22 @@ $$;
 
 
 --
+-- Name: protect_crew_artifact(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_crew_artifact() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'crew artifacts are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_crew_task(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -526,6 +542,23 @@ BEGIN
     ELSE false
   END) IS NOT TRUE THEN
     RAISE EXCEPTION 'invalid execution run transition';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_execution_run_context(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_run_context() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.input_context IS DISTINCT FROM OLD.input_context OR
+     NEW.input_artifact_id IS DISTINCT FROM OLD.input_artifact_id THEN
+    RAISE EXCEPTION 'execution run context is immutable';
   END IF;
   RETURN NEW;
 END;
@@ -1481,6 +1514,58 @@ ALTER SEQUENCE public.conversations_id_seq OWNED BY public.conversations.id;
 
 
 --
+-- Name: crew_artifacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.crew_artifacts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    execution_run_id bigint NOT NULL,
+    supersedes_artifact_id bigint,
+    target_artifact_id bigint,
+    artifact_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_number integer NOT NULL,
+    artifact_kind character varying NOT NULL,
+    body text NOT NULL,
+    uncertainty text NOT NULL,
+    review_outcome character varying,
+    citations jsonb DEFAULT '[]'::jsonb NOT NULL,
+    conflicts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    change_requests jsonb DEFAULT '[]'::jsonb NOT NULL,
+    payload_digest character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
+    CONSTRAINT crew_artifacts_content CHECK ((((octet_length(body) >= 1) AND (octet_length(body) <= 51200)) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
+    CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY ((ARRAY['investigation'::character varying, 'draft'::character varying, 'quality_review'::character varying])::text[]))),
+    CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
+    CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = 'quality_review'::text) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> 'quality_review'::text) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
+    CONSTRAINT crew_artifacts_version CHECK ((version_number > 0))
+);
+
+
+--
+-- Name: crew_artifacts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.crew_artifacts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: crew_artifacts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.crew_artifacts_id_seq OWNED BY public.crew_artifacts.id;
+
+
+--
 -- Name: crew_task_dependencies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1870,9 +1955,12 @@ CREATE TABLE public.execution_runs (
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    input_context text NOT NULL,
+    input_artifact_id bigint,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK ((((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128)) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
+    CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
     CONSTRAINT execution_runs_status CHECK (((status)::text = ANY ((ARRAY['admitting'::character varying, 'admitted'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying, 'timed_out'::character varying, 'canceled'::character varying, 'policy_denied'::character varying])::text[])))
 );
@@ -2982,6 +3070,13 @@ ALTER TABLE ONLY public.conversations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: crew_artifacts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts ALTER COLUMN id SET DEFAULT nextval('public.crew_artifacts_id_seq'::regclass);
+
+
+--
 -- Name: crew_task_dependencies id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3352,6 +3447,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: crew_artifacts crew_artifacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT crew_artifacts_pkey PRIMARY KEY (id);
 
 
 --
@@ -4021,6 +4124,41 @@ CREATE INDEX index_conversations_on_workspace_id_and_last_message_at ON public.c
 
 
 --
+-- Name: index_crew_artifacts_on_artifact_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_artifacts_on_artifact_key ON public.crew_artifacts USING btree (artifact_key);
+
+
+--
+-- Name: index_crew_artifacts_on_execution_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_artifacts_on_execution_run_id ON public.crew_artifacts USING btree (execution_run_id);
+
+
+--
+-- Name: index_crew_artifacts_on_task_kind_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_artifacts_on_task_kind_version ON public.crew_artifacts USING btree (crew_task_id, artifact_kind, version_number);
+
+
+--
+-- Name: index_crew_artifacts_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_artifacts_on_workspace_id ON public.crew_artifacts USING btree (workspace_id);
+
+
+--
+-- Name: index_crew_artifacts_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_artifacts_on_workspace_id_and_id ON public.crew_artifacts USING btree (workspace_id, id);
+
+
+--
 -- Name: index_crew_task_dependencies_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4259,6 +4397,13 @@ CREATE UNIQUE INDEX index_execution_runs_on_crew_task_id_and_attempt_number ON p
 
 
 --
+-- Name: index_execution_runs_on_input_artifact_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_input_artifact_id ON public.execution_runs USING btree (input_artifact_id);
+
+
+--
 -- Name: index_execution_runs_on_run_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4284,6 +4429,13 @@ CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_id ON public.execut
 --
 
 CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_request_key ON public.execution_runs USING btree (workspace_id, request_key);
+
+
+--
+-- Name: index_execution_runs_on_workspace_id_task; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_task ON public.execution_runs USING btree (workspace_id, id, crew_task_id);
 
 
 --
@@ -4952,6 +5104,20 @@ CREATE TRIGGER conversation_messages_no_truncate BEFORE TRUNCATE ON public.conve
 
 
 --
+-- Name: crew_artifacts crew_artifacts_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_artifacts_append_only BEFORE DELETE OR UPDATE ON public.crew_artifacts FOR EACH ROW EXECUTE FUNCTION public.protect_crew_artifact();
+
+
+--
+-- Name: crew_artifacts crew_artifacts_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_artifacts_no_truncate BEFORE TRUNCATE ON public.crew_artifacts FOR EACH STATEMENT EXECUTE FUNCTION public.protect_crew_artifact();
+
+
+--
 -- Name: crew_task_dependencies crew_task_dependencies_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5075,6 +5241,13 @@ CREATE TRIGGER execution_events_no_truncate BEFORE TRUNCATE ON public.execution_
 --
 
 CREATE CONSTRAINT TRIGGER execution_events_require_link AFTER INSERT ON public.execution_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.require_linked_execution_event();
+
+
+--
+-- Name: execution_runs execution_runs_immutable_context; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_immutable_context BEFORE UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_run_context();
 
 
 --
@@ -5294,6 +5467,22 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: crew_artifacts fk_crew_artifacts_supersedes; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_supersedes FOREIGN KEY (workspace_id, supersedes_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: crew_artifacts fk_crew_artifacts_target; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_target FOREIGN KEY (workspace_id, target_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
 -- Name: crew_task_events fk_crew_task_events_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5355,6 +5544,14 @@ ALTER TABLE ONLY public.crew_tasks
 
 ALTER TABLE ONLY public.execution_runs
     ADD CONSTRAINT fk_execution_runs_current_event FOREIGN KEY (workspace_id, id, current_event_id) REFERENCES public.execution_events(workspace_id, execution_run_id, id);
+
+
+--
+-- Name: execution_runs fk_execution_runs_input_artifact; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_input_artifact FOREIGN KEY (workspace_id, input_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
 
 
 --
@@ -5878,6 +6075,14 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: crew_artifacts fk_rails_7b0a9aadf7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_rails_7b0a9aadf7 FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
 -- Name: crew_task_events fk_rails_7baa24c856; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6054,6 +6259,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: crew_artifacts fk_rails_a5798990c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_rails_a5798990c4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: email_draft_attachments fk_rails_a6b8203129; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6163,6 +6376,14 @@ ALTER TABLE ONLY public.email_drafts
 
 ALTER TABLE ONLY public.accounts
     ADD CONSTRAINT fk_rails_bac5365c2c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: crew_artifacts fk_rails_bb2eb7b83b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_rails_bb2eb7b83b FOREIGN KEY (workspace_id, execution_run_id, crew_task_id) REFERENCES public.execution_runs(workspace_id, id, crew_task_id);
 
 
 --
@@ -6420,6 +6641,7 @@ ALTER TABLE ONLY public.agent_profile_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824081944'),
 ('20260824040011'),
 ('20260824040010'),
 ('20260824040009'),

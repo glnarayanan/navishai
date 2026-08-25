@@ -48,13 +48,15 @@ class ExecutionLedger
       end
 
       attempt = task.execution_runs.maximum(:attempt_number).to_i + 1
+      input_context, input_artifact = context_for(task)
       @workspace.execution_runs.create!(
         crew_task: task,
         agent_profile: task.assigned_agent_profile,
         agent_profile_version: task.assigned_agent_profile_version,
         request_key:,
         attempt_number: attempt,
-        runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key
+        runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key,
+        input_context:, input_artifact:
       )
     end
   rescue ActiveRecord::RecordInvalid => error
@@ -75,6 +77,7 @@ class ExecutionLedger
 
     response = client.admit!(
       task: run.crew_task,
+      input_context: run.input_context,
       run_id: run.run_key,
       idempotency_key: "admit:#{run.run_key}",
       attempt: run.attempt_number
@@ -93,6 +96,7 @@ class ExecutionLedger
 
     ExecutionRun.transaction do
       run = @workspace.execution_runs.find_by!(run_key: attributes.fetch("run_id"))
+      run.crew_task.lock!
       run.lock!
 
       if (existing = @workspace.execution_events.find_by(event_key: attributes.fetch("event_id")))
@@ -121,15 +125,53 @@ class ExecutionLedger
       )
       updates = updates_for(run, event_record)
       run.update!(updates.merge(current_sequence: sequence, current_event: event_record))
+      if event_record.event_type == "run.completed" && CrewArtifactPublisher.supports?(run)
+        CrewArtifactPublisher.publish!(workspace: @workspace, task: run.crew_task, run:)
+      end
       event_record
     end
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidRun, error.record.errors.full_messages.to_sentence
+  rescue CrewArtifactPublisher::InvalidOutput => error
+    raise InvalidRun, error.message
   rescue ActiveRecord::RecordNotUnique
     raise EventConflict, "Event identity or sequence is already in use."
   end
 
   private
+    def context_for(task)
+      context = task.input_context.dup
+      input_artifact = nil
+      case task.assigned_agent_profile.role_key
+      when "resolution_drafter"
+        latest_draft = task.artifacts.where(artifact_kind: "draft").order(version_number: :desc).first
+        review = latest_draft && @workspace.crew_artifacts
+          .where(artifact_kind: "quality_review", target_artifact: latest_draft, review_outcome: "changes_requested")
+          .order(created_at: :desc, id: :desc).first
+        if review
+          input_artifact = review
+          feedback = { change_requests: review.change_requests, conflicts: review.conflicts }
+          context << "\n\nRequired quality-review changes:\n#{JSON.generate(feedback)}"
+        end
+      when "support_reviewer"
+        draft = @workspace.crew_artifacts.joins(:crew_task)
+          .where(artifact_kind: "draft", crew_tasks: {
+            scope_kind: task.scope_kind, support_case_id: task.support_case_id, account_id: task.account_id
+          }).order(created_at: :desc, id: :desc).first
+        if draft
+          input_artifact = draft
+          review_input = {
+            artifact_key: draft.artifact_key, version: draft.version_number, body: draft.body,
+            uncertainty: draft.uncertainty, citations: draft.citations
+          }
+          context << "\n\nCurrent draft to review:\n#{JSON.generate(review_input)}"
+        end
+      end
+      raise InvalidRun, "Execution context exceeds the runner protocol limit." if context.bytesize > 128.kilobytes
+
+      [ context, input_artifact ]
+    end
+
     def updates_for(run, event)
       from, to = TRANSITIONS.fetch(event.event_type)
       raise OutOfOrder, "Event #{event.event_type} cannot follow #{run.status}." unless run.status == from

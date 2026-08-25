@@ -63,4 +63,15 @@ class RunnerProtocolTest < ActiveSupport::TestCase
       RunnerProtocol::AdmissionResponse.parse(JSON.generate(response), expected_run_id: SecureRandom.uuid)
     end
   end
+
+  test "bounds assembled run context at 128 KiB" do
+    body = JSON.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
+    body.fetch("task")["input_context"] = "x" * 128.kilobytes
+    assert RunnerProtocol::AdmissionRequest.parse(JSON.generate(body))
+
+    body.fetch("task")["input_context"] << "x"
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::AdmissionRequest.parse(JSON.generate(body))
+    end
+  end
 end

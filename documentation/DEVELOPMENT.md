@@ -58,6 +58,8 @@ Build `runner/cmd/navishai-exec` beside the runner before enabling process execu
 
 Runner events post to `/webhooks/runner-events` with the same HMAC headers plus `X-NavishAI-Workspace-Key`. PostgreSQL stores each run attempt and ordered event. Exact event replay is idempotent; changed, out-of-order, cross-workspace, and invalid terminal events fail closed.
 
+Completed Support Crew runs publish strict artifact schema `1` JSON with a role-bound `kind`, body, explicit uncertainty, one or more workspace-checked citations, conflicts, change requests, and review outcome. Investigation, draft, and quality-review artifacts are append-only and versioned. A quality review freezes the exact draft it saw. A rerun freezes the prior review and its requested changes into the next admission context, which is bounded at 128 KiB on both Rails and Go. Invalid or stale output rolls the completion event back instead of creating an uncited or mismatched result. These records propose work only; they cannot create or send an email draft.
+
 ## Checks
 
 Run the full local check suite with:

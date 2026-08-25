@@ -20,12 +20,13 @@ class RunnerClient
     raise ConfigurationError, "runner shared secret must contain at least 32 bytes" if @secret.bytesize < 32
   end
 
-  def admit!(task:, run_id:, idempotency_key:, attempt:)
+  def admit!(task:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
     request_message = RunnerProtocol::AdmissionRequest.for_task(
       task: task,
       run_id: run_id,
       idempotency_key: idempotency_key,
-      attempt: attempt
+      attempt: attempt,
+      input_context: input_context
     )
     body = request_message.to_json
     timestamp = @clock.call.to_i.to_s

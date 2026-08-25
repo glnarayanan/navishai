@@ -26,7 +26,7 @@ module RunnerProtocol
 
     attr_reader :attributes
 
-    def self.for_task(task:, run_id:, idempotency_key:, attempt:)
+    def self.for_task(task:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
       version = task.assigned_agent_profile_version
       new(
         "protocol_version" => VERSION,
@@ -37,7 +37,7 @@ module RunnerProtocol
           "task_key" => task.task_key,
           "attempt" => attempt,
           "title" => task.title,
-          "input_context" => task.input_context,
+          "input_context" => input_context,
           "expected_output" => task.expected_output
         },
         "agent" => {
@@ -90,7 +90,7 @@ module RunnerProtocol
       uuid!(task["task_key"], "task.task_key")
       integer!(task["attempt"], 1, 100, "task.attempt")
       string!(task["title"], 200, "task.title")
-      string!(task["input_context"], 8_000, "task.input_context")
+      string!(task["input_context"], 128.kilobytes, "task.input_context")
       string!(task["expected_output"], 8_000, "task.expected_output")
 
       agent = value["agent"]

@@ -40,6 +40,26 @@ func TestAdmissionRejectsUnknownAndOutOfBoundsFields(t *testing.T) {
 	if _, _, err := DecodeAdmission(strings.NewReader(duplicateTool)); err == nil {
 		t.Fatal("expected duplicate tools to fail")
 	}
+	var request AdmissionRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		t.Fatal(err)
+	}
+	request.Task.InputContext = strings.Repeat("x", 128*1024)
+	bounded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeAdmission(strings.NewReader(string(bounded))); err != nil {
+		t.Fatalf("expected 128 KiB context to pass: %v", err)
+	}
+	request.Task.InputContext += "x"
+	tooLarge, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeAdmission(strings.NewReader(string(tooLarge))); err == nil {
+		t.Fatal("expected context over 128 KiB to fail")
+	}
 }
 
 func TestSharedSignatureVector(t *testing.T) {

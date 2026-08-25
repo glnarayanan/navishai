@@ -5,10 +5,11 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     @workspace = workspaces(:acme_support)
     @owner = memberships(:owner_support)
     CrewConfiguration.install_defaults!(workspace: @workspace)
-    support_case = create_support_case
+    @support_case = create_support_case
+    @message = add_inbound_message(@support_case)
     profile = @workspace.agent_profiles.find_by!(role_key: "support_investigator")
     @task = CrewWork.create!(
-      workspace: @workspace, membership: @owner, scope: support_case, profile:,
+      workspace: @workspace, membership: @owner, scope: @support_case, profile:,
       title: "Investigate the failure", input_context: "Use the current case and approved sources.",
       expected_output: "State the cause and cite the evidence."
     )
@@ -21,7 +22,7 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     ingest(1, "run.admitted", workspace_key: @workspace.runner_key, task_key: @task.task_key, attempt: 1)
     ingest(2, "run.started", adapter: "scripted", scenario: "success", attempt: 1)
     ingest(3, "tool.completed", tool: "case_read", result: "scripted")
-    ingest(4, "output.produced", text: "The reset link expired.")
+    ingest(4, "output.produced", text: artifact_output)
     ingest(5, "usage.observed", input_units: 12, output_units: 3)
     ingest(6, "usage.observed", input_units: 8, output_units: 2)
     ingest(7, "run.completed", outcome: "completed")
@@ -29,7 +30,8 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     @run.reload
     assert @run.completed?
     assert_equal 7, @run.current_sequence
-    assert_equal "The reset link expired.", @run.output
+    assert_equal artifact_output, @run.output
+    assert_equal "The reset link expired.", @run.crew_artifact.body
     assert_equal 20, @run.input_units
     assert_equal 5, @run.output_units
     assert_equal (1..7).to_a, @run.events.pluck(:sequence_number)
@@ -92,10 +94,11 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     expected_task = @task
     expected_run_key = @run.run_key
     success_client = Object.new
-    success_client.define_singleton_method(:admit!) do |task:, run_id:, idempotency_key:, attempt:|
+    success_client.define_singleton_method(:admit!) do |task:, run_id:, idempotency_key:, attempt:, input_context:|
       unless task == expected_task && run_id == expected_run_key && idempotency_key == "admit:#{expected_run_key}" && attempt == 1
         raise "wrong task"
       end
+      raise "wrong context" unless input_context == task.input_context
       response
     end
     assert_equal @run, @ledger.admit!(run: @run, client: success_client)
@@ -118,6 +121,9 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::ReadOnlyRecord) { @run.events.first.update!(data: {}) }
     assert_raises(ActiveRecord::StatementInvalid) do
       ExecutionRun.transaction(requires_new: true) { ExecutionRun.where(id: @run.id).update_all(run_key: SecureRandom.uuid) }
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ExecutionRun.transaction(requires_new: true) { ExecutionRun.where(id: @run.id).update_all(input_context: "Changed") }
     end
 
     foreign = workspaces(:beta_support)
@@ -164,6 +170,17 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
   end
 
   private
+    def artifact_output
+      JSON.generate(
+        schema_version: 1, kind: "investigation", body: "The reset link expired.",
+        uncertainty: "The opening time is unknown.", conflicts: [], change_requests: [], review_outcome: nil,
+        citations: [ {
+          kind: "conversation", locator: "conversation://#{@support_case.conversation_id}/messages/#{@message.id}",
+          label: "Customer report"
+        } ]
+      )
+    end
+
     def ingest(sequence, type, **data)
       @ledger.ingest!(event: event(sequence, type, **data))
     end
