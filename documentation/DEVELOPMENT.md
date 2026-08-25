@@ -141,6 +141,8 @@ The Account health scorecard designer maps a human goal to selected retained sig
 
 NavishAI creates in-app and email alerts for assignments, work that needs review, SLA thresholds, delivery and integration failures, blocked Crew work, and completed Crew work. Alert emails contain only the alert kind, workspace name, time, and a sign-in link; customer content stays inside NavishAI. Configure Action Mailer for the deployment as you would for verification, reset, and invitation mail.
 
+Owners and Admins can register outbound webhook endpoints from the Webhooks page. Each endpoint selects alert categories and a credential key. Set `NAVISHAI_WEBHOOK_<CREDENTIAL_KEY>_SIGNING_SECRET` or `outbound_webhooks.<credential_key>.signing_secret` in Rails credentials. NavishAI sends content-free JSON with a stable event ID and signs the exact body in `X-NavishAI-Signature` using HMAC-SHA256. Receivers should deduplicate on `X-NavishAI-Event`. Delivery resolves and pins public DNS, rejects private or mixed answers, does not follow redirects, retries network and 5xx failures up to five times, and keeps 4xx failures for review.
+
 The Crew task page polls its workspace-scoped run record while an attempt is active. Case tasks use the Support Crew; Account tasks use the Customer Success Crew. A writer can retry an unconfirmed admission with its original idempotency key or start a later attempt after a terminal result. The page keeps blocked, degraded, failed, canceled, and completed states distinct and exposes safe run IDs, event sequence, policy version, usage, and failure codes for operator checks. An active run blocks task cancellation until the runner records a terminal event.
 
 ## Checks

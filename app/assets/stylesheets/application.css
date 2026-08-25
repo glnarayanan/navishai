@@ -3811,3 +3811,29 @@ td {
   .notifications-heading form,
   .notifications-heading .button { width: 100%; }
 }
+
+.webhook-page { max-width: 64rem; }
+.webhook-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.webhook-form .field { min-width: 0; }
+.webhook-form .field-hint { overflow-wrap: anywhere; }
+.webhook-form .webhook-categories,
+.webhook-form .button { grid-column: 1 / -1; }
+.webhook-categories { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0; padding: 0; border: 0; }
+.webhook-categories legend { width: 100%; margin-bottom: 0.5rem; font-weight: 700; }
+.webhook-categories label { display: flex; align-items: center; gap: 0.5rem; min-height: 3rem; }
+.webhook-categories input { width: 1.25rem; height: 1.25rem; }
+.webhook-endpoint-list { display: grid; margin-top: 1rem; border-top: 1px solid var(--line); }
+.webhook-endpoint { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 1.5rem; padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.webhook-endpoint h3 { margin: 0; }
+.webhook-endpoint p { margin: 0.25rem 0; overflow-wrap: anywhere; color: var(--muted); }
+.webhook-endpoint small { color: var(--muted); }
+.webhook-endpoint dl { display: flex; gap: 1rem; margin: 0; }
+.webhook-endpoint dl div { display: grid; text-align: center; }
+.webhook-endpoint dt { color: var(--muted); font-size: 0.75rem; }
+.webhook-endpoint dd { margin: 0; font-weight: 800; }
+
+@media (max-width: 48rem) {
+  .webhook-form { grid-template-columns: 1fr; }
+  .webhook-endpoint { grid-template-columns: 1fr auto; }
+  .webhook-endpoint > div { grid-column: 1 / -1; }
+}

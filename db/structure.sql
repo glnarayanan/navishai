@@ -1011,6 +1011,30 @@ $$;
 
 
 --
+-- Name: protect_outbound_webhook_delivery(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_outbound_webhook_delivery() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.outbound_webhook_endpoint_id, OLD.notification_id,
+         OLD.event_key, OLD.target_url, OLD.credential_key, OLD.payload, OLD.payload_sha256, OLD.created_at)
+     IS NOT DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.outbound_webhook_endpoint_id, NEW.notification_id,
+         NEW.event_key, NEW.target_url, NEW.credential_key, NEW.payload, NEW.payload_sha256, NEW.created_at) AND
+     ((OLD.status = 'pending' AND NEW.status IN ('sending', 'failed')) OR
+      (OLD.status = 'sending' AND NEW.status IN ('delivered', 'failed')) OR
+      (OLD.status = 'failed' AND NEW.status IN ('sending', 'failed'))) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'outbound webhook delivery snapshots are immutable';
+END;
+$$;
+
+
+--
 -- Name: protect_public_web_extraction(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3875,6 +3899,91 @@ ALTER SEQUENCE public.outbound_email_delivery_attachments_id_seq OWNED BY public
 
 
 --
+-- Name: outbound_webhook_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_webhook_deliveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    outbound_webhook_endpoint_id bigint NOT NULL,
+    notification_id bigint NOT NULL,
+    event_key character varying NOT NULL,
+    target_url text NOT NULL,
+    credential_key character varying NOT NULL,
+    payload text NOT NULL,
+    payload_sha256 character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    failure_code character varying,
+    last_attempted_at timestamp(6) without time zone,
+    delivered_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT outbound_webhook_deliveries_digest CHECK (((payload_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT outbound_webhook_deliveries_key CHECK (((event_key)::text ~ '^[0-9a-f-]{36}$'::text)),
+    CONSTRAINT outbound_webhook_deliveries_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'sending'::character varying, 'delivered'::character varying, 'failed'::character varying])::text[])) AND ((attempt_count >= 0) AND (attempt_count <= 5))))
+);
+
+
+--
+-- Name: outbound_webhook_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.outbound_webhook_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: outbound_webhook_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.outbound_webhook_deliveries_id_seq OWNED BY public.outbound_webhook_deliveries.id;
+
+
+--
+-- Name: outbound_webhook_endpoints; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbound_webhook_endpoints (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    url text NOT NULL,
+    credential_key character varying NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    categories jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT outbound_webhooks_categories CHECK (((jsonb_typeof(categories) = 'array'::text) AND ((jsonb_array_length(categories) >= 1) AND (jsonb_array_length(categories) <= 6)))),
+    CONSTRAINT outbound_webhooks_credential CHECK (((credential_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)),
+    CONSTRAINT outbound_webhooks_name CHECK (((octet_length((name)::text) >= 1) AND (octet_length((name)::text) <= 100)))
+);
+
+
+--
+-- Name: outbound_webhook_endpoints_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.outbound_webhook_endpoints_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: outbound_webhook_endpoints_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.outbound_webhook_endpoints_id_seq OWNED BY public.outbound_webhook_endpoints.id;
+
+
+--
 -- Name: public_web_extractions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5130,6 +5239,20 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments ALTER COLUMN id SET 
 
 
 --
+-- Name: outbound_webhook_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries ALTER COLUMN id SET DEFAULT nextval('public.outbound_webhook_deliveries_id_seq'::regclass);
+
+
+--
+-- Name: outbound_webhook_endpoints id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_endpoints ALTER COLUMN id SET DEFAULT nextval('public.outbound_webhook_endpoints_id_seq'::regclass);
+
+
+--
 -- Name: public_web_extractions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5749,6 +5872,22 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments
 
 
 --
+-- Name: outbound_webhook_deliveries outbound_webhook_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT outbound_webhook_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: outbound_webhook_endpoints outbound_webhook_endpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_endpoints
+    ADD CONSTRAINT outbound_webhook_endpoints_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: public_web_extractions public_web_extractions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5964,6 +6103,13 @@ CREATE UNIQUE INDEX idx_on_intercom_connection_id_remote_part_id_61d69c288c ON p
 --
 
 CREATE UNIQUE INDEX idx_on_intercom_connection_id_remote_tag_id_1e0b48db33 ON public.intercom_tag_links USING btree (intercom_connection_id, remote_tag_id);
+
+
+--
+-- Name: idx_on_outbound_webhook_endpoint_id_ab9a3111dd; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_outbound_webhook_endpoint_id_ab9a3111dd ON public.outbound_webhook_deliveries USING btree (outbound_webhook_endpoint_id);
 
 
 --
@@ -7591,6 +7737,13 @@ CREATE INDEX index_notifications_on_source_audit_event_id ON public.notification
 
 
 --
+-- Name: index_notifications_on_workspace_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notifications_on_workspace_and_id ON public.notifications USING btree (workspace_id, id);
+
+
+--
 -- Name: index_notifications_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7630,6 +7783,55 @@ CREATE UNIQUE INDEX index_outbound_email_deliveries_on_workspace_id_and_id ON pu
 --
 
 CREATE INDEX index_outbound_email_delivery_attachments_on_workspace_id ON public.outbound_email_delivery_attachments USING btree (workspace_id);
+
+
+--
+-- Name: index_outbound_webhook_deliveries_on_event_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_webhook_deliveries_on_event_key ON public.outbound_webhook_deliveries USING btree (event_key);
+
+
+--
+-- Name: index_outbound_webhook_deliveries_on_notification_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbound_webhook_deliveries_on_notification_id ON public.outbound_webhook_deliveries USING btree (notification_id);
+
+
+--
+-- Name: index_outbound_webhook_deliveries_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbound_webhook_deliveries_on_workspace_id ON public.outbound_webhook_deliveries USING btree (workspace_id);
+
+
+--
+-- Name: index_outbound_webhook_endpoints_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbound_webhook_endpoints_on_workspace_id ON public.outbound_webhook_endpoints USING btree (workspace_id);
+
+
+--
+-- Name: index_outbound_webhook_endpoints_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_webhook_endpoints_on_workspace_id_and_id ON public.outbound_webhook_endpoints USING btree (workspace_id, id);
+
+
+--
+-- Name: index_outbound_webhook_endpoints_on_workspace_id_and_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_webhook_endpoints_on_workspace_id_and_name ON public.outbound_webhook_endpoints USING btree (workspace_id, name);
+
+
+--
+-- Name: index_outbound_webhooks_on_endpoint_and_notification; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_outbound_webhooks_on_endpoint_and_notification ON public.outbound_webhook_deliveries USING btree (outbound_webhook_endpoint_id, notification_id);
 
 
 --
@@ -8711,6 +8913,13 @@ CREATE TRIGGER outbound_message_attachments_require_clean BEFORE INSERT ON publi
 
 
 --
+-- Name: outbound_webhook_deliveries outbound_webhook_deliveries_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER outbound_webhook_deliveries_protect BEFORE DELETE OR UPDATE ON public.outbound_webhook_deliveries FOR EACH ROW EXECUTE FUNCTION public.protect_outbound_webhook_delivery();
+
+
+--
 -- Name: public_web_extractions public_web_extractions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9111,6 +9320,22 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: outbound_webhook_deliveries fk_outbound_webhook_delivery_endpoint; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT fk_outbound_webhook_delivery_endpoint FOREIGN KEY (workspace_id, outbound_webhook_endpoint_id) REFERENCES public.outbound_webhook_endpoints(workspace_id, id);
+
+
+--
+-- Name: outbound_webhook_deliveries fk_outbound_webhook_delivery_notification; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT fk_outbound_webhook_delivery_notification FOREIGN KEY (workspace_id, notification_id) REFERENCES public.notifications(workspace_id, id);
+
+
+--
 -- Name: account_merges fk_rails_00215f0be3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9420,6 +9645,14 @@ ALTER TABLE ONLY public.intercom_sync_operations
 
 ALTER TABLE ONLY public.intercom_tag_links
     ADD CONSTRAINT fk_rails_36b994f919 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
+-- Name: outbound_webhook_endpoints fk_rails_36deb0720c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_endpoints
+    ADD CONSTRAINT fk_rails_36deb0720c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -9943,6 +10176,14 @@ ALTER TABLE ONLY public.account_merges
 
 
 --
+-- Name: outbound_webhook_deliveries fk_rails_73f17d8db3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT fk_rails_73f17d8db3 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: crew_task_events fk_rails_74f0d28011; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10303,6 +10544,14 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: outbound_webhook_deliveries fk_rails_a922d62322; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT fk_rails_a922d62322 FOREIGN KEY (notification_id) REFERENCES public.notifications(id);
+
+
+--
 -- Name: workspace_invitations fk_rails_aa0ff4982f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10655,6 +10904,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 
 --
+-- Name: outbound_webhook_deliveries fk_rails_d25dea0cdd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbound_webhook_deliveries
+    ADD CONSTRAINT fk_rails_d25dea0cdd FOREIGN KEY (outbound_webhook_endpoint_id) REFERENCES public.outbound_webhook_endpoints(id);
+
+
+--
 -- Name: knowledge_source_versions fk_rails_d40427c568; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10917,6 +11174,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260824230300'),
 ('20260824230100'),
 ('20260824230000'),
 ('20260824220000'),

@@ -72,6 +72,7 @@ Browser input, mail and integration payloads, public web content, model output, 
 | Duplicate or unattributed Intercom write | Freeze each local note, assignment, tag, and untag operation with its current human Membership and User tuple. Match Intercom admins by exact email, claim once before external I/O, retry only definite failures with a cap, and stop an interrupted or uncertain result for review. Never put a customer reply in this operation set. |
 | Duplicate, stale, or unattributed Intercom customer reply | Bind every form to the newest synced conversation part. Recheck a current authenticated writer and matching Intercom admin, then freeze the body, source part, remote conversation, and human actor before one external call. Definite rejection needs a fresh command. Uncertain results block resend until a writer verifies the exact remote part or marks it not sent. Serialize reply completion with sync for that conversation. |
 | Unauthorised customer communication | No agent, job, approval, or background trigger receives send authority. A current authenticated human must review and issue each send command. |
+| Webhook replay, content leak, or server-side request forgery | Send only fixed content-free alert fields with a stable event ID; HMAC-sign the exact body; require public HTTPS; reject credentials, local names, private or mixed DNS answers, and redirects; pin the checked address for TLS. |
 
 ## Review rules
 
