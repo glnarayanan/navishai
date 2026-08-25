@@ -1,8 +1,3 @@
-<% content_for :page_actions do %>
-  <% if @membership.owner? || @membership.admin? %>
-    <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
-  <% end %>
-<% end %>
 <% content_for :title, "Case queue · #{@workspace.name} — NavishAI" %>
 
 <main class="workbench-shell queue-page page-family-collection">
