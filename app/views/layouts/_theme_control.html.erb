@@ -1,7 +1,16 @@
-<details class="theme-control" data-action="toggle->theme#placeMenu">
+<% icon_only = local_assigns.fetch(:icon_only, false) %>
+<details class="theme-control<%= " is-icon" if icon_only %>" data-action="toggle->theme#placeMenu">
   <summary class="theme-toggle">
     <span class="visually-hidden">Color theme</span>
-    <span data-theme-target="label"><%= color_theme_label %></span>
+    <% if icon_only %>
+      <svg class="theme-icon theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M12 4.1 13.1 2h-2.2L12 4.1zM4.1 12 2 10.9v2.2L4.1 12zm15.8 0L22 13.1v-2.2L19.9 12zM12 19.9 10.9 22h2.2L12 19.9zM6.05 6.05 4.4 4.4l1.1-1.1 1.65 1.65zm11.9 0 1.65-1.65 1.1 1.1-1.65 1.65zM6.05 17.95 4.4 19.6l1.1 1.1 1.65-1.65zm11.9 0 1.65 1.65 1.1-1.1-1.65-1.65zM12 7.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 0 1 12 7.5z"/>
+      </svg>
+      <svg class="theme-icon theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M15.2 2.1A9.9 9.9 0 0 0 12 1.5 10.5 10.5 0 1 0 21.8 14.3 8.2 8.2 0 0 1 15.2 2.1z"/>
+      </svg>
+    <% end %>
+    <span class="theme-toggle-label<%= " visually-hidden" if icon_only %>" data-theme-target="label"><%= color_theme_label %></span>
   </summary>
   <div class="theme-menu" role="radiogroup" aria-label="Color theme">
     <% color_theme_options.each do |label, value| %>

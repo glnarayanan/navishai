@@ -1,19 +1,27 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
+  static targets = ["frame", "bar", "menu", "indicator"]
+
   connect() {
-    this.bar = this.element.querySelector(".site-header-wrap")
+    this.manual = false
     this.onScroll = () => this.update()
+    this.onResize = () => this.placeIndicator()
     window.addEventListener("scroll", this.onScroll, { passive: true })
+    window.addEventListener("resize", this.onResize)
     this.update()
+    this.placeIndicator()
   }
 
   disconnect() {
     window.removeEventListener("scroll", this.onScroll)
+    window.removeEventListener("resize", this.onResize)
   }
 
   update() {
-    this.bar?.classList.toggle("is-scrolled", window.scrollY > 12)
+    const scrolled = window.scrollY > 10
+    this.element.querySelector(".site-header-wrap")?.classList.toggle("is-scrolled", scrolled)
+    if (!this.manual) this.syncActive()
   }
 
   jump(event) {
@@ -22,7 +30,50 @@ export default class extends Controller {
     const target = document.querySelector(href)
     if (!target) return
     event.preventDefault()
-    target.scrollIntoView({ behavior: this.reducedMotion() ? "auto" : "smooth", block: "start" })
+    this.manual = true
+    this.setActive(href.substring(1), event.currentTarget)
+    const top = target.getBoundingClientRect().top + window.pageYOffset - 100
+    window.scrollTo({ top, behavior: this.reducedMotion() ? "auto" : "smooth" })
+    window.setTimeout(() => { this.manual = false }, 500)
+  }
+
+  syncActive() {
+    if (!this.hasMenuTarget) return
+    const links = [...this.menuTarget.querySelectorAll("a[data-landing-section]")]
+    let active = links[0]
+    let min = Infinity
+    links.forEach((link) => {
+      const id = link.dataset.landingSection
+      const section = document.getElementById(id)
+      if (!section) return
+      const distance = Math.abs(section.getBoundingClientRect().top - 100)
+      if (distance < min) {
+        min = distance
+        active = link
+      }
+    })
+    if (active) this.setActive(active.dataset.landingSection, active)
+  }
+
+  setActive(id, link) {
+    if (!this.hasMenuTarget) return
+    this.menuTarget.querySelectorAll("a").forEach((anchor) => {
+      const selected = anchor === link
+      anchor.classList.toggle("is-active", selected)
+      if (selected) anchor.setAttribute("aria-current", "true")
+      else anchor.removeAttribute("aria-current")
+    })
+    this.placeIndicator(link)
+  }
+
+  placeIndicator(link) {
+    if (!this.hasIndicatorTarget || !this.hasMenuTarget) return
+    const active = link || this.menuTarget.querySelector("a.is-active") || this.menuTarget.querySelector("a")
+    const item = active?.parentElement
+    if (!item || item === this.indicatorTarget) return
+    this.indicatorTarget.style.left = `${item.offsetLeft}px`
+    this.indicatorTarget.style.width = `${item.getBoundingClientRect().width}px`
+    this.indicatorTarget.classList.add("is-ready")
   }
 
   reducedMotion() {

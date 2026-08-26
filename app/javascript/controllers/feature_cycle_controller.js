@@ -1,18 +1,21 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["item", "panel", "line"]
+  static targets = ["item", "panel", "line", "carousel", "card", "mobileCanvas", "mobileLine"]
   static values = { interval: { type: Number, default: 5000 } }
 
   connect() {
     this.index = 0
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    this.onKey = (event) => this.shortcut(event)
+    this.element.addEventListener("keydown", this.onKey)
     if (!this.reduced) this.start()
     this.show(0)
   }
 
   disconnect() {
     this.stop()
+    this.element.removeEventListener("keydown", this.onKey)
   }
 
   start() {
@@ -28,6 +31,7 @@ export default class extends Controller {
   select(event) {
     const index = Number(event.currentTarget.dataset.featureIndex)
     this.show(index)
+    this.scrollCard(index)
     if (!this.reduced) this.start()
   }
 
@@ -37,8 +41,37 @@ export default class extends Controller {
     this.select(event)
   }
 
+  shortcut(event) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault()
+      this.show((this.index + 1) % this.itemTargets.length)
+      this.scrollCard(this.index)
+      if (!this.reduced) this.start()
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault()
+      this.show((this.index - 1 + this.itemTargets.length) % this.itemTargets.length)
+      this.scrollCard(this.index)
+      if (!this.reduced) this.start()
+    }
+  }
+
   advance() {
-    this.show((this.index + 1) % this.itemTargets.length)
+    const next = (this.index + 1) % this.itemTargets.length
+    this.show(next)
+    this.scrollCard(next)
+  }
+
+  scrollCard(index) {
+    if (!this.hasCarouselTarget) return
+    const card = this.cardTargets[index]
+    if (!card) return
+    const cardRect = card.getBoundingClientRect()
+    const carouselRect = this.carouselTarget.getBoundingClientRect()
+    const offset = cardRect.left - carouselRect.left - (carouselRect.width - cardRect.width) / 2
+    this.carouselTarget.scrollTo({
+      left: this.carouselTarget.scrollLeft + offset,
+      behavior: this.reduced ? "auto" : "smooth"
+    })
   }
 
   show(index) {
@@ -52,15 +85,24 @@ export default class extends Controller {
     this.panelTargets.forEach((panel, i) => {
       panel.hidden = i !== index
     })
-    this.lineTargets.forEach((line, i) => {
-      const selected = i === index
+    if (this.hasMobileCanvasTarget) {
+      this.mobileCanvasTargets.forEach((canvas, i) => {
+        canvas.hidden = i !== index
+      })
+    }
+    if (this.hasCardTarget) {
+      this.cardTargets.forEach((card, i) => card.classList.toggle("is-active", i === index))
+    }
+    this.restartLines(this.lineTargets, index)
+    if (this.hasMobileLineTarget) this.restartLines(this.mobileLineTargets, index)
+  }
+
+  restartLines(lines, index) {
+    lines.forEach((line, i) => {
       line.style.animation = "none"
       line.offsetHeight
-      if (selected && this.timer) {
-        line.style.transform = "scaleX(0)"
+      if (i === index && !this.reduced) {
         line.style.animation = `feature-line ${this.intervalValue}ms linear forwards`
-      } else {
-        line.style.transform = selected ? "scaleX(1)" : "scaleX(0)"
       }
     })
   }
