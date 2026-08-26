@@ -118,6 +118,24 @@ class CaseWorkflowTest < ActiveSupport::TestCase
     assert_equal %w[case.note_added case.priority_changed case.tag_added case.tag_removed], AuditEvent.last(4).map(&:action).sort
   end
 
+  test "assignment and tag callbacks run only for the transaction that changes the case" do
+    support_case = new_case
+    actor = memberships(:owner_support)
+    tag = CaseWorkflow.create_tag!(workspace: support_case.workspace, membership: actor, name: "Callback")
+    callbacks = []
+
+    2.times do
+      CaseWorkflow.assign!(
+        workspace: support_case.workspace, support_case:, membership: actor, assignee: actor
+      ) { callbacks << :assigned }
+      CaseWorkflow.tag!(
+        workspace: support_case.workspace, support_case:, membership: actor, tag:
+      ) { callbacks << :tagged }
+    end
+
+    assert_equal %i[assigned tagged], callbacks
+  end
+
   test "audit failure rolls back a case mutation" do
     support_case = new_case
     original_record = AuditEvent.method(:record!)
