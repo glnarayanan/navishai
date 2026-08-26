@@ -87,8 +87,13 @@ export default class extends Controller {
     const score = this.tooltipsValue[this.index] || this.scoresValue[this.index]
     if (this.hasTooltipTarget) {
       this.tooltipTarget.textContent = String(score)
-      this.tooltipTarget.style.left = `calc(${(point.x / 600) * 100}% - 1.5rem)`
-      this.tooltipTarget.style.top = `calc(${(point.y / 200) * 70}% + 1.5rem)`
+      this.tooltipTarget.animate(
+        {
+          left: `${(point.x / 600) * 100}%`,
+          top: `${(point.y / 200) * 70 + 8}%`
+        },
+        { duration: this.reduced ? 0 : 400, fill: "forwards", easing: "ease" }
+      )
     }
     if (this.hasDotTarget) {
       this.dotTarget.setAttribute("cx", String(point.x))
@@ -99,8 +104,13 @@ export default class extends Controller {
       pulse.setAttribute("cy", String(point.y))
     })
     if (this.hasStemTarget) {
-      this.stemTarget.style.left = `${(point.x / 600) * 100}%`
-      this.stemTarget.style.top = `calc(${(point.y / 200) * 70}% + 2.25rem)`
+      this.stemTarget.animate(
+        {
+          left: `${(point.x / 600) * 100}%`,
+          top: `${(point.y / 200) * 70 + 12}%`
+        },
+        { duration: this.reduced ? 0 : 400, fill: "forwards", easing: "ease" }
+      )
     }
   }
 }

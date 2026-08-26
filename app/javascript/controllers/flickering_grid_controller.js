@@ -36,8 +36,6 @@ export default class extends Controller {
     this.dpr = dpr
     this.canvas.width = this.width * dpr
     this.canvas.height = this.height * dpr
-    this.canvas.style.width = `${this.width}px`
-    this.canvas.style.height = `${this.height}px`
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     const cell = this.squareSizeValue + this.gridGapValue
     this.cols = Math.ceil(this.width / cell)

@@ -71,8 +71,11 @@ export default class extends Controller {
     const active = link || this.menuTarget.querySelector("a.is-active") || this.menuTarget.querySelector("a")
     const item = active?.parentElement
     if (!item || item === this.indicatorTarget) return
-    this.indicatorTarget.style.left = `${item.offsetLeft}px`
-    this.indicatorTarget.style.width = `${item.getBoundingClientRect().width}px`
+    const duration = this.reducedMotion() ? 0 : 280
+    this.indicatorTarget.animate(
+      { left: `${item.offsetLeft}px`, width: `${item.getBoundingClientRect().width}px` },
+      { duration, fill: "forwards", easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+    )
     this.indicatorTarget.classList.add("is-ready")
   }
 

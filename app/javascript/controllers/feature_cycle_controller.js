@@ -103,11 +103,9 @@ export default class extends Controller {
 
   restartLines(lines, index) {
     lines.forEach((line, i) => {
-      line.style.animation = "none"
-      line.offsetHeight
-      if (i === index && !this.reduced) {
-        line.style.animation = `feature-line ${this.intervalValue}ms linear forwards`
-      }
+      line.classList.remove("is-running")
+      void line.offsetWidth
+      if (i === index && !this.reduced) line.classList.add("is-running")
     })
   }
 }

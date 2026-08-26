@@ -538,6 +538,7 @@
 
 .orbit-stage {
   isolation: isolate;
+  min-height: 22rem;
 }
 
 .orbit-fade {
@@ -959,8 +960,8 @@ html.dark .feature-item.is-active {
   background: var(--secondary);
 }
 
-.feature-item.is-active .feature-line,
-.feature-carousel .card.is-active .feature-line {
+.feature-item.is-active .feature-line.is-running,
+.feature-carousel .card.is-active .feature-line.is-running {
   animation: feature-line 5s linear forwards;
 }
 
@@ -1190,7 +1191,8 @@ html.dark .feature-item.is-active {
   mask-position: center;
 }
 
-.shield-grid canvas {
+.shield-grid canvas,
+.footer-signoff canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -1655,8 +1657,8 @@ html.dark .readiness-card li::before {
     transition: none !important;
   }
   .health-stage.is-on .chart-line { stroke-dashoffset: 0; }
-  .feature-item.is-active .feature-line,
-  .feature-carousel .card.is-active .feature-line { width: 100%; }
+  .feature-item.is-active .feature-line.is-running,
+  .feature-carousel .card.is-active .feature-line.is-running { width: 100%; }
   .feature-panel.is-active .feature-canvas,
   .feature-mobile-canvas.is-active { animation: none; }
 }
@@ -1767,12 +1769,13 @@ html.dark .readiness-card li::before {
   z-index: 0;
   top: 0.375rem;
   bottom: 0.375rem;
+  left: 0;
+  width: 0;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in oklch, var(--accent-fill) 60%, transparent);
   opacity: 0;
   pointer-events: none;
-  transition: left 280ms cubic-bezier(0.22, 1, 0.36, 1), width 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease;
 }
 
 .nav-pill-indicator.is-ready { opacity: 1; }
