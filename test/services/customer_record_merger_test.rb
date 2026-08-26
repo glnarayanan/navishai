@@ -47,6 +47,8 @@ class CustomerRecordMergerTest < ActiveSupport::TestCase
     CustomerRecordMerger.merge!(workspace: source.workspace, source: source, target: target, membership: memberships(:owner_support))
 
     assert_equal target, child.canonical
+    preloaded_child = Account.preload(source_merges: :target).find(child.id)
+    assert_equal target, preloaded_child.canonical
 
     CustomerRecordMerger.unmerge!(workspace: source.workspace, source: source, membership: memberships(:owner_support))
 
@@ -70,6 +72,8 @@ class CustomerRecordMergerTest < ActiveSupport::TestCase
       target: contacts(:alice),
       membership: memberships(:owner_support)
     )
+    preloaded_contact = Contact.preload(source_merges: :target).find(contacts(:alice_duplicate).id)
+    assert_equal contacts(:alice), preloaded_contact.canonical
   end
 
   test "account unmerge rejects an active contact merge that it would split" do

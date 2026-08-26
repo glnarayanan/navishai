@@ -14,7 +14,12 @@ class Contact < ApplicationRecord
   validate :account_stays_in_workspace
 
   def canonical
-    source_merges.active.first&.target&.canonical || self
+    merge = if source_merges.loaded?
+      source_merges.find { |candidate| candidate.unmerged_at.nil? }
+    else
+      source_merges.active.first
+    end
+    merge&.target&.canonical || self
   end
 
   private

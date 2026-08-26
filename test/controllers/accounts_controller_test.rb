@@ -25,6 +25,33 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", text: "Renewal-risk work"
   end
 
+  test "paginates accounts without loading contacts or assessment history" do
+    51.times { |index| @workspace.accounts.create!(name: "Page account #{index.to_s.rjust(2, "0")}") }
+    12.times do |index|
+      AccountHealth.recalculate!(workspace: @workspace, account: @account,
+        trigger_kind: "schedule", at: index.minutes.ago)
+    end
+    instantiated = Hash.new(0)
+    subscriber = lambda do |_name, _started, _finished, _id, payload|
+      instantiated[payload[:class_name]] += payload[:record_count]
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "instantiation.active_record") do
+      get workspace_accounts_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select ".account-list [role='listitem']", count: 50
+    assert_select "nav[aria-label='Account pages'] a", text: "Next"
+    assert_equal 0, instantiated["Contact"]
+    assert_equal 1, instantiated["AccountHealthAssessment"]
+
+    get workspace_accounts_path(@workspace, page: 2)
+    assert_response :success
+    assert_select ".account-list [role='listitem']", count: 3
+    assert_select "nav[aria-label='Account pages'] a", text: "Previous"
+  end
+
   test "imports CSV and JSON inputs and rejects foreign accounts" do
     csv = Rack::Test::UploadedFile.new(
       StringIO.new("source_id,account_name,renewal_on\ncontroller-csv,Controller Import,2026-09-20\n"),
