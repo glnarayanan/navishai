@@ -32,13 +32,18 @@ class AccountHealthTest < ApplicationSystemTestCase
         return {
           clipped: cellRect.right - frameRect.right,
           contained: cellRect.right - scrollRect.right,
-          scrollable: scroller.scrollWidth - scroller.clientWidth
+          scrollable: scroller.scrollWidth - scroller.clientWidth,
+          regionClient: scroller.clientWidth,
+          regionScroll: scroller.scrollWidth,
+          citationClient: cell.clientWidth,
+          citationScroll: cell.scrollWidth
         }
       })()
     JAVASCRIPT
-    assert last_cell["clipped"] <= 1 || last_cell["scrollable"] > 0,
-      "Risk points/citation clipped without a contained scroll: #{last_cell.inspect}"
-    assert_operator last_cell["contained"], :<=, 1
+    assert_operator last_cell["scrollable"], :<=, 0, last_cell.inspect
+    assert_operator last_cell["clipped"], :<=, 1, last_cell.inspect
+    assert_operator last_cell["contained"], :<=, 1, last_cell.inspect
+    assert_operator last_cell["citationScroll"], :<=, last_cell["citationClient"] + 1, last_cell.inspect
 
     page.current_window.resize_to(320, 844)
     overflow = page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")

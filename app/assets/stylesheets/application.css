@@ -3663,17 +3663,18 @@ td {
   text-align: left;
 }
 
-.health-signals-table {
+.table-scroll.health-signals-table {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overscroll-behavior-x: contain;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 .health-signals th,
 .health-signals td {
+  max-width: 0;
   padding: 0.9rem 0.75rem;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
@@ -3707,6 +3708,8 @@ td {
   color: var(--muted);
   font-size: 0.75rem;
   overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
 }
 
 .health-signals td:last-child strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
