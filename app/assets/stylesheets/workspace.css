@@ -390,6 +390,7 @@
 @media (max-width: 48rem) {
   .is-app button,
   .is-app .button,
+  .is-app .nav-item,
   .data-controls-shell .button {
     min-height: 49px;
   }

@@ -426,7 +426,7 @@ body.is-app {
 .app-drawer .nav-item,
 .app-drawer .sidebar-sign-out,
 .app-drawer .theme-toggle {
-  min-height: 3rem;
+  min-height: 49px;
 }
 
 @media (max-width: 64rem) {
