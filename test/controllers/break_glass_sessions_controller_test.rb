@@ -46,4 +46,15 @@ class BreakGlassSessionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
   end
+
+  test "requests forwarded through a loopback reverse proxy cannot reach recovery sign in" do
+    host! "example.com"
+    get new_break_glass_session_path, headers: {
+      "REMOTE_ADDR" => "127.0.0.1",
+      "HTTP_X_FORWARDED_HOST" => "example.com",
+      "HTTP_X_FORWARDED_PROTO" => "https"
+    }
+
+    assert_response :not_found
+  end
 end

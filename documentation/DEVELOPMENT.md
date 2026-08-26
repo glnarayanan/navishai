@@ -28,7 +28,7 @@ Create or reset the one local break-glass Admin with:
 ORGANIZATION_SLUG=acme WORKSPACE_SLUG=support EMAIL=recovery@example.com PASSWORD='a-long-random-password' bin/rails navishai:break_glass:create
 ```
 
-Set `NAVISHAI_BREAK_GLASS_TOKEN` to a separate random value of at least 32 bytes. The local-only `/break-glass/session/new` route requires that deployment token as well as the break-glass account password. Recovery sessions expire after 15 minutes. Normal sessions expire after 12 hours.
+Set `NAVISHAI_BREAK_GLASS_TOKEN` to a separate random value of at least 32 bytes. The direct-local-only `/break-glass/session/new` route rejects requests with proxy forwarding headers and requires that deployment token as well as the break-glass account password. Open it through a direct loopback connection on the deployment host, not through the public reverse proxy. Recovery sessions expire after 15 minutes. Normal sessions expire after 12 hours.
 
 Set `NAVISHAI_APP_HOST` to the public application host in production so password reset and invitation emails use valid HTTPS links.
 
