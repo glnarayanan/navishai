@@ -1,0 +1,405 @@
+/* Authenticated workspace surfaces: template grammar applied to NavishAI product UI. */
+
+.is-app .button,
+.is-app .nav-item,
+.is-app .case-row,
+.is-app .memory-record-link,
+.is-app .workspace-link,
+.is-app .knowledge-source-link,
+.is-app summary,
+.is-app .signal-card,
+.is-app .scorecard-stage,
+.is-app .setup-disclosure {
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.is-app .button:active,
+.is-app .nav-item:active {
+  transform: scale(0.98);
+}
+
+.is-app .page-shell h1,
+.is-app .account-health-page h1,
+.is-app .scorecard-page h1,
+.is-app .case-workspace h1,
+.is-app .workbench-shell h1 {
+  font-size: var(--text-page);
+  letter-spacing: var(--tracking-page);
+}
+
+.is-app .page-shell h2,
+.is-app .account-health-page h2,
+.is-app .scorecard-page h2,
+.is-app .case-workspace h2 {
+  font-size: 1.125rem;
+}
+
+.decision-next {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.15rem 1.15rem 1.25rem;
+  border: 1px solid color-mix(in oklch, var(--secondary) 28%, var(--border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--secondary) 8%, var(--card));
+  box-shadow: var(--shadow);
+}
+
+.decision-next h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.decision-next p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.decision-next .button-primary {
+  width: 100%;
+}
+
+.decision-next .button-secondary,
+.decision-next .button-quiet {
+  width: 100%;
+}
+
+.queue-rail {
+  background: color-mix(in oklch, var(--muted-surface) 70%, var(--card));
+}
+
+.queue-rail .case-row[aria-current="page"] {
+  background: var(--card);
+  box-shadow: inset 3px 0 0 var(--secondary);
+}
+
+.conversation-thread {
+  background: var(--background);
+}
+
+.case-context {
+  background: color-mix(in oklch, var(--muted-surface) 55%, var(--card));
+}
+
+.case-workspace-grid {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.context-section,
+.crew-progress-card,
+.evidence-panel,
+.send-gate {
+  border-radius: var(--radius-sheet);
+}
+
+.case-toolbar h1 {
+  margin: 0.2rem 0 0;
+}
+
+.health-overview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.account-health-actions {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+}
+
+.account-health-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.account-health-tertiary {
+  color: var(--muted-foreground);
+}
+
+.scorecard-decision {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.scorecard-decision article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1.15rem 1.25rem;
+}
+
+.scorecard-decision article + article {
+  border-left: 1px solid var(--border);
+}
+
+.scorecard-decision span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scorecard-decision strong {
+  font-size: 1.25rem;
+  letter-spacing: -0.03em;
+}
+
+.scorecard-rule-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scorecard-rule-cards li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--muted-surface);
+}
+
+.scorecard-rule-cards strong {
+  font-size: 0.9375rem;
+}
+
+.scorecard-rule-cards span {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.scorecard-band-card {
+  box-shadow: inset 3px 0 0 var(--secondary);
+}
+
+.memory-record-list {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 0;
+}
+
+.memory-record-link {
+  align-items: flex-start;
+  padding: 1.05rem 1.1rem;
+  border-radius: 0.75rem;
+}
+
+.memory-record-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  align-items: baseline;
+}
+
+.memory-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.memory-chip {
+  display: inline-flex;
+  height: 1.5rem;
+  align-items: center;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--muted-surface);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.memory-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(16rem, 20rem);
+  gap: 1.25rem;
+}
+
+.memory-record-content,
+.memory-metadata {
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.memory-metadata dl {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.memory-metadata dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.memory-metadata dd {
+  margin: 0.2rem 0 0;
+}
+
+.auth-panel h1,
+.setup-panel h1 {
+  font-size: 1.75rem;
+}
+
+.setup-panel {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.setup-panel fieldset {
+  margin: 0;
+  padding: 1rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.setup-panel legend {
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-link {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--foreground);
+  text-decoration: none;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.workspace-link:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--secondary) 35%, var(--border));
+}
+
+.workspace-link small,
+.workspace-link > span:last-child {
+  color: var(--muted-foreground);
+}
+
+.workspace-link span:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.empty-state {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+  padding: 2rem 1.5rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--muted-surface) 60%, var(--card));
+}
+
+.page-family-integration .empty-state,
+.page-family-collection .empty-state,
+.webhook-page .empty-state,
+.data-controls-shell .empty-state {
+  min-height: 12rem;
+  place-content: center;
+}
+
+.route-status {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.config-panel,
+.section-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.section-block {
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.app-drawer-panel {
+  animation: drawer-in 280ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.nav-drawer[open] .nav-drawer-panel {
+  animation: drawer-in 280ms cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+
+.health-score-panel strong {
+  transition: color 220ms ease;
+}
+
+@media (max-width: 48rem) {
+  .scorecard-decision {
+    grid-template-columns: 1fr;
+  }
+
+  .scorecard-decision article + article {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .memory-detail-grid,
+  .memory-heading,
+  .memory-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-app .button,
+  .is-app .nav-item,
+  .is-app .case-row,
+  .is-app .memory-record-link,
+  .is-app .workspace-link,
+  .is-app summary,
+  .app-drawer-panel,
+  .nav-drawer-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}

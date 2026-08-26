@@ -3,8 +3,9 @@
 <main class="setup-shell" aria-labelledby="setup-title">
   <section class="setup-panel">
     <div class="page-heading">
+      <p class="landing-badge">First-run bootstrap</p>
       <h1 id="setup-title">Create the first Owner</h1>
-      <p>This one-time setup creates the first organisation, workspace, and verified Owner.</p>
+      <p>This one-time setup creates the first organisation, workspace, and verified Owner. It is available only on a deployment that does not yet have an Owner.</p>
     </div>
 
     <%= form_with url: setup_path, scope: :setup, class: "form-stack" do |form| %>

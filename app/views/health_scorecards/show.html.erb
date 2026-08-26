@@ -17,6 +17,29 @@
     <%= render "shared/notice", kind: "destructive", title: "Scorecard not changed", body: @command_error %>
   <% end %>
 
+  <section class="scorecard-decision" aria-label="Published scorecard versus this version">
+    <article>
+      <span>Published</span>
+      <strong>Version <%= @scorecard.current_version.version_number %></strong>
+      <p class="muted-copy">Scores future snapshots.</p>
+    </article>
+    <article>
+      <span><%= published_selected ? "Current view" : "Proposal" %></span>
+      <strong>Version <%= @selected_version.version_number %></strong>
+      <p class="muted-copy"><%= published_selected ? "This is the live definition." : "Immutable until you publish." %></p>
+    </article>
+    <article>
+      <span>Change</span>
+      <% if @backtest %>
+        <strong><%= @backtest.results.fetch("summary").fetch("changed_count") %></strong>
+        <p class="muted-copy">scores moved in the last preview.</p>
+      <% else %>
+        <strong>Not previewed</strong>
+        <p class="muted-copy">Run a backtest before publishing.</p>
+      <% end %>
+    </article>
+  </section>
+
   <div class="scorecard-layout">
     <div class="scorecard-flow">
       <section class="scorecard-proposal" aria-labelledby="proposal-title">
@@ -28,12 +51,18 @@
             <p><%= @selected_version.explanation %></p>
           </div>
         </div>
-        <dl class="scorecard-rule-summary">
+        <ul class="scorecard-rule-cards">
           <% definition.fetch("rules").each do |rule| %>
-            <div><dt><%= @catalog.fetch(rule.fetch("signal_key")).fetch(:label) %></dt><dd>Up to <strong><%= rule.fetch("weight") %></strong> risk points</dd></div>
+            <li>
+              <strong><%= @catalog.fetch(rule.fetch("signal_key")).fetch(:label) %></strong>
+              <span>Up to <%= rule.fetch("weight") %> risk points</span>
+            </li>
           <% end %>
-          <div><dt>Health bands</dt><dd>Healthy ≥ <strong><%= definition.fetch("healthy_min") %></strong> · Watch ≥ <strong><%= definition.fetch("watch_min") %></strong></dd></div>
-        </dl>
+          <li class="scorecard-band-card">
+            <strong>Health bands</strong>
+            <span>Healthy ≥ <%= definition.fetch("healthy_min") %> · Watch ≥ <%= definition.fetch("watch_min") %></span>
+          </li>
+        </ul>
       </section>
 
       <% if @membership.can_write? %>

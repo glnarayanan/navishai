@@ -93,9 +93,16 @@
           <li>
             <%= link_to workspace_memory_record_path(@workspace, memory), class: "memory-record-link" do %>
               <span class="memory-record-main">
-                <span class="memory-record-kinds"><strong><%= memory_topic_label(memory) %></strong><span><%= memory.memory_type.titleize %></span></span>
+                <span class="memory-record-kinds">
+                  <strong><%= memory_topic_label(memory) %></strong>
+                  <span class="memory-provenance">
+                    <span class="memory-chip"><%= memory.memory_type.titleize %></span>
+                    <span class="memory-chip"><%= memory_scope_label(memory) %></span>
+                    <span class="memory-chip"><%= memory_authority_label(memory) %></span>
+                  </span>
+                </span>
                 <span class="memory-preview"><%= truncate(memory.content, length: 180) %></span>
-                <span class="memory-record-meta"><%= memory_scope_label(memory) %> · <%= memory_authority_label(memory) %> · Observed <%= time_ago_in_words(memory.observed_at) %> ago</span>
+                <span class="memory-record-meta">Observed <%= time_ago_in_words(memory.observed_at) %> ago · <%= memory.source_reference %></span>
               </span>
               <span class="status-badge <%= state_class %>"><%= state %></span>
             <% end %>

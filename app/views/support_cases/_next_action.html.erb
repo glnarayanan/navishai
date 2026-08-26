@@ -1,8 +1,13 @@
 <h2>Next action</h2>
 <% if @policy_reviews.any? %>
   <p>Review crew output before sending.</p>
-<% elsif @email_thread || @intercom_link %>
+  <%= link_to "Open policy review", workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "button button-primary" %>
+<% elsif @email_thread && @membership.can_write? %>
   <p>Review the draft in the conversation column, then press Send.</p>
+  <a href="#email-reply" class="button button-primary">Review email draft</a>
+<% elsif @intercom_link && @membership.can_write? %>
+  <p>Review the draft in the conversation column, then press Send.</p>
+  <a href="#intercom-reply" class="button button-primary">Review Intercom draft</a>
 <% else %>
   <p>Update status when the investigation has a clear next step.</p>
 <% end %>
