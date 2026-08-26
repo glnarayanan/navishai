@@ -27,10 +27,10 @@
   <% if @accounts.any? %>
     <div class="account-list" role="list">
       <% @accounts.each do |account| %>
-        <% assessment = account.health_assessments.first %>
+        <% assessment = @assessments_by_account_id[account.id] %>
         <div role="listitem">
           <%= link_to workspace_account_path(@workspace, account), class: "account-list-row" do %>
-            <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(account.contacts.size, "contact") %></small></span>
+            <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(@contact_counts.fetch(account.id, 0), "contact") %></small></span>
             <% if assessment %>
               <span class="health-score health-score-<%= assessment.risk_level.dasherize %>"><b><%= assessment.score %></b><small>of 100</small></span>
               <span class="risk-state risk-state-<%= assessment.risk_level.dasherize %>"><%= assessment.risk_level.humanize %></span>
@@ -47,5 +47,16 @@
       description: "Sync Intercom or import account data to create the first health record.",
       action_label: "Open scorecard designer",
       action_path: workspace_health_scorecard_path(@workspace) %>
+  <% end %>
+
+  <% if @page > 1 || @has_next_page %>
+    <nav class="pagination" aria-label="Account pages">
+      <% if @page > 1 %>
+        <%= link_to "Previous", workspace_accounts_path(@workspace, request.query_parameters.merge(page: @page - 1)), class: "button button-quiet" %>
+      <% end %>
+      <% if @has_next_page %>
+        <%= link_to "Next", workspace_accounts_path(@workspace, request.query_parameters.merge(page: @page + 1)), class: "button button-quiet" %>
+      <% end %>
+    </nav>
   <% end %>
 </main>

@@ -18,7 +18,7 @@ class SupportCasesController < ApplicationController
   private
     def set_support_case
       @support_case = Current.require_workspace!.support_cases
-        .includes(conversation: { contact: :account })
+        .includes(conversation: { contact: canonical_contact_preloads })
         .find(params[:id])
     end
 
@@ -27,7 +27,7 @@ class SupportCasesController < ApplicationController
       @membership = Current.require_membership!
       load_queue(limit: 25)
       @messages = @support_case.conversation.conversation_messages
-        .includes(:intercom_part_link, stored_attachments: { file_attachment: :blob })
+        .includes(:author_contact, :author_user, :intercom_part_link, stored_attachments: { file_attachment: :blob })
       @status_changes = @support_case.status_changes.includes(:actor).order(occurred_at: :desc, id: :desc)
       @notes = @support_case.case_notes.includes(:author).order(created_at: :desc, id: :desc)
       @available_tags = @workspace.tags.where.not(id: @support_case.tag_ids).order(:name)
@@ -69,7 +69,7 @@ class SupportCasesController < ApplicationController
     def queue_scope
       scope = Current.workspace.support_cases
         .left_joins(:conversation)
-        .includes(:tags, assigned_membership: :user, conversation: { contact: :account })
+        .includes(:tags, assigned_membership: :user, conversation: { contact: canonical_contact_preloads })
       scope = case params[:status].presence || "open"
       when "open" then scope.where.not(status: :closed)
       when "all" then scope
@@ -81,6 +81,13 @@ class SupportCasesController < ApplicationController
       scope = scope.where(assigned_membership: nil) if params[:assignment] == "unassigned"
       scope = scope.joins(:support_case_taggings).where(support_case_taggings: { tag_id: Current.workspace.tags.select(:id).where(id: params[:tag_id]) }) if params[:tag_id].present?
       scope.order(Arel.sql("COALESCE(conversations.last_message_at, conversations.started_at) DESC"), id: :desc)
+    end
+
+    def canonical_contact_preloads
+      [
+        { source_merges: { target: { account: { source_merges: :target } } } },
+        { account: { source_merges: :target } }
+      ]
     end
 
     def load_queue(limit: 50)

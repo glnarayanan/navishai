@@ -12,7 +12,10 @@ class MemoryRecordsController < ApplicationController
     relation = relation.where(scope_kind: params[:scope]) if params[:scope].in?(MemoryRecord::SCOPE_KINDS)
     relation = relation.where(authority: params[:authority]) if params[:authority].in?(MemoryRecord::AUTHORITIES)
     relation = state_scope(relation, params[:state])
-    @records = relation.includes(:memory_tombstone, :revisions, :memory_index_entry).order(observed_at: :desc, id: :desc).limit(100)
+    @records = relation.preload(
+      :workspace, :organization, :account, :contact, :crew_template, :agent_profile, :user,
+      :memory_tombstone, :revisions, :memory_index_entry, support_case: :conversation
+    ).order(observed_at: :desc, id: :desc).limit(100)
     @access_scope = @membership.can_manage_work? ? "all" : "used"
     @can_manage = @membership.can_manage_work?
     @degraded_index_count = @can_manage ? @workspace.memory_index_entries.where(status: %w[failed unknown]).count : 0
