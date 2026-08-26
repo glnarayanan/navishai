@@ -28,7 +28,18 @@ class BreakGlassSessionsController < ApplicationController
 
   private
     def require_local_request
-      head :not_found unless request.local? && ENV["NAVISHAI_BREAK_GLASS_TOKEN"].present?
+      head :not_found unless direct_local_request? && ENV["NAVISHAI_BREAK_GLASS_TOKEN"].present?
+    end
+
+    def direct_local_request?
+      request.local? && %w[
+        Forwarded
+        X-Forwarded-For
+        X-Forwarded-Host
+        X-Forwarded-Port
+        X-Forwarded-Proto
+        X-Real-IP
+      ].none? { |header| request.headers[header].present? }
     end
 
     def valid_deployment_token?(candidate)

@@ -103,6 +103,29 @@ class IntercomOutboundSyncTest < ActiveSupport::TestCase
     assert_equal "admin_1", @client.calls.last.last.fetch(:admin_id)
   end
 
+  test "locks the connection before creating a shared remote tag" do
+    tag = @workspace.tags.create!(name: "Serialized")
+    operation = IntercomOutboundSync.enqueue!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      operation_kind: :tag, payload: { tag_id: tag.id, name: tag.name }
+    )
+    queries = []
+    lock_seen_before_create = false
+    client = @client
+    client.define_singleton_method(:create_tag) do |name:|
+      lock_seen_before_create = queries.any? do |sql|
+        sql.include?("intercom_connections") && sql.include?("FOR UPDATE")
+      end
+      super(name:)
+    end
+
+    ActiveSupport::Notifications.subscribed(->(*args) { queries << args.last.fetch(:sql) }, "sql.active_record") do
+      IntercomOutboundSync.deliver!(operation, client:)
+    end
+
+    assert lock_seen_before_create, "remote tag creation must hold the connection lock"
+  end
+
   test "attributes a remote tag removal to the human actor" do
     tag = @workspace.tags.create!(name: "VIP")
     @connection.intercom_tag_links.create!(workspace: @workspace, tag: tag, remote_tag_id: "remote_tag")

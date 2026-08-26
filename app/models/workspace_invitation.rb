@@ -39,14 +39,16 @@ class WorkspaceInvitation < ApplicationRecord
       raise AcceptanceError, "invitation has expired" if expires_at <= Time.current
       raise AcceptanceError, "invitation is no longer pending" unless pending?
 
-      accepted_user = resolve_user(user, password, password_confirmation)
-      raise AcceptanceError, "user is already a member" if workspace.memberships.exists?(user: accepted_user)
-
       workspace.with_lock do
+        raise AcceptanceError, "workspace is no longer active" if workspace.deletion_requested?
+
+        accepted_user = resolve_user(user, password, password_confirmation)
+        raise AcceptanceError, "user is already a member" if workspace.memberships.exists?(user: accepted_user)
+
         workspace.memberships.create!(user: accepted_user, role: role)
         update!(status: :accepted, accepted_by: accepted_user, accepted_at: Time.current)
+        accepted_user
       end
-      accepted_user
     end
   end
 

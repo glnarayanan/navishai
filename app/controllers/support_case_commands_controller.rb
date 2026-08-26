@@ -15,16 +15,15 @@ class SupportCaseCommandsController < SupportCasesController
 
   def assignment
     assignee = Current.workspace.memberships.find(params[:assigned_membership_id]) if params[:assigned_membership_id].present?
-    operation = IntercomSyncOperation.transaction do
-      previous_id = @support_case.reload.assigned_membership_id
-      changed_case = CaseWorkflow.assign!(
+    operation = nil
+    IntercomSyncOperation.transaction do
+      CaseWorkflow.assign!(
         workspace: Current.workspace,
         support_case: @support_case,
         membership: Current.require_membership!,
         assignee: assignee
-      )
-      if previous_id != changed_case.assigned_membership_id
-        IntercomOutboundSync.enqueue!(
+      ) do |changed_case|
+        operation = IntercomOutboundSync.enqueue!(
           workspace: Current.workspace, support_case: changed_case,
           membership: Current.require_membership!, operation_kind: :assign,
           payload: { email: assignee&.user&.email_address }
@@ -46,30 +45,28 @@ class SupportCaseCommandsController < SupportCasesController
 
   def tag
     selected_tag = Current.workspace.tags.find(params[:tag_id])
-    operation = IntercomSyncOperation.transaction do
-      existed = @support_case.tags.exists?(selected_tag.id)
+    operation = nil
+    IntercomSyncOperation.transaction do
       CaseWorkflow.tag!(
         workspace: Current.workspace,
         support_case: @support_case,
         membership: Current.require_membership!,
         tag: selected_tag
-      )
-      enqueue_tag_sync(:tag, selected_tag) unless existed
+      ) { operation = enqueue_tag_sync(:tag, selected_tag) }
     end
     redirect_after_sync(operation, "Tag added.")
   end
 
   def untag
     selected_tag = Current.workspace.tags.find(params[:tag_id])
-    operation = IntercomSyncOperation.transaction do
-      existed = @support_case.tags.exists?(selected_tag.id)
+    operation = nil
+    IntercomSyncOperation.transaction do
       CaseWorkflow.untag!(
         workspace: Current.workspace,
         support_case: @support_case,
         membership: Current.require_membership!,
         tag: selected_tag
-      )
-      enqueue_tag_sync(:untag, selected_tag) if existed
+      ) { operation = enqueue_tag_sync(:untag, selected_tag) }
     end
     redirect_after_sync(operation, "Tag removed.")
   end
@@ -92,7 +89,8 @@ class SupportCaseCommandsController < SupportCasesController
   end
 
   def create_tag
-    operation = Tag.transaction do
+    operation = nil
+    Tag.transaction do
       tag = CaseWorkflow.create_tag!(
         workspace: Current.workspace,
         membership: Current.require_membership!,
@@ -103,8 +101,7 @@ class SupportCaseCommandsController < SupportCasesController
         support_case: @support_case,
         membership: Current.require_membership!,
         tag: tag
-      )
-      enqueue_tag_sync(:tag, tag)
+      ) { operation = enqueue_tag_sync(:tag, tag) }
     end
     redirect_after_sync(operation, "Tag created and added.")
   end

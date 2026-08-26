@@ -68,4 +68,67 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     assert_equal "workspace.content_expiry_failed", audit.action
     assert_equal({ "failure_code" => "unavailable" }, audit.metadata)
   end
+
+  test "expiry makes a pending index entry terminal based on memory age" do
+    workspace = workspaces(:acme_support)
+    memory = workspace.memory_records.create!(
+      memory_type: :episodic, scope_kind: :workspace, topic: "old-memory", content: "Private old memory",
+      authority: :source_record, origin_kind: :system, source_reference: "test://old-memory",
+      source_digest: Digest::SHA256.hexdigest("old-memory"), observed_at: 3.days.ago,
+      valid_from: 3.days.ago, confidence: 1, retention_policy: :indefinite
+    )
+    entry = workspace.memory_index_entries.create!(memory_record: memory)
+    run = workspace.workspace_content_expiry_runs.create!(cutoff_at: 2.days.ago)
+
+    WorkspaceContentExpiry.perform!(run:, object_purger: ->(*) { })
+
+    assert entry.reload.failed?
+    assert_equal "retention_expired", entry.failure_code
+    engine = Object.new
+    engine.define_singleton_method(:index) { |**| flunk "expired memory must never be indexed" }
+    MemoryIndexer.perform!(entry:, engine:)
+  end
+
+  test "repeat expiry neither rewrites nor recounts a terminal index entry" do
+    organization = Organization.create!(name: "Repeat expiry", slug: "repeat-expiry")
+    workspace = organization.workspaces.create!(name: "Subject", slug: "subject")
+    memory = create_old_memory(workspace, "repeat-expiry")
+    entry = workspace.memory_index_entries.create!(memory_record: memory)
+    cutoff = 2.days.ago
+
+    expire_workspace_content(workspace, cutoff)
+    marker = 1.day.ago.change(usec: 123_456)
+    set_index_entry_updated_at(entry, marker)
+    expire_workspace_content(workspace, cutoff)
+
+    assert entry.reload.failed?
+    assert_equal "retention_expired", entry.failure_code
+    assert_equal marker, entry.updated_at
+  end
+
+  private
+    def create_old_memory(workspace, key)
+      workspace.memory_records.create!(
+        memory_type: :episodic, scope_kind: :workspace, topic: "old-memory", content: "Private old memory",
+        authority: :source_record, origin_kind: :system, source_reference: "test://#{key}",
+        source_digest: Digest::SHA256.hexdigest(key), observed_at: 3.days.ago,
+        valid_from: 3.days.ago, confidence: 1, retention_policy: :indefinite
+      )
+    end
+
+    def expire_workspace_content(workspace, cutoff)
+      ActiveRecord::Base.connection.select_value(
+        "SELECT expire_workspace_content(#{workspace.id}, #{ActiveRecord::Base.connection.quote(cutoff)})"
+      ).to_i
+    end
+
+    def set_index_entry_updated_at(entry, timestamp)
+      connection = ActiveRecord::Base.connection
+      connection.execute("ALTER TABLE memory_index_entries DISABLE TRIGGER USER")
+      connection.execute(
+        "UPDATE memory_index_entries SET updated_at = #{connection.quote(timestamp)} WHERE id = #{entry.id}"
+      )
+    ensure
+      connection&.execute("ALTER TABLE memory_index_entries ENABLE TRIGGER USER")
+    end
 end

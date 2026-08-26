@@ -16,7 +16,12 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: jobs
     spec:
-      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000 }
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: jobs
           image: {{ include "navishai.image" .Values.image.rails }}

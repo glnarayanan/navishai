@@ -62,7 +62,8 @@ class ColorThemeTest < ApplicationSystemTestCase
     click_link "Acme Support"
 
     page.current_window.resize_to(1024, 900)
-    open_workspace_nav
+    assert_operator page.evaluate_script("window.innerWidth"), :<=, 1024
+    click_button "Open navigation"
     within "dialog#app-nav-drawer" do
       find("summary.theme-toggle").click
       %w[System Light Dark].each do |label|

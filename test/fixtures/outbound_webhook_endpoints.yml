@@ -1,0 +1,13 @@
+acme_ops:
+  workspace: acme_support
+  name: Fixture operations
+  url: https://hooks.example.com/navishai
+  credential_key: ops
+  active: true
+  categories:
+    - assignment
+    - review
+    - sla
+    - failure
+    - blocked
+    - completion

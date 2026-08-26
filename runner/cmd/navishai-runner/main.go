@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -84,7 +85,7 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	certificate, key, err := tlsFiles(os.Getenv)
+	certificate, key, err := tlsFiles(address, os.Getenv)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,11 +97,20 @@ func main() {
 	log.Fatal(server.ListenAndServe())
 }
 
-func tlsFiles(getenv func(string) string) (string, string, error) {
+func tlsFiles(address string, getenv func(string) string) (string, string, error) {
 	certificate := getenv("NAVISHAI_RUNNER_TLS_CERT_FILE")
 	key := getenv("NAVISHAI_RUNNER_TLS_KEY_FILE")
 	if (certificate == "") != (key == "") {
 		return "", "", fmt.Errorf("NAVISHAI_RUNNER_TLS_CERT_FILE and NAVISHAI_RUNNER_TLS_KEY_FILE must be set together")
+	}
+	if certificate == "" {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid NAVISHAI_RUNNER_BIND_ADDRESS: %w", err)
+		}
+		if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+			return "", "", fmt.Errorf("cleartext runner bind must use a loopback IP address")
+		}
 	}
 	return certificate, key, nil
 }

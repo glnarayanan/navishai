@@ -302,6 +302,29 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     assert_empty transport.deliveries
   end
 
+  test "a session revoked after claim blocks SMTP" do
+    transport = RecordingTransport.new
+    original = HumanSendAuthorization.method(:with_current_authority)
+    authorization = HumanSendAuthorization.singleton_class
+    revoke_before_lock = lambda do |**arguments, &block|
+      Current.session.revoke!
+      original.call(**arguments, &block)
+    end
+    authorization.define_method(:with_current_authority, revoke_before_lock)
+
+    assert_raises(ActiveRecord::RecordNotFound) do
+      send_email(transport: transport)
+    end
+
+    assert_empty transport.deliveries
+    delivery = @workspace.outbound_email_deliveries.sole
+    assert delivery.failed?
+    assert_equal "authorization_changed", delivery.failure_code
+    assert delivery.email_draft.reload.ready?
+  ensure
+    authorization&.define_method(:with_current_authority, original)
+  end
+
   test "a definite configuration failure allows a fresh human retry" do
     transport = RecordingTransport.new(error: SharedEmailSmtpTransport::ConfigurationError.new("not configured"))
 

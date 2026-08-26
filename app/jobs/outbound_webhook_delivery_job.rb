@@ -11,8 +11,7 @@ class OutboundWebhookDeliveryJob < ApplicationJob
     delivery = claim!(delivery_id)
     return unless delivery
 
-    transport.deliver(delivery:)
-    delivery.with_lock { delivery.update!(status: :delivered, delivered_at: Time.current, failure_code: nil) }
+    deliver_with_current_endpoint!(delivery)
   rescue OutboundWebhookTransport::Error => error
     fail!(delivery, error)
   end
@@ -34,6 +33,27 @@ class OutboundWebhookDeliveryJob < ApplicationJob
 
         delivery.update!(status: :sending, attempt_count: delivery.attempt_count + 1, last_attempted_at: Time.current)
         delivery
+      end
+    end
+
+    def deliver_with_current_endpoint!(delivery)
+      Workspace.transaction do
+        workspace = Workspace.lock.find_by(id: delivery.workspace_id)
+        return unless workspace
+
+        if workspace.deletion_requested?
+          delivery.with_lock { delivery.update!(status: :failed, failure_code: "workspace_deleting") }
+          return
+        end
+
+        endpoint = workspace.outbound_webhook_endpoints.lock.find(delivery.outbound_webhook_endpoint_id)
+        unless endpoint.active?
+          delivery.with_lock { delivery.update!(status: :failed, failure_code: "endpoint_inactive") }
+          return
+        end
+
+        transport.deliver(delivery:)
+        delivery.with_lock { delivery.update!(status: :delivered, delivered_at: Time.current, failure_code: nil) }
       end
     end
 

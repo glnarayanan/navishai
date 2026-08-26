@@ -40,9 +40,13 @@ class MemoryPortability
     raise InvalidArchive, "memory archive is too large" if json.to_s.bytesize > MAX_BYTES
     archive = JSON.parse(json)
     validate_archive!(archive, workspace)
-    raise InvalidArchive, "workspace memory must be empty before import" if workspace.memory_records.exists?
 
     MemoryRecord.transaction do
+      workspace = Workspace.lock.find(workspace.id)
+      actor = manager!(workspace, membership, lock: true)
+      raise InvalidArchive, "workspace is no longer active" if workspace.deletion_requested?
+      raise InvalidArchive, "workspace memory must be empty before import" if workspace.memory_records.exists?
+
       records = import_records!(workspace, archive.fetch("memory_records"))
       import_rows!(workspace.memory_proposals, archive.fetch("memory_proposals"), records)
       import_rows!(workspace.memory_correction_proposals, archive.fetch("correction_proposals"), records)
@@ -139,8 +143,10 @@ class MemoryPortability
   end
   private_class_method :import_rows!
 
-  def self.manager!(workspace, membership)
-    workspace.memberships.find(membership.id).tap do |current|
+  def self.manager!(workspace, membership, lock: false)
+    memberships = workspace.memberships
+    memberships = memberships.lock if lock
+    memberships.find(membership.id).tap do |current|
       raise Current::RoleAccessDenied unless current.can_manage_work?
     end
   end

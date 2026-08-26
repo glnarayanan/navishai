@@ -86,15 +86,17 @@ class IntercomOutboundSync
   def self.remote_tag_id!(operation, client)
     connection = operation.intercom_connection
     payload = operation.payload
-    mapping = connection.intercom_tag_links.find_by(tag_id: payload.fetch("tag_id"))
-    return mapping.remote_tag_id if mapping
+    connection.with_lock do
+      mapping = connection.intercom_tag_links.find_by(tag_id: payload.fetch("tag_id"))
+      next mapping.remote_tag_id if mapping
 
-    response = client.create_tag(name: payload.fetch("name"))
-    remote_id = response.fetch("id").to_s
-    connection.intercom_tag_links.create!(
-      workspace: operation.workspace, tag_id: payload.fetch("tag_id"), remote_tag_id: remote_id
-    )
-    remote_id
+      response = client.create_tag(name: payload.fetch("name"))
+      remote_id = response.fetch("id").to_s
+      connection.intercom_tag_links.create!(
+        workspace: operation.workspace, tag_id: payload.fetch("tag_id"), remote_tag_id: remote_id
+      )
+      remote_id
+    end
   end
   private_class_method :remote_tag_id!
 

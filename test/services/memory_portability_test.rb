@@ -1,4 +1,5 @@
 require "test_helper"
+require "pg"
 
 class MemoryPortabilityTest < ActiveSupport::TestCase
   setup do
@@ -67,6 +68,39 @@ class MemoryPortabilityTest < ActiveSupport::TestCase
     )
     assert_raises(Current::RoleAccessDenied) do
       MemoryPortability.export(workspace: @workspace, membership: member)
+    end
+  end
+
+  test "import serializes concurrent workspace writes before checking for existing memory" do
+    archive = {
+      format: MemoryPortability::FORMAT, workspace_key: @workspace.runner_key,
+      exported_at: Time.current.iso8601,
+      memory_records: [ portable_record(@owner) ], memory_proposals: [],
+      correction_proposals: [], tombstones: []
+    }
+    import_blocked_change = false
+    singleton = MemoryPortability.singleton_class
+    original_import = MemoryPortability.method(:import_records!)
+    singleton.define_method(:import_records!) do |workspace, rows|
+      begin
+        connection = PG.connect(dbname: ActiveRecord::Base.connection.current_database)
+        connection.exec("SET lock_timeout = '100ms'")
+        connection.exec_params("UPDATE workspaces SET name = name WHERE id = $1", [ workspace.id ])
+      rescue PG::LockNotAvailable
+        import_blocked_change = true
+      ensure
+        connection&.close
+      end
+      original_import.call(workspace, rows)
+    end
+
+    MemoryPortability.import!(workspace: @workspace, membership: @owner, json: JSON.generate(archive))
+
+    assert import_blocked_change, "a concurrent import or deletion must wait for the workspace import lock"
+  ensure
+    if singleton && original_import
+      singleton.define_method(:import_records!, original_import)
+      singleton.send(:private, :import_records!)
     end
   end
 

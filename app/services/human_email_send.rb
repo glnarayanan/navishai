@@ -101,7 +101,7 @@ class HumanEmailSend
     delivery, claimed = claim!
     return delivery unless claimed
 
-    smtp_accepted = false
+    smtp_attempted = smtp_accepted = false
     attachments = begin
       delivery.stored_attachments.map do |attachment|
         {
@@ -113,19 +113,27 @@ class HumanEmailSend
     rescue StandardError
       return fail!(delivery, "attachment_unavailable", retryable: true)
     end
-    smtp_attempted = true
-    @transport.deliver!(
-      inbox: delivery.shared_email_inbox,
-      message_id: delivery.message_id,
-      in_reply_to: delivery.in_reply_to_message_id,
-      references: [ delivery.email_thread.thread_key, delivery.in_reply_to_message_id ].compact.uniq,
-      to: delivery.to_address,
-      subject: delivery.subject,
-      body: delivery.body,
-      attachments: attachments
-    )
+    HumanSendAuthorization.with_current_authority(workspace: @workspace, membership: @membership) do
+      smtp_attempted = true
+      @transport.deliver!(
+        inbox: delivery.shared_email_inbox,
+        message_id: delivery.message_id,
+        in_reply_to: delivery.in_reply_to_message_id,
+        references: [ delivery.email_thread.thread_key, delivery.in_reply_to_message_id ].compact.uniq,
+        to: delivery.to_address,
+        subject: delivery.subject,
+        body: delivery.body,
+        attachments: attachments
+      )
+    end
     smtp_accepted = true
     complete!(delivery)
+  rescue Current::RoleAccessDenied, ActiveRecord::RecordNotFound
+    if delivery
+      smtp_attempted ? fail!(delivery, "unknown_outcome", retryable: false) :
+        fail!(delivery, "authorization_changed", retryable: true)
+    end
+    raise
   rescue SharedEmailSmtpTransport::ConfigurationError
     fail!(delivery, "configuration_error", retryable: true)
   rescue Net::SMTPFatalError, Net::SMTPServerBusy, Net::SMTPAuthenticationError, Net::SMTPUnsupportedCommand

@@ -45,6 +45,18 @@ class WorkspaceInvitationTest < ActiveSupport::TestCase
     end
   end
 
+  test "rejects acceptance after workspace deletion is requested" do
+    invitation = workspace_invitations(:pending_member)
+    invitation.workspace.update!(deletion_requested_at: Time.current)
+
+    assert_no_difference [ "User.count", "Membership.count" ] do
+      assert_raises(WorkspaceInvitation::AcceptanceError) do
+        invitation.accept!(password: "password12345", password_confirmation: "password12345")
+      end
+    end
+    assert invitation.reload.pending?
+  end
+
   test "revocation invalidates the acceptance token" do
     invitation = workspace_invitations(:pending_member)
     token = invitation.generate_token_for(:acceptance)

@@ -22,7 +22,7 @@ class CaseWorkflow
     end
   end
 
-  def self.assign!(workspace:, support_case:, membership:, assignee:)
+  def self.assign!(workspace:, support_case:, membership:, assignee:, &after_change)
     SupportCase.transaction do
       actor, target = assignment_memberships!(workspace, membership, assignee)
       current_case = workspace.support_cases.lock.find(support_case.id)
@@ -37,6 +37,7 @@ class CaseWorkflow
         subject: current_case,
         metadata: target ? { assignee_id: target.id } : {}
       )
+      after_change&.call(current_case)
       current_case
     end
   end
@@ -70,12 +71,12 @@ class CaseWorkflow
     end
   end
 
-  def self.tag!(workspace:, support_case:, membership:, tag:)
-    change_tag!(workspace:, support_case:, membership:, tag:, adding: true)
+  def self.tag!(workspace:, support_case:, membership:, tag:, &after_change)
+    change_tag!(workspace:, support_case:, membership:, tag:, adding: true, &after_change)
   end
 
-  def self.untag!(workspace:, support_case:, membership:, tag:)
-    change_tag!(workspace:, support_case:, membership:, tag:, adding: false)
+  def self.untag!(workspace:, support_case:, membership:, tag:, &after_change)
+    change_tag!(workspace:, support_case:, membership:, tag:, adding: false, &after_change)
   end
 
   def self.add_note!(workspace:, support_case:, membership:, body:)
@@ -104,7 +105,7 @@ class CaseWorkflow
   end
   private_class_method :resume_for_inbound!
 
-  def self.change_tag!(workspace:, support_case:, membership:, tag:, adding:)
+  def self.change_tag!(workspace:, support_case:, membership:, tag:, adding:, &after_change)
     SupportCaseTagging.transaction do
       actor = authorized_membership!(workspace, membership)
       current_case = workspace.support_cases.lock.find(support_case.id)
@@ -125,6 +126,7 @@ class CaseWorkflow
         subject: current_case,
         metadata: { tag_id: current_tag.id }
       )
+      after_change&.call(adding ? tagging : current_case)
       adding ? tagging : current_case
     end
   end

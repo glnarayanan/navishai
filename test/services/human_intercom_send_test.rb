@@ -207,6 +207,30 @@ class HumanIntercomSendTest < ActiveSupport::TestCase
     assert_empty client.replies
   end
 
+  test "a role downgrade after claim blocks the Intercom reply" do
+    client = FakeClient.new
+    original = HumanSendAuthorization.method(:with_current_authority)
+    authorization = HumanSendAuthorization.singleton_class
+    membership = @membership
+    downgrade_before_lock = lambda do |**arguments, &block|
+      membership.update_column(:role, "viewer")
+      original.call(**arguments, &block)
+    end
+    authorization.define_method(:with_current_authority, downgrade_before_lock)
+
+    assert_raises(Current::RoleAccessDenied) do
+      send_reply(client: client)
+    end
+
+    assert_empty client.replies
+    delivery = @workspace.intercom_outbound_deliveries.sole
+    assert delivery.failed?
+    assert_equal "authorization_changed", delivery.failure_code
+    assert delivery.intercom_draft.reload.ready?
+  ensure
+    authorization&.define_method(:with_current_authority, original)
+  end
+
   test "a local failure after remote acceptance becomes unknown and keeps its durable identity" do
     other_case = build_other_case
     other_link = other_case.intercom_conversation_link
