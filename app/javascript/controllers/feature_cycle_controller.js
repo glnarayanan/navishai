@@ -83,11 +83,15 @@ export default class extends Controller {
       item.tabIndex = selected ? 0 : -1
     })
     this.panelTargets.forEach((panel, i) => {
-      panel.hidden = i !== index
+      const selected = i === index
+      panel.hidden = !selected
+      panel.classList.toggle("is-active", selected)
     })
     if (this.hasMobileCanvasTarget) {
       this.mobileCanvasTargets.forEach((canvas, i) => {
-        canvas.hidden = i !== index
+        const selected = i === index
+        canvas.hidden = !selected
+        canvas.classList.toggle("is-active", selected)
       })
     }
     if (this.hasCardTarget) {

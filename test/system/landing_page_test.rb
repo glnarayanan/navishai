@@ -15,10 +15,10 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_text "does not claim SOC 2, HIPAA, ISO 27001, or any other certification."
     refute_selector "img[alt*='logo' i]"
 
-    click_link "See how it works"
+    click_link "See how it works", href: "#how-it-works", match: :first
     assert_selector "#how-it-works"
 
-    click_button "Review the draft"
+    click_button "Review the draft", match: :first
     assert_selector ".feature-panel:not([hidden])", text: /Policy review/
 
     find("summary", text: "Does this replace Intercom on day one?").click

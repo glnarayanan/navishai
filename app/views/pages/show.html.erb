@@ -13,7 +13,7 @@
         Open source and self-hosted
       </p>
       <div class="landing-hero-copy">
-        <h1 id="hero-title">Specialist AI crews for customer operations</h1>
+        <h1 id="hero-title">Specialist AI crews<br>for customer operations</h1>
         <p>Investigate, retrieve, and draft with evidence. A signed-in human still reviews every customer message and presses Send.</p>
       </div>
       <div class="landing-actions">
@@ -225,9 +225,10 @@
         </ul>
         <div class="feature-stage">
           <% features.each_with_index do |(title, _body), index| %>
-            <article class="feature-panel" id="workflow-panel-<%= index %>" role="tabpanel"
+            <article class="feature-panel<%= " is-active" if index.zero? %>" id="workflow-panel-<%= index %>" role="tabpanel"
               aria-labelledby="workflow-tab-<%= index %>" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
-              <div class="feature-canvas feature-visual-<%= index %>" aria-hidden="true">
+              <div class="feature-canvas feature-visual-<%= index %>">
+                <div class="feature-canvas-inner">
                 <% if index.zero? %>
                   <span class="feature-chip">Shared email</span>
                   <span class="feature-chip">Intercom</span>
@@ -238,6 +239,7 @@
                   <div class="feature-evidence-card"><strong>Memory</strong><small>Prior 401 after secret change</small></div>
                   <div class="feature-evidence-card is-web"><strong>Public web</strong><small>Cited, untrusted until reviewed</small></div>
                 <% elsif index == 2 %>
+                  <p class="feature-chip">Policy review</p>
                   <ul class="feature-review-list">
                     <li class="is-ok">Evidence cited beside the draft</li>
                     <li class="is-warn">Stale article flagged for review</li>
@@ -250,6 +252,7 @@
                     <span class="button button-primary">Send email</span>
                   </div>
                 <% end %>
+                </div>
               </div>
             </article>
           <% end %>
@@ -258,7 +261,8 @@
       <div class="feature-mobile">
         <div class="feature-mobile-stage">
           <% features.each_with_index do |(_title, _body), index| %>
-            <div class="feature-mobile-canvas feature-visual-<%= index %>" data-feature-cycle-target="mobileCanvas" <%= "hidden" unless index.zero? %>>
+            <div class="feature-mobile-canvas feature-visual-<%= index %><%= " is-active" if index.zero? %>" data-feature-cycle-target="mobileCanvas" <%= "hidden" unless index.zero? %>>
+              <div class="feature-canvas-inner">
               <% if index.zero? %>
                 <span class="feature-chip">Shared email</span>
                 <span class="feature-chip">Intercom</span>
@@ -269,6 +273,7 @@
                 <div class="feature-evidence-card"><strong>Memory</strong><small>Prior 401 after secret change</small></div>
                 <div class="feature-evidence-card is-web"><strong>Public web</strong><small>Cited, untrusted until reviewed</small></div>
               <% elsif index == 2 %>
+                <p class="feature-chip">Policy review</p>
                 <ul class="feature-review-list">
                   <li class="is-ok">Evidence cited beside the draft</li>
                   <li class="is-warn">Stale article flagged for review</li>
@@ -280,6 +285,7 @@
                   <span>The ledger will record the human, channel, and time.</span>
                 </div>
               <% end %>
+              </div>
             </div>
           <% end %>
         </div>
@@ -325,17 +331,24 @@
         <article class="growth-panel">
           <div class="growth-visual globe-visual" aria-hidden="true">
             <div class="globe">
+              <span class="globe-atmosphere"></span>
+              <span class="globe-highlight"></span>
               <span class="globe-ring"></span>
               <span class="globe-ring globe-ring-2"></span>
               <span class="globe-ring globe-ring-3"></span>
               <span class="globe-meridian"></span>
               <span class="globe-meridian globe-meridian-2"></span>
+              <span class="globe-meridian globe-meridian-3"></span>
               <span class="globe-equator"></span>
+              <span class="globe-equator globe-equator-2"></span>
               <span class="globe-dot" style="--x: 18%; --y: 32%;"></span>
+              <span class="globe-dot" style="--x: 38%; --y: 22%;"></span>
               <span class="globe-dot" style="--x: 62%; --y: 28%;"></span>
               <span class="globe-dot" style="--x: 44%; --y: 58%;"></span>
               <span class="globe-dot" style="--x: 72%; --y: 64%;"></span>
               <span class="globe-dot" style="--x: 30%; --y: 72%;"></span>
+              <span class="globe-dot" style="--x: 78%; --y: 40%;"></span>
+              <span class="globe-arc"></span>
             </div>
           </div>
           <h3>Self-host on infrastructure you control</h3>

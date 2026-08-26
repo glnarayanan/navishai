@@ -66,7 +66,7 @@
 }
 
 .landing h1 {
-  max-width: 16ch;
+  max-width: 18ch;
   margin: 0 auto;
   font-size: clamp(1.875rem, 4.6vw, 3.75rem);
   font-weight: var(--weight-medium);
@@ -573,8 +573,12 @@
 
 .orbit-ring {
   position: absolute;
+  top: 50%;
+  left: 50%;
   width: calc(var(--orbit-radius) * 2);
   height: calc(var(--orbit-radius) * 2);
+  margin-top: calc(var(--orbit-radius) * -1);
+  margin-left: calc(var(--orbit-radius) * -1);
   border: 1px solid color-mix(in oklch, var(--foreground) 8%, transparent);
   border-radius: 999px;
   background: linear-gradient(to bottom, color-mix(in oklch, var(--foreground) 5%, transparent), transparent 55%);
@@ -710,7 +714,7 @@
   opacity: 0;
   transform: translateX(-50%);
   box-shadow: inset 0 1.1px 0 rgba(255, 255, 255, 0.2), 0 2.2px 6.6px rgba(18, 43, 105, 0.04);
-  transition: opacity 300ms ease;
+  transition: opacity 300ms ease, left 400ms ease, top 400ms ease;
 }
 
 .health-stage.is-on .health-tooltip { opacity: 1; }
@@ -895,7 +899,7 @@ html.dark .stack-cursor { background: var(--accent-fill); }
   display: grid;
   width: 100%;
   min-height: 2.8125rem;
-  padding: 0.75rem 0.75rem 0.75rem 1rem;
+  padding: 0.75rem 0.75rem 1rem 1rem;
   border: 0;
   border-radius: 0;
   color: inherit;
@@ -935,10 +939,10 @@ html.dark .feature-item.is-active {
 
 .feature-rail {
   position: absolute;
-  left: 0;
-  top: 0;
+  right: 0;
   bottom: 0;
-  width: 2px;
+  left: 0;
+  height: 2px;
   overflow: hidden;
   border-radius: 999px;
   background: color-mix(in oklch, var(--foreground) 18%, transparent);
@@ -950,20 +954,19 @@ html.dark .feature-item.is-active {
 
 .feature-line {
   display: block;
-  width: 100%;
-  height: 0;
+  width: 0;
+  height: 100%;
   background: var(--secondary);
 }
 
 .feature-item.is-active .feature-line,
 .feature-carousel .card.is-active .feature-line {
-  height: 100%;
   animation: feature-line 5s linear forwards;
 }
 
 @keyframes feature-line {
-  from { height: 0; }
-  to { height: 100%; }
+  from { width: 0; }
+  to { width: 100%; }
 }
 
 .feature-stage {
@@ -977,34 +980,38 @@ html.dark .feature-item.is-active {
   inset: 0;
 }
 
-.feature-panel[hidden] {
-  display: block !important;
-  pointer-events: none;
-}
-
 .feature-canvas,
 .feature-mobile-canvas {
   height: 100%;
-  padding: 1.25rem;
+  padding: 0.25rem;
   overflow: hidden;
-  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
   border-radius: 0.75rem;
   background: var(--muted-surface);
-  transition: opacity 300ms ease, filter 300ms ease;
 }
 
-.feature-panel[hidden] .feature-canvas,
-.feature-mobile-canvas[hidden] {
-  display: block !important;
-  pointer-events: none;
-  opacity: 0;
-  filter: blur(12px);
+.feature-canvas-inner {
+  height: 100%;
+  padding: 1.25rem;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  background: color-mix(in oklch, var(--card) 82%, var(--muted-surface));
 }
 
-.feature-panel:not([hidden]) .feature-canvas,
-.feature-mobile-canvas:not([hidden]) {
-  opacity: 1;
-  filter: blur(0);
+.feature-panel.is-active .feature-canvas,
+.feature-mobile-canvas.is-active {
+  animation: feature-in 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes feature-in {
+  from {
+    opacity: 0;
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 
 .feature-chip,
@@ -1195,14 +1202,33 @@ html.dark .feature-item.is-active {
 
 .globe {
   position: relative;
-  width: 18rem;
-  height: 18rem;
-  border: 1px solid var(--border);
+  width: 20rem;
+  height: 20rem;
   border-radius: 999px;
   background:
-    radial-gradient(circle at 35% 30%, color-mix(in oklch, var(--secondary) 28%, transparent), transparent 42%),
+    radial-gradient(circle at 32% 28%, color-mix(in oklch, var(--secondary) 38%, white), transparent 34%),
+    radial-gradient(circle at 70% 70%, color-mix(in oklch, var(--foreground) 18%, transparent), transparent 42%),
     radial-gradient(circle at 50% 50%, var(--muted-surface), var(--card));
-  animation: globe-spin 24s linear infinite;
+  box-shadow:
+    inset -1.5rem -1rem 2.5rem color-mix(in oklch, var(--foreground) 18%, transparent),
+    0 18px 40px color-mix(in oklch, var(--foreground) 10%, transparent);
+  animation: globe-spin 28s linear infinite;
+}
+
+.globe-atmosphere {
+  position: absolute;
+  inset: -12%;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in oklch, var(--secondary) 22%, transparent), transparent 68%);
+  pointer-events: none;
+}
+
+.globe-highlight {
+  position: absolute;
+  inset: 12% 38% 58% 18%;
+  border-radius: 999px;
+  background: color-mix(in oklch, white 28%, transparent);
+  filter: blur(8px);
 }
 
 .globe-ring,
@@ -1210,7 +1236,7 @@ html.dark .feature-item.is-active {
 .globe-equator {
   position: absolute;
   inset: 8%;
-  border: 1px solid color-mix(in oklch, var(--foreground) 16%, transparent);
+  border: 1px solid color-mix(in oklch, var(--foreground) 18%, transparent);
   border-radius: 999px;
 }
 
@@ -1218,7 +1244,17 @@ html.dark .feature-item.is-active {
 .globe-ring-3 { inset: 36%; }
 .globe-meridian { transform: rotateY(55deg) scaleX(0.45); }
 .globe-meridian-2 { transform: rotateY(-55deg) scaleX(0.45); }
+.globe-meridian-3 { transform: rotateY(0deg) scaleX(0.22); }
 .globe-equator { inset: 42% 4%; border-radius: 50%; }
+.globe-equator-2 { inset: 28% 10%; }
+
+.globe-arc {
+  position: absolute;
+  inset: 18%;
+  border: 2px solid color-mix(in oklch, var(--secondary) 55%, transparent);
+  border-radius: 999px;
+  clip-path: inset(0 0 40% 40%);
+}
 
 .globe-dot {
   position: absolute;
@@ -1605,19 +1641,24 @@ html.dark .readiness-card li::before {
   .chart-pulse,
   .health-stage.is-on .chart-line,
   .feature-item.is-active .feature-line,
-  .feature-carousel .card.is-active .feature-line {
+  .feature-carousel .card.is-active .feature-line,
+  .health-tooltip {
     animation: none !important;
   }
   .reason-stack,
   .proof-mark,
   .proof-more,
   .feature-canvas,
-  .stack-card {
+  .stack-card,
+  .health-tooltip,
+  .health-stem {
     transition: none !important;
   }
   .health-stage.is-on .chart-line { stroke-dashoffset: 0; }
   .feature-item.is-active .feature-line,
-  .feature-carousel .card.is-active .feature-line { height: 100%; }
+  .feature-carousel .card.is-active .feature-line { width: 100%; }
+  .feature-panel.is-active .feature-canvas,
+  .feature-mobile-canvas.is-active { animation: none; }
 }
 
 .marketing-shell {
