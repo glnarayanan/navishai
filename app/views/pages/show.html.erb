@@ -111,23 +111,25 @@
           <div class="bento-visual orbit-stage" aria-hidden="true">
             <div class="orbit-fade orbit-fade-top"></div>
             <div class="orbit-fade orbit-fade-bottom"></div>
-            <div class="orbit-core">
-              <svg width="28" height="28" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.2 13.4 4.3v7.4L8 14.8 2.6 11.7V4.3L8 1.2Z"/></svg>
-            </div>
-            <div class="orbit-ring" style="--orbit-radius: 100px; --orbit-duration: 20s; --orbit-dir: reverse;">
-              <span class="orbit-icon" style="--angle: 0deg;" title="Shared email"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 6.75A2.75 2.75 0 0 1 5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v10.5A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Zm2.2.5 6.2 4.4a1 1 0 0 0 1.2 0l6.2-4.4H5.2Zm13.05 1.66-6.05 4.3a2.5 2.5 0 0 1-3 0L3.75 8.91v8.34c0 .69.56 1.25 1.25 1.25h14c.69 0 1.25-.56 1.25-1.25V8.91Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 120deg;" title="Intercom"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 5.75A2.75 2.75 0 0 1 7.75 3h8.5A2.75 2.75 0 0 1 19 5.75v7.5A2.75 2.75 0 0 1 16.25 16H13l-3.4 3.4A1 1 0 0 1 8 18.7V16H7.75A2.75 2.75 0 0 1 5 13.25v-7.5Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 240deg;" title="Webhooks"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13 3.5 6.2 13.2A1.5 1.5 0 0 0 7.45 15.5H11v5l6.8-9.7A1.5 1.5 0 0 0 16.55 8.5H13V3.5Z"/></svg></span>
-            </div>
-            <div class="orbit-ring" style="--orbit-radius: 160px; --orbit-duration: 40s; --orbit-dir: normal;">
-              <span class="orbit-icon" style="--angle: 40deg;" title="Knowledge"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.5 4.5A2.5 2.5 0 0 0 4 7v11.25c0 .97.78 1.75 1.75 1.75H18.5v-1.5H5.75a.25.25 0 0 1-.25-.25V7A1 1 0 0 1 6.5 6h12V18h1.5V4.5H6.5Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 160deg;" title="Memory"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5 2.5 2.5 0 0 1 17.5 10h-11A2.5 2.5 0 0 1 4 7.5Zm2 6A2.5 2.5 0 0 1 8.5 11h7a2.5 2.5 0 0 1 0 5h-7A2.5 2.5 0 0 1 6 13.5Zm2 6A2.5 2.5 0 0 1 10.5 17h3a2.5 2.5 0 0 1 0 5h-3A2.5 2.5 0 0 1 8 19.5Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 280deg;" title="Scorecard"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 19.5h16v-1.5H5.5V5H4v14.5ZM8 16h1.5v-5H8v5Zm4 0h1.5V8H12v8Zm4 0h1.5v-8H16v8Z"/></svg></span>
-            </div>
-            <div class="orbit-ring" style="--orbit-radius: 230px; --orbit-duration: 40s; --orbit-dir: reverse;">
-              <span class="orbit-icon" style="--angle: 80deg;" title="Go runner"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l11-6.5L8 5.5Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 200deg;" title="PostgreSQL"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5h10A3.5 3.5 0 0 1 20.5 8v8A3.5 3.5 0 0 1 17 19.5H7A3.5 3.5 0 0 1 3.5 16V8A3.5 3.5 0 0 1 7 4.5Zm1.5 4v7h2V12h3v3.5h2v-7h-2V10h-3V8.5h-2Z"/></svg></span>
-              <span class="orbit-icon" style="--angle: 320deg;" title="Supermemory"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8L12 3.5Zm0 2.3L6.5 9v6L12 18.2 17.5 15V9L12 5.8Z"/></svg></span>
+            <div class="orbit-cluster">
+              <div class="orbit-core">
+                <svg width="28" height="28" viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.2 13.4 4.3v7.4L8 14.8 2.6 11.7V4.3L8 1.2Z"/></svg>
+              </div>
+              <div class="orbit-ring orbit-ring-inner">
+                <span class="orbit-icon" title="Shared email"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 6.75A2.75 2.75 0 0 1 5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v10.5A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25V6.75Zm2.2.5 6.2 4.4a1 1 0 0 0 1.2 0l6.2-4.4H5.2Zm13.05 1.66-6.05 4.3a2.5 2.5 0 0 1-3 0L3.75 8.91v8.34c0 .69.56 1.25 1.25 1.25h14c.69 0 1.25-.56 1.25-1.25V8.91Z"/></svg></span>
+                <span class="orbit-icon" title="Intercom"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M5 5.75A2.75 2.75 0 0 1 7.75 3h8.5A2.75 2.75 0 0 1 19 5.75v7.5A2.75 2.75 0 0 1 16.25 16H13l-3.4 3.4A1 1 0 0 1 8 18.7V16H7.75A2.75 2.75 0 0 1 5 13.25v-7.5Z"/></svg></span>
+                <span class="orbit-icon" title="Webhooks"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M13 3.5 6.2 13.2A1.5 1.5 0 0 0 7.45 15.5H11v5l6.8-9.7A1.5 1.5 0 0 0 16.55 8.5H13V3.5Z"/></svg></span>
+              </div>
+              <div class="orbit-ring orbit-ring-mid">
+                <span class="orbit-icon" title="Knowledge"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.5 4.5A2.5 2.5 0 0 0 4 7v11.25c0 .97.78 1.75 1.75 1.75H18.5v-1.5H5.75a.25.25 0 0 1-.25-.25V7A1 1 0 0 1 6.5 6h12V18h1.5V4.5H6.5Z"/></svg></span>
+                <span class="orbit-icon" title="Memory"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 7.5A2.5 2.5 0 0 1 6.5 5h11A2.5 2.5 0 0 1 20 7.5 2.5 2.5 0 0 1 17.5 10h-11A2.5 2.5 0 0 1 4 7.5Zm2 6A2.5 2.5 0 0 1 8.5 11h7a2.5 2.5 0 0 1 0 5h-7A2.5 2.5 0 0 1 6 13.5Zm2 6A2.5 2.5 0 0 1 10.5 17h3a2.5 2.5 0 0 1 0 5h-3A2.5 2.5 0 0 1 8 19.5Z"/></svg></span>
+                <span class="orbit-icon" title="Scorecard"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 19.5h16v-1.5H5.5V5H4v14.5ZM8 16h1.5v-5H8v5Zm4 0h1.5V8H12v8Zm4 0h1.5v-8H16v8Z"/></svg></span>
+              </div>
+              <div class="orbit-ring orbit-ring-outer">
+                <span class="orbit-icon" title="Go runner"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l11-6.5L8 5.5Z"/></svg></span>
+                <span class="orbit-icon" title="PostgreSQL"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5h10A3.5 3.5 0 0 1 20.5 8v8A3.5 3.5 0 0 1 17 19.5H7A3.5 3.5 0 0 1 3.5 16V8A3.5 3.5 0 0 1 7 4.5Zm1.5 4v7h2V12h3v3.5h2v-7h-2V10h-3V8.5h-2Z"/></svg></span>
+                <span class="orbit-icon" title="Supermemory"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.5 19.5 8v8L12 20.5 4.5 16V8L12 3.5Zm0 2.3L6.5 9v6L12 18.2 17.5 15V9L12 5.8Z"/></svg></span>
+              </div>
             </div>
           </div>
           <div class="bento-copy">
@@ -200,6 +202,9 @@
     <header class="section-header section-header-plain">
       <h2 id="features-title">From inbox to attributed send</h2>
       <p>Four steps. Same evidence, memory, and review rules on Support cases and account health.</p>
+      <button type="button" class="feature-pause" data-feature-cycle-target="pause" data-action="feature-cycle#togglePause" aria-pressed="false">
+        Pause slideshow
+      </button>
     </header>
     <div class="feature-cycle">
       <div class="feature-desktop">
@@ -214,7 +219,7 @@
             <li>
               <button type="button" class="feature-item<%= " is-active" if index.zero? %>" role="tab"
                 id="workflow-tab-<%= index %>" aria-controls="workflow-panel-<%= index %>"
-                aria-selected="<%= index.zero? %>" data-feature-cycle-target="item" data-feature-index="<%= index %>"
+                aria-selected="<%= index.zero? %>" tabindex="<%= index.zero? ? 0 : -1 %>" data-feature-cycle-target="item" data-feature-index="<%= index %>"
                 data-action="feature-cycle#select keydown->feature-cycle#keyselect">
                 <span class="feature-rail" aria-hidden="true"><span class="feature-line" data-feature-cycle-target="line"></span></span>
                 <h3><%= title %></h3>
@@ -226,7 +231,7 @@
         <div class="feature-stage">
           <% features.each_with_index do |(title, _body), index| %>
             <article class="feature-panel<%= " is-active" if index.zero? %>" id="workflow-panel-<%= index %>" role="tabpanel"
-              aria-labelledby="workflow-tab-<%= index %>" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
+              aria-labelledby="workflow-tab-<%= index %>" tabindex="<%= index.zero? ? 0 : -1 %>" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
               <div class="feature-canvas feature-visual-<%= index %>">
                 <div class="feature-canvas-inner">
                 <% if index.zero? %>
@@ -341,13 +346,13 @@
               <span class="globe-meridian globe-meridian-3"></span>
               <span class="globe-equator"></span>
               <span class="globe-equator globe-equator-2"></span>
-              <span class="globe-dot" style="--x: 18%; --y: 32%;"></span>
-              <span class="globe-dot" style="--x: 38%; --y: 22%;"></span>
-              <span class="globe-dot" style="--x: 62%; --y: 28%;"></span>
-              <span class="globe-dot" style="--x: 44%; --y: 58%;"></span>
-              <span class="globe-dot" style="--x: 72%; --y: 64%;"></span>
-              <span class="globe-dot" style="--x: 30%; --y: 72%;"></span>
-              <span class="globe-dot" style="--x: 78%; --y: 40%;"></span>
+              <span class="globe-dot globe-dot-1"></span>
+              <span class="globe-dot globe-dot-2"></span>
+              <span class="globe-dot globe-dot-3"></span>
+              <span class="globe-dot globe-dot-4"></span>
+              <span class="globe-dot globe-dot-5"></span>
+              <span class="globe-dot globe-dot-6"></span>
+              <span class="globe-dot globe-dot-7"></span>
               <span class="globe-arc"></span>
             </div>
           </div>
@@ -363,9 +368,9 @@
       <h2 id="readiness-title">What ships in this self-hosted v1</h2>
       <p>No billed plans yet. These are the surfaces an operator can actually turn on.</p>
     </header>
-    <div class="readiness-tabs" role="tablist" aria-label="Product path">
-      <button type="button" class="is-active" role="tab" aria-selected="true" data-readiness-tabs-target="tab" data-action="readiness-tabs#select" data-readiness-tab="support">Support</button>
-      <button type="button" role="tab" aria-selected="false" data-readiness-tabs-target="tab" data-action="readiness-tabs#select" data-readiness-tab="success">Customer Success</button>
+    <div class="readiness-tabs" role="group" aria-label="Product path">
+      <button type="button" class="is-active" aria-pressed="true" data-readiness-tabs-target="tab" data-action="readiness-tabs#select" data-readiness-tab="support">Support</button>
+      <button type="button" aria-pressed="false" data-readiness-tabs-target="tab" data-action="readiness-tabs#select" data-readiness-tab="success">Customer Success</button>
     </div>
     <div class="readiness-grid">
       <article class="readiness-card">
@@ -509,7 +514,9 @@
           <ul>
             <li><%= link_to "Sign in", new_session_path %></li>
             <li><%= link_to "Reset password", new_password_path %></li>
-            <li><%= link_to "First-time setup", new_setup_path %></li>
+            <% if FirstOwnerBootstrap.available? %>
+              <li><%= link_to "First-time setup", new_setup_path %></li>
+            <% end %>
             <li><a href="#readiness" data-action="landing-header#jump">What ships</a></li>
           </ul>
         </div>

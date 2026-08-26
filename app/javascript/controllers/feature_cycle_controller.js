@@ -1,25 +1,39 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["item", "panel", "line", "carousel", "card", "mobileCanvas", "mobileLine"]
+  static targets = ["item", "panel", "line", "carousel", "card", "mobileCanvas", "mobileLine", "pause"]
   static values = { interval: { type: Number, default: 5000 } }
 
   connect() {
     this.index = 0
+    this.userPaused = false
+    this.holding = false
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
     this.onKey = (event) => this.shortcut(event)
+    this.onHold = () => this.hold()
+    this.onRelease = (event) => this.release(event)
     this.element.addEventListener("keydown", this.onKey)
-    if (!this.reduced) this.start()
+    this.element.addEventListener("pointerenter", this.onHold)
+    this.element.addEventListener("pointerleave", this.onRelease)
+    this.element.addEventListener("focusin", this.onHold)
+    this.element.addEventListener("focusout", this.onRelease)
     this.show(0)
+    this.syncPauseControl()
+    if (!this.reduced) this.start()
   }
 
   disconnect() {
     this.stop()
     this.element.removeEventListener("keydown", this.onKey)
+    this.element.removeEventListener("pointerenter", this.onHold)
+    this.element.removeEventListener("pointerleave", this.onRelease)
+    this.element.removeEventListener("focusin", this.onHold)
+    this.element.removeEventListener("focusout", this.onRelease)
   }
 
   start() {
     this.stop()
+    if (this.reduced || this.userPaused || this.holding) return
     this.timer = window.setInterval(() => this.advance(), this.intervalValue)
   }
 
@@ -28,11 +42,36 @@ export default class extends Controller {
     this.timer = null
   }
 
+  hold() {
+    this.holding = true
+    this.stop()
+  }
+
+  release(event) {
+    if (event.type === "focusout" && this.element.contains(event.relatedTarget)) return
+    this.holding = false
+    this.start()
+  }
+
+  togglePause() {
+    this.userPaused = !this.userPaused
+    this.syncPauseControl()
+    if (this.userPaused) this.stop()
+    else this.start()
+  }
+
+  syncPauseControl() {
+    if (!this.hasPauseTarget) return
+    const paused = this.userPaused || this.reduced
+    this.pauseTarget.setAttribute("aria-pressed", paused ? "true" : "false")
+    this.pauseTarget.textContent = paused ? "Play slideshow" : "Pause slideshow"
+  }
+
   select(event) {
     const index = Number(event.currentTarget.dataset.featureIndex)
     this.show(index)
     this.scrollCard(index)
-    if (!this.reduced) this.start()
+    this.start()
   }
 
   keyselect(event) {
@@ -42,17 +81,21 @@ export default class extends Controller {
   }
 
   shortcut(event) {
-    if (event.key === "ArrowRight") {
-      event.preventDefault()
-      this.show((this.index + 1) % this.itemTargets.length)
-      this.scrollCard(this.index)
-      if (!this.reduced) this.start()
-    } else if (event.key === "ArrowLeft") {
-      event.preventDefault()
-      this.show((this.index - 1 + this.itemTargets.length) % this.itemTargets.length)
-      this.scrollCard(this.index)
-      if (!this.reduced) this.start()
-    }
+    if (!this.itemTargets.includes(event.target)) return
+
+    const last = this.itemTargets.length - 1
+    let next = this.index
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (this.index + 1) % this.itemTargets.length
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (this.index - 1 + this.itemTargets.length) % this.itemTargets.length
+    else if (event.key === "Home") next = 0
+    else if (event.key === "End") next = last
+    else return
+
+    event.preventDefault()
+    this.show(next)
+    this.scrollCard(next)
+    this.itemTargets[next].focus()
+    this.start()
   }
 
   advance() {
@@ -86,6 +129,7 @@ export default class extends Controller {
       const selected = i === index
       panel.hidden = !selected
       panel.classList.toggle("is-active", selected)
+      panel.tabIndex = selected ? 0 : -1
     })
     if (this.hasMobileCanvasTarget) {
       this.mobileCanvasTargets.forEach((canvas, i) => {

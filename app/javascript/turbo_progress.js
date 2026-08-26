@@ -1,14 +1,32 @@
 import { Turbo } from "@hotwired/turbo-rails"
 
-function disableInlineProgressBar() {
-  const bar = Turbo.navigator?.delegate?.adapter?.progressBar
+function disableProgressBar(bar) {
   if (!bar || bar.datasetDisabled) return
   bar.datasetDisabled = true
   bar.show = () => {}
   bar.hide = () => {}
   bar.setValue = () => {}
+  bar.refresh = () => {}
   bar.installStylesheetElement = () => {}
   bar.uninstallStylesheetElement = () => {}
+  bar.installProgressElement = () => {}
+  bar.startTrickling = () => {}
+  const proto = Object.getPrototypeOf(bar)
+  if (proto && proto !== Object.prototype) {
+    proto.show = () => {}
+    proto.hide = () => {}
+    proto.setValue = () => {}
+    proto.refresh = () => {}
+    proto.installStylesheetElement = () => {}
+    proto.uninstallStylesheetElement = () => {}
+    proto.installProgressElement = () => {}
+    proto.startTrickling = () => {}
+  }
+}
+
+function disableInlineProgressBar() {
+  disableProgressBar(Turbo.navigator?.delegate?.adapter?.progressBar)
+  disableProgressBar(Turbo.session?.adapter?.progressBar)
 }
 
 function markFetching(busy) {

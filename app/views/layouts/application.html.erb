@@ -12,6 +12,15 @@
     <%= csp_meta_tag %>
     <%= javascript_tag nonce: true do %>
       (function () {
+        window.__navishaiCspViolations = [];
+        document.addEventListener("securitypolicyviolation", function (event) {
+          window.__navishaiCspViolations.push([
+            event.effectiveDirective,
+            event.blockedURI,
+            event.sourceFile || "",
+            event.lineNumber || 0
+          ].join(" "));
+        });
         var root = document.documentElement;
         var stored = root.getAttribute("data-theme") || "system";
         var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

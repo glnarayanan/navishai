@@ -10,7 +10,16 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a", text: "See how it works"
     assert_select "body", text: /self-hosted/i
     assert_select "body", text: /does not claim SOC 2/
-    assert_select "a", text: "First-time setup"
+    assert_select "a", text: "First-time setup", count: 0
+  end
+
+  test "first-time setup appears only while bootstrap is available" do
+    FirstOwnerBootstrap.stub(:available?, true) do
+      get root_path
+    end
+
+    assert_response :success
+    assert_select "a[href=?]", new_setup_path, text: "First-time setup"
   end
 
   test "authenticated people are sent to workspaces" do

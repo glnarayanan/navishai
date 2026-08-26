@@ -8,7 +8,7 @@ export default class extends Controller {
     this.tabTargets.forEach((tab) => {
       const selected = tab === event.currentTarget
       tab.classList.toggle("is-active", selected)
-      tab.setAttribute("aria-selected", selected ? "true" : "false")
+      tab.setAttribute("aria-pressed", selected ? "true" : "false")
     })
     this.supportOnlyTargets.forEach((node) => { node.hidden = value !== "support" })
     this.successOnlyTargets.forEach((node) => { node.hidden = value !== "success" })

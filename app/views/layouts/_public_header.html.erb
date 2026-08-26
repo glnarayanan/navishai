@@ -29,7 +29,7 @@
     </header>
   </div>
   <% if landing_page? %>
-    <dialog class="nav-drawer" id="public-nav-drawer" data-nav-drawer-target="dialog" data-action="click->nav-drawer#backdrop keydown->nav-drawer#trap">
+    <dialog class="nav-drawer" id="public-nav-drawer" aria-label="Page navigation" data-nav-drawer-target="dialog" data-action="click->nav-drawer#backdrop keydown->nav-drawer#trap">
       <div class="nav-drawer-panel" data-nav-drawer-target="panel">
         <div class="nav-drawer-head">
           <%= render "layouts/wordmark" %>

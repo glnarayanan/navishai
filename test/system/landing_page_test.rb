@@ -34,4 +34,39 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_no_selector "dialog[open]"
     assert_includes page.evaluate_script("getComputedStyle(document.body).fontFamily"), "Geist"
   end
+
+  test "workflow tabs, pause control, and named navigation follow ARIA patterns" do
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']"
+    assert_no_selector "#readiness [role='tablist']"
+    assert_selector "#readiness [role='group'][aria-label='Product path'] button[aria-pressed='true']", text: "Support"
+
+    click_button "Customer Success"
+    assert_selector "#readiness button[aria-pressed='true']", text: "Customer Success"
+    assert_text "Deterministic account-health signals"
+
+    first_tab = find("#workflow-tab-0")
+    first_tab.send_keys(:arrow_right)
+    assert_equal "workflow-tab-1", page.evaluate_script("document.activeElement.id")
+    assert_selector "#workflow-panel-1:not([hidden])[role='tabpanel']"
+    find("#workflow-tab-1").send_keys(:end)
+    assert_equal "workflow-tab-3", page.evaluate_script("document.activeElement.id")
+    find("#workflow-tab-3").send_keys(:home)
+    assert_equal "workflow-tab-0", page.evaluate_script("document.activeElement.id")
+
+    assert_button "Pause slideshow"
+    click_button "Pause slideshow"
+    assert_button "Play slideshow"
+    assert_selector ".feature-pause[aria-pressed='true']"
+
+    inner = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-inner')).width)")
+    outer = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-outer')).width)")
+    dot_left = page.evaluate_script("getComputedStyle(document.querySelector('.globe-dot-1')).left")
+    assert_operator inner, :>=, 180
+    assert_operator outer, :>=, 400
+    refute_equal "auto", dot_left
+    refute_equal "0px", dot_left
+  end
 end

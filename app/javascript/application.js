@@ -1,3 +1,4 @@
+import "turbo_progress_guard"
 import "@hotwired/turbo-rails"
 import "turbo_progress"
 import "controllers"

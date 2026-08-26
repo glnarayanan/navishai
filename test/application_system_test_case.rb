@@ -38,4 +38,16 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     JAVASCRIPT
     assert_equal client_width, scroll_width, offenders.join(", ")
   end
+
+  def assert_no_csp_violations
+    inline_styles = page.evaluate_script(<<~JAVASCRIPT)
+      Array.from(document.querySelectorAll('[style]')).map((element) => {
+        const className = typeof element.className === 'string' ? element.className : '';
+        return `${element.tagName}.${className}[style="${element.getAttribute('style')}"]`;
+      })
+    JAVASCRIPT
+    violations = page.evaluate_script("window.__navishaiCspViolations || []")
+    assert_empty inline_styles, inline_styles.join("\n")
+    assert_empty violations, violations.join("\n")
+  end
 end
