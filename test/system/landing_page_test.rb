@@ -19,7 +19,9 @@ class LandingPageTest < ApplicationSystemTestCase
     click_link "See how it works", href: "#how-it-works", match: :first
     assert_selector "#how-it-works"
 
-    click_button "Review the draft", match: :first
+    review_draft = first(:button, "Review the draft")
+    page.scroll_to(review_draft, align: :center)
+    review_draft.click
     assert_selector ".feature-panel:not([hidden])", text: /Policy review/
 
     find("summary", text: "Does this replace Intercom on day one?").click
