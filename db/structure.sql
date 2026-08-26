@@ -322,7 +322,7 @@ BEGIN
     SELECT 1 FROM memory_records AS records
     WHERE records.workspace_id = target_workspace_id AND records.id = entries.memory_record_id
       AND records.observed_at < cutoff
-  );
+  ) AND (entries.status <> 'failed' OR entries.failure_code <> 'retention_expired');
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE intercom_webhook_deliveries
