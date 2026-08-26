@@ -85,6 +85,7 @@ class HumanIntercomSend
   end
 
   def send!
+    attempted = false
     authorize_human!
     replay = replayed_delivery
     return replay if replay
@@ -95,17 +96,25 @@ class HumanIntercomSend
     delivery, claimed = claim!(admin_id)
     return delivery unless claimed
 
-    attempted = true
-    response = client.reply(
-      conversation_id: delivery.remote_conversation_id,
-      admin_id: delivery.admin_id,
-      body: delivery.body
-    )
+    response = HumanSendAuthorization.with_current_authority(workspace: @workspace, membership: @membership) do
+      attempted = true
+      client.reply(
+        conversation_id: delivery.remote_conversation_id,
+        admin_id: delivery.admin_id,
+        body: delivery.body
+      )
+    end
     remote_part = self.class.send(
       :part_from, response, admin_id: delivery.admin_id, body: delivery.body,
       after: delivery.started_at, expected_conversation_id: delivery.remote_conversation_id
     )
     complete!(delivery, remote_part)
+  rescue Current::RoleAccessDenied, ActiveRecord::RecordNotFound
+    if delivery
+      attempted ? fail!(delivery, "unknown_outcome", retryable: false) :
+        fail!(delivery, "authorization_changed", retryable: true)
+    end
+    raise
   rescue IntercomClient::ConfigurationError
     delivery ? fail!(delivery, "configuration_error", retryable: true) : raise
   rescue IntercomClient::Rejected

@@ -3468,7 +3468,7 @@ CREATE TABLE public.intercom_outbound_deliveries (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT intercom_outbound_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT intercom_outbound_deliveries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['configuration_error'::character varying, 'remote_rejected'::character varying, 'unknown_outcome'::character varying, 'confirmed_not_sent'::character varying])::text[])))),
+    CONSTRAINT intercom_outbound_deliveries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY ((ARRAY['configuration_error'::character varying, 'remote_rejected'::character varying, 'authorization_changed'::character varying, 'unknown_outcome'::character varying, 'confirmed_not_sent'::character varying])::text[])))),
     CONSTRAINT intercom_outbound_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (remote_part_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['sending'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])) AND (conversation_message_id IS NULL) AND (remote_part_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY ((ARRAY['failed'::character varying, 'unknown'::character varying])::text[])) AND (failure_code IS NOT NULL)))))),
     CONSTRAINT intercom_outbound_deliveries_status CHECK (((status)::text = ANY ((ARRAY['sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'unknown'::character varying])::text[])))
 );
@@ -11857,6 +11857,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260826123000'),
 ('20260825220000'),
 ('20260824230700'),
 ('20260824230600'),

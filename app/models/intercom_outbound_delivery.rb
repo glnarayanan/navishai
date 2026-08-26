@@ -1,6 +1,6 @@
 class IntercomOutboundDelivery < ApplicationRecord
   STATUSES = %w[sending sent failed unknown].freeze
-  FAILURE_CODES = %w[configuration_error remote_rejected unknown_outcome confirmed_not_sent].freeze
+  FAILURE_CODES = %w[configuration_error remote_rejected authorization_changed unknown_outcome confirmed_not_sent].freeze
 
   belongs_to :workspace
   belongs_to :intercom_draft
