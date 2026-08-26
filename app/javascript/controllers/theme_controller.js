@@ -47,18 +47,39 @@ export default class extends Controller {
   }
 
   choose(event) {
-    const theme = event.currentTarget.dataset.themeValue
-    if (!THEMES.includes(theme)) return
-    this.persist(theme)
-    this.apply(theme)
-    this.sync()
+    this.selectTheme(event.currentTarget.dataset.themeValue)
     event.currentTarget.closest("details")?.removeAttribute("open")
+  }
+
+  move(event) {
+    const group = event.currentTarget
+    const options = [...group.querySelectorAll('[role="radio"]')]
+    const current = event.target.closest('[role="radio"]')
+    if (!current || !options.includes(current)) return
+
+    const index = options.indexOf(current)
+    let next = index
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") next = (index + 1) % options.length
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft") next = (index - 1 + options.length) % options.length
+    else if (event.key === "Home") next = 0
+    else if (event.key === "End") next = options.length - 1
+    else return
+
+    event.preventDefault()
+    const option = options[next]
+    this.selectTheme(option.dataset.themeValue)
+    option.focus()
   }
 
   cycle() {
     const next = THEMES[(THEMES.indexOf(this.storedTheme()) + 1) % THEMES.length]
-    this.persist(next)
-    this.apply(next)
+    this.selectTheme(next)
+  }
+
+  selectTheme(theme) {
+    if (!THEMES.includes(theme)) return
+    this.persist(theme)
+    this.apply(theme)
     this.sync()
   }
 
@@ -85,6 +106,7 @@ export default class extends Controller {
     this.optionTargets.forEach((option) => {
       const selected = option.dataset.themeValue === theme
       option.setAttribute("aria-checked", selected ? "true" : "false")
+      option.tabIndex = selected ? 0 : -1
       option.classList.toggle("is-selected", selected)
     })
   }

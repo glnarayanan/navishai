@@ -23,6 +23,37 @@ class ColorThemeTest < ApplicationSystemTestCase
     assert_equal "light", page.evaluate_script("document.documentElement.getAttribute('data-theme')")
   end
 
+  test "theme radios use wrapped arrows and roving tabindex" do
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    find("summary.theme-toggle").click
+    group = find(".theme-menu[role='radiogroup']", match: :first)
+    system_option = group.find_button("System")
+    light_option = group.find_button("Light")
+    dark_option = group.find_button("Dark")
+
+    assert_equal "true", system_option["aria-checked"]
+    assert_equal "0", system_option[:tabindex]
+    assert_equal "-1", light_option[:tabindex]
+    assert_equal "-1", dark_option[:tabindex]
+
+    system_option.send_keys(:arrow_down)
+    assert_equal "Light", page.evaluate_script("document.activeElement.textContent.trim()")
+    assert_equal "true", group.find_button("Light")["aria-checked"]
+    assert_equal "false", group.find_button("System")["aria-checked"]
+    assert_equal "0", group.find_button("Light")[:tabindex]
+    assert_equal "-1", group.find_button("System")[:tabindex]
+    assert_selector "details.theme-control[open]"
+
+    group.find_button("Light").send_keys(:arrow_down)
+    assert_equal "Dark", page.evaluate_script("document.activeElement.textContent.trim()")
+    group.find_button("Dark").send_keys(:arrow_down)
+    assert_equal "System", page.evaluate_script("document.activeElement.textContent.trim()")
+    assert_equal "true", group.find_button("System")["aria-checked"]
+    assert_selector "details.theme-control[open]"
+  end
+
   test "the workspace theme menu stays on screen at 1024 by 900" do
     visit new_session_path
     fill_in "Email address", with: users(:owner).email_address

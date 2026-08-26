@@ -12,10 +12,11 @@
     <% end %>
     <span class="theme-toggle-label<%= " visually-hidden" if icon_only %>" data-theme-target="label"><%= color_theme_label %></span>
   </summary>
-  <div class="theme-menu" role="radiogroup" aria-label="Color theme">
+  <div class="theme-menu" role="radiogroup" aria-label="Color theme" data-action="keydown->theme#move">
     <% color_theme_options.each do |label, value| %>
       <button type="button" class="theme-option" role="radio" data-theme-target="option"
-        aria-checked="<%= value == color_theme %>" data-theme-value="<%= value %>" data-action="theme#choose">
+        aria-checked="<%= value == color_theme %>" tabindex="<%= value == color_theme ? 0 : -1 %>"
+        data-theme-value="<%= value %>" data-action="theme#choose">
         <%= label %>
       </button>
     <% end %>
