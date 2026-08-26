@@ -16,10 +16,12 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: web
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       initContainers:
         - name: database-prepare
           image: {{ include "navishai.image" .Values.image.rails }}
@@ -28,6 +30,9 @@ spec:
           envFrom:
             - configMapRef: { name: {{ include "navishai.fullname" . }} }
             - secretRef: { name: {{ .Values.applicationSecret }} }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
       containers:
         - name: web
           image: {{ include "navishai.image" .Values.image.rails }}

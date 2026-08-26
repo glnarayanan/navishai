@@ -24,7 +24,7 @@ docker compose build
 docker compose up -d
 ```
 
-Compose binds Rails to port 3000 by default. Set `NAVISHAI_HTTP_PORT` to change the host port. Rails, jobs, and Supermemory share one container network namespace so Rails can use Supermemory's supported loopback HTTP endpoint. They remain separate processes and images. The runner has its own container and receives no Docker socket. The control network is internal. Put the reverse proxy on the edge side and send the original HTTPS host. Rails rejects every Host other than `NAVISHAI_APP_HOST`; only `/up` skips that check for local health probes.
+Compose binds Rails to port 3000 by default. Set `NAVISHAI_HTTP_PORT` to change the host port. Rails, jobs, and Supermemory share one container network namespace so Rails can use Supermemory's supported loopback HTTP endpoint. They remain separate processes and images. The runner has its own container and receives no Docker socket. The non-root application containers drop Linux capabilities and cannot gain new privileges. The control network is internal. Put the reverse proxy on the edge side and send the original HTTPS host. Rails rejects every Host other than `NAVISHAI_APP_HOST`; only `/up` skips that check for local health probes.
 
 Supermemory needs its first-boot local model setup. Start it, complete that setup according to its local prompt, then place its generated key in `NAVISHAI_SUPERMEMORY_API_KEY` and recreate `web` and `jobs`. A placeholder value may be used for the first Supermemory boot. The Lite build has a 10,000-document licence cap.
 
@@ -62,7 +62,7 @@ The web unit runs `db:prepare` before boot. Do not run migrations from the jobs 
 
 ## Experimental Helm
 
-The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 15 with pgvector 0.8.6, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it.
+The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 15 with pgvector 0.8.6, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it. The chart disables service-account token mounts, uses the runtime-default seccomp profile, and blocks privilege gain for each application and init container.
 
 Create the application secret with these keys:
 

@@ -23,6 +23,8 @@ x-rails-service: &rails-service
     dockerfile: Dockerfile
   image: navishai-rails:local
   restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
   environment: *rails-environment
   volumes:
     - rails_storage:/rails/storage
@@ -58,6 +60,8 @@ services:
       dockerfile: ops/docker/runner.Dockerfile
     image: navishai-runner:local
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     environment:
       NAVISHAI_RUNNER_BIND_ADDRESS: 0.0.0.0:8081
       NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
@@ -83,6 +87,8 @@ services:
       dockerfile: ops/docker/supermemory.Dockerfile
     image: navishai-supermemory:0.0.8
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     volumes:
       - supermemory_data:/var/lib/supermemory
     ports:
