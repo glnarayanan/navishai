@@ -83,10 +83,11 @@ export default class extends Controller {
   shortcut(event) {
     if (!this.itemTargets.includes(event.target)) return
 
+    const current = this.itemTargets.indexOf(event.target)
     const last = this.itemTargets.length - 1
-    let next = this.index
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (this.index + 1) % this.itemTargets.length
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (this.index - 1 + this.itemTargets.length) % this.itemTargets.length
+    let next = current
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % this.itemTargets.length
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + this.itemTargets.length) % this.itemTargets.length
     else if (event.key === "Home") next = 0
     else if (event.key === "End") next = last
     else return

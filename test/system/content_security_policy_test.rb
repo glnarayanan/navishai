@@ -14,7 +14,7 @@ class ContentSecurityPolicyTest < ApplicationSystemTestCase
 
     click_link "Acme Support"
     assert_selector "h2", text: "Case queue"
-    assert_selector "dialog#app-nav-drawer[aria-label='Workspace navigation']"
+    assert_selector "dialog#app-nav-drawer[aria-label='Workspace navigation']", visible: :all
     assert_no_csp_violations
   end
 end

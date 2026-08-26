@@ -78,15 +78,17 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     assert_selector ".queue-rail .case-row", text: "Invoice webhook retry"
 
     selected, other_shadow, other_background, selected_background = page.evaluate_script(<<~JS)
-      const rows = Array.from(document.querySelectorAll('.queue-rail .case-row'))
-      const selected = rows.find((row) => row.getAttribute('aria-current') === 'page')
-      const other = rows.find((row) => row.getAttribute('aria-current') !== 'page')
-      return [
-        rows.filter((row) => row.getAttribute('aria-current') === 'page').length,
-        getComputedStyle(other).boxShadow,
-        getComputedStyle(other).backgroundColor,
-        getComputedStyle(selected).backgroundColor
-      ]
+      (function() {
+        var rows = Array.from(document.querySelectorAll('.queue-rail .case-row'))
+        var selectedRow = rows.find(function(row) { return row.getAttribute('aria-current') === 'page' })
+        var otherRow = rows.find(function(row) { return row.getAttribute('aria-current') !== 'page' })
+        return [
+          rows.filter(function(row) { return row.getAttribute('aria-current') === 'page' }).length,
+          getComputedStyle(otherRow).boxShadow,
+          getComputedStyle(otherRow).backgroundColor,
+          getComputedStyle(selectedRow).backgroundColor
+        ]
+      })()
     JS
     assert_equal 1, selected
     assert_match(/inset/i, page.evaluate_script("getComputedStyle(document.querySelector('.queue-rail .case-row[aria-current=\"page\"]')).boxShadow"))

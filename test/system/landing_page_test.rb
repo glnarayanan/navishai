@@ -39,7 +39,7 @@ class LandingPageTest < ApplicationSystemTestCase
     visit root_path
     page.current_window.resize_to(1440, 1000)
 
-    assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']"
+    assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']", visible: :all
     assert_no_selector "#readiness [role='tablist']"
     assert_selector "#readiness [role='group'][aria-label='Product path'] button[aria-pressed='true']", text: "Support"
 
@@ -47,7 +47,13 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_selector "#readiness button[aria-pressed='true']", text: "Customer Success"
     assert_text "Deterministic account-health signals"
 
+    assert_button "Pause slideshow"
+    click_button "Pause slideshow"
+    assert_button "Play slideshow"
+    assert_selector ".feature-pause[aria-pressed='true']"
+
     first_tab = find("#workflow-tab-0")
+    first_tab.click
     first_tab.send_keys(:arrow_right)
     assert_equal "workflow-tab-1", page.evaluate_script("document.activeElement.id")
     assert_selector "#workflow-panel-1:not([hidden])[role='tabpanel']"
@@ -55,11 +61,6 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_equal "workflow-tab-3", page.evaluate_script("document.activeElement.id")
     find("#workflow-tab-3").send_keys(:home)
     assert_equal "workflow-tab-0", page.evaluate_script("document.activeElement.id")
-
-    assert_button "Pause slideshow"
-    click_button "Pause slideshow"
-    assert_button "Play slideshow"
-    assert_selector ".feature-pause[aria-pressed='true']"
 
     inner = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-inner')).width)")
     outer = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-outer')).width)")
