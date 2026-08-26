@@ -6,13 +6,18 @@ export default class extends Controller {
   connect() {
     this.previouslyFocused = null
     this.onClose = () => this.afterClose()
+    this.onKey = (event) => this.trap(event)
     if (this.hasDialogTarget) {
       this.dialogTarget.addEventListener("close", this.onClose)
+      this.dialogTarget.addEventListener("keydown", this.onKey)
     }
   }
 
   disconnect() {
-    if (this.hasDialogTarget) this.dialogTarget.removeEventListener("close", this.onClose)
+    if (this.hasDialogTarget) {
+      this.dialogTarget.removeEventListener("close", this.onClose)
+      this.dialogTarget.removeEventListener("keydown", this.onKey)
+    }
     document.documentElement.classList.remove("is-nav-open")
   }
 
@@ -35,6 +40,26 @@ export default class extends Controller {
     if (event.target === this.dialogTarget) this.close()
   }
 
+  trap(event) {
+    if (event.key !== "Tab" || !this.hasPanelTarget) return
+    const nodes = this.focusables()
+    if (!nodes.length) return
+    const first = nodes[0]
+    const last = nodes[nodes.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  focusables() {
+    return [...this.panelTarget.querySelectorAll("a, button, select, input, textarea, [tabindex]:not([tabindex='-1'])")]
+      .filter((node) => !node.disabled && node.getClientRects().length > 0)
+  }
+
   afterClose() {
     this.element.classList.remove("is-nav-open")
     document.documentElement.classList.remove("is-nav-open")
@@ -47,7 +72,6 @@ export default class extends Controller {
   }
 
   focusFirst() {
-    const first = this.panelTarget.querySelector("a, button, select, input, [tabindex]:not([tabindex='-1'])")
-    first?.focus()
+    this.focusables()[0]?.focus()
   }
 }

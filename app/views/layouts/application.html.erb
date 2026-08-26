@@ -19,59 +19,6 @@
         root.classList.toggle("dark", resolved === "dark");
       })();
     <% end %>
-    <%= javascript_tag nonce: true do %>
-      (function () {
-        function turboProgressStyle(node) {
-          return node && node.nodeType === 1 && node.tagName === "STYLE" &&
-            /turbo-progress-bar/.test(node.textContent || "");
-        }
-
-        var insertBefore = Node.prototype.insertBefore;
-        Node.prototype.insertBefore = function (node, reference) {
-          if (turboProgressStyle(node)) return node;
-          return insertBefore.call(this, node, reference);
-        };
-
-        var appendChild = Node.prototype.appendChild;
-        Node.prototype.appendChild = function (node) {
-          if (turboProgressStyle(node)) return node;
-          return appendChild.call(this, node);
-        };
-
-        function freezeProgress(element) {
-          if (!element || element.dataset.progressFrozen) return;
-          element.dataset.progressFrozen = "true";
-          try {
-            Object.defineProperty(element.style, "width", {
-              configurable: true,
-              enumerable: true,
-              get: function () { return "0%"; },
-              set: function () {}
-            });
-            Object.defineProperty(element.style, "opacity", {
-              configurable: true,
-              enumerable: true,
-              get: function () { return "0"; },
-              set: function () {}
-            });
-          } catch (error) {}
-        }
-
-        var className = Object.getOwnPropertyDescriptor(Element.prototype, "className");
-        if (className && className.set) {
-          Object.defineProperty(Element.prototype, "className", {
-            configurable: true,
-            enumerable: className.enumerable,
-            get: className.get,
-            set: function (value) {
-              className.set.call(this, value);
-              if (String(value).indexOf("turbo-progress-bar") !== -1) freezeProgress(this);
-            }
-          });
-        }
-      })();
-    <% end %>
-
     <%= yield :head %>
 
     <link rel="icon" href="/icon.png" type="image/png">
@@ -85,22 +32,26 @@
   <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="<%= body_controllers %>">
     <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
     <% if authenticated? %>
-      <div class="app-shell">
-        <%= render "layouts/app_sidebar" %>
-        <div class="app-canvas">
-          <%= render "layouts/app_mobile_bar" %>
-          <%= render "layouts/app_pagebar" %>
-          <%= render "shared/flash_messages" %>
-          <div class="app-content" id="main-content" tabindex="-1">
-            <%= yield %>
+      <div class="app-stage">
+        <div class="app-shell">
+          <%= render "layouts/app_sidebar" %>
+          <div class="app-canvas">
+            <%= render "layouts/app_mobile_bar" %>
+            <%= render "layouts/app_pagebar" %>
+            <%= render "shared/flash_messages" %>
+            <div class="app-content" id="main-content" tabindex="-1">
+              <%= yield %>
+            </div>
           </div>
         </div>
       </div>
       <%= render "layouts/app_nav_drawer" %>
     <% else %>
-      <div class="site-frame">
-        <div class="site-rail site-rail-start" aria-hidden="true"></div>
-        <div class="site-rail site-rail-end" aria-hidden="true"></div>
+      <div class="<%= landing_page? ? "marketing-shell" : "site-frame" %>">
+        <% unless landing_page? %>
+          <div class="site-rail site-rail-start" aria-hidden="true"></div>
+          <div class="site-rail site-rail-end" aria-hidden="true"></div>
+        <% end %>
         <%= render "layouts/public_header" %>
         <%= render "shared/flash_messages" %>
         <div class="app-container" id="main-content" tabindex="-1">

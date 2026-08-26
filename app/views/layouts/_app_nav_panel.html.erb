@@ -27,7 +27,7 @@
         <%= nav_link "Accounts", workspace_accounts_path(Current.workspace), "accounts", "account_imports" %>
       </div>
       <div class="sidebar-group">
-        <p class="sidebar-group-label">Knowledge and<br>intelligence</p>
+        <p class="sidebar-group-label">Knowledge</p>
         <%= nav_link "Knowledge", workspace_knowledge_sources_path(Current.workspace), "knowledge_sources" %>
         <% if membership.can_inspect_memory? %>
           <%= nav_link "Memory", workspace_memory_records_path(Current.workspace), "memory_records", "memory_corrections" %>
@@ -48,7 +48,7 @@
       <% end %>
       <% if membership.can_configure_integrations? || membership.owner? %>
         <div class="sidebar-group">
-          <p class="sidebar-group-label">Workspace<br>administration</p>
+          <p class="sidebar-group-label">Admin</p>
           <% if membership.can_configure_integrations? %>
             <%= nav_link "Webhooks", workspace_outbound_webhook_endpoints_path(Current.workspace), "outbound_webhook_endpoints" %>
           <% end %>
