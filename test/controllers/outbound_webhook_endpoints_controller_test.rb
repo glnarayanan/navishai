@@ -20,7 +20,7 @@ class OutboundWebhookEndpointsControllerTest < ActionDispatch::IntegrationTest
         }
       }
     end
-    endpoint = @workspace.outbound_webhook_endpoints.sole
+    endpoint = @workspace.outbound_webhook_endpoints.find_by!(name: "Ops")
     assert_redirected_to workspace_outbound_webhook_endpoints_path(@workspace)
     assert_equal %w[assignment failure], endpoint.categories
     assert_equal "webhook.endpoint_configured", AuditEvent.order(:id).last.action

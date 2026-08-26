@@ -1,4 +1,5 @@
 require "test_helper"
+require "pg"
 
 class OutboundWebhookTest < ActiveSupport::TestCase
   Resolver = Struct.new(:addresses) do
@@ -23,7 +24,7 @@ class OutboundWebhookTest < ActiveSupport::TestCase
   end
 
   test "fanout freezes one content-free delivery per endpoint and notification" do
-    assert_difference "OutboundWebhookDelivery.count", 1 do
+    assert_difference "OutboundWebhookDelivery.count", @workspace.outbound_webhook_endpoints.active.count do
       OutboundWebhookFanout.call(@notification)
     end
     assert_no_difference "OutboundWebhookDelivery.count" do
@@ -103,6 +104,63 @@ class OutboundWebhookTest < ActiveSupport::TestCase
     assert_equal 0, delivery.attempt_count
   end
 
+  test "endpoint paused after claim prevents the outbound request" do
+    delivery = create_delivery
+    endpoint = @endpoint
+    transport = Object.new
+    transport.define_singleton_method(:deliver) { |**| flunk "stale endpoint authority must not send" }
+    job = OutboundWebhookDeliveryJob.new
+    job.define_singleton_method(:transport) { transport }
+    job.define_singleton_method(:claim!) do |delivery_id|
+      super(delivery_id).tap { endpoint.update!(active: false) }
+    end
+
+    job.perform(delivery.id)
+
+    assert delivery.reload.failed?
+    assert_equal "endpoint_inactive", delivery.failure_code
+  end
+
+  test "workspace deletion requested after claim prevents the outbound request" do
+    delivery = create_delivery
+    workspace = @workspace
+    transport = Object.new
+    transport.define_singleton_method(:deliver) { |**| flunk "a deleting workspace must not send" }
+    job = OutboundWebhookDeliveryJob.new
+    job.define_singleton_method(:transport) { transport }
+    job.define_singleton_method(:claim!) do |delivery_id|
+      super(delivery_id).tap { workspace.update!(deletion_requested_at: Time.current) }
+    end
+
+    job.perform(delivery.id)
+
+    assert delivery.reload.failed?
+    assert_equal "workspace_deleting", delivery.failure_code
+  end
+
+  test "endpoint pause cannot overtake an in-flight delivery" do
+    endpoint = outbound_webhook_endpoints(:acme_ops)
+    delivery = create_delivery(endpoint:)
+    pause_blocked = false
+    transport = Object.new
+    transport.define_singleton_method(:deliver) do |**|
+      connection = PG.connect(dbname: ActiveRecord::Base.connection.current_database)
+      connection.exec("SET lock_timeout = '100ms'")
+      connection.exec_params("UPDATE outbound_webhook_endpoints SET active = false WHERE id = $1", [ endpoint.id ])
+    rescue PG::LockNotAvailable
+      pause_blocked = true
+    ensure
+      connection&.close
+    end
+    job = OutboundWebhookDeliveryJob.new
+    job.define_singleton_method(:transport) { transport }
+
+    job.perform(delivery.id)
+
+    assert pause_blocked, "pausing an endpoint must wait until its in-flight delivery finishes"
+    assert delivery.reload.delivered?
+  end
+
   test "database freezes payload and keeps delivery records in one workspace" do
     delivery = create_delivery
     assert_raises(ActiveRecord::StatementInvalid) do
@@ -124,8 +182,8 @@ class OutboundWebhookTest < ActiveSupport::TestCase
   end
 
   private
-    def create_delivery(notification: @notification)
-      @endpoint.outbound_webhook_deliveries.find_or_create_by!(notification:) { |delivery| delivery.workspace = @workspace }
+    def create_delivery(notification: @notification, endpoint: @endpoint)
+      endpoint.outbound_webhook_deliveries.find_or_create_by!(notification:) { |delivery| delivery.workspace = @workspace }
     end
 
     def create_notification
