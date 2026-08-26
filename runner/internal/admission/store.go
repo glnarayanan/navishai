@@ -43,13 +43,17 @@ type PendingEvent struct {
 }
 
 type Store struct {
-	mu      sync.Mutex
-	path    string
-	records map[string]Record
+	mu        sync.Mutex
+	path      string
+	records   map[string]Record
+	runKeys   map[string]string
+	sortedIDs []string
 }
 
 func OpenStore(path string) (*Store, error) {
-	store := &Store{path: path, records: make(map[string]Record)}
+	store := &Store{
+		path: path, records: make(map[string]Record), runKeys: make(map[string]string),
+	}
 	if path == "" {
 		return store, nil
 	}
@@ -76,6 +80,7 @@ func OpenStore(path string) (*Store, error) {
 	if err := store.validate(); err != nil {
 		return nil, err
 	}
+	store.indexRecords()
 	return store, nil
 }
 
@@ -90,10 +95,8 @@ func (store *Store) Admit(request protocol.AdmissionRequest, digest string, resp
 		}
 		return record.Response, true, nil
 	}
-	for _, record := range store.records {
-		if record.Response.RunID == request.RunID {
-			return protocol.AdmissionResponse{}, false, ErrConflict
-		}
+	if _, exists := store.runKeys[request.RunID]; exists {
+		return protocol.AdmissionResponse{}, false, ErrConflict
 	}
 	if len(store.records) >= maximumRecords {
 		return protocol.AdmissionResponse{}, false, ErrCapacity
@@ -104,9 +107,13 @@ func (store *Store) Admit(request protocol.AdmissionRequest, digest string, resp
 		LastSequence: 1, LastOccurredAt: response.Event.OccurredAt,
 		Outbox: []protocol.CanonicalEvent{response.Event},
 	}
+	store.runKeys[request.RunID] = key
+	store.insertSortedID(key)
 	if err := store.persist(); err != nil {
 		if !errors.Is(err, errDurabilityUnknown) {
 			delete(store.records, key)
+			delete(store.runKeys, request.RunID)
+			store.removeSortedID(key)
 		}
 		return protocol.AdmissionResponse{}, false, err
 	}
@@ -243,21 +250,39 @@ func terminalEvent(eventType string) bool {
 }
 
 func (store *Store) recordForRun(runID string) (string, Record, bool) {
-	for key, record := range store.records {
-		if record.Response.RunID == runID {
-			return key, record, true
-		}
+	key, ok := store.runKeys[runID]
+	if !ok {
+		return "", Record{}, false
 	}
-	return "", Record{}, false
+	return key, store.records[key], true
 }
 
 func (store *Store) sortedKeys() []string {
-	keys := make([]string, 0, len(store.records))
-	for key := range store.records {
-		keys = append(keys, key)
+	return store.sortedIDs
+}
+
+func (store *Store) indexRecords() {
+	store.sortedIDs = make([]string, 0, len(store.records))
+	for key, record := range store.records {
+		store.sortedIDs = append(store.sortedIDs, key)
+		store.runKeys[record.Response.RunID] = key
 	}
-	sort.Strings(keys)
-	return keys
+	sort.Strings(store.sortedIDs)
+}
+
+func (store *Store) insertSortedID(key string) {
+	index := sort.SearchStrings(store.sortedIDs, key)
+	store.sortedIDs = append(store.sortedIDs, "")
+	copy(store.sortedIDs[index+1:], store.sortedIDs[index:])
+	store.sortedIDs[index] = key
+}
+
+func (store *Store) removeSortedID(key string) {
+	index := sort.SearchStrings(store.sortedIDs, key)
+	if index == len(store.sortedIDs) || store.sortedIDs[index] != key {
+		return
+	}
+	store.sortedIDs = append(store.sortedIDs[:index], store.sortedIDs[index+1:]...)
 }
 
 func (store *Store) validate() error {

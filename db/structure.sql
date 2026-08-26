@@ -8196,6 +8196,13 @@ CREATE UNIQUE INDEX index_memory_records_on_workspace_id_and_id ON public.memory
 
 
 --
+-- Name: index_memory_records_on_workspace_id_and_observed_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_memory_records_on_workspace_id_and_observed_at_and_id ON public.memory_records USING btree (workspace_id, observed_at DESC, id DESC);
+
+
+--
 -- Name: index_memory_records_on_workspace_id_and_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11865,6 +11872,7 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260826140000'),
 ('20260826123000'),
+('20260826120000'),
 ('20260825220000'),
 ('20260824230700'),
 ('20260824230600'),

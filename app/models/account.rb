@@ -16,7 +16,12 @@ class Account < ApplicationRecord
   validates :name, presence: true, length: { maximum: 200 }
 
   def canonical
-    source_merges.active.first&.target&.canonical || self
+    merge = if source_merges.loaded?
+      source_merges.find { |candidate| candidate.unmerged_at.nil? }
+    else
+      source_merges.active.first
+    end
+    merge&.target&.canonical || self
   end
 
   def current_health_assessment
