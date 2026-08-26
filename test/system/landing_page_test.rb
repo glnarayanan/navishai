@@ -72,6 +72,25 @@ class LandingPageTest < ApplicationSystemTestCase
     refute_equal "0px", dot_left
   end
 
+  test "reduced motion keeps the slideshow paused until Play is pressed" do
+    emulate_prefers_reduced_motion("reduce")
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    assert_button "Play slideshow"
+    assert_selector ".feature-pause[aria-pressed='true']"
+    assert_selector "#workflow-tab-0[aria-selected='true']"
+    assert_selector "#workflow-panel-0:not([hidden])"
+
+    click_button "Play slideshow"
+    assert_button "Pause slideshow"
+    assert_selector ".feature-pause[aria-pressed='false']"
+
+    assert_selector "#workflow-tab-1[aria-selected='true']", wait: 6
+    assert_selector "#workflow-panel-1:not([hidden])"
+    assert_no_selector "#workflow-tab-0[aria-selected='true']"
+  end
+
   test "principles use a 750px vertical column stage and a readable reduced-motion grid" do
     emulate_prefers_reduced_motion("no-preference")
     visit root_path

@@ -6,9 +6,9 @@ export default class extends Controller {
 
   connect() {
     this.index = 0
-    this.userPaused = false
     this.holding = false
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    this.userPaused = this.reduced
     this.onKey = (event) => this.shortcut(event)
     this.onHold = () => this.hold()
     this.onRelease = (event) => this.release(event)
@@ -19,7 +19,7 @@ export default class extends Controller {
     this.element.addEventListener("focusout", this.onRelease)
     this.show(0)
     this.syncPauseControl()
-    if (!this.reduced) this.start()
+    if (!this.userPaused) this.start()
   }
 
   disconnect() {
@@ -33,7 +33,7 @@ export default class extends Controller {
 
   start() {
     this.stop()
-    if (this.reduced || this.userPaused || this.holding) return
+    if (this.userPaused || this.holding) return
     this.timer = window.setInterval(() => this.advance(), this.intervalValue)
   }
 
@@ -56,15 +56,18 @@ export default class extends Controller {
   togglePause() {
     this.userPaused = !this.userPaused
     this.syncPauseControl()
-    if (this.userPaused) this.stop()
-    else this.start()
+    if (this.userPaused) {
+      this.stop()
+      return
+    }
+    this.holding = false
+    this.start()
   }
 
   syncPauseControl() {
     if (!this.hasPauseTarget) return
-    const paused = this.userPaused || this.reduced
-    this.pauseTarget.setAttribute("aria-pressed", paused ? "true" : "false")
-    this.pauseTarget.textContent = paused ? "Play slideshow" : "Pause slideshow"
+    this.pauseTarget.setAttribute("aria-pressed", this.userPaused ? "true" : "false")
+    this.pauseTarget.textContent = this.userPaused ? "Play slideshow" : "Pause slideshow"
   }
 
   select(event) {
