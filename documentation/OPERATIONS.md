@@ -26,7 +26,7 @@ The `navishai-backup-v1` directory contains:
 
 Back up `.env`, runner TLS keys, SMTP and integration secrets, runtime subscription credentials, and any external object-store credentials in the host's secret manager. The archive records the `.env` digest so an operator can match the separately protected copy without exposing it.
 
-`verify_backup` checks every checksum, uses the exact PostgreSQL image recorded in the archive to parse each database dump, and reads every tar directory. It does not need a running database or application configuration, but Docker may need to pull that pinned image. Verification does not prove restore. Run a restore test on a schedule and before an upgrade.
+`verify_backup` checks every checksum, uses the PostgreSQL image pinned by the current Compose configuration to parse each database dump, and reads every tar directory. It never runs an image reference supplied by the archive. It does not need a running database, but Docker may need to pull the configured image. Verification does not prove restore. Run a restore test on a schedule and before an upgrade.
 
 ## Restore and restore test
 

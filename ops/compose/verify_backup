@@ -16,9 +16,14 @@ require_archive "$archive"
 }
 
 (cd "$archive" && sha256sum --check --strict SHA256SUMS)
-postgres_image="$(grep -E '^pgvector/pgvector:' "$archive/images.txt" || true)"
-[[ -n "$postgres_image" && "$(printf '%s\n' "$postgres_image" | wc -l)" -eq 1 ]] || {
+archived_postgres_image="$(grep -E '^pgvector/pgvector:' "$archive/images.txt" || true)"
+[[ -n "$archived_postgres_image" && "$(printf '%s\n' "$archived_postgres_image" | wc -l)" -eq 1 ]] || {
   printf 'Backup must name exactly one pgvector PostgreSQL image.\n' >&2
+  exit 1
+}
+postgres_image="$(compose config --images | grep -E '^pgvector/pgvector:' || true)"
+[[ -n "$postgres_image" && "$(printf '%s\n' "$postgres_image" | wc -l)" -eq 1 ]] || {
+  printf 'Deployment must name exactly one pgvector PostgreSQL image.\n' >&2
   exit 1
 }
 for database in navishai_production navishai_production_cache navishai_production_queue navishai_production_cable; do

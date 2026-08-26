@@ -75,6 +75,29 @@ class ComposeOperationsTest < ActiveSupport::TestCase
     assert_includes verify_stderr, "exactly one pgvector PostgreSQL image"
   end
 
+  test "verification never executes the image named by a backup" do
+    archive = File.join(@temporary, "backup")
+    _stdout, stderr, backup_status = run_operation("backup", archive)
+    assert backup_status.success?, stderr
+
+    images = File.join(archive, "images.txt")
+    File.write(images, File.read(images).sub(
+      %r{pgvector/pgvector:[^\n]+}, "pgvector/pgvector:untrusted"
+    ))
+    checksums = File.join(archive, "SHA256SUMS")
+    File.write(checksums, File.readlines(checksums).map { |line|
+      line.end_with?("  images.txt\n") ? "#{Digest::SHA256.file(images).hexdigest}  images.txt\n" : line
+    }.join)
+    FileUtils.rm_f(@log)
+
+    _stdout, verify_stderr, verify_status = run_operation("verify_backup", archive)
+
+    assert verify_status.success?, verify_stderr
+    commands = File.readlines(@log, chomp: true)
+    refute commands.any? { |command| command.include?("pgvector/pgvector:untrusted") }
+    assert commands.any? { |command| command.include?("pgvector/pgvector:0.8.6-pg15@sha256:test") }
+  end
+
   test "restore requires confirmation and restores every state group" do
     archive = File.join(@temporary, "backup")
     _stdout, stderr, backup_status = run_operation("backup", archive)
