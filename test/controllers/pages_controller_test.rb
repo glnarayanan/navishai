@@ -11,6 +11,10 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "body", text: /self-hosted/i
     assert_select "body", text: /does not claim SOC 2/
     assert_select "a", text: "First-time setup", count: 0
+    assert_select ".principle-stage[aria-hidden=true]"
+    assert_select ".principle-column", count: 3
+    assert_select ".principle-static"
+    assert_select ".principle-static[aria-hidden]", count: 0
   end
 
   test "authenticated people are sent to workspaces" do

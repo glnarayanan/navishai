@@ -415,29 +415,60 @@
   </section>
 
   <section id="principles" class="principles-section" aria-labelledby="principles-title">
-    <header class="section-header section-header-plain">
+    <header class="section-header">
       <h2 id="principles-title">Rules the product actually enforces</h2>
       <p>Not testimonials. These are operating constraints a reviewer can verify in the product.</p>
     </header>
-    <div class="principle-marquee" aria-hidden="true">
-      <div class="principle-track">
-        <% rules = [
-          ["Send rule", "A human reviews the current draft and presses Send. Agents cannot."],
-          ["Ledger rule", "Tasks, runs, evidence, reviews, and sends stay attributable."],
-          ["Memory rule", "Records carry source, time, scope, and supersession."],
-          ["Runtime rule", "Rails submits work through the runner protocol. Go owns isolation."],
-          ["Score rule", "Health signals stay inspectable. Analysis is labeled as analysis."],
-          ["Degrade rule", "If memory or a runtime is down, NavishAI says so and keeps case work moving."]
-        ] %>
-        <% 2.times do %>
-          <% rules.each do |title, body| %>
-            <article class="principle-card">
-              <strong><%= title %></strong>
-              <p><%= body %></p>
-            </article>
-          <% end %>
+    <% rules = [
+      ["Send rule", "A human reviews the current draft and presses Send. Agents cannot."],
+      ["Ledger rule", "Tasks, runs, evidence, reviews, and sends stay attributable."],
+      ["Memory rule", "Records carry source, time, scope, and supersession."],
+      ["Runtime rule", "Rails submits work through the runner protocol. Go owns isolation."],
+      ["Score rule", "Health signals stay inspectable. Analysis is labeled as analysis."],
+      ["Degrade rule", "If memory or a runtime is down, NavishAI says so and keeps case work moving."],
+      ["Policy rule", "Policy review surfaces missing evidence, stale sources, and conflicts before anyone can send."],
+      ["Isolation rule", "Tenant, workspace, and memory scope stay isolated. PostgreSQL stays authoritative."],
+      ["Channel rule", "Email and Intercom stay in the approved registry. No agent can send on either."]
+    ] %>
+    <div class="principle-stage" aria-hidden="true">
+      <div class="principle-columns">
+        <% rules.each_slice(3).with_index do |group, index| %>
+          <div class="principle-column principle-column-<%= index + 1 %>">
+            <% 2.times do %>
+              <div class="principle-column-track">
+                <% group.each do |title, body| %>
+                  <article class="principle-card">
+                    <p><%= body %></p>
+                    <footer>
+                      <span class="principle-mark" aria-hidden="true"><%= title.first %></span>
+                      <span>
+                        <strong><%= title %></strong>
+                        <small>Enforced in the product</small>
+                      </span>
+                    </footer>
+                  </article>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
         <% end %>
       </div>
+      <div class="principle-fade principle-fade-top"></div>
+      <div class="principle-fade principle-fade-bottom"></div>
+    </div>
+    <div class="principle-static">
+      <% rules.each do |title, body| %>
+        <article class="principle-card">
+          <p><%= body %></p>
+          <footer>
+            <span class="principle-mark" aria-hidden="true"><%= title.first %></span>
+            <span>
+              <strong><%= title %></strong>
+              <small>Enforced in the product</small>
+            </span>
+          </footer>
+        </article>
+      <% end %>
     </div>
   </section>
 

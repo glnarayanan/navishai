@@ -1,4 +1,5 @@
 require "application_system_test_case"
+require "timeout"
 
 class LandingPageTest < ApplicationSystemTestCase
   test "public landing explains the self-hosted product without invented claims" do
@@ -70,4 +71,144 @@ class LandingPageTest < ApplicationSystemTestCase
     refute_equal "auto", dot_left
     refute_equal "0px", dot_left
   end
+
+  test "principles use a 750px vertical column stage and a readable reduced-motion grid" do
+    emulate_prefers_reduced_motion("no-preference")
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    geometry = page.evaluate_script(<<~JAVASCRIPT)
+      (() => {
+        const stage = document.querySelector('.principle-stage')
+        const columns = [...document.querySelectorAll('.principle-column')]
+        const visible = columns.filter((column) => getComputedStyle(column).display !== 'none')
+        const tracks = [...document.querySelectorAll('.principle-column-track')]
+        const staticCopy = document.querySelector('.principle-static')
+        const horizontal = tracks.some((track) => {
+          const transform = getComputedStyle(track).animationName || ''
+          return transform.includes('marquee') && !transform.includes('vertical')
+        })
+        return {
+          height: Math.round(stage.getBoundingClientRect().height),
+          overflow: getComputedStyle(stage).overflow,
+          overflowX: getComputedStyle(stage).overflowX,
+          overflowY: getComputedStyle(stage).overflowY,
+          columns: visible.length,
+          stageHidden: stage.getAttribute('aria-hidden'),
+          staticHidden: staticCopy.getAttribute('aria-hidden'),
+          staticClip: getComputedStyle(staticCopy).clip,
+          staticPosition: getComputedStyle(staticCopy).position,
+          horizontal
+        }
+      })()
+    JAVASCRIPT
+    assert_in_delta 750, geometry["height"], 1
+    assert_equal "hidden", geometry["overflow"]
+    assert_equal 3, geometry["columns"]
+    assert_equal "true", geometry["stageHidden"]
+    assert_nil geometry["staticHidden"]
+    assert geometry["staticPosition"] == "absolute"
+    refute geometry["horizontal"]
+
+    emulate_prefers_reduced_motion("reduce")
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    reduced = page.evaluate_script(<<~JAVASCRIPT)
+      (() => {
+        const stage = document.querySelector('.principle-stage')
+        const staticCopy = document.querySelector('.principle-static')
+        const first = staticCopy.querySelector('.principle-card')
+        return {
+          stageDisplay: getComputedStyle(stage).display,
+          staticDisplay: getComputedStyle(staticCopy).display,
+          staticPosition: getComputedStyle(staticCopy).position,
+          staticClip: getComputedStyle(staticCopy).clip,
+          staticHidden: staticCopy.getAttribute('aria-hidden'),
+          staticWidth: Math.round(staticCopy.getBoundingClientRect().width),
+          cardVisible: first.getBoundingClientRect().height > 0,
+          cardAriaHidden: first.closest('[aria-hidden="true"]') !== null,
+          columns: getComputedStyle(staticCopy).gridTemplateColumns.split(' ').filter(Boolean).length,
+          overflow: Math.max(0, staticCopy.scrollWidth - staticCopy.clientWidth)
+        }
+      })()
+    JAVASCRIPT
+    assert_equal "none", reduced["stageDisplay"]
+    assert_equal "grid", reduced["staticDisplay"]
+    assert_equal "static", reduced["staticPosition"]
+    refute_match(/rect\(0/, reduced["staticClip"].to_s)
+    assert_nil reduced["staticHidden"]
+    assert reduced["cardVisible"]
+    refute reduced["cardAriaHidden"]
+    assert_equal 3, reduced["columns"]
+    assert_operator reduced["staticWidth"], :>=, 1000
+    assert_operator reduced["overflow"], :<=, 0
+    assert_text "A human reviews the current draft and presses Send"
+  end
+
+  test "the desktop nav pill sits behind the active link at rest and after a jump" do
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+    assert_nav_pill_behind_active("Home")
+
+    click_link "Features", href: "#features"
+    assert_nav_pill_behind_active("Features")
+
+    page.current_window.resize_to(1024, 900)
+    click_link "Home", href: "#hero"
+    assert_nav_pill_behind_active("Home")
+  end
+
+  test "the hero CTA sizes from its label at 390 pixels" do
+    visit root_path
+    page.current_window.resize_to(390, 844)
+
+    box = page.evaluate_script(<<~JAVASCRIPT)
+      (() => {
+        const link = [...document.querySelectorAll('.landing-actions a')].find((node) => node.textContent.includes('See how it works'))
+        return { client: link.clientWidth, scroll: link.scrollWidth, width: getComputedStyle(link).width }
+      })()
+    JAVASCRIPT
+    assert_operator box["client"], :>=, box["scroll"], box.inspect
+  end
+
+  private
+    def emulate_prefers_reduced_motion(value)
+      page.driver.browser.execute_cdp(
+        "Emulation.setEmulatedMedia",
+        features: [ { name: "prefers-reduced-motion", value: value } ]
+      )
+    end
+
+    def assert_nav_pill_behind_active(label)
+      metrics = nil
+      Timeout.timeout(Capybara.default_max_wait_time) do
+        loop do
+          metrics = page.evaluate_script(<<~JAVASCRIPT)
+            (() => {
+              const indicator = document.querySelector('.nav-pill-indicator')
+              const active = document.querySelector('.nav-pill a.is-active') || document.querySelector('.nav-pill a[aria-current="true"]')
+              if (!indicator || !active) return null
+              const item = active.parentElement
+              const indicatorRect = indicator.getBoundingClientRect()
+              const itemRect = item.getBoundingClientRect()
+              return {
+                label: active.textContent.trim(),
+                position: getComputedStyle(indicator).position,
+                leftDelta: Math.abs(indicatorRect.left - itemRect.left),
+                widthDelta: Math.abs(indicatorRect.width - itemRect.width),
+                behind: parseInt(getComputedStyle(indicator).zIndex, 10) < parseInt(getComputedStyle(item).zIndex, 10)
+              }
+            })()
+          JAVASCRIPT
+          break if metrics && metrics["label"] == label && metrics["leftDelta"] <= 2 && metrics["position"] == "absolute"
+          sleep 0.05
+        end
+      end
+      assert_equal label, metrics["label"]
+      assert_equal "absolute", metrics["position"]
+      assert_operator metrics["leftDelta"], :<=, 2, metrics.inspect
+      assert_operator metrics["widthDelta"], :<=, 2, metrics.inspect
+      assert metrics["behind"], metrics.inspect
+    end
 end
