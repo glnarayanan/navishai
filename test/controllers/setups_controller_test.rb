@@ -78,4 +78,11 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
     assert_not User.exists?
     assert_not InstallationState.exists?
   end
+
+  test "landing links to first-time setup while bootstrap is available" do
+    get root_path
+
+    assert_response :success
+    assert_select "a[href=?]", new_setup_path, text: "First-time setup"
+  end
 end

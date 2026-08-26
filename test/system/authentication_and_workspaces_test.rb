@@ -19,10 +19,12 @@ class AuthenticationAndWorkspacesTest < ApplicationSystemTestCase
 
     assert_selector "h1", text: "Workspace invitations"
     assert_title "Invitations · Acme Support — NavishAI"
+    reveal_setup "Send an invitation"
     assert_field "Email address"
     assert_selector "select[name='workspace_invitation[role]'] option", count: 5
 
     page.current_window.resize_to(375, 812)
+    open_workspace_nav
     assert_link "Workspaces", visible: true
   end
 

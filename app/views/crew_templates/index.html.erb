@@ -1,15 +1,17 @@
 <% content_for :title, "Crews · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell crew-shell">
-  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+<main class="page-shell crew-shell page-family-config">
   <div class="page-heading crew-heading">
     <div>
       <h1>Specialist crews</h1>
       <p>Set narrow instructions, tools, runtime preferences, and budgets for each accountable role.</p>
     </div>
-    <div class="crew-safety-note">
-      <strong>Human send stays separate</strong>
-      <span>No crew role can send or schedule a customer message.</span>
+    <div class="notice notice-info crew-safety-note">
+      <span class="notice-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.5A6.5 6.5 0 1 1 1.5 8 6.5 6.5 0 0 1 8 1.5zM7.4 7h1.2v5H7.4zm0-2.8h1.2V5.4H7.4z"/></svg></span>
+      <div class="notice-body">
+        <strong>Human send stays separate</strong>
+        <p>No crew role can send or schedule a customer message.</p>
+      </div>
     </div>
   </div>
 

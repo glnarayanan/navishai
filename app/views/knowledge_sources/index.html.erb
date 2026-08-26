@@ -1,7 +1,6 @@
 <% content_for :title, "Knowledge · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell knowledge-shell">
-  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+<main class="page-shell knowledge-shell page-family-collection">
   <div class="page-heading knowledge-heading">
     <div>
       <h1>Knowledge sources</h1>
@@ -13,6 +12,15 @@
       <%= form.submit "Search", class: "button button-secondary" %>
     <% end %>
   </div>
+
+  <section class="route-status" aria-label="Knowledge library status">
+    <dl>
+      <div><dt>Sources</dt><dd><%= @sources.size %></dd></div>
+      <div><dt>Current</dt><dd><%= @sources.count { |source| !source.deleted? && !source.stale? } %></dd></div>
+      <div><dt>Stale or deleted</dt><dd><%= @sources.count { |source| source.deleted? || source.stale? } %></dd></div>
+      <div><dt>Your access</dt><dd><%= @can_manage ? "Can add and version sources" : "Read-only" %></dd></div>
+    </dl>
+  </section>
 
   <% if @query.present? %>
     <section class="section-block" aria-labelledby="search-results-title">
@@ -37,54 +45,6 @@
         <%= render "shared/empty_state",
           title: "No current source matches",
           description: "Try fewer terms. Deleted sources and older versions do not appear in current search." %>
-      <% end %>
-    </section>
-  <% end %>
-
-  <% if @can_manage %>
-    <section class="section-block" aria-labelledby="add-source-title">
-      <h2 id="add-source-title">Add approved knowledge</h2>
-      <p class="section-intro">URL sources fetch bounded public HTTPS text when the text box is blank. Paste reviewed text to store a snapshot without fetching.</p>
-      <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
-      <%= form_with url: workspace_knowledge_sources_path(Current.workspace), scope: :knowledge_source,
-        class: "knowledge-form", multipart: true do |form| %>
-        <div class="knowledge-form-grid">
-          <div class="field">
-            <%= form.label :source_kind, "Source type" %>
-            <%= form.select :source_kind, KnowledgeSource::SOURCE_KINDS.map { |kind| [ knowledge_source_kind_label(kind), kind ] }, {}, required: true %>
-          </div>
-          <div class="field knowledge-title-field">
-            <%= form.label :title %>
-            <%= form.text_field :title, required: true, maxlength: 200, autocomplete: "off" %>
-          </div>
-          <div class="field">
-            <%= form.label :expires_at, "Expires at" %>
-            <%= form.datetime_local_field :expires_at, aria: { describedby: "expiry-hint" } %>
-            <span class="field-hint" id="expiry-hint">Optional. Expired versions stay visible with a stale warning.</span>
-          </div>
-          <div class="field">
-            <%= form.label :url, "HTTPS source URL" %>
-            <%= form.url_field :url, maxlength: 2048, placeholder: "https://docs.example.com/article" %>
-            <span class="field-hint">Required only for a URL snapshot.</span>
-          </div>
-          <div class="field">
-            <%= form.label :external_id, "Intercom article ID" %>
-            <%= form.text_field :external_id, maxlength: 500, autocomplete: "off" %>
-            <span class="field-hint">Required only for Intercom Help Center.</span>
-          </div>
-          <div class="field">
-            <%= form.label :upload, "Plain-text upload" %>
-            <%= form.file_field :upload, accept: "text/plain,.txt", aria: { describedby: "knowledge-upload-hint" } %>
-            <span class="field-hint" id="knowledge-upload-hint">Required only for Upload. The file must pass the configured scanner.</span>
-          </div>
-        </div>
-        <div class="field">
-          <%= form.label :content, "Approved source text" %>
-          <%= form.text_area :content, rows: 9, maxlength: KnowledgeSourceVersion::MAX_CONTENT_BYTES,
-            aria: { describedby: "knowledge-content-hint" } %>
-          <span class="field-hint" id="knowledge-content-hint">Required for maintained text and Intercom Help Center. Optional for URL fetches. Maximum 1 MiB.</span>
-        </div>
-        <%= form.submit "Add knowledge source", class: "button button-primary" %>
       <% end %>
     </section>
   <% end %>
@@ -115,4 +75,54 @@
         description: @can_manage ? "Add maintained text or an approved snapshot to start the library." : "A Manager, Admin, or Owner can add the first source." %>
     <% end %>
   </section>
+
+  <% if @can_manage %>
+    <details class="setup-disclosure" <%= "open" if @form_error.present? %>>
+      <summary>Add approved knowledge</summary>
+      <p class="section-intro">URL sources fetch bounded public HTTPS text when the text box is blank. Paste reviewed text to store a snapshot without fetching.</p>
+      <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
+      <%= form_with url: workspace_knowledge_sources_path(Current.workspace), scope: :knowledge_source,
+        class: "knowledge-form", multipart: true,
+        data: { controller: "knowledge-form", action: "change->knowledge-form#sync" } do |form| %>
+        <div class="knowledge-form-grid">
+          <div class="field">
+            <%= form.label :source_kind, "Source type" %>
+            <%= form.select :source_kind, KnowledgeSource::SOURCE_KINDS.map { |kind| [ knowledge_source_kind_label(kind), kind ] },
+              {}, { required: true, data: { knowledge_form_target: "kind" } } %>
+          </div>
+          <div class="field knowledge-title-field">
+            <%= form.label :title %>
+            <%= form.text_field :title, required: true, maxlength: 200, autocomplete: "off" %>
+          </div>
+          <div class="field">
+            <%= form.label :expires_at, "Expires at" %>
+            <%= form.datetime_local_field :expires_at, aria: { describedby: "expiry-hint" } %>
+            <span class="field-hint" id="expiry-hint">Optional. Expired versions stay visible with a stale warning.</span>
+          </div>
+          <div class="field" hidden data-knowledge-form-target="urlFields">
+            <%= form.label :url, "HTTPS source URL" %>
+            <%= form.url_field :url, maxlength: 2048, placeholder: "https://docs.example.com/article" %>
+            <span class="field-hint">Required for a URL snapshot.</span>
+          </div>
+          <div class="field" hidden data-knowledge-form-target="externalFields">
+            <%= form.label :external_id, "Intercom article ID" %>
+            <%= form.text_field :external_id, maxlength: 500, autocomplete: "off" %>
+            <span class="field-hint">Required for Intercom Help Center.</span>
+          </div>
+          <div class="field" hidden data-knowledge-form-target="uploadFields">
+            <%= form.label :upload, "Plain-text upload" %>
+            <%= form.file_field :upload, accept: "text/plain,.txt", aria: { describedby: "knowledge-upload-hint" } %>
+            <span class="field-hint" id="knowledge-upload-hint">Required for Upload. The file must pass the configured scanner.</span>
+          </div>
+        </div>
+        <div class="field" data-knowledge-form-target="contentFields">
+          <%= form.label :content, "Approved source text" %>
+          <%= form.text_area :content, rows: 9, maxlength: KnowledgeSourceVersion::MAX_CONTENT_BYTES,
+            aria: { describedby: "knowledge-content-hint" } %>
+          <span class="field-hint" id="knowledge-content-hint">Required for maintained text and Intercom Help Center. Optional for URL fetches. Maximum 1 MiB.</span>
+        </div>
+        <%= form.submit "Add knowledge source", class: "button button-primary" %>
+      <% end %>
+    </details>
+  <% end %>
 </main>

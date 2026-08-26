@@ -48,7 +48,9 @@
     <% else %>
       <%= render "shared/empty_state",
         title: "No cases in the queue",
-        description: "New customer conversations will appear here when intake is connected." %>
+        description: "New customer conversations will appear here when intake is connected.",
+        action_label: @membership.can_configure_integrations? ? "Connect shared email" : nil,
+        action_path: @membership.can_configure_integrations? ? workspace_shared_email_inboxes_path(@workspace) : nil %>
     <% end %>
   <% end %>
 </section>

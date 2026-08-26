@@ -4,7 +4,7 @@ Rails.application.routes.draw do
     post "intercom/:webhook_key", to: "intercom#create", as: :intercom
     post "runner-events", to: "runner_events#create", as: :runner_events
   end
-  root "workspaces#index"
+  root "pages#show"
   resources :workspaces, only: %i[ index show ] do
     resource :deletion, only: %i[ create update ], controller: "workspace_deletions"
     resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls" do

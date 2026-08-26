@@ -1,0 +1,12 @@
+<dialog class="app-drawer" id="app-nav-drawer" aria-label="Workspace navigation" data-nav-drawer-target="dialog" data-action="click->nav-drawer#backdrop">
+  <div class="app-drawer-panel" data-nav-drawer-target="panel">
+    <div class="app-drawer-toolbar">
+      <%= render "layouts/wordmark" %>
+      <button type="button" class="nav-drawer-close" data-action="nav-drawer#close">
+        <span class="visually-hidden">Close</span>
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.2 5.8 12 11.6l5.8-5.8 1.4 1.4L13.4 13l5.8 5.8-1.4 1.4L12 14.4l-5.8 5.8-1.4-1.4 5.8-5.8-5.8-5.8z"/></svg>
+      </button>
+    </div>
+    <%= render "layouts/app_nav_panel", variant: "drawer" %>
+  </div>
+</dialog>

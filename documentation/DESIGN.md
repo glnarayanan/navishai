@@ -1,16 +1,37 @@
 # Interface design language
 
-NavishAI uses a quiet, task-first application shell. Warm neutral surfaces keep long work sessions readable. Deep green marks the current path, primary action, focus, and successful state. Red appears only for errors and blocked actions.
+NavishAI uses the licensed MagicUI agent-template composition as the executable visual specification. Product content and behaviour are NavishAI; the visible geometry is not reinterpreted. Surfaces share cool paper, near-black Geist type, and electric blue (`--secondary`) for the current path, primary action, and focus. Red is reserved for errors, blocked work, and destructive confirmation. Success is green; warnings are amber. Informational, review-required, blocked, and degraded states also use a distinct icon and label, not color alone.
 
-## Shared patterns
+Geist and Geist Mono are hosted from `app/assets/fonts` under the SIL Open Font License. They are not loaded from a CDN or font service.
 
-- The header holds the product mark, current workspace, workspace switcher, and sign-out action.
-- Every page has one clear heading and one primary action.
-- Forms use visible labels, 12-character password hints, compact controls on desktop, and 48-pixel controls on mobile.
-- Flashes announce changes through a shared live region. Form errors appear next to the form and name each problem.
-- Empty states explain why the page is empty and offer one next action when the user can take one.
-- Tables use row dividers and horizontal overflow rather than shrinking text on narrow screens.
+Light and dark themes share one token set. The interface follows the operating-system preference until a person chooses Light, Dark, or System, and that choice persists across visits.
+
+## Visual grammar
+
+- Navigation and meta: 14px. Body: 16px with comfortable line height. Card titles: 18–20px. Page titles: 28–32px, tightly tracked.
+- Radii: 10px fields and compact cards, 12px sheets, 16px major cards. Hairline borders, layered light/dark surfaces, restrained shadows.
+- Icons are local 16/20px SVG. Spacing follows an 8/12/16/24 rhythm.
+- Motion is 150–300ms CSS or Stimulus. It stops under `prefers-reduced-motion`.
+
+## Public product page
+
+The landing page ports the template section rhythm: sticky 70rem header contracting to 800px on scroll, centered active-nav pill, icon-only theme control, 16:9 media stage, bordered 2×4 proof grid, bento animations, feature slideshow, quote band, two-panel growth visual, readiness cards in the pricing layout, principle marquee, FAQ, 400px CTA with supplied artwork, and a large animated NavishAI footer sign-off. Sign in lives in the mobile drawer.
+
+## Authenticated shell
+
+- Work sits in a bounded, layered frame on a radial wash. Destinations are 40–44px pills with visible text and a matching local icon.
+- Workspace identity lives in the sidebar header; theme, sign-out, and notifications live in a contained footer.
+- A compact floating page bar holds location, the current section title, status, and page-specific actions.
+- On tablet and mobile, including a 1024-pixel viewport, destinations move into an approximately 95%-wide bottom sheet with a cyclic focus trap, Escape, and focus restoration. The mobile app bar stays under 88 pixels.
+
+## Page families
+
+- Cases keep a compact queue, conversation and investigation, and a decision rail. The primary next action is blue; secondary controls stay quiet.
+- Accounts put current health in the mobile first fold. Signals use a table on desktop and keyboard-reachable cards on mobile, keeping signal, value, source/range, weight, risk points, and citation.
+- The scorecard is a visual scoring workspace: comparison first, compact threshold cards, and progressive disclosure for history, backtest, publish, and validation. Mobile preserves Account/Published/Proposal/Change.
+- Memory uses provenance and state cards with light/dark layer separation.
+- Setup, auth, and admin routes have route-specific compositions. Setup forms stay behind a disclosure until requested.
 
 ## Accessibility and layout
 
-The shell includes a keyboard skip link, visible focus, semantic landmarks, reduced-motion support, and a 320-pixel minimum layout. Body copy stays at least 16 pixels on mobile. Interactive states must not depend on color alone.
+The shell includes a keyboard skip link, visible focus, semantic landmarks, reduced-motion support, and a 320-pixel minimum layout. Body copy stays at least 16 pixels on mobile. Interactive states must not depend on color alone. CSP remains `style-src 'self'` without DOM prototype monkey-patches.

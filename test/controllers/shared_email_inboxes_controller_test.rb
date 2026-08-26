@@ -139,7 +139,7 @@ class SharedEmailInboxesControllerTest < ActionDispatch::IntegrationTest
 
     get workspace_support_cases_path(@workspace)
     assert_response :success
-    assert_select "a", { text: "Email", count: 0 }
+    assert_select ".nav-label", text: "Email", count: 0
 
     get workspace_shared_email_inboxes_path(@workspace)
     assert_response :forbidden

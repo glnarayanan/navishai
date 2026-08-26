@@ -4,9 +4,10 @@ class IntercomConnectionsTest < ApplicationSystemTestCase
   test "owner configures an Intercom connection on desktop and mobile" do
     sign_in(users(:owner))
     visit workspace_shared_email_inboxes_path(workspaces(:acme_support))
-    click_on "Manage Intercom sync"
+    click_on "Intercom", match: :first
 
     assert_selector "h1", text: "Intercom sync"
+    reveal_setup "Add a connection"
     fill_in "Connection name", with: "Support Intercom"
     fill_in "Intercom app ID", with: "app_123"
     fill_in "Credential key", with: "support"
@@ -20,6 +21,7 @@ class IntercomConnectionsTest < ApplicationSystemTestCase
     assert_text "Paused"
 
     page.current_window.resize_to(320, 844)
+    reveal_setup "Add a connection"
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     page.all("input, button, a.button").first(5).each do |control|
       assert_operator control.rect.height, :>=, 48

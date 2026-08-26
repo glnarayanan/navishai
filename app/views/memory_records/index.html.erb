@@ -1,7 +1,6 @@
 <% content_for :title, "Memory · #{@workspace.name} — NavishAI" %>
 
-<main class="page-shell memory-shell">
-  <%= link_to "Back to cases", workspace_support_cases_path(@workspace), class: "back-link" %>
+<main class="page-shell memory-shell page-family-collection">
   <div class="page-heading memory-heading">
     <div>
       <h1>Workspace memory</h1>
@@ -23,10 +22,8 @@
         <p>PostgreSQL stays authoritative. Export a complete archive or rebuild the external index from current records.</p>
       </div>
       <% if @degraded_index_count.positive? %>
-        <div class="execution-alert execution-alert-warning" role="status">
-          <strong>Memory indexing is degraded</strong>
-          <p><%= pluralize(@degraded_index_count, "record") %> failed or has an unknown result. Source work remains saved.</p>
-        </div>
+        <%= render "shared/notice", kind: "degraded", title: "Memory indexing is degraded",
+          body: "#{pluralize(@degraded_index_count, "record")} failed or has an unknown result. Source work remains saved." %>
       <% end %>
       <div class="memory-operation-actions">
         <%= link_to "Export memory", export_workspace_memory_records_path(@workspace), class: "button button-secondary" %>
@@ -96,9 +93,16 @@
           <li>
             <%= link_to workspace_memory_record_path(@workspace, memory), class: "memory-record-link" do %>
               <span class="memory-record-main">
-                <span class="memory-record-kinds"><strong><%= memory_topic_label(memory) %></strong><span><%= memory.memory_type.titleize %></span></span>
+                <span class="memory-record-kinds">
+                  <strong><%= memory_topic_label(memory) %></strong>
+                  <span class="memory-provenance">
+                    <span class="memory-chip"><%= memory.memory_type.titleize %></span>
+                    <span class="memory-chip"><%= memory_scope_label(memory) %></span>
+                    <span class="memory-chip"><%= memory_authority_label(memory) %></span>
+                  </span>
+                </span>
                 <span class="memory-preview"><%= truncate(memory.content, length: 180) %></span>
-                <span class="memory-record-meta"><%= memory_scope_label(memory) %> · <%= memory_authority_label(memory) %> · Observed <%= time_ago_in_words(memory.observed_at) %> ago</span>
+                <span class="memory-record-meta">Observed <%= time_ago_in_words(memory.observed_at) %> ago · <%= memory.source_reference %></span>
               </span>
               <span class="status-badge <%= state_class %>"><%= state %></span>
             <% end %>
@@ -106,9 +110,11 @@
         <% end %>
       </ol>
     <% else %>
-      <%= render "shared/empty_state",
-        title: "No memory matches",
-        description: @access_scope == "all" ? "Change the filters or wait for a source event to create memory." : "No memory has been disclosed to one of your execution runs." %>
+    <%= render "shared/empty_state",
+      title: "No memory matches",
+      description: @access_scope == "all" ? "Change the filters or wait for a source event to create memory." : "No memory has been disclosed to one of your execution runs.",
+      action_label: @access_scope == "all" ? "Open knowledge library" : nil,
+      action_path: @access_scope == "all" ? workspace_knowledge_sources_path(@workspace) : nil %>
     <% end %>
   </section>
 </main>

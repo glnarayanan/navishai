@@ -1,7 +1,6 @@
 <% content_for :title, "Runtimes · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell runtime-shell">
-  <%= link_to "Back to crews", workspace_crew_templates_path(Current.workspace), class: "back-link" %>
+<main class="page-shell runtime-shell page-family-config">
   <div class="page-heading runtime-heading">
     <div>
       <h1>Runtime approvals</h1>
@@ -13,10 +12,17 @@
     <% end %>
   </div>
 
-  <div class="runtime-safety-note">
-    <strong>Credentials stay on the runner</strong>
-    <span>NavishAI stores the resolved executable, reported version, capabilities, and non-secret account details. Approval never copies a login token.</span>
-  </div>
+  <%= render "shared/notice", kind: "info", css: "runtime-safety-note", title: "Credentials stay on the runner",
+    body: "NavishAI stores the resolved executable, reported version, capabilities, and non-secret account details. Approval never copies a login token." %>
+
+  <section class="route-status" aria-label="Runtime boundary">
+    <dl>
+      <div><dt>Installations</dt><dd><%= @installations.size %></dd></div>
+      <div><dt>Approved</dt><dd><%= @installations.count(&:runnable?) %></dd></div>
+      <div><dt>Last checked</dt><dd><%= @installations.filter_map(&:checked_at).max&.then { |at| time_tag at, at.to_fs(:short) } || "Not checked yet" %></dd></div>
+      <div><dt>Your access</dt><dd><%= @can_configure ? "Can detect and set policy" : "Read-only" %></dd></div>
+    </dl>
+  </section>
 
   <% if @runtime_error %>
     <p class="inline-error" role="alert"><%= @runtime_error %></p>

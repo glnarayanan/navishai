@@ -21,6 +21,30 @@ class AccountHealthTest < ApplicationSystemTestCase
     assert_selector ".health-signals tbody tr", minimum: 6
     assert_text "Risk points subtract from 100"
 
+    last_cell = page.evaluate_script(<<~JAVASCRIPT)
+      (() => {
+        const cell = document.querySelector('.health-signals tbody tr td:last-child')
+        const frame = document.querySelector('.app-shell')
+        const scroller = document.querySelector('.health-signals-table')
+        const cellRect = cell.getBoundingClientRect()
+        const frameRect = frame.getBoundingClientRect()
+        const scrollRect = scroller.getBoundingClientRect()
+        return {
+          clipped: cellRect.right - frameRect.right,
+          contained: cellRect.right - scrollRect.right,
+          scrollable: scroller.scrollWidth - scroller.clientWidth,
+          regionClient: scroller.clientWidth,
+          regionScroll: scroller.scrollWidth,
+          citationClient: cell.clientWidth,
+          citationScroll: cell.scrollWidth
+        }
+      })()
+    JAVASCRIPT
+    assert_operator last_cell["scrollable"], :<=, 0, last_cell.inspect
+    assert_operator last_cell["clipped"], :<=, 1, last_cell.inspect
+    assert_operator last_cell["contained"], :<=, 1, last_cell.inspect
+    assert_operator last_cell["citationScroll"], :<=, last_cell["citationClient"] + 1, last_cell.inspect
+
     page.current_window.resize_to(320, 844)
     overflow = page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     offenders = page.evaluate_script(<<~JAVASCRIPT)

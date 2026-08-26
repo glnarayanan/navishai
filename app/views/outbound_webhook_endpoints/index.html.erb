@@ -1,52 +1,64 @@
 <% content_for :title, "Webhooks · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell webhook-page">
+<main class="page-shell webhook-page page-family-integration">
   <div class="page-heading">
     <h1>Outbound webhooks</h1>
     <p>Send signed, content-free work alerts to a public HTTPS endpoint.</p>
   </div>
 
-  <section class="section-block" aria-labelledby="new-webhook-title">
-    <div class="section-heading">
-      <div><h2 id="new-webhook-title">Add endpoint</h2><p>The signing secret stays in deployment credentials, never in this form.</p></div>
-    </div>
-    <%= render "shared/form_errors", record: @new_endpoint %>
-    <%= form_with model: @new_endpoint, url: workspace_outbound_webhook_endpoints_path(Current.workspace), class: "webhook-form" do |form| %>
-      <div class="field"><%= form.label :name %><%= form.text_field :name, required: true, maxlength: 100 %></div>
-      <div class="field"><%= form.label :url, "Public HTTPS URL" %><%= form.url_field :url, required: true, placeholder: "https://ops.example.com/navishai" %></div>
-      <div class="field"><%= form.label :credential_key %><%= form.text_field :credential_key, required: true, pattern: "[a-z][a-z0-9_]{0,63}", aria: { describedby: "credential-hint" } %><span class="field-hint" id="credential-hint">Set NAVISHAI_WEBHOOK_&lt;CREDENTIAL_KEY&gt;_SIGNING_SECRET for this key.</span></div>
-      <fieldset class="webhook-categories"><legend>Alert categories</legend>
-        <% Notification::CATEGORIES.each do |category| %>
-          <label><%= check_box_tag "outbound_webhook_endpoint[categories][]", category, @new_endpoint.categories.include?(category), id: "new-category-#{category}" %><span><%= category.humanize %></span></label>
-        <% end %>
-      </fieldset>
-      <%= form.submit "Add endpoint", class: "button button-primary" %>
-    <% end %>
+  <section class="route-status" aria-label="Webhook delivery status">
+    <dl>
+      <div><dt>Endpoints</dt><dd><%= @endpoints.size %></dd></div>
+      <div><dt>Delivered</dt><dd><%= @delivery_counts.select { |(_, status), _| status == "delivered" }.values.sum %></dd></div>
+      <div><dt>Failed</dt><dd><%= @delivery_counts.select { |(_, status), _| status == "failed" }.values.sum %></dd></div>
+      <div><dt>Payload</dt><dd>Signed, content-free alerts</dd></div>
+    </dl>
   </section>
 
-  <section class="section-block" aria-labelledby="configured-webhooks-title">
-    <h2 id="configured-webhooks-title">Configured endpoints</h2>
-    <%= render "shared/form_errors", record: @editing_endpoint if @editing_endpoint %>
-    <% if @endpoints.any? %>
-      <div class="webhook-endpoint-list">
-        <% @endpoints.each do |endpoint| %>
-          <article class="webhook-endpoint">
-            <div><h3><%= endpoint.name %></h3><p><%= endpoint.url %></p><small><%= endpoint.categories.map(&:humanize).to_sentence %></small></div>
-            <dl>
-              <div><dt>Delivered</dt><dd><%= @delivery_counts.fetch([endpoint.id, "delivered"], 0) %></dd></div>
-              <div><dt>Failed</dt><dd><%= @delivery_counts.fetch([endpoint.id, "failed"], 0) %></dd></div>
-            </dl>
-            <%= form_with model: endpoint, url: workspace_outbound_webhook_endpoint_path(Current.workspace, endpoint), method: :patch do |form| %>
-              <%= form.hidden_field :name %><%= form.hidden_field :url %><%= form.hidden_field :credential_key %>
-              <% endpoint.categories.each do |category| %><%= hidden_field_tag "outbound_webhook_endpoint[categories][]", category %><% end %>
-              <%= form.hidden_field :active, value: (!endpoint.active).to_s %>
-              <%= form.submit endpoint.active? ? "Pause" : "Resume", class: "button button-quiet" %>
-            <% end %>
-          </article>
-        <% end %>
-      </div>
-    <% else %>
-      <div class="empty-state"><h3>No webhook endpoints</h3><p>Add one to send signed operational alerts.</p></div>
-    <% end %>
-  </section>
+  <div class="integration-layout">
+    <section class="config-panel" aria-labelledby="configured-webhooks-title">
+      <h2 id="configured-webhooks-title">Configured endpoints</h2>
+      <%= render "shared/form_errors", record: @editing_endpoint if @editing_endpoint %>
+      <% if @endpoints.any? %>
+        <div class="webhook-endpoint-list">
+          <% @endpoints.each do |endpoint| %>
+            <article class="webhook-endpoint">
+              <div><h3><%= endpoint.name %></h3><p><%= endpoint.url %></p><small><%= endpoint.categories.map(&:humanize).to_sentence %></small></div>
+              <dl>
+                <div><dt>Delivered</dt><dd><%= @delivery_counts.fetch([endpoint.id, "delivered"], 0) %></dd></div>
+                <div><dt>Failed</dt><dd><%= @delivery_counts.fetch([endpoint.id, "failed"], 0) %></dd></div>
+              </dl>
+              <%= form_with model: endpoint, url: workspace_outbound_webhook_endpoint_path(Current.workspace, endpoint), method: :patch do |form| %>
+                <%= form.hidden_field :name %><%= form.hidden_field :url %><%= form.hidden_field :credential_key %>
+                <% endpoint.categories.each do |category| %><%= hidden_field_tag "outbound_webhook_endpoint[categories][]", category %><% end %>
+                <%= form.hidden_field :active, value: (!endpoint.active).to_s %>
+                <%= form.submit endpoint.active? ? "Pause" : "Resume", class: "button button-quiet" %>
+              <% end %>
+            </article>
+          <% end %>
+        </div>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No webhook endpoints",
+          description: "Add one to send signed operational alerts." %>
+      <% end %>
+    </section>
+
+    <details class="setup-disclosure" <%= "open" if @new_endpoint.errors.any? %>>
+      <summary>Add endpoint</summary>
+      <p class="muted-copy">The signing secret stays in deployment credentials, never in this form.</p>
+      <%= render "shared/form_errors", record: @new_endpoint %>
+      <%= form_with model: @new_endpoint, url: workspace_outbound_webhook_endpoints_path(Current.workspace), class: "webhook-form" do |form| %>
+        <div class="field"><%= form.label :name %><%= form.text_field :name, required: true, maxlength: 100 %></div>
+        <div class="field"><%= form.label :url, "Public HTTPS URL" %><%= form.url_field :url, required: true, placeholder: "https://ops.example.com/navishai" %></div>
+        <div class="field"><%= form.label :credential_key %><%= form.text_field :credential_key, required: true, pattern: "[a-z][a-z0-9_]{0,63}", aria: { describedby: "credential-hint" } %><span class="field-hint" id="credential-hint">Set NAVISHAI_WEBHOOK_&lt;CREDENTIAL_KEY&gt;_SIGNING_SECRET for this key.</span></div>
+        <fieldset class="webhook-categories"><legend>Alert categories</legend>
+          <% Notification::CATEGORIES.each do |category| %>
+            <label><%= check_box_tag "outbound_webhook_endpoint[categories][]", category, @new_endpoint.categories.include?(category), id: "new-category-#{category}" %><span><%= category.humanize %></span></label>
+          <% end %>
+        </fieldset>
+        <%= form.submit "Add endpoint", class: "button button-primary" %>
+      <% end %>
+    </details>
+  </div>
 </main>

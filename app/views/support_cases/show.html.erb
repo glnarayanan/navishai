@@ -9,6 +9,7 @@
       <div>
         <h1><%= @support_case.conversation.subject.presence || "Case ##{@support_case.id}" %></h1>
         <p><%= contact.name.presence || "Unnamed contact" %><% if account %> · <%= account.name %><% end %></p>
+        <p class="text-meta"><%= @contact_emails.to_sentence.presence || "No email recorded" %><% if @account_domains.any? %> · <%= @account_domains.to_sentence %><% end %></p>
       </div>
       <span class="status-badge status-<%= @support_case.status.dasherize %>"><%= case_status_label(@support_case.status) %></span>
     </div>
@@ -20,71 +21,18 @@
     </aside>
 
     <section class="conversation-thread" aria-labelledby="conversation-title">
+      <div class="decision-next decision-next-mobile">
+        <%= render "next_action" %>
+      </div>
       <% if @command_error %>
         <div class="inline-error command-error" role="alert" tabindex="-1" autofocus>
           <h2>Case not changed</h2>
           <p><%= @command_error %></p>
         </div>
       <% end %>
-      <div class="thread-heading">
-        <div>
-          <h2 id="conversation-title">Conversation</h2>
-          <p>Started <%= time_ago_in_words(@support_case.conversation.started_at) %> ago</p>
-        </div>
-        <span><%= pluralize(@messages.size, "message") %></span>
-      </div>
-
-      <% if @messages.any? %>
-        <ol class="message-list" role="list">
-          <% @messages.each do |message| %>
-            <li>
-              <article class="message message-<%= message.direction %>">
-                <header>
-                <strong>
-                  <% if message.contact? %>
-                    <%= message.author_contact.name.presence || "Customer" %>
-                  <% elsif message.user? %>
-                    <%= message.author_user.email_address %>
-                  <% else %>
-                    <%= message.external_author_name %>
-                  <% end %>
-                </strong>
-                  <span class="message-direction"><%= message.direction.titleize %></span>
-                  <time datetime="<%= message.occurred_at.iso8601 %>"><%= message.occurred_at.to_fs(:short) %></time>
-                </header>
-                <div class="message-body">
-                  <% if message.intercom_part_link&.redacted_at? %>
-                    <p class="muted-copy">This message was redacted in Intercom.</p>
-                  <% else %>
-                    <%= simple_format(message.body) %>
-                  <% end %>
-                </div>
-                <% if message.stored_attachments.any? %>
-                  <ul class="attachment-list" aria-label="Attachments">
-                    <% message.stored_attachments.each do |attachment| %>
-                      <li>
-                        <% if attachment.available? %>
-                          <%= link_to attachment.filename, workspace_attachment_path(@workspace, attachment), class: "attachment-link" %>
-                        <% else %>
-                          <span><%= attachment.filename %></span>
-                          <small><%= attachment.rejected? ? "Blocked" : "Quarantined" %>: <%= attachment.scan_result_code.humanize %></small>
-                        <% end %>
-                      </li>
-                    <% end %>
-                  </ul>
-                <% end %>
-              </article>
-            </li>
-          <% end %>
-        </ol>
-      <% else %>
-        <%= render "shared/empty_state",
-          title: "No messages yet",
-          description: "This case has no customer messages. Sending is not available from this workspace." %>
-      <% end %>
-
+      <%= render "investigation" %>
       <% if @email_thread %>
-        <section class="email-reply" id="email-reply" aria-labelledby="email-reply-title">
+        <section class="email-reply send-gate" id="email-reply" aria-labelledby="email-reply-title">
           <div>
             <h2 id="email-reply-title">Email reply</h2>
             <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
@@ -201,7 +149,7 @@
       <% end %>
 
       <% if @intercom_link %>
-        <section class="email-reply intercom-reply" id="intercom-reply" aria-labelledby="intercom-reply-title">
+        <section class="email-reply intercom-reply send-gate" id="intercom-reply" aria-labelledby="intercom-reply-title">
           <div>
             <h2 id="intercom-reply-title">Intercom reply</h2>
             <% if @intercom_delivery&.unknown? || @intercom_delivery&.sending? %>
@@ -268,12 +216,73 @@
           <% end %>
         </section>
       <% end %>
+
+      <div class="thread-heading">
+        <div>
+          <h2 id="conversation-title">Conversation</h2>
+          <p>Started <%= time_ago_in_words(@support_case.conversation.started_at) %> ago</p>
+        </div>
+        <span><%= pluralize(@messages.size, "message") %></span>
+      </div>
+
+      <% if @messages.any? %>
+        <ol class="message-list" role="list">
+          <% @messages.each do |message| %>
+            <li>
+              <article class="message message-<%= message.direction %>">
+                <header>
+                <strong>
+                  <% if message.contact? %>
+                    <%= message.author_contact.name.presence || "Customer" %>
+                  <% elsif message.user? %>
+                    <%= message.author_user.email_address %>
+                  <% else %>
+                    <%= message.external_author_name %>
+                  <% end %>
+                </strong>
+                  <span class="message-direction"><%= message.direction.titleize %></span>
+                  <time datetime="<%= message.occurred_at.iso8601 %>"><%= message.occurred_at.to_fs(:short) %></time>
+                </header>
+                <div class="message-body">
+                  <% if message.intercom_part_link&.redacted_at? %>
+                    <p class="muted-copy">This message was redacted in Intercom.</p>
+                  <% else %>
+                    <%= simple_format(message.body) %>
+                  <% end %>
+                </div>
+                <% if message.stored_attachments.any? %>
+                  <ul class="attachment-list" aria-label="Attachments">
+                    <% message.stored_attachments.each do |attachment| %>
+                      <li>
+                        <% if attachment.available? %>
+                          <%= link_to attachment.filename, workspace_attachment_path(@workspace, attachment), class: "attachment-link" %>
+                        <% else %>
+                          <span><%= attachment.filename %></span>
+                          <small><%= attachment.rejected? ? "Blocked" : "Quarantined" %>: <%= attachment.scan_result_code.humanize %></small>
+                        <% end %>
+                      </li>
+                    <% end %>
+                  </ul>
+                <% end %>
+              </article>
+            </li>
+          <% end %>
+        </ol>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No messages yet",
+          description: "This case has no customer messages. Sending is not available from this workspace." %>
+      <% end %>
     </section>
 
-    <aside class="case-context" aria-label="Case context">
+    <aside class="case-context decision-rail" aria-label="Case context">
       <% unless @membership.can_write? %>
-        <p class="read-only-notice"><strong>Read-only access</strong><br>You can review case work but cannot change it.</p>
+        <%= render "shared/notice", kind: "info", css: "read-only-notice", title: "Read-only access",
+          body: "You can review case work but cannot change it." %>
       <% end %>
+      <div class="decision-next decision-next-rail">
+        <%= render "next_action" %>
+      </div>
       <% if @intercom_link %>
         <section class="context-section" aria-labelledby="intercom-context-title">
           <h2 id="intercom-context-title">Intercom source</h2>
@@ -324,7 +333,12 @@
               <%= form.submit "Update status", class: "button button-secondary" %>
             <% end %>
           <% end %>
+        <% end %>
+      </section>
 
+      <details class="record-disclosure">
+        <summary>Priority and assignment</summary>
+        <% if @membership.can_write? %>
           <%= form_with url: priority_workspace_support_case_path(@workspace, @support_case), method: :patch, class: "compact-form inline-control" do |form| %>
             <div class="field">
               <%= form.label :priority, "Priority" %>
@@ -343,38 +357,23 @@
             </div>
             <%= form.submit "Save", class: "button button-quiet" %>
           <% end %>
-        <% end %>
-      </section>
-
-      <section class="context-section case-crew-summary">
-        <div class="context-section-heading">
-          <h2>Crew work</h2>
-          <%= link_to "Open", workspace_support_case_crew_tasks_path(@workspace, @support_case), class: "button button-quiet" %>
-        </div>
-        <% if @crew_tasks.any? %>
-          <dl class="case-facts">
-            <div><dt>Open tasks</dt><dd><%= @crew_tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
-            <div><dt>Needs review</dt><dd><%= @crew_tasks.count(&:review_requested?) %></dd></div>
-            <div><dt>Complete</dt><dd><%= @crew_tasks.count(&:completed?) %></dd></div>
-          </dl>
-          <p class="muted-copy"><strong><%= @crew_tasks.first.assigned_agent_profile.name %>:</strong> <%= @crew_tasks.first.title %></p>
         <% else %>
-          <p class="muted-copy">No specialist work has been planned for this case.</p>
+          <p class="muted-copy"><%= @support_case.assigned_membership&.user&.email_address || "Unassigned" %> · <%= @support_case.priority.titleize %></p>
         <% end %>
-      </section>
+      </details>
 
-      <section class="context-section">
-        <h2>Customer</h2>
+      <details class="record-disclosure">
+        <summary>Customer</summary>
         <dl class="case-facts">
           <div><dt>Contact</dt><dd><%= contact.name.presence || "Unnamed contact" %></dd></div>
           <div><dt>Account</dt><dd><%= account&.name || "No account linked" %></dd></div>
           <div><dt>Email</dt><dd><%= @contact_emails.to_sentence.presence || "Not recorded" %></dd></div>
           <div><dt>Domain</dt><dd><%= @account_domains.to_sentence.presence || "Not recorded" %></dd></div>
         </dl>
-      </section>
+      </details>
 
-      <section class="context-section" id="tags">
-        <h2>Tags</h2>
+      <details class="record-disclosure" id="tags" <%= "open" if @support_case.tags.any? %>>
+        <summary>Tags</summary>
         <% if @support_case.tags.any? %>
           <ul class="tag-list" role="list">
             <% @support_case.tags.order(:name).each do |tag| %>
@@ -409,10 +408,10 @@
             <%= form.submit "Create", class: "button button-quiet" %>
           <% end %>
         <% end %>
-      </section>
+      </details>
 
-      <section class="context-section" id="notes">
-        <h2>Private notes</h2>
+      <details class="record-disclosure" id="notes" <%= "open" if @notes.any? %>>
+        <summary>Private notes</summary>
         <p class="muted-copy">Private — staff only</p>
         <% if @membership.can_write? %>
           <%= form_with url: notes_workspace_support_case_path(@workspace, @support_case), class: "compact-form note-form" do |form| %>
@@ -433,16 +432,16 @@
         <% elsif !@membership.can_write? %>
           <p class="muted-copy">No private notes</p>
         <% end %>
-      </section>
+      </details>
 
-      <section class="context-section">
-        <h2>Case activity</h2>
+      <details class="record-disclosure">
+        <summary>Case activity</summary>
         <ol class="audit-list" role="list">
           <% @activity_items.each do |item| %>
             <%= render "activity_item", item: item %>
           <% end %>
         </ol>
-      </section>
+      </details>
     </aside>
   </div>
 </main>

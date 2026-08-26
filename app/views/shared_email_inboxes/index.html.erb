@@ -1,94 +1,103 @@
 <% content_for :title, "Email inboxes · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell">
-  <%= link_to "Back to cases", workspace_support_cases_path(Current.workspace), class: "back-link" %>
+<main class="page-shell page-family-integration">
   <div class="page-heading">
     <h1>Shared email inboxes</h1>
     <p>Connect signed inbound forwarding. Customer sending stays off until the separate human-send flow is configured.</p>
-    <p><%= link_to "Manage Intercom sync", workspace_intercom_connections_path(Current.workspace), class: "button button-quiet" %></p>
   </div>
 
-  <section class="section-block" aria-labelledby="add-inbox-title">
-    <h2 id="add-inbox-title">Add an inbox</h2>
-    <%= render "shared/form_errors", record: @inbox %>
-    <%= form_with model: [ Current.workspace, @inbox ], class: "inbox-form" do |form| %>
-      <div class="field">
-        <%= form.label :name, "Inbox name" %>
-        <%= form.text_field :name, required: true, maxlength: 100, autocomplete: "off" %>
-      </div>
-      <div class="field">
-        <%= form.label :email_address %>
-        <%= form.email_field :email_address, required: true, maxlength: 254, autocomplete: "email" %>
-      </div>
-      <div class="field">
-        <%= form.label :credential_key %>
-        <%= form.text_field :credential_key, required: true, maxlength: 100, pattern: "[a-z0-9_]+", autocomplete: "off", aria: { describedby: "credential-key-hint" } %>
-        <span class="field-hint" id="credential-key-hint">Lowercase letters, numbers, and underscores. Secret values stay in Rails credentials or deployment environment variables.</span>
-      </div>
-      <%= form.submit "Add inbox", class: "button button-primary" %>
-    <% end %>
+  <section class="route-status" aria-label="Email connection status">
+    <dl>
+      <div><dt>Inboxes</dt><dd><%= @inboxes.size %></dd></div>
+      <div><dt>Ready</dt><dd><%= @inboxes.count { |inbox| inbox.active? && inbox.webhook_ready? } %></dd></div>
+      <div><dt>Deliveries to retry</dt><dd><%= @retry_counts.values.sum %></dd></div>
+      <div><dt>Send boundary</dt><dd>Human send stays off this page</dd></div>
+    </dl>
   </section>
 
-  <section class="section-block" aria-labelledby="configured-inboxes-title">
-    <h2 id="configured-inboxes-title">Configured inboxes</h2>
-    <% if @inboxes.any? %>
-      <div class="table-wrap inbox-table-wrap">
-        <table class="inbox-table">
-          <thead>
-            <tr><th>Inbox</th><th>Inbound endpoint</th><th>Status</th><th>Intake</th><th><span class="visually-hidden">Action</span></th></tr>
-          </thead>
-          <tbody>
-            <% @inboxes.each do |inbox| %>
-              <tr>
-                <td data-label="Inbox"><strong><%= inbox.name %></strong><br><span class="muted-copy"><%= inbox.email_address %></span></td>
-                <td data-label="Inbound endpoint"><code class="endpoint"><%= webhooks_shared_email_url(inbox.webhook_key) %></code></td>
-                <td data-label="Status">
-                  <span class="status-badge"><%= shared_email_inbox_status_label(inbox) %></span>
-                </td>
-                <td data-label="Intake">
-                  <% retry_count = @retry_counts.fetch(inbox.id, 0) %>
-                  <% terminal_counts = @terminal_failure_counts.select { |(inbox_id, _), _| inbox_id == inbox.id } %>
-                  <% if retry_count.positive? %>
-                    <strong><%= pluralize(retry_count, "delivery") %> need retry</strong>
-                    <ul class="integration-failures">
-                      <% @retry_failure_counts.each do |(inbox_id, failure_code), count| %>
-                        <% next unless inbox_id == inbox.id %>
-                        <li><%= failure_code ? failure_code.humanize : "Processing interrupted" %>: <%= count %></li>
-                      <% end %>
-                    </ul>
-                  <% end %>
-                  <% if terminal_counts.any? %>
-                    <strong><%= pluralize(terminal_counts.values.sum, "delivery") %> need review</strong>
-                    <ul class="integration-failures">
-                      <% terminal_counts.each do |(_, failure_code), count| %>
-                        <li><%= failure_code ? failure_code.humanize : "Retry limit reached" %>: <%= count %></li>
-                      <% end %>
-                    </ul>
-                  <% elsif retry_count.zero? %>
-                    <span class="muted-copy">No failures</span>
-                  <% end %>
-                </td>
-                <td data-label="Action">
-                  <%= form_with model: [ Current.workspace, inbox ] do |form| %>
-                    <%= form.hidden_field :active, value: !inbox.active? %>
-                    <%= form.submit inbox.active? ? "Pause" : "Activate", class: "button button-quiet" %>
-                  <% end %>
-                  <% if retry_count.positive? && inbox.active? %>
-                    <%= button_to "Retry", reconcile_workspace_shared_email_inbox_path(Current.workspace, inbox), class: "button button-quiet" %>
-                  <% elsif retry_count.positive? %>
-                    <span class="field-hint">Activate to retry</span>
-                  <% end %>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-      <p class="field-hint integration-hint">Sign each raw RFC 5322 request with <code>X-NavishAI-Timestamp</code> and an HMAC-SHA256 <code>X-NavishAI-Signature</code>. The signature payload is <code>timestamp.webhook_key.raw_email</code>.</p>
-    <% else %>
-      <%= render "shared/empty_state",
-        title: "No email inboxes",
-        description: "Add the shared address that will forward customer mail into this workspace." %>
-    <% end %>
-  </section>
+  <div class="integration-layout">
+    <section class="config-panel" aria-labelledby="configured-inboxes-title">
+      <h2 id="configured-inboxes-title">Configured inboxes</h2>
+      <% if @inboxes.any? %>
+        <div class="table-wrap inbox-table-wrap">
+          <table class="inbox-table">
+            <thead>
+              <tr><th>Inbox</th><th>Inbound endpoint</th><th>Status</th><th>Intake</th><th><span class="visually-hidden">Action</span></th></tr>
+            </thead>
+            <tbody>
+              <% @inboxes.each do |inbox| %>
+                <tr>
+                  <td data-label="Inbox"><strong><%= inbox.name %></strong><br><span class="muted-copy"><%= inbox.email_address %></span></td>
+                  <td data-label="Inbound endpoint"><code class="endpoint"><%= webhooks_shared_email_url(inbox.webhook_key) %></code></td>
+                  <td data-label="Status">
+                    <span class="status-badge"><%= shared_email_inbox_status_label(inbox) %></span>
+                  </td>
+                  <td data-label="Intake">
+                    <% retry_count = @retry_counts.fetch(inbox.id, 0) %>
+                    <% terminal_counts = @terminal_failure_counts.select { |(inbox_id, _), _| inbox_id == inbox.id } %>
+                    <% if retry_count.positive? %>
+                      <strong><%= pluralize(retry_count, "delivery") %> need retry</strong>
+                      <ul class="integration-failures">
+                        <% @retry_failure_counts.each do |(inbox_id, failure_code), count| %>
+                          <% next unless inbox_id == inbox.id %>
+                          <li><%= failure_code ? failure_code.humanize : "Processing interrupted" %>: <%= count %></li>
+                        <% end %>
+                      </ul>
+                    <% end %>
+                    <% if terminal_counts.any? %>
+                      <strong><%= pluralize(terminal_counts.values.sum, "delivery") %> need review</strong>
+                      <ul class="integration-failures">
+                        <% terminal_counts.each do |(_, failure_code), count| %>
+                          <li><%= failure_code ? failure_code.humanize : "Retry limit reached" %>: <%= count %></li>
+                        <% end %>
+                      </ul>
+                    <% elsif retry_count.zero? %>
+                      <span class="muted-copy">No failures</span>
+                    <% end %>
+                  </td>
+                  <td data-label="Action">
+                    <%= form_with model: [ Current.workspace, inbox ] do |form| %>
+                      <%= form.hidden_field :active, value: !inbox.active? %>
+                      <%= form.submit inbox.active? ? "Pause" : "Activate", class: "button button-quiet" %>
+                    <% end %>
+                    <% if retry_count.positive? && inbox.active? %>
+                      <%= button_to "Retry", reconcile_workspace_shared_email_inbox_path(Current.workspace, inbox), class: "button button-quiet" %>
+                    <% elsif retry_count.positive? %>
+                      <span class="field-hint">Activate to retry</span>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <p class="field-hint integration-hint">Sign each raw RFC 5322 request with <code>X-NavishAI-Timestamp</code> and an HMAC-SHA256 <code>X-NavishAI-Signature</code>. The signature payload is <code>timestamp.webhook_key.raw_email</code>.</p>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No email inboxes",
+          description: "Add the shared address that will forward customer mail into this workspace." %>
+      <% end %>
+    </section>
+
+    <details class="setup-disclosure" <%= "open" if @inbox.errors.any? %>>
+      <summary>Add an inbox</summary>
+      <%= render "shared/form_errors", record: @inbox %>
+      <%= form_with model: [ Current.workspace, @inbox ], class: "inbox-form" do |form| %>
+        <div class="field">
+          <%= form.label :name, "Inbox name" %>
+          <%= form.text_field :name, required: true, maxlength: 100, autocomplete: "off" %>
+        </div>
+        <div class="field">
+          <%= form.label :email_address %>
+          <%= form.email_field :email_address, required: true, maxlength: 254, autocomplete: "email" %>
+        </div>
+        <div class="field">
+          <%= form.label :credential_key %>
+          <%= form.text_field :credential_key, required: true, maxlength: 100, pattern: "[a-z0-9_]+", autocomplete: "off", aria: { describedby: "credential-key-hint" } %>
+          <span class="field-hint" id="credential-key-hint">Lowercase letters, numbers, and underscores. Secret values stay in Rails credentials or deployment environment variables.</span>
+        </div>
+        <%= form.submit "Add inbox", class: "button button-primary" %>
+      <% end %>
+    </details>
+  </div>
 </main>

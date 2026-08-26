@@ -1,6 +1,6 @@
 <% content_for :title, "#{@account.name} health — NavishAI" %>
 
-<main class="account-health-page account-health-detail">
+<main class="account-health-page account-health-detail page-family-record">
   <header class="account-health-heading">
     <div>
       <%= link_to "All accounts", workspace_accounts_path(@workspace), class: "back-link" %>
@@ -8,17 +8,21 @@
       <p>Deterministic account facts stay separate from crew analysis and proposed interventions.</p>
     </div>
     <div class="account-health-actions">
-      <%= link_to "Scorecard", workspace_health_scorecard_path(@workspace), class: "button button-secondary" %>
-      <%= link_to "Crew work", workspace_account_crew_tasks_path(@workspace, @account), class: "button button-secondary" %>
       <% if @membership.can_write? %>
-        <%= button_to "Recalculate", recalculate_workspace_account_path(@workspace, @account), class: "button button-secondary" %>
         <%= button_to "Open risk review", request_risk_review_workspace_account_path(@workspace, @account), class: "button button-primary" %>
+      <% end %>
+      <div class="account-health-secondary">
+        <%= link_to "Scorecard", workspace_health_scorecard_path(@workspace), class: "button button-quiet" %>
+        <%= link_to "Crew work", workspace_account_crew_tasks_path(@workspace, @account), class: "button button-secondary" %>
+      </div>
+      <% if @membership.can_write? %>
+        <%= button_to "Recalculate", recalculate_workspace_account_path(@workspace, @account), class: "button button-quiet account-health-tertiary" %>
       <% end %>
     </div>
   </header>
 
   <% if @command_error %>
-    <div class="inline-error" role="alert"><strong>Risk review not changed</strong><p><%= @command_error %></p></div>
+    <%= render "shared/notice", kind: "destructive", title: "Risk review not changed", body: @command_error %>
   <% end %>
 
   <% if @assessment %>
@@ -41,7 +45,7 @@
 
     <section class="health-signals" aria-labelledby="signals-title">
       <header><div><h2 id="signals-title">Deterministic signals</h2><p>Risk points subtract from 100. Zero-weight rows add context without changing the score.</p></div></header>
-      <div class="table-scroll">
+      <div class="table-scroll health-signals-table" role="region" tabindex="0" aria-label="Deterministic signals">
         <table>
           <thead><tr><th>Signal</th><th>Value</th><th>Source and range</th><th>Weight</th><th>Risk points</th></tr></thead>
           <tbody>
@@ -57,6 +61,28 @@
           </tbody>
         </table>
       </div>
+      <ul class="signal-cards">
+        <% @assessment.signals.each do |signal| %>
+          <li>
+            <details class="signal-card">
+              <summary>
+                <span>
+                  <strong><%= signal.signal_key.humanize %></strong>
+                  <small>Weight <%= signal.weight %></small>
+                </span>
+                <b><%= signal.risk_points %> pts</b>
+              </summary>
+              <dl>
+                <div><dt>Value</dt><dd><%= signal.value_kind == "date" ? signal.date_value.to_fs(:long) : number_with_delimiter(signal.numeric_value) %></dd></div>
+                <div><dt>Source and range</dt><dd><%= signal.source_kind.humanize %> · <code><%= signal.source_locator %></code><small><%= signal.range_starts_at&.to_fs(:short) || "All retained history" %> – <%= signal.range_ends_at.to_fs(:short) %></small></dd></div>
+                <div><dt>Weight</dt><dd><%= signal.weight %></dd></div>
+                <div><dt>Risk points</dt><dd><%= signal.risk_points %></dd></div>
+                <div><dt>Citation</dt><dd><code><%= signal.citation_uri %></code></dd></div>
+              </dl>
+            </details>
+          </li>
+        <% end %>
+      </ul>
     </section>
   <% else %>
     <%= render "shared/empty_state", title: "Health has not been calculated",
@@ -95,7 +121,7 @@
         <% end %>
       </ol>
     <% else %>
-      <p class="read-only-notice">No material change, renewal-window trigger, or human-requested review is open.</p>
+      <p class="muted-copy">No material change, renewal-window trigger, or human-requested review is open.</p>
     <% end %>
   </section>
 

@@ -1,6 +1,6 @@
 <% content_for :title, "Case queue · #{@workspace.name} — NavishAI" %>
 
-<main class="workbench-shell queue-page">
+<main class="workbench-shell queue-page page-family-collection">
   <header class="workspace-toolbar">
     <div>
       <h1><%= @workspace.name %></h1>
@@ -18,10 +18,10 @@
         <%= render "queue", support_cases: @support_cases %>
       </div>
       <section class="empty-selection" aria-labelledby="empty-selection-title">
-        <div>
+        <div class="empty-state">
           <p class="eyebrow">Case workspace</p>
           <h2 id="empty-selection-title">Select a case</h2>
-          <p>Choose a queue item to read the conversation and review its case work.</p>
+          <p>Open a queue item to read the conversation, cited evidence, and the next human action.</p>
         </div>
       </section>
     </div>

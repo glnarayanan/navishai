@@ -1,0 +1,51 @@
+<div class="site-header-wrap<%= " is-marketing" if landing_page? %>">
+  <div class="site-header-frame" data-landing-header-target="frame">
+    <header class="site-header" data-landing-header-target="bar">
+      <%= render "layouts/wordmark" %>
+      <% if landing_page? %>
+        <nav class="nav-desktop" aria-label="Page">
+          <ul class="nav-pill" data-landing-header-target="menu">
+            <li class="nav-pill-indicator" data-landing-header-target="indicator" aria-hidden="true"></li>
+            <li><a href="#hero" data-landing-section="hero" data-action="landing-header#jump">Home</a></li>
+            <li><a href="#how-it-works" data-landing-section="how-it-works" data-action="landing-header#jump">How it works</a></li>
+            <li><a href="#features" data-landing-section="features" data-action="landing-header#jump">Features</a></li>
+            <li><a href="#self-host" data-landing-section="self-host" data-action="landing-header#jump">Self-hosting</a></li>
+          </ul>
+        </nav>
+      <% end %>
+      <div class="header-tools">
+        <% unless controller_name == "sessions" && action_name == "new" %>
+          <%= link_to landing_page? ? "Sign in" : "Sign in", new_session_path, class: "button button-primary header-cta" %>
+        <% end %>
+        <%= render "layouts/theme_control", icon_only: landing_page? %>
+        <% if landing_page? %>
+          <button type="button" class="nav-mobile-trigger" aria-expanded="false" aria-controls="public-nav-drawer" data-nav-drawer-target="trigger" data-action="nav-drawer#open">
+            <span class="visually-hidden">Open menu</span>
+            <svg class="nav-mobile-icon-open" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6.75h16v1.5H4zm0 4.75h16v1.5H4zM4 16.25h16v1.5H4z"/></svg>
+            <svg class="nav-mobile-icon-close" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.2 5.8 12 11.6l5.8-5.8 1.4 1.4L13.4 13l5.8 5.8-1.4 1.4L12 14.4l-5.8 5.8-1.4-1.4 5.8-5.8-5.8-5.8z"/></svg>
+          </button>
+        <% end %>
+      </div>
+    </header>
+  </div>
+  <% if landing_page? %>
+    <dialog class="nav-drawer" id="public-nav-drawer" aria-label="Page navigation" data-nav-drawer-target="dialog" data-action="click->nav-drawer#backdrop keydown->nav-drawer#trap">
+      <div class="nav-drawer-panel" data-nav-drawer-target="panel">
+        <div class="nav-drawer-head">
+          <%= render "layouts/wordmark" %>
+          <button type="button" class="nav-drawer-close" data-action="nav-drawer#close">
+            <span class="visually-hidden">Close</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6.2 5.8 12 11.6l5.8-5.8 1.4 1.4L13.4 13l5.8 5.8-1.4 1.4L12 14.4l-5.8 5.8-1.4-1.4 5.8-5.8-5.8-5.8z"/></svg>
+          </button>
+        </div>
+        <ul class="nav-drawer-links">
+          <li><a href="#hero" data-action="landing-header#jump nav-drawer#close">Home</a></li>
+          <li><a href="#how-it-works" data-action="landing-header#jump nav-drawer#close">How it works</a></li>
+          <li><a href="#features" data-action="landing-header#jump nav-drawer#close">Features</a></li>
+          <li><a href="#self-host" data-action="landing-header#jump nav-drawer#close">Self-hosting</a></li>
+        </ul>
+        <%= link_to "Sign in", new_session_path, class: "button button-primary nav-drawer-cta" %>
+      </div>
+    </dialog>
+  <% end %>
+</div>

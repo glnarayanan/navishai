@@ -1,7 +1,7 @@
 <% content_for :title, "#{@source.title} · Knowledge — NavishAI" %>
 <% status, status_class = knowledge_source_status(@source) %>
 
-<main class="page-shell knowledge-shell">
+<main class="page-shell knowledge-shell page-family-record">
   <%= link_to "Back to knowledge", workspace_knowledge_sources_path(Current.workspace), class: "back-link" %>
   <div class="workspace-heading knowledge-source-heading">
     <div class="page-heading">
@@ -12,15 +12,11 @@
   </div>
 
   <% if @source.deleted? %>
-    <div class="knowledge-warning" role="status">
-      <strong>Deleted from current use</strong>
-      <p>This source no longer appears in search. Its versions and citation links remain for prior evidence.</p>
-    </div>
+    <%= render "shared/notice", kind: "blocked", css: "knowledge-warning", title: "Deleted from current use",
+      body: "This source no longer appears in search. Its versions and citation links remain for prior evidence." %>
   <% elsif @source.stale? %>
-    <div class="knowledge-warning" role="status">
-      <strong>Current version is stale</strong>
-      <p>Add a checked version before relying on this source for new work.</p>
-    </div>
+    <%= render "shared/notice", kind: "warning", css: "knowledge-warning", title: "Current version is stale",
+      body: "Add a checked version before relying on this source for new work." %>
   <% end %>
 
   <% current = @source.current_version %>

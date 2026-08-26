@@ -1,84 +1,96 @@
 <% content_for :title, "Intercom · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell">
-  <%= link_to "Back to email inboxes", workspace_shared_email_inboxes_path(Current.workspace), class: "back-link" %>
+<main class="page-shell page-family-integration">
   <div class="page-heading">
     <h1>Intercom sync</h1>
     <p>Mirror customer records and support work while Intercom stays the source for its conversations, notes, assignment, and tags.</p>
   </div>
 
-  <section class="section-block" aria-labelledby="add-intercom-title">
-    <h2 id="add-intercom-title">Add a connection</h2>
-    <%= render "shared/form_errors", record: @connection %>
-    <%= form_with model: [ Current.workspace, @connection ], class: "inbox-form" do |form| %>
-      <div class="field">
-        <%= form.label :name, "Connection name" %>
-        <%= form.text_field :name, required: true, maxlength: 100, autocomplete: "off" %>
-      </div>
-      <div class="field">
-        <%= form.label :remote_workspace_id, "Intercom app ID" %>
-        <%= form.text_field :remote_workspace_id, required: true, maxlength: 100, autocomplete: "off" %>
-      </div>
-      <div class="field">
-        <%= form.label :credential_key %>
-        <%= form.text_field :credential_key, required: true, maxlength: 100, pattern: "[a-z0-9_]+", autocomplete: "off", aria: { describedby: "intercom-credential-hint" } %>
-        <span class="field-hint" id="intercom-credential-hint">Store the access token and client secret in Rails credentials or deployment environment variables.</span>
-      </div>
-      <%= form.submit "Add connection", class: "button button-primary" %>
-    <% end %>
+  <section class="route-status" aria-label="Intercom connection status">
+    <dl>
+      <div><dt>Connections</dt><dd><%= @connections.size %></dd></div>
+      <div><dt>Active</dt><dd><%= @connections.count { |connection| connection.active? && connection.ready? } %></dd></div>
+      <div><dt>Events to retry</dt><dd><%= @retry_counts.values.sum %></dd></div>
+      <div><dt>Last checked</dt><dd><%= @connections.filter_map(&:last_reconciled_at).max&.then { |at| "#{time_ago_in_words(at)} ago" } || "Not reconciled yet" %></dd></div>
+    </dl>
   </section>
 
-  <section class="section-block" aria-labelledby="configured-intercom-title">
-    <h2 id="configured-intercom-title">Configured connections</h2>
-    <% if @connections.any? %>
-      <div class="table-wrap inbox-table-wrap">
-        <table class="inbox-table">
-          <thead><tr><th>Connection</th><th>Webhook endpoint</th><th>Status</th><th>Sync</th><th><span class="visually-hidden">Action</span></th></tr></thead>
-          <tbody>
-            <% @connections.each do |connection| %>
-              <% retry_count = @retry_counts.fetch(connection.id, 0) %>
-              <% terminal = @terminal_failure_counts.select { |(connection_id, _), _| connection_id == connection.id } %>
-              <% operations = @operation_review_counts.select { |(connection_id, _), _| connection_id == connection.id } %>
-              <tr>
-                <td data-label="Connection"><strong><%= connection.name %></strong><br><span class="muted-copy"><%= connection.remote_workspace_id %></span></td>
-                <td data-label="Webhook endpoint"><code class="endpoint"><%= webhooks_intercom_url(connection.webhook_key) %></code></td>
-                <td data-label="Status"><span class="status-badge"><%= connection.active? ? (connection.ready? ? "Active" : "Needs credentials") : "Paused" %></span></td>
-                <td data-label="Sync">
-                  <% if retry_count.positive? %><strong><%= pluralize(retry_count, "event") %> need retry</strong><% end %>
-                  <% if terminal.any? %>
-                    <strong><%= pluralize(terminal.values.sum, "event") %> need review</strong>
-                    <ul class="integration-failures">
-                      <% terminal.each do |(_, failure_code), count| %><li><%= failure_code.to_s.humanize %>: <%= count %></li><% end %>
-                    </ul>
-                  <% end %>
-                  <% if operations.any? %>
-                    <strong><%= pluralize(operations.values.sum, "outbound change") %> need review</strong>
-                    <ul class="integration-failures">
-                      <% operations.each do |(_, failure_code), count| %><li><%= (failure_code || "Interrupted").humanize %>: <%= count %></li><% end %>
-                    </ul>
-                  <% end %>
-                  <% if connection.last_error_code.present? %>
-                    <strong>Reconcile needs review</strong>
-                    <span class="muted-copy"><%= connection.last_error_code.humanize %></span>
-                  <% elsif operations.empty? && terminal.empty? && retry_count.zero? %>
-                    <span class="muted-copy"><%= connection.last_reconciled_at ? "Last checked #{time_ago_in_words(connection.last_reconciled_at)} ago" : "Not reconciled yet" %></span>
-                  <% end %>
-                </td>
-                <td data-label="Action">
-                  <%= form_with model: [ Current.workspace, connection ] do |form| %>
-                    <%= form.hidden_field :active, value: !connection.active? %>
-                    <%= form.submit connection.active? ? "Pause" : "Activate", class: "button button-quiet" %>
-                  <% end %>
-                  <% if connection.active? %><%= button_to "Reconcile", reconcile_workspace_intercom_connection_path(Current.workspace, connection), class: "button button-quiet" %><% end %>
-                </td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-      <p class="field-hint integration-hint">Subscribe Intercom to the endpoint shown above. NavishAI checks <code>X-Hub-Signature</code> against the exact JSON request body.</p>
-    <% else %>
-      <%= render "shared/empty_state", title: "No Intercom connection", description: "Add an Intercom app to begin signed webhook intake and reconciliation." %>
-    <% end %>
-  </section>
+  <div class="integration-layout">
+    <section class="config-panel" aria-labelledby="configured-intercom-title">
+      <h2 id="configured-intercom-title">Configured connections</h2>
+      <% if @connections.any? %>
+        <div class="table-wrap inbox-table-wrap">
+          <table class="inbox-table">
+            <thead><tr><th>Connection</th><th>Webhook endpoint</th><th>Status</th><th>Sync</th><th><span class="visually-hidden">Action</span></th></tr></thead>
+            <tbody>
+              <% @connections.each do |connection| %>
+                <% retry_count = @retry_counts.fetch(connection.id, 0) %>
+                <% terminal = @terminal_failure_counts.select { |(connection_id, _), _| connection_id == connection.id } %>
+                <% operations = @operation_review_counts.select { |(connection_id, _), _| connection_id == connection.id } %>
+                <tr>
+                  <td data-label="Connection"><strong><%= connection.name %></strong><br><span class="muted-copy"><%= connection.remote_workspace_id %></span></td>
+                  <td data-label="Webhook endpoint"><code class="endpoint"><%= webhooks_intercom_url(connection.webhook_key) %></code></td>
+                  <td data-label="Status"><span class="status-badge"><%= connection.active? ? (connection.ready? ? "Active" : "Needs credentials") : "Paused" %></span></td>
+                  <td data-label="Sync">
+                    <% if retry_count.positive? %><strong><%= pluralize(retry_count, "event") %> need retry</strong><% end %>
+                    <% if terminal.any? %>
+                      <strong><%= pluralize(terminal.values.sum, "event") %> need review</strong>
+                      <ul class="integration-failures">
+                        <% terminal.each do |(_, failure_code), count| %><li><%= failure_code.to_s.humanize %>: <%= count %></li><% end %>
+                      </ul>
+                    <% end %>
+                    <% if operations.any? %>
+                      <strong><%= pluralize(operations.values.sum, "outbound change") %> need review</strong>
+                      <ul class="integration-failures">
+                        <% operations.each do |(_, failure_code), count| %><li><%= (failure_code || "Interrupted").humanize %>: <%= count %></li><% end %>
+                      </ul>
+                    <% end %>
+                    <% if connection.last_error_code.present? %>
+                      <strong>Reconcile needs review</strong>
+                      <span class="muted-copy"><%= connection.last_error_code.humanize %></span>
+                    <% elsif operations.empty? && terminal.empty? && retry_count.zero? %>
+                      <span class="muted-copy"><%= connection.last_reconciled_at ? "Last checked #{time_ago_in_words(connection.last_reconciled_at)} ago" : "Not reconciled yet" %></span>
+                    <% end %>
+                  </td>
+                  <td data-label="Action">
+                    <%= form_with model: [ Current.workspace, connection ] do |form| %>
+                      <%= form.hidden_field :active, value: !connection.active? %>
+                      <%= form.submit connection.active? ? "Pause" : "Activate", class: "button button-quiet" %>
+                    <% end %>
+                    <% if connection.active? %><%= button_to "Reconcile", reconcile_workspace_intercom_connection_path(Current.workspace, connection), class: "button button-quiet" %><% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+        <p class="field-hint integration-hint">Subscribe Intercom to the endpoint shown above. NavishAI checks <code>X-Hub-Signature</code> against the exact JSON request body.</p>
+      <% else %>
+        <%= render "shared/empty_state",
+          title: "No Intercom connection",
+          description: "Add an Intercom app to begin signed webhook intake and reconciliation." %>
+      <% end %>
+    </section>
+
+    <details class="setup-disclosure" <%= "open" if @connection.errors.any? %>>
+      <summary>Add a connection</summary>
+      <%= render "shared/form_errors", record: @connection %>
+      <%= form_with model: [ Current.workspace, @connection ], class: "inbox-form" do |form| %>
+        <div class="field">
+          <%= form.label :name, "Connection name" %>
+          <%= form.text_field :name, required: true, maxlength: 100, autocomplete: "off" %>
+        </div>
+        <div class="field">
+          <%= form.label :remote_workspace_id, "Intercom app ID" %>
+          <%= form.text_field :remote_workspace_id, required: true, maxlength: 100, autocomplete: "off" %>
+        </div>
+        <div class="field">
+          <%= form.label :credential_key %>
+          <%= form.text_field :credential_key, required: true, maxlength: 100, pattern: "[a-z0-9_]+", autocomplete: "off", aria: { describedby: "intercom-credential-hint" } %>
+          <span class="field-hint" id="intercom-credential-hint">Store the access token and client secret in Rails credentials or deployment environment variables.</span>
+        </div>
+        <%= form.submit "Add connection", class: "button button-primary" %>
+      <% end %>
+    </details>
+  </div>
 </main>

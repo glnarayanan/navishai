@@ -32,28 +32,68 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     assert_text "Case status updated."
     assert_text "Triaged"
 
+    find("summary", text: "Priority and assignment").click
     select "High", from: "Priority"
     within find("form[action$='/priority']") do
       click_button "Save"
     end
     assert_text "Priority updated."
 
+    find("summary", text: "Priority and assignment").click
     select users(:owner).email_address, from: "Assignee"
     within find("form[action$='/assignment']") do
       click_button "Save"
     end
     assert_text "Assignment updated."
 
+    find("summary", text: "Tags").click
     fill_in "Create tag", with: "Access"
     click_button "Create"
     assert_text "Tag created and added."
     assert_text "Access"
 
+    find("summary", text: "Private notes").click
     fill_in "Add a private note", with: "Check the identity provider logs."
     click_button "Add note"
     assert_text "Private note added."
     assert_text "Check the identity provider logs."
     save_screenshot Rails.root.join(".amp/in/artifacts/case-workspace-desktop.png") if ENV["CAPTURE_CASE_WORKSPACE"]
+  end
+
+  test "selected case has one next action and one selected queue row" do
+    page.current_window.resize_to(1440, 1000)
+    support_case = create_support_case
+    add_inbound_message(support_case)
+    other = create_support_case(subject: "Invoice webhook retry")
+    add_inbound_message(other, body: "The invoice webhook still returns 401.")
+    sign_in_in_browser(users(:owner))
+
+    click_link "Acme Support"
+    click_link "Cannot sign in", match: :first
+
+    assert_equal 1, page.all("h2", text: "Next action", visible: true).size
+    assert_selector ".decision-next-rail", visible: true
+    assert_no_selector ".decision-next-mobile", visible: true
+    assert_selector ".queue-rail .case-row[aria-current='page']", text: "Cannot sign in", count: 1
+    assert_selector ".queue-rail .case-row", text: "Invoice webhook retry"
+
+    selected, other_shadow, other_background, selected_background = page.evaluate_script(<<~JS)
+      (function() {
+        var rows = Array.from(document.querySelectorAll('.queue-rail .case-row'))
+        var selectedRow = rows.find(function(row) { return row.getAttribute('aria-current') === 'page' })
+        var otherRow = rows.find(function(row) { return row.getAttribute('aria-current') !== 'page' })
+        return [
+          rows.filter(function(row) { return row.getAttribute('aria-current') === 'page' }).length,
+          getComputedStyle(otherRow).boxShadow,
+          getComputedStyle(otherRow).backgroundColor,
+          getComputedStyle(selectedRow).backgroundColor
+        ]
+      })()
+    JS
+    assert_equal 1, selected
+    assert_match(/inset/i, page.evaluate_script("getComputedStyle(document.querySelector('.queue-rail .case-row[aria-current=\"page\"]')).boxShadow"))
+    refute_match(/inset/i, other_shadow)
+    refute_equal selected_background, other_background
   end
 
   test "mobile case workspace keeps the thread before context without overflow" do
@@ -74,6 +114,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     assert_equal 0, page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     assert_operator find_field("Reason").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
 
+    find("summary", text: "Private notes").click
     fill_in "Add a private note", with: "Mobile note"
     click_button "Add note"
     assert_text "Mobile note"
@@ -109,6 +150,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
 
     visit workspace_support_case_path(support_case.workspace, support_case)
     assert_text "Read-only access"
+    find("summary", text: "Private notes").click
     assert_text "Private — staff only"
     refute_field "Reason"
     refute_field "Add a private note"
@@ -117,6 +159,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     sign_in_in_browser(users(:outsider))
     click_link "Beta Support"
     assert_text "No cases in the queue"
+    open_workspace_nav
     assert_link "Workspaces", visible: true
   end
 

@@ -1,6 +1,6 @@
 <% content_for :title, "Notifications · #{Current.workspace.name} — NavishAI" %>
 
-<main class="page-shell notifications-page">
+<main class="page-shell notifications-page page-family-collection">
   <div class="page-heading notifications-heading">
     <div>
       <h1>Notifications</h1>
@@ -10,6 +10,14 @@
       <%= button_to "Mark all read", read_all_workspace_notifications_path(Current.workspace), class: "button button-quiet" %>
     <% end %>
   </div>
+
+  <section class="route-status" aria-label="Notification status">
+    <dl>
+      <div><dt>Unread</dt><dd><%= @notifications.count { |notification| notification.read_at.blank? } %></dd></div>
+      <div><dt>Shown</dt><dd><%= @notifications.size %></dd></div>
+      <div><dt>Scope</dt><dd>Assignments, reviews, SLA alerts, failures, blocked work, and completions for you</dd></div>
+    </dl>
+  </section>
 
   <% if @notifications.any? %>
     <ol class="notification-list" aria-label="Notifications">
@@ -28,6 +36,7 @@
     <section class="empty-state">
       <h2>No notifications</h2>
       <p>New work that needs your attention will appear here.</p>
+      <%= link_to "Open case queue", workspace_support_cases_path(Current.workspace), class: "button button-secondary" %>
     </section>
   <% end %>
 </main>

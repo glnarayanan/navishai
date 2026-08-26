@@ -1,6 +1,6 @@
 <% content_for :title, "Crew work · #{@account&.name || @support_case.conversation.subject.presence || "Case"} — NavishAI" %>
 
-<main class="crew-work-page">
+<main class="crew-work-page page-family-record">
   <header class="crew-work-header">
     <%= link_to @account ? "Back to account" : "Back to case",
       @account ? workspace_account_path(@workspace, @account) : workspace_support_case_path(@workspace, @support_case),
@@ -30,10 +30,13 @@
     </section>
 
     <section class="crew-work-panel crew-task-create" aria-labelledby="new-task-title">
-      <h2 id="new-task-title">Add a task</h2>
-      <p>Set one clear goal and choose the specialist accountable for the first step.</p>
+      <h2 id="new-task-title">Crew responsibility</h2>
+      <p>Tasks, evidence, and review stay on this <%= @account ? "account" : "case" %>. No specialist can send or schedule a customer message.</p>
       <% if @membership.can_write? %>
-        <%= form_with url: crew_tasks_path_for_scope, class: "crew-task-form" do |form| %>
+        <details class="setup-disclosure" <%= "open" if @command_error.present? %>>
+          <summary>Add a task</summary>
+          <p>Set one clear goal and choose the specialist accountable for the first step.</p>
+          <%= form_with url: crew_tasks_path_for_scope, class: "crew-task-form" do |form| %>
           <div class="field">
             <%= form.label :title, "Task title" %>
             <%= form.text_field :title, value: params[:title], required: true, maxlength: 200, autocomplete: "off" %>
@@ -67,6 +70,7 @@
           <% end %>
           <%= form.submit "Create task", class: "button button-primary" %>
         <% end %>
+        </details>
       <% else %>
         <p class="read-only-notice">Read-only access. You can inspect the work record but cannot add tasks.</p>
       <% end %>
