@@ -320,7 +320,7 @@
   .is-app textarea,
   .is-app button,
   .is-app .button {
-    min-height: 3rem;
+    min-height: 49px;
   }
 }
 

@@ -369,6 +369,12 @@
 }
 
 @media (max-width: 48rem) {
+  .is-app button,
+  .is-app .button,
+  .data-controls-shell .button {
+    min-height: 49px;
+  }
+
   .scorecard-decision {
     grid-template-columns: 1fr;
   }

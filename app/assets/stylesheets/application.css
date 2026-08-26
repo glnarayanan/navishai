@@ -3298,7 +3298,7 @@ td {
   .button,
   input,
   select {
-    min-height: 3rem;
+    min-height: 49px;
   }
 }
 
