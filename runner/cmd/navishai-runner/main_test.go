@@ -51,23 +51,28 @@ func TestHandlerRequiresASecret(t *testing.T) {
 func TestTLSFiles(t *testing.T) {
 	tests := []struct {
 		name        string
+		address     string
 		environment map[string]string
 		certificate string
 		key         string
 		wantError   bool
 	}{
-		{name: "cleartext loopback default", environment: map[string]string{}},
-		{name: "certificate pair", environment: map[string]string{
+		{name: "cleartext IPv4 loopback", address: "127.0.0.1:8081", environment: map[string]string{}},
+		{name: "cleartext IPv6 loopback", address: "[::1]:8081", environment: map[string]string{}},
+		{name: "cleartext unspecified IPv4", address: "0.0.0.0:8081", environment: map[string]string{}, wantError: true},
+		{name: "cleartext unspecified IPv6", address: "[::]:8081", environment: map[string]string{}, wantError: true},
+		{name: "cleartext non-loopback", address: "192.0.2.10:8081", environment: map[string]string{}, wantError: true},
+		{name: "certificate pair", address: "0.0.0.0:8081", environment: map[string]string{
 			"NAVISHAI_RUNNER_TLS_CERT_FILE": "/run/secrets/runner.crt",
 			"NAVISHAI_RUNNER_TLS_KEY_FILE":  "/run/secrets/runner.key",
 		}, certificate: "/run/secrets/runner.crt", key: "/run/secrets/runner.key"},
-		{name: "missing key", environment: map[string]string{
+		{name: "missing key", address: "127.0.0.1:8081", environment: map[string]string{
 			"NAVISHAI_RUNNER_TLS_CERT_FILE": "/run/secrets/runner.crt",
 		}, wantError: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			certificate, key, err := tlsFiles(func(name string) string { return test.environment[name] })
+			certificate, key, err := tlsFiles(test.address, func(name string) string { return test.environment[name] })
 			if (err != nil) != test.wantError {
 				t.Fatalf("unexpected error: %v", err)
 			}
