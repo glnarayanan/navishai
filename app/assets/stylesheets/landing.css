@@ -1811,14 +1811,6 @@ html.dark .readiness-card li::before {
   .principle-column-3 { display: flex; }
 }
 
-@media (prefers-reduced-motion: reduce) and (min-width: 48rem) {
-  .principle-static { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (prefers-reduced-motion: reduce) and (min-width: 80rem) {
-  .principle-static { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
 @media (min-width: 64rem) {
   .feature-desktop { display: grid; }
   .feature-mobile { display: none; }
@@ -1885,6 +1877,14 @@ html.dark .readiness-card li::before {
   .feature-carousel .card.is-active .feature-line.is-running { width: 100%; }
   .feature-panel.is-active .feature-canvas,
   .feature-mobile-canvas.is-active { animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) and (min-width: 48rem) {
+  .principle-static { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) and (min-width: 80rem) {
+  .principle-static { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 .marketing-shell {

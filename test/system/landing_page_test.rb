@@ -128,7 +128,7 @@ class LandingPageTest < ApplicationSystemTestCase
           staticWidth: Math.round(staticCopy.getBoundingClientRect().width),
           cardVisible: first.getBoundingClientRect().height > 0,
           cardAriaHidden: first.closest('[aria-hidden="true"]') !== null,
-          columns: getComputedStyle(staticCopy).gridTemplateColumns.split(' ').filter(Boolean).length,
+          columns: [...new Set([...staticCopy.querySelectorAll('.principle-card')].map((card) => Math.round(card.getBoundingClientRect().left)))].length,
           overflow: Math.max(0, staticCopy.scrollWidth - staticCopy.clientWidth)
         }
       })()
@@ -178,6 +178,14 @@ class LandingPageTest < ApplicationSystemTestCase
         "Emulation.setEmulatedMedia",
         features: [ { name: "prefers-reduced-motion", value: value } ]
       )
+    end
+
+    def teardown
+      emulate_prefers_reduced_motion("no-preference")
+    rescue StandardError
+      nil
+    ensure
+      super
     end
 
     def assert_nav_pill_behind_active(label)
