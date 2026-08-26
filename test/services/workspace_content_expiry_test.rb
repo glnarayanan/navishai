@@ -68,4 +68,24 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     assert_equal "workspace.content_expiry_failed", audit.action
     assert_equal({ "failure_code" => "unavailable" }, audit.metadata)
   end
+
+  test "expiry makes a pending index entry terminal based on memory age" do
+    workspace = workspaces(:acme_support)
+    memory = workspace.memory_records.create!(
+      memory_type: :episodic, scope_kind: :workspace, topic: "old-memory", content: "Private old memory",
+      authority: :source_record, origin_kind: :system, source_reference: "test://old-memory",
+      source_digest: Digest::SHA256.hexdigest("old-memory"), observed_at: 3.days.ago,
+      valid_from: 3.days.ago, confidence: 1, retention_policy: :indefinite
+    )
+    entry = workspace.memory_index_entries.create!(memory_record: memory)
+    run = workspace.workspace_content_expiry_runs.create!(cutoff_at: 2.days.ago)
+
+    WorkspaceContentExpiry.perform!(run:, object_purger: ->(*) { })
+
+    assert entry.reload.failed?
+    assert_equal "retention_expired", entry.failure_code
+    engine = Object.new
+    engine.define_singleton_method(:index) { |**| flunk "expired memory must never be indexed" }
+    MemoryIndexer.perform!(entry:, engine:)
+  end
 end

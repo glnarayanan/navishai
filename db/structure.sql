@@ -313,10 +313,16 @@ BEGIN
   WHERE workspace_id = target_workspace_id AND created_at < cutoff AND content <> '[Expired by retention policy]';
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
-  UPDATE memory_index_entries
+  UPDATE memory_index_entries AS entries
   SET status = 'failed', external_document_id = NULL, external_status = NULL,
-      failure_code = 'retention_expired', indexed_at = NULL, updated_at = CURRENT_TIMESTAMP
-  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND external_document_id IS NOT NULL;
+      failure_code = 'retention_expired', attempt_count = GREATEST(attempt_count, 1),
+      last_attempted_at = COALESCE(last_attempted_at, CURRENT_TIMESTAMP),
+      indexed_at = NULL, updated_at = CURRENT_TIMESTAMP
+  WHERE entries.workspace_id = target_workspace_id AND EXISTS (
+    SELECT 1 FROM memory_records AS records
+    WHERE records.workspace_id = target_workspace_id AND records.id = entries.memory_record_id
+      AND records.observed_at < cutoff
+  );
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE intercom_webhook_deliveries
@@ -11857,6 +11863,7 @@ ALTER TABLE ONLY public.account_health_assessments
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260826140000'),
 ('20260826123000'),
 ('20260825220000'),
 ('20260824230700'),

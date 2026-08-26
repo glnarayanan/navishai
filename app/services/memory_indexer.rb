@@ -1,8 +1,14 @@
 class MemoryIndexer
   def self.perform!(entry:, engine: nil, attempted_at: Time.current)
+    connection = MemoryIndexEntry.connection
+    workspace_id = entry.workspace_id
+    connection.execute("SELECT pg_advisory_lock(48, #{connection.quote(workspace_id)})")
+    expiry_lock_acquired = true
+
     entry.with_lock do
       return entry if entry.indexed?
       return entry if entry.memory_record.memory_tombstone
+      return entry if entry.failure_code == "retention_expired"
 
       entry.update!(
         status: :indexing,
@@ -31,6 +37,10 @@ class MemoryIndexer
     record_failure(entry, :unknown, "ambiguous_result")
   rescue SupermemoryEngine::Error, SystemCallError, Timeout::Error => error
     record_failure(entry, :failed, error.class.name.demodulize.underscore.first(100))
+  ensure
+    if expiry_lock_acquired
+      connection.execute("SELECT pg_advisory_unlock(48, #{connection.quote(workspace_id)})")
+    end
   end
 
   def self.record_failure(entry, status, code)

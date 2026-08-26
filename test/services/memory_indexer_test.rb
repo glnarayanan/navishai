@@ -1,4 +1,5 @@
 require "test_helper"
+require "pg"
 
 class MemoryIndexerTest < ActiveSupport::TestCase
   setup do
@@ -44,6 +45,25 @@ class MemoryIndexerTest < ActiveSupport::TestCase
     assert @entry.reload.failed?
     assert_equal "unavailable", @entry.failure_code
     assert_equal 2, @entry.attempt_count
+  end
+
+  test "holds the workspace expiry lock through the external index call" do
+    expiry_lock_available = nil
+    workspace_id = @workspace.id
+    engine = Object.new
+    engine.define_singleton_method(:index) do |document:|
+      connection = PG.connect(dbname: ActiveRecord::Base.connection.current_database)
+      result = connection.exec_params("SELECT pg_try_advisory_lock(48, $1)", [ workspace_id ])
+      expiry_lock_available = result.getvalue(0, 0) == "t"
+      connection.exec_params("SELECT pg_advisory_unlock(48, $1)", [ workspace_id ]) if expiry_lock_available
+      MemoryEngine::IndexReceipt.new(document_id: document.memory_key, status: "done")
+    ensure
+      connection&.close
+    end
+
+    MemoryIndexer.perform!(entry: @entry, engine:)
+
+    assert_equal false, expiry_lock_available
   end
 
   test "database freezes index identity" do
