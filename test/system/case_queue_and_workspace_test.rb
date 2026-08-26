@@ -60,6 +60,40 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     save_screenshot Rails.root.join(".amp/in/artifacts/case-workspace-desktop.png") if ENV["CAPTURE_CASE_WORKSPACE"]
   end
 
+  test "selected case has one next action and one selected queue row" do
+    page.current_window.resize_to(1440, 1000)
+    support_case = create_support_case
+    add_inbound_message(support_case)
+    other = create_support_case(subject: "Invoice webhook retry")
+    add_inbound_message(other, body: "The invoice webhook still returns 401.")
+    sign_in_in_browser(users(:owner))
+
+    click_link "Acme Support"
+    click_link "Cannot sign in", match: :first
+
+    assert_equal 1, page.all("h2", text: "Next action", visible: true).size
+    assert_selector ".decision-next-rail", visible: true
+    assert_no_selector ".decision-next-mobile", visible: true
+    assert_selector ".queue-rail .case-row[aria-current='page']", text: "Cannot sign in", count: 1
+    assert_selector ".queue-rail .case-row", text: "Invoice webhook retry"
+
+    selected, other_shadow, other_background, selected_background = page.evaluate_script(<<~JS)
+      const rows = Array.from(document.querySelectorAll('.queue-rail .case-row'))
+      const selected = rows.find((row) => row.getAttribute('aria-current') === 'page')
+      const other = rows.find((row) => row.getAttribute('aria-current') !== 'page')
+      return [
+        rows.filter((row) => row.getAttribute('aria-current') === 'page').length,
+        getComputedStyle(other).boxShadow,
+        getComputedStyle(other).backgroundColor,
+        getComputedStyle(selected).backgroundColor
+      ]
+    JS
+    assert_equal 1, selected
+    assert_match(/inset/i, page.evaluate_script("getComputedStyle(document.querySelector('.queue-rail .case-row[aria-current=\"page\"]')).boxShadow"))
+    refute_match(/inset/i, other_shadow)
+    refute_equal selected_background, other_background
+  end
+
   test "mobile case workspace keeps the thread before context without overflow" do
     page.current_window.resize_to(390, 844)
     support_case = create_support_case

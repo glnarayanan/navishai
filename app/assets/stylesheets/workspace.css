@@ -64,11 +64,20 @@
   width: 100%;
 }
 
+.decision-next.decision-next-mobile {
+  display: none;
+}
+
 .queue-rail {
   background: color-mix(in oklch, var(--muted-surface) 70%, var(--card));
 }
 
-.queue-rail .case-row[aria-current="page"] {
+.queue-rail .case-row:hover {
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+.queue-rail .case-row[aria-current="page"],
+.queue-rail .case-row[aria-current="page"]:hover {
   background: var(--card);
   box-shadow: inset 3px 0 0 var(--secondary);
 }
@@ -366,6 +375,16 @@
 
 .health-score-panel strong {
   transition: color 220ms ease;
+}
+
+@media (max-width: 64rem) {
+  .decision-next.decision-next-mobile {
+    display: grid;
+  }
+
+  .decision-next.decision-next-rail {
+    display: none;
+  }
 }
 
 @media (max-width: 48rem) {
