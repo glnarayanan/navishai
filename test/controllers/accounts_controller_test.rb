@@ -91,4 +91,75 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     } ] }, as: :json
     assert_response :forbidden
   end
+
+  test "renders the source-backed dossier and resolves an ambiguous identity through recorded candidates" do
+    duplicate = contacts(:alice_duplicate)
+    identity = @workspace.source_identities.create!(
+      entity_kind: :contact, source_namespace: "intercom:primary", source_record_type: :contact,
+      source_record_id: "account-dossier-ambiguous", status: :ambiguous
+    )
+    identity.source_identity_keys.create!(workspace: @workspace, kind: :email, normalized_value: "alice@example.com")
+    identity.identity_match_candidates.create!(workspace: @workspace, contact: contacts(:alice), key_kind: :email)
+    identity.identity_match_candidates.create!(workspace: @workspace, contact: duplicate, key_kind: :email)
+
+    get workspace_account_path(@workspace, @account)
+
+    assert_response :success
+    assert_select "#account-dossier h2", text: "Account dossier"
+    assert_select ".dossier-record-conflict", text: /Competing identity matches/
+    assert_select "form[action=?]", resolve_identity_workspace_account_path(
+      @workspace, @account, source_identity_id: identity.id
+    ), count: 2
+
+    post resolve_identity_workspace_account_path(
+      @workspace, @account, source_identity_id: identity.id
+    ), params: { target_id: contacts(:alice).id }
+
+    assert_redirected_to workspace_account_path(@workspace, @account, anchor: "account-dossier")
+    assert identity.reload.matched?
+    assert_equal contacts(:alice), identity.contact
+    assert identity.reviewed?
+  end
+
+  test "member sees an identity conflict but cannot resolve it" do
+    member = User.create!(email_address: "dossier-member@example.com", password: "password12345", verified_at: Time.current)
+    @workspace.memberships.create!(user: member, role: :member)
+    identity = @workspace.source_identities.create!(
+      entity_kind: :contact, source_namespace: "intercom:primary", source_record_type: :contact,
+      source_record_id: "member-ambiguous", status: :ambiguous
+    )
+    identity.source_identity_keys.create!(workspace: @workspace, kind: :email, normalized_value: "alice@example.com")
+    identity.identity_match_candidates.create!(workspace: @workspace, contact: contacts(:alice), key_kind: :email)
+    sign_in_as member
+
+    get workspace_account_path(@workspace, @account)
+    assert_response :success
+    assert_select ".dossier-record-conflict", text: /Manager must choose/
+    assert_select "form[action=?]", resolve_identity_workspace_account_path(
+      @workspace, @account, source_identity_id: identity.id
+    ), count: 0
+
+    post resolve_identity_workspace_account_path(
+      @workspace, @account, source_identity_id: identity.id
+    ), params: { target_id: contacts(:alice).id }
+    assert_response :forbidden
+    assert identity.reload.ambiguous?
+  end
+
+  test "cannot resolve an identity from another Account through this dossier" do
+    other_account = @workspace.accounts.create!(name: "Other Account")
+    other_contact = @workspace.contacts.create!(account: other_account, name: "Other Contact")
+    identity = @workspace.source_identities.create!(
+      entity_kind: :contact, source_namespace: "intercom:primary", source_record_type: :contact,
+      source_record_id: "other-account-ambiguous", status: :ambiguous
+    )
+    identity.identity_match_candidates.create!(workspace: @workspace, contact: other_contact, key_kind: :email)
+
+    post resolve_identity_workspace_account_path(
+      @workspace, @account, source_identity_id: identity.id
+    ), params: { target_id: other_contact.id }
+
+    assert_response :not_found
+    assert identity.reload.ambiguous?
+  end
 end

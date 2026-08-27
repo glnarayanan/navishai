@@ -311,6 +311,7 @@
       <div class="decision-next decision-next-rail">
         <%= render "next_action" %>
       </div>
+      <%= render "account_context", dossier: @account_dossier if @account_dossier %>
       <% if @intercom_link %>
         <section class="context-section" aria-labelledby="intercom-context-title">
           <h2 id="intercom-context-title">Intercom source</h2>

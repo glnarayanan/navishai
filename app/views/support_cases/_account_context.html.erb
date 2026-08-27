@@ -1,0 +1,20 @@
+<section class="context-section account-context-card" aria-labelledby="account-context-title">
+  <div class="context-section-heading">
+    <h2 id="account-context-title">Account context</h2>
+    <%= link_to "Full dossier", workspace_account_path(dossier.workspace, dossier.account, anchor: "account-dossier") %>
+  </div>
+  <strong class="account-context-name"><%= dossier.account.name %></strong>
+  <dl class="case-facts">
+    <div><dt>Health</dt><dd><%= dossier.assessment ? "#{dossier.assessment.score}/100 · #{dossier.assessment.risk_level.humanize}" : "Not calculated" %></dd></div>
+    <div><dt>Conflicts</dt><dd><%= dossier.conflict_count.zero? ? "None recorded" : pluralize(dossier.conflict_count, "retained conflict") %></dd></div>
+    <div><dt>Recent cases</dt><dd><%= dossier.recent_cases.size %></dd></div>
+  </dl>
+  <div class="account-context-action">
+    <span>Next human action</span>
+    <strong><%= dossier.next_action.label %></strong>
+    <small><%= dossier.next_action.detail %></small>
+  </div>
+  <% if dossier.recurring_issues.any? %>
+    <p class="account-context-issues"><strong>Recurring:</strong> <%= dossier.recurring_issues.map(&:name).to_sentence %></p>
+  <% end %>
+</section>

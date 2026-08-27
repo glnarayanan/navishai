@@ -5,7 +5,7 @@ class AccountsController < ApplicationController
   before_action :set_context
   before_action :set_account, except: :index
   before_action :require_writer, only: %i[ recalculate request_risk_review start_risk_review ]
-  before_action :require_manager, only: :resolve_risk_review
+  before_action :require_manager, only: %i[ resolve_risk_review resolve_identity ]
 
   rescue_from Current::RoleAccessDenied, with: :forbidden
   rescue_from AccountRiskWorkflow::InvalidCommand, with: :invalid_change
@@ -56,6 +56,22 @@ class AccountsController < ApplicationController
       notice: "Risk review resolved."
   end
 
+  def resolve_identity
+    dossier = AccountDossier.new(workspace: @workspace, account: @account, membership: @membership)
+    identity = dossier.identity!(params[:source_identity_id])
+    target = identity.account? ? @workspace.accounts.find(params.require(:target_id)) :
+      @workspace.contacts.find(params.require(:target_id))
+    IdentityMatchReview.resolve!(
+      workspace: @workspace, source_identity: identity, target:, membership: @membership
+    )
+    redirect_to workspace_account_path(@workspace, @account, anchor: "account-dossier"),
+      notice: "Source identity resolved."
+  rescue ActiveRecord::RecordInvalid, ArgumentError, ActionController::ParameterMissing => error
+    @command_error = error.message
+    load_account
+    render :show, status: :unprocessable_content
+  end
+
   private
     def set_context
       @workspace = Current.require_workspace!
@@ -74,6 +90,7 @@ class AccountsController < ApplicationController
         .includes(:account_health_assessment, crew_task: [ :assigned_agent_profile, :artifacts ])
         .order(opened_at: :desc, id: :desc)
       @tasks = @account.crew_tasks.includes(:assigned_agent_profile, :current_event).order(created_at: :desc).limit(8)
+      @dossier = AccountDossier.new(workspace: @workspace, account: @account, membership: @membership)
     end
 
     def require_writer

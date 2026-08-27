@@ -4227,6 +4227,296 @@ td {
 .account-supporting-grid time,
 .account-supporting-grid span { color: var(--muted); }
 
+/* Source-backed Account dossier */
+.account-dossier {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dossier-heading,
+.dossier-panel > header,
+.dossier-record-heading,
+.dossier-candidates > li,
+.dossier-issue-list > li,
+.context-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dossier-heading > div,
+.dossier-panel > header > div,
+.dossier-record-heading > :first-child,
+.context-section-heading > :first-child { min-width: 0; }
+
+.dossier-heading h2,
+.dossier-panel h3,
+.dossier-memory-group h4,
+.dossier-next-action h3 { margin: 0; }
+
+.dossier-heading p,
+.dossier-panel > header p,
+.dossier-next-action p,
+.dossier-record p,
+.dossier-memory-item p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.dossier-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5rem, 1fr));
+  min-width: min(100%, 21rem);
+  margin: 0;
+}
+
+.dossier-summary > div {
+  display: grid;
+  gap: 0.2rem;
+  padding-inline: 1rem;
+  border-left: 1px solid var(--line);
+}
+
+.dossier-summary dt,
+.dossier-memory-item dt {
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+}
+
+.dossier-summary dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dossier-next-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 1rem;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sheet);
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+
+.dossier-next-action > span,
+.account-context-action > span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+}
+
+.dossier-next-action .button { grid-column: 2; grid-row: 1 / span 3; }
+
+.dossier-grid,
+.dossier-memory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.dossier-panel {
+  min-width: 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.dossier-panel > header { margin-bottom: 1rem; }
+
+.dossier-panel > header > span,
+.dossier-record-heading > span,
+.dossier-memory-group > header > span {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.dossier-primary-facts,
+.dossier-memory-item dl {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.dossier-primary-facts > div,
+.dossier-memory-item dl > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.3fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.dossier-primary-facts dt { color: var(--foreground); font-weight: var(--weight-semibold); }
+
+.dossier-primary-facts dd,
+.dossier-memory-item dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.dossier-record-list,
+.dossier-candidates,
+.dossier-issue-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dossier-record-list { margin-top: 1rem; }
+
+.dossier-record {
+  min-width: 0;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.dossier-record-heading a,
+.dossier-memory-item a,
+.account-context-card a { overflow-wrap: anywhere; }
+
+.dossier-record code,
+.dossier-source-line code,
+.dossier-memory-item code,
+.dossier-issue-list code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dossier-record small,
+.dossier-memory-item small,
+.account-context-action small {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+}
+
+.dossier-record-conflict {
+  padding-inline: 1rem;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+}
+
+.dossier-warning { color: var(--warning-foreground) !important; }
+
+.dossier-candidates {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.dossier-candidates > li { align-items: center; }
+.dossier-candidates form { margin: 0; }
+
+.dossier-source-line {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.dossier-source-line > span { color: var(--muted); font-size: 0.8125rem; }
+.dossier-memory { container-type: inline-size; }
+
+.dossier-memory-group {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+}
+
+.dossier-memory-group > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.dossier-memory-item {
+  min-width: 0;
+  padding-top: 1rem;
+}
+
+.dossier-memory-item + .dossier-memory-item {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.dossier-memory-item p,
+.dossier-decisions p {
+  max-height: 10rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dossier-memory-item dl { margin-block: 0.75rem; }
+
+.dossier-issue-list > li {
+  align-items: baseline;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.dossier-issue-list > li > span {
+  min-width: 0;
+  color: var(--muted);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.dossier-health-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+.dossier-health-summary > strong {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-page);
+}
+
+.dossier-health-summary small { font-size: 1rem; font-weight: var(--weight-regular); letter-spacing: 0; }
+.dossier-health-summary > span { color: var(--muted); }
+.dossier-decisions { margin-top: 1rem; }
+
+.dossier-decisions article {
+  padding-block: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.account-context-name { display: block; margin-bottom: 0.75rem; }
+
+.account-context-action {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+
+.account-context-issues { margin: 0.75rem 0 0; color: var(--muted); }
+.dossier-limit { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.8125rem; }
+
+@container (max-width: 48rem) {
+  .dossier-memory-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 48rem) {
   .account-health-detail {
     display: flex;
@@ -4260,6 +4550,25 @@ td {
   .risk-review-actions .button,
   .risk-review-actions form,
   .risk-review-actions form .button { width: 100%; }
+  .account-dossier { padding: 1rem; }
+  .dossier-heading,
+  .dossier-panel > header,
+  .dossier-record-heading,
+  .dossier-candidates > li,
+  .dossier-issue-list > li { flex-direction: column; gap: 0.35rem; }
+  .dossier-summary { width: 100%; min-width: 0; }
+  .dossier-summary > div { padding: 0.65rem; border-top: 1px solid var(--line); border-left: 0; }
+  .dossier-summary > div + div { border-left: 1px solid var(--line); }
+  .dossier-summary dt { min-height: 2.5rem; }
+  .dossier-next-action { grid-template-columns: minmax(0, 1fr); }
+  .dossier-next-action .button { grid-column: 1; grid-row: auto; width: 100%; min-height: 3rem; margin-top: 0.5rem; }
+  .dossier-grid,
+  .dossier-memory-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .dossier-primary-facts > div,
+  .dossier-memory-item dl > div { grid-template-columns: minmax(0, 1fr); gap: 0.15rem; }
+  .dossier-record-conflict { padding-inline: 0.75rem; }
+  .dossier-candidates .button { width: 100%; min-height: 3rem; }
+  .dossier-issue-list > li > span { text-align: left; }
 }
 
 @media (max-width: 24rem) {

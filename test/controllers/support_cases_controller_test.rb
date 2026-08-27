@@ -30,6 +30,8 @@ class SupportCasesControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", text: "Cannot sign in"
     assert_select ".message-body", text: /still cannot access/
     assert_select "aside[aria-label='Case context']"
+    assert_select ".account-context-card", text: /Account context/
+    assert_select ".account-context-card a", text: "Full dossier"
     assert_select "input, textarea, button", text: /Reply|Send/, count: 0
   end
 

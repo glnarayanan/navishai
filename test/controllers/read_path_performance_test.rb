@@ -200,6 +200,60 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_operator account_elapsed, :<, 5.seconds
   end
 
+  test "Account dossier and concise case context keep source-backed detail bounded" do
+    account = accounts(:acme)
+    44.times do |index|
+      contact = @workspace.contacts.create!(account:, name: "Dossier contact #{index}")
+      identity = @workspace.source_identities.create!(
+        entity_kind: :contact, source_namespace: "performance", source_record_type: :contact,
+        source_record_id: "dossier-contact-#{index}", status: :matched, contact:,
+        resolution_method: :created, resolved_at: Time.current
+      )
+      identity.source_identity_keys.create!(
+        workspace: @workspace, kind: :email, normalized_value: "dossier-#{index}@example.com"
+      )
+    end
+    70.times do |index|
+      content = "Bounded dossier memory #{index}"
+      @workspace.memory_records.create!(
+        memory_type: :profile, scope_kind: :account, account:, topic: "dossier-topic-#{index}", content:,
+        authority: :source_record, origin_kind: :system, source_reference: "test://dossier/#{index}",
+        source_digest: Digest::SHA256.hexdigest(content), observed_at: index.minutes.ago,
+        valid_from: index.minutes.ago, confidence: 1, retention_policy: :indefinite
+      )
+    end
+    64.times do |index|
+      @workspace.account_health_inputs.create!(
+        account:, input_key: "active_users", value_kind: :number, numeric_value: index,
+        source_kind: :api, source_key: "dossier:active-users:#{index}",
+        source_locator: "api://accounts/acme/active-users/#{index}", observed_at: index.seconds.ago
+      )
+    end
+    support_case = create_support_case(subject: "Dossier query guard")
+
+    account_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    account_queries = capture_sql { get workspace_account_path(@workspace, account) }
+    account_elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - account_started
+
+    assert_response :success
+    assert_select ".dossier-memory-group", count: AccountDossier::LIMITS.fetch(:memories)
+    assert_select ".dossier-identity .dossier-record", count: AccountDossier::LIMITS.fetch(:identities)
+    assert_select ".dossier-source-line", count: AccountDossier::LIMITS.fetch(:facts)
+    assert_select ".dossier-limit", text: /newest 60/
+    assert_select ".dossier-limit", text: /newest 40/
+    assert_operator account_queries.size, :<=, 70
+    assert_operator account_elapsed, :<, 5.seconds
+
+    case_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    case_queries = capture_sql { get workspace_support_case_path(@workspace, support_case) }
+    case_elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - case_started
+
+    assert_response :success
+    assert_select ".account-context-card", text: /Account context/
+    assert_operator case_queries.size, :<=, 75
+    assert_operator case_elapsed, :<, 5.seconds
+  end
+
   private
     def capture_sql
       queries = []
