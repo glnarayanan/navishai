@@ -17,18 +17,34 @@ The stacked source includes:
 
 `bin/ci` is the source checkpoint. It runs Ruby and Go style checks, dependency audits, Brakeman, the full Rails and browser suites, Go vet and tests, the Rails-to-runner contract, seed checks, and the SBOM check. Record host-specific omissions instead of treating a partial run as a green release checkpoint.
 
-The 25 August Ruby 4.0.6 and pgvector 0.8.6 checkpoint passed setup, 406-file Ruby style, Go style, gem and Importmap audits, Brakeman, 520 Rails tests with 3,212 assertions, seed replant, and the 84-component SBOM check. The 33-test browser suite completed 376 assertions on macOS but retained six environment-specific failures: Chrome enforces a 500-pixel minimum window for five 320/375-pixel assertions, and local font rendering produces one 22-pixel link target where the test requires 24 pixels. Direct browser smoke testing at exact 1,440 and 320-pixel device viewports covered sign-in, Workspace selection, Cases, Accounts, and account health with no horizontal overflow. The Go runner cross-compiles and vets for Linux amd64, but the full native Linux runner suite, persistent PostgreSQL 15 upgrade smoke, and production container build still need a Linux container host before this becomes a green release checkpoint.
+The 27 August rebaseline started from `fbf65f0b3c268f650a2489035236d7fb82e9467d` on Linux 6.1 x86-64 with Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, pgvector 0.8.6, and Chrome for Testing 152.0.7977.64. A fresh orb exposed a system-test setup defect: Selenium downloaded Chrome only after the test class had already resolved its browser path, so all 45 browser tests failed before making an assertion. Commit `3f06a961797870e4aa2b3a4f96fc37c5fbf9336d` now asks Selenium Manager for Chrome before driver setup. With an empty Selenium browser cache, the first plain `bin/rails test:system` invocation passed 45 tests and 656 assertions without skips. The full `bin/ci` checkpoint then passed 422-file Ruby style, Go style, gem and Importmap audits, Brakeman with no warnings, 547 Rails tests with 3,341 assertions, 45 browser tests with 656 assertions, the native Linux Go suite and three Linux binary builds, the Rails-to-runner contract, seed replant, and the 84-component SBOM check.
+
+Focused release checks passed 14 tests with 75 assertions for backup, verification, restore confirmation and state coverage, upgrade preflight, the pgvector 0.8.1-to-0.8.6 migration boundary, and container privilege settings. An uncached native Linux Go run passed `go vet ./...` and `go test ./...`, then built x86-64 runner, executor, and namespace-launcher binaries. SBOM output and a deterministic release manifest matched the checked commit and artifact digest. The host PostgreSQL check had no pending migrations, and a custom-format `navishai_test` backup passed checksum and catalog verification; its isolated restore matched 49 migrations, 87 public tables, and pgvector 0.8.6. This host has only pgvector 0.8.6 available and no Docker or Podman executable, so it could not run a live 0.8.1 volume upgrade, production image construction, the four-database Compose backup and full state archives, Compose restore, or Compose upgrade preflight.
 
 ## Known gaps before a public release
 
+### Host boundaries
+
+- Production image construction, a live pgvector 0.8.1-to-0.8.6 volume upgrade, the full Compose backup and isolated restore, and Compose upgrade preflight still need a Linux host with Docker Engine and Compose v2. The Linux orb rebaseline covered their source-controlled regression tests and the native PostgreSQL restore described above, not these live Compose paths.
+- The Helm chart is experimental. It does not yet have the same live upgrade, restore, and platform-security evidence as Compose and native Linux.
+
+### Credential boundaries
+
+- Live OpenID Connect, SMTP, Intercom, SearXNG, object-store, and subscription-runtime smoke tests need deployment-owned endpoints or credentials. The default suites use protocol fixtures and must not consume customer accounts.
+
+### Legal and signing boundaries
+
 - Final source-licence text and contributor terms still need legal review. Do not publish a release or describe the licence as OSI-approved before that review.
 - No project release-signing identity has been set up. Current manifests provide SHA-256 integrity, not signed provenance or a SLSA claim.
+
+### Deployment boundaries
+
 - GitHub Actions is manual-only and has not been used for this build. Local repository checks are the current verification record.
-- Podman 6.1 cannot currently boot its Fedora CoreOS machine on this macOS 26 host, so the production container build and live pgvector 0.8.1-to-0.8.6 volume upgrade remain Linux-host release checks.
-- The Helm chart is experimental. It does not yet have the same live upgrade, restore, and platform-security evidence as Compose and native Linux.
-- Live OpenID Connect, SMTP, Intercom, SearXNG, object-store, and subscription-runtime smoke tests need deployment-owned endpoints or credentials. The default suites use protocol fixtures and must not consume customer accounts.
 - The self-hosted Supermemory Lite build has a 10,000-document licence cap. Operators must size and monitor within that limit.
 - A real deployment still needs operator-owned TLS, secrets, backup storage, restore rehearsal, firewall policy, runtime namespace policy, and post-install checks. Repository tests do not certify those controls on an unknown host.
+
+### Pilot boundary
+
 - No paid pilot or production adoption evidence exists in this record. Product validation remains an owner decision after real use.
 
 ## Handoff rule
