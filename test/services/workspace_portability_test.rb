@@ -83,6 +83,32 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     assert @imported.audit_events.exists?(action: "workspace.imported", actor: users(:owner))
   end
 
+  test "round trips historical schema v1 artifacts and published contract families without rewriting history" do
+    source = workspaces(:acme_support)
+    historical = publish_historical_v1(source)
+    archive = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
+
+    imported = WorkspacePortability.import(
+      workspace: source, membership: memberships(:owner_support), archive_io: archive,
+      name: "Historical Restore", slug: "historical-restore"
+    )
+
+    restored = imported.crew_artifacts.find_by!(payload_digest: historical.payload_digest)
+    assert_equal 1, restored.schema_version
+    assert_nil restored.resolution_contract_version
+    assert_nil restored.contract_result_state
+    assert_empty restored.material_claims
+    assert_empty restored.contract_blockers
+    assert_equal historical.body, restored.body
+    assert_equal ResolutionContractFamily::FAMILIES.keys.sort,
+      imported.resolution_contract_families.pluck(:family_key).sort
+    assert imported.resolution_contract_families.all? do |family|
+      family.current_version && family.current_version.resolution_contract_family_id == family.id
+    end
+  ensure
+    archive&.close!
+  end
+
   test "rejects an archive for another organization before writing" do
     source = workspaces(:acme_support)
     compressed = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
@@ -174,6 +200,67 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
   end
 
   private
+    def publish_historical_v1(workspace)
+      owner = memberships(:owner_support)
+      approve_scripted_runtime(workspace:, membership: owner)
+      CrewConfiguration.install_defaults!(workspace:)
+      ResolutionContractConfiguration.install_defaults!(workspace:)
+      settle_deferred_constraints
+      support_case = create_support_case
+      settle_deferred_constraints
+      profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+      task = CrewWork.create!(
+        workspace:, membership: owner, scope: support_case, profile:, title: "Historical investigation",
+        input_context: "Use the current case.", expected_output: "Return schema v1 JSON."
+      )
+      settle_deferred_constraints
+      CrewWork.apply!(
+        workspace:, membership: owner, task:, command: :start,
+        expected_sequence: task.current_event.sequence_number
+      )
+      settle_deferred_constraints
+      payload = {
+        "schema_version" => 1,
+        "kind" => "investigation",
+        "body" => "The customer reports an expired reset link.",
+        "uncertainty" => "The cause is not yet confirmed.",
+        "citations" => [ {
+          "kind" => "case",
+          "locator" => "case://#{support_case.id}",
+          "label" => "Support case"
+        } ],
+        "conflicts" => [],
+        "change_requests" => [],
+        "review_outcome" => nil,
+        "memory_proposals" => []
+      }
+      run = ExecutionLedger.new(workspace:).prepare!(task:, request_key: "archive:v1:#{task.id}")
+      ledger = ExecutionLedger.new(workspace:)
+      output = JSON.generate(payload)
+      events = [
+        [ "run.admitted", { "workspace_key" => workspace.runner_key, "task_key" => task.task_key, "attempt" => 1 } ],
+        [ "run.started", { "adapter" => "scripted", "scenario" => "historical v1", "attempt" => 1 } ],
+        [ "output.produced", { "text" => output } ],
+        [ "run.completed", { "outcome" => "completed" } ]
+      ]
+      now = Time.current
+      events.each_with_index do |(event_type, data), index|
+        ledger.ingest!(event: {
+          "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+          "sequence" => index + 1, "event_type" => event_type,
+          "occurred_at" => (now + (index / 1000.0).seconds).iso8601(6), "data" => data
+        })
+        settle_deferred_constraints
+      end
+      run.reload.crew_artifact
+    end
+
+    def settle_deferred_constraints
+      connection = ActiveRecord::Base.connection
+      connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      connection.execute("SET CONSTRAINTS ALL DEFERRED")
+    end
+
     def archive_manifest(archive)
       archive.rewind
       gzip = Zlib::GzipReader.new(archive)

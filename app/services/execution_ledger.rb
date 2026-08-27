@@ -130,6 +130,7 @@ class ExecutionLedger
 
     ExecutionRun.transaction do
       run = @workspace.execution_runs.find_by!(run_key: attributes.fetch("run_id"))
+      CrewScopeLock.acquire!(workspace: @workspace, scope: run.crew_task)
       run.crew_task.lock!
       run.lock!
 

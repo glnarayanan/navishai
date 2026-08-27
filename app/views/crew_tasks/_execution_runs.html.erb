@@ -71,10 +71,39 @@
               <div>
                 <h4 id="artifact-<%= artifact.id %>-title"><%= artifact.artifact_kind.humanize %> · v<%= artifact.version_number %></h4>
                 <% if artifact.review_outcome %><span class="run-state run-state-<%= artifact.review_outcome.dasherize %>"><%= artifact.review_outcome.humanize %></span><% end %>
+                <% if artifact.schema_version == 2 %>
+                  <span class="run-state run-state-<%= artifact.contract_result_state.dasherize %>"><%= artifact.contract_result_state.humanize %></span>
+                <% end %>
               </div>
             </header>
+            <% if artifact.contract_blocking? %>
+              <div class="artifact-proof artifact-proof-blocked" role="alert">
+                <strong>Proof blocked</strong>
+                <p>Contract v<%= artifact.resolution_contract_version.version_number %> found material claims that cannot pass readiness or approval.</p>
+                <ul>
+                  <% artifact.contract_blockers.each do |blocker| %>
+                    <li>
+                      <strong><%= blocker.fetch("message") %></strong>
+                      <span><%= blocker.fetch("remediation") %></span>
+                    </li>
+                  <% end %>
+                </ul>
+              </div>
+            <% end %>
             <div class="run-artifact-body"><%= simple_format(artifact.body) %></div>
             <dl class="run-artifact-facts">
+              <% if artifact.schema_version == 2 %>
+                <div>
+                  <dt>Material claims</dt>
+                  <dd>
+                    <ul>
+                      <% artifact.material_claims.each do |claim| %>
+                        <li><strong><%= claim.fetch("text") %></strong> · <%= claim.fetch("state").humanize %></li>
+                      <% end %>
+                    </ul>
+                  </dd>
+                </div>
+              <% end %>
               <div><dt>Uncertainty</dt><dd><%= artifact.uncertainty %></dd></div>
               <div>
                 <dt>Citations</dt>

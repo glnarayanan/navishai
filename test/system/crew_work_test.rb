@@ -120,6 +120,84 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-mobile.png") if ENV["CAPTURE_EXECUTION"]
   end
 
+  test "a writer inspects blocked claim proof and remediation on desktop and mobile" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace:, membership: owner)
+    CrewConfiguration.install_defaults!(workspace:)
+    ResolutionContractConfiguration.install_defaults!(workspace:)
+    support_case = create_support_case
+    message = add_inbound_message(support_case, body: "The reset link expired before I could use it.")
+    profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    task = CrewWork.create!(
+      workspace:, membership: owner, scope: support_case, profile:,
+      title: "Inspect blocked proof", input_context: "Use current evidence.",
+      expected_output: "Return typed claims and cite or refuse each material claim."
+    )
+    CrewWork.apply!(workspace:, membership: owner, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number)
+    run = ExecutionLedger.new(workspace:).prepare!(task:, request_key: "system:blocked-proof")
+    locator = "conversation://#{support_case.conversation_id}/messages/#{message.id}"
+    output = JSON.generate(
+      "schema_version" => 2, "kind" => "investigation",
+      "body" => "The customer reports an expired link; the product cause remains unproved.",
+      "uncertainty" => "No current technical source proves the cause.",
+      "citations" => [ { "kind" => "conversation", "locator" => locator, "label" => "Customer report" } ],
+      "conflicts" => [], "change_requests" => [], "review_outcome" => nil, "memory_proposals" => [],
+      "required_facts" => %w[customer_report technical_cause],
+      "material_claims" => [
+        {
+          "key" => "customer_report", "category" => "customer_account_fact",
+          "text" => "The customer reports that the reset link expired.", "state" => "uncertain",
+          "evidence" => [ { "kind" => "conversation", "locator" => locator } ]
+        },
+        {
+          "key" => "technical_cause", "category" => "product_technical_fact",
+          "text" => "The technical cause is not established.", "state" => "refused", "evidence" => []
+        }
+      ],
+      "proposed_actions" => [ "A human can request current technical evidence." ],
+      "policy_checks" => ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+        { "check" => check, "status" => "passed" }
+      end
+    )
+    ledger = ExecutionLedger.new(workspace:)
+    now = Time.current
+    ingest_run_event(ledger, run, 1, "run.admitted", now,
+      workspace_key: workspace.runner_key, task_key: task.task_key, attempt: 1)
+    ingest_run_event(ledger, run, 2, "run.started", now + 1.second,
+      adapter: "scripted", scenario: "blocked proof", attempt: 1)
+    ingest_run_event(ledger, run, 3, "output.produced", now + 2.seconds, text: output)
+    ingest_run_event(ledger, run, 4, "run.completed", now + 3.seconds, outcome: "completed")
+
+    sign_in(users(:owner))
+    visit workspace_support_case_crew_task_path(workspace, support_case, task)
+    assert_text "Proof blocked"
+    assert_text "Material claim customer report is uncertain."
+    assert_text "Add current evidence or qualify the claim for human review."
+    assert_text "Material claim technical cause is refused."
+    assert_text "Supply the required evidence or keep the refusal in the human review."
+    assert_selector ".run-state-blocked", text: "Blocked"
+    find("body").send_keys(:tab)
+    assert page.evaluate_script("document.activeElement.matches('a, button, input, select, summary, textarea')")
+    save_screenshot Rails.root.join(".amp/in/artifacts/blocked-proof-desktop.png") if ENV["CAPTURE_GROUNDING"]
+
+    page.current_window.resize_to(320, 844)
+    assert_no_horizontal_overflow
+    proof = find(".artifact-proof-blocked")
+    assert_operator proof.rect.width, :<=, 320
+    blocker = proof.find("li", text: "Material claim customer report is uncertain.")
+    page.execute_script("document.activeElement.blur()")
+    page.execute_script(
+      "document.documentElement.style.scrollBehavior = 'auto'; " \
+        "window.scrollTo(0, arguments[0].getBoundingClientRect().top + window.scrollY - 120)", blocker
+    )
+    assert_operator page.evaluate_script("arguments[0].getBoundingClientRect().top", blocker), :>=, 0
+    assert_operator page.evaluate_script("arguments[0].getBoundingClientRect().bottom", blocker), :<=,
+      page.evaluate_script("window.innerHeight")
+    save_screenshot Rails.root.join(".amp/in/artifacts/blocked-proof-mobile.png") if ENV["CAPTURE_GROUNDING"]
+  end
+
   test "a writer sees a specialist continue explicitly without memory during an outage" do
     workspace = workspaces(:acme_support)
     owner = memberships(:owner_support)

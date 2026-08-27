@@ -130,6 +130,9 @@ class CrewWork
         raise InvalidCommand, "This task is not waiting for review." unless task.review_requested?
         outcome = attributes[:review_outcome].to_s
         raise InvalidCommand, "Choose a review outcome." unless CrewTaskEvent::REVIEW_OUTCOMES.include?(outcome)
+        if outcome == "approved" && task.artifacts.order(created_at: :desc, id: :desc).first&.contract_blocking?
+          raise InvalidCommand, "A blocking AI result cannot receive an approved outcome review."
+        end
         target = outcome == "approved" ? "completed" : "in_progress"
         kind = outcome == "approved" ? "outcome_recorded" : "review_resolved"
         append_event!(task, kind:, to_status: target, to_profile: task.assigned_agent_profile,
@@ -215,8 +218,7 @@ class CrewWork
     end
 
     def lock_scope!(scope)
-      value = "crew-work:#{@workspace.id}:#{scope.class.base_class.name}:#{scope.id}"
-      CrewTask.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{CrewTask.connection.quote(value)}))")
+      CrewScopeLock.acquire!(workspace: @workspace, scope:)
     end
 
     def required_body(value, message)

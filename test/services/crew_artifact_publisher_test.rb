@@ -6,6 +6,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     @owner = memberships(:owner_support)
     approve_scripted_runtime(workspace: @workspace, membership: @owner)
     CrewConfiguration.install_defaults!(workspace: @workspace)
+    ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
     @support_case = create_support_case
     @message = add_inbound_message(@support_case, body: "The reset link says it has expired.")
     @knowledge = KnowledgeIngestion.create!(
@@ -256,6 +257,253 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_equal account.id, finding.crew_task.account_id
   end
 
+  test "publishes the deterministic schema v2 fixture with frozen contract evidence and audit" do
+    start(@investigation)
+
+    artifact = publish(@investigation, scripted_v2_payload)
+
+    assert_equal 2, artifact.schema_version
+    assert_equal "complete", artifact.contract_result_state
+    assert_empty artifact.contract_blockers
+    assert_equal "support_resolution", artifact.resolution_contract_version.resolution_contract_family.family_key
+    assert_equal %w[supported supported], artifact.material_claims.map { |claim| claim.fetch("state") }
+    evidence = artifact.material_claims.flat_map { |claim| claim.fetch("evidence") }
+    assert evidence.all? { |item| item.fetch("status") == "available" }
+    assert evidence.all? { |item| item.fetch("observed_at").present? && item.fetch("fresh_until").present? }
+    audit = AuditEvent.where(action: "crew.artifact_published", subject_id: artifact.id).sole
+    assert_equal({
+      "artifact_kind" => "investigation", "version" => 1, "schema_version" => 2,
+      "contract_version" => 1, "contract_result" => "complete"
+    }, audit.metadata)
+
+    invalid_claims = artifact.material_claims.deep_dup
+    invalid_claims.first["state"] = "invented"
+    unused_run = prepare_run(@investigation, "unused")
+    assert_raises(ActiveRecord::StatementInvalid) do
+      CrewArtifact.transaction(requires_new: true) do
+        CrewArtifact.insert_all!([ artifact.attributes.except(
+          "id", "artifact_key", "execution_run_id", "payload_digest", "created_at", "updated_at"
+        ).merge(
+          "artifact_key" => SecureRandom.uuid, "execution_run_id" => unused_run.id,
+          "version_number" => 2, "supersedes_artifact_id" => artifact.id,
+          "material_claims" => invalid_claims, "payload_digest" => Digest::SHA256.hexdigest("invalid-claim-state"),
+          "created_at" => Time.current, "updated_at" => Time.current
+        ) ])
+      end
+    end
+
+    unsupported_claims = artifact.material_claims.deep_dup
+    unsupported_claims.first.fetch("evidence").first["status"] = "unavailable"
+    assert_raises(ActiveRecord::StatementInvalid) do
+      CrewArtifact.transaction(requires_new: true) do
+        CrewArtifact.insert_all!([ artifact.attributes.except(
+          "id", "artifact_key", "execution_run_id", "payload_digest", "created_at", "updated_at"
+        ).merge(
+          "artifact_key" => SecureRandom.uuid, "execution_run_id" => unused_run.id,
+          "version_number" => 2, "supersedes_artifact_id" => artifact.id,
+          "material_claims" => unsupported_claims,
+          "payload_digest" => Digest::SHA256.hexdigest("unsupported-evidence-state"),
+          "created_at" => Time.current, "updated_at" => Time.current
+        ) ])
+      end
+    end
+  end
+
+  test "downgrades stale missing deleted and expired evidence instead of representing it as supported" do
+    stale_source = KnowledgeIngestion.ingest_integration!(
+      workspace: @workspace, source_kind: :intercom_help_center, title: "Old reset policy",
+      content: "Reset links expire.", external_id: "old-reset-policy",
+      source_updated_at: 60.days.ago, retrieved_at: 60.days.ago
+    )
+    start(@investigation)
+    stale = publish(@investigation, v2_payload(knowledge_locator: stale_source.current_version.citation_uri))
+    assert_equal "blocked", stale.contract_result_state
+    assert_equal "uncertain", stale.material_claims.find { |claim| claim.fetch("key") == "reset_policy" }.fetch("state")
+    assert_equal "stale", stale.material_claims.last.fetch("evidence").sole.fetch("status")
+    assert_includes stale.contract_blockers.map { |blocker| blocker.fetch("code") }, "claim_stale"
+
+    missing_locator = "knowledge://sources/#{SecureRandom.uuid}/versions/1"
+    missing = publish(@investigation, v2_payload(knowledge_locator: missing_locator))
+    assert_equal "uncertain", missing.material_claims.last.fetch("state")
+    assert_equal "unavailable", missing.material_claims.last.fetch("evidence").sole.fetch("status")
+    assert_equal "blocked", missing.contract_result_state
+
+    KnowledgeIngestion.new(workspace: @workspace, membership: @owner).delete!(knowledge_source: @knowledge)
+    deleted = publish(@investigation, v2_payload)
+    assert_equal "deleted", deleted.material_claims.last.fetch("evidence").sole.fetch("status")
+    assert_equal "uncertain", deleted.material_claims.last.fetch("state")
+
+    expired_source = KnowledgeIngestion.create!(
+      workspace: @workspace, membership: @owner, source_kind: :manual,
+      title: "Expired reset policy", content: "Reset links expire.",
+      url: nil, external_id: nil, upload: nil, expires_at: 1.hour.ago
+    )
+    expired = publish(@investigation, v2_payload(knowledge_locator: expired_source.current_version.citation_uri))
+    assert_equal "expired", expired.material_claims.last.fetch("evidence").sole.fetch("status")
+    assert_equal "blocked", expired.contract_result_state
+  end
+
+  test "requires each non-refused material claim to cite evidence" do
+    start(@investigation)
+    uncited = v2_payload(claim_states: { "customer_report" => "uncertain" })
+    uncited.fetch("material_claims").first["evidence"] = []
+
+    error = assert_raises(ExecutionLedger::InvalidRun) { complete_run(@investigation, uncited) }
+
+    assert_includes error.message, "cite evidence or be refused"
+    assert_empty @investigation.artifacts
+  end
+
+  test "freezes conflicted uncertain and refused claims with exact remediation" do
+    start(@investigation)
+    payload = v2_payload
+    payload.fetch("material_claims").first["state"] = "conflicted"
+    payload.fetch("material_claims").last["state"] = "refused"
+    payload.fetch("material_claims").last["evidence"] = []
+    payload["conflicts"] = [ {
+      "summary" => "Current records disagree", "details" => "The conversation and policy have different dates.",
+      "severity" => "blocking"
+    } ]
+
+    artifact = publish(@investigation, payload)
+
+    assert_equal %w[conflicted refused], artifact.material_claims.map { |claim| claim.fetch("state") }
+    assert_equal "blocked", artifact.contract_result_state
+    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "claim_conflicted"
+    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "claim_refused"
+    assert artifact.contract_blockers.all? { |blocker| blocker.fetch("remediation").present? }
+
+    uncertain = publish(@investigation, v2_payload(claim_states: { "customer_report" => "uncertain" }))
+    assert_equal "uncertain", uncertain.material_claims.first.fetch("state")
+    assert_equal "blocked", uncertain.contract_result_state
+  end
+
+  test "a nonblocking contract routes missing grounding to human review" do
+    family = ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
+      .find_by!(family_key: "support_resolution")
+    current = family.current_version
+    ResolutionContractConfiguration.publish!(
+      workspace: @workspace, membership: @owner, family:,
+      attributes: contract_attributes(current).merge(missing_items_block: false)
+    )
+    start(@investigation)
+
+    artifact = publish(@investigation, v2_payload(claim_states: { "customer_report" => "uncertain" }))
+
+    assert_equal "needs_human", artifact.contract_result_state
+    assert artifact.contract_blockers.all? { |blocker| blocker.fetch("severity") == "review" }
+  end
+
+  test "each artifact freezes the contract version used at publication" do
+    start(@investigation)
+    first = publish(@investigation, v2_payload)
+    family = first.resolution_contract_version.resolution_contract_family
+    current = family.current_version
+    ResolutionContractConfiguration.publish!(
+      workspace: @workspace, membership: @owner, family:,
+      attributes: contract_attributes(current).merge(execution_budget_units: 90_000)
+    )
+
+    second = publish(@investigation, v2_payload)
+
+    assert_equal 1, first.resolution_contract_version.version_number
+    assert_equal 2, second.resolution_contract_version.version_number
+    assert_equal 100_000, first.resolution_contract_version.execution_budget_units
+    assert_equal 90_000, second.resolution_contract_version.execution_budget_units
+    assert_equal "complete", first.contract_result_state
+  end
+
+  test "blocks an artifact when observed use exceeds the published threshold" do
+    family = ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
+      .find_by!(family_key: "support_resolution")
+    current = family.current_version
+    ResolutionContractConfiguration.publish!(
+      workspace: @workspace, membership: @owner, family:,
+      attributes: contract_attributes(current).merge(execution_budget_units: 50)
+    )
+    start(@investigation)
+
+    artifact = publish_run(
+      @investigation,
+      complete_run(@investigation, v2_payload, usage: { input_units: 40, output_units: 20 })
+    )
+
+    assert_equal "blocked", artifact.contract_result_state
+    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "execution_budget_exceeded"
+  end
+
+  test "foreign evidence fails closed as unavailable without leaking another Workspace" do
+    foreign_case = create_support_case(
+      workspace: workspaces(:beta_support), contact: contacts(:bob), membership: memberships(:outsider_beta)
+    )
+    foreign_message = add_inbound_message(foreign_case)
+    foreign_locator = "conversation://#{foreign_case.conversation_id}/messages/#{foreign_message.id}"
+    start(@investigation)
+    payload = v2_payload
+    payload.fetch("citations").first["locator"] = foreign_locator
+    payload.fetch("material_claims").first.fetch("evidence").first["locator"] = foreign_locator
+
+    artifact = publish(@investigation, payload)
+
+    snapshot = artifact.material_claims.first.fetch("evidence").sole
+    assert_equal "unavailable", snapshot.fetch("status")
+    assert_nil snapshot.fetch("observed_at")
+    assert_equal "blocked", artifact.contract_result_state
+    refute_includes artifact.contract_blockers.to_json, foreign_message.body
+  end
+
+  test "blocking output cannot receive task quality or success approval or move a case to Draft Ready" do
+    draft_task = create_task(@profiles.fetch("resolution_drafter"), "Grounded draft")
+    start(draft_task)
+    blocked_payload = v2_payload(kind: "draft", claim_states: { "customer_report" => "uncertain" })
+    blocked = publish(draft_task, blocked_payload)
+    assert blocked.contract_blocking?
+
+    apply(draft_task, :request_review, body: "Review the blocked draft.")
+    error = assert_raises(CrewWork::InvalidCommand) do
+      apply(draft_task, :review, review_outcome: "approved", body: "Approve")
+    end
+    assert_includes error.message, "blocking AI result"
+
+    reviewer = create_task(@profiles.fetch("support_reviewer"), "Quality review")
+    start(reviewer)
+    error = assert_raises(ExecutionLedger::InvalidRun) do
+      complete_run(reviewer, artifact_payload(
+        kind: "quality_review", body: "Approved despite the block.", review_outcome: "approved"
+      ))
+    end
+    assert_includes error.message, "blocking artifact"
+    assert_empty reviewer.artifacts
+
+    account = accounts(:acme)
+    strategist = create_account_task(
+      account, @workspace.agent_profiles.find_by!(role_key: "success_strategist"), "Blocked intervention"
+    )
+    start(strategist)
+    blocked_plan = publish(strategist, v2_payload(kind: "intervention_plan"))
+    assert blocked_plan.contract_blocking?
+    success_reviewer = create_account_task(
+      account, @workspace.agent_profiles.find_by!(role_key: "success_reviewer"), "Blocked success review"
+    )
+    start(success_reviewer)
+    error = assert_raises(ExecutionLedger::InvalidRun) do
+      complete_run(success_reviewer, artifact_payload(
+        kind: "success_review", body: "Approved despite the block.", review_outcome: "approved"
+      ))
+    end
+    assert_includes error.message, "blocking artifact"
+    assert_empty success_reviewer.artifacts
+
+    @support_case.update!(status: :investigating, status_changed_at: Time.current)
+    assert_raises(CaseWorkflow::InvalidTransition) do
+      CaseWorkflow.transition!(
+        workspace: @workspace, support_case: @support_case, membership: @owner,
+        to: :draft_ready, reason: "AI draft ready"
+      )
+    end
+    assert @support_case.reload.status_investigating?
+  end
+
   private
     def create_task(profile, title, dependencies: [])
       CrewWork.create!(
@@ -304,16 +552,17 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       run
     end
 
-    def complete_run(task, payload, memory_engine: nil)
+    def complete_run(task, payload, memory_engine: nil, usage: nil)
       output = JSON.generate(payload)
       run = prepare_run(task, output, memory_engine:)
       ledger = ExecutionLedger.new(workspace: @workspace)
       events = [
         [ "run.admitted", { workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number } ],
         [ "run.started", { adapter: "scripted", scenario: "support journey", attempt: run.attempt_number } ],
-        [ "output.produced", { text: output } ],
-        [ "run.completed", { outcome: "completed" } ]
+        [ "output.produced", { text: output } ]
       ]
+      events << [ "usage.observed", usage ] if usage
+      events << [ "run.completed", { outcome: "completed" } ]
       events.each_with_index do |(type, data), index|
         ledger.ingest!(event: {
           "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
@@ -331,6 +580,37 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
         "schema_version" => 1, "kind" => kind, "body" => body, "uncertainty" => uncertainty,
         "citations" => citations || [ conversation_citation ], "conflicts" => conflicts, "change_requests" => change_requests,
         "review_outcome" => review_outcome, "memory_proposals" => memory_proposals
+      }
+    end
+
+    def scripted_v2_payload
+      JSON.parse(
+        file_fixture("crew_artifacts/v2/supported.json").read
+          .gsub("{{conversation_locator}}", conversation_citation.fetch("locator"))
+          .gsub("{{knowledge_locator}}", knowledge_citation.fetch("locator"))
+      )
+    end
+
+    def v2_payload(kind: "investigation", knowledge_locator: knowledge_citation.fetch("locator"), claim_states: {})
+      payload = scripted_v2_payload
+      payload["kind"] = kind
+      payload.fetch("citations").find { |citation| citation.fetch("kind") == "knowledge" }["locator"] = knowledge_locator
+      payload.fetch("material_claims").find { |claim| claim.fetch("key") == "reset_policy" }
+        .fetch("evidence").first["locator"] = knowledge_locator
+      payload.fetch("material_claims").each do |claim|
+        claim["state"] = claim_states.fetch(claim.fetch("key"), claim.fetch("state"))
+      end
+      payload
+    end
+
+    def contract_attributes(version)
+      {
+        expected_current_version_id: version.id,
+        required_claim_categories: version.required_claim_categories,
+        evidence_freshness_days: version.evidence_freshness_days,
+        mandatory_review_checks: version.mandatory_review_checks,
+        execution_budget_units: version.execution_budget_units,
+        missing_items_block: version.missing_items_block
       }
     end
 

@@ -47,6 +47,8 @@ class Workspace < ApplicationRecord
   has_many :execution_runs, dependent: :restrict_with_exception
   has_many :execution_events, dependent: :restrict_with_exception
   has_many :crew_artifacts, dependent: :restrict_with_exception
+  has_many :resolution_contract_families, dependent: :restrict_with_exception
+  has_many :resolution_contract_versions, dependent: :restrict_with_exception
   has_many :runtime_installations, dependent: :restrict_with_exception
   has_many :public_web_searches, dependent: :restrict_with_exception
   has_many :public_web_search_results, dependent: :restrict_with_exception
@@ -92,6 +94,7 @@ class Workspace < ApplicationRecord
     uniqueness: { scope: :organization_id }
 
   after_create :install_default_crew_configuration
+  after_create :install_default_resolution_contracts
   after_create :install_default_health_scorecard
   after_create :install_default_data_policy
 
@@ -105,6 +108,10 @@ class Workspace < ApplicationRecord
   private
     def install_default_crew_configuration
       CrewConfiguration.install_defaults!(workspace: self)
+    end
+
+    def install_default_resolution_contracts
+      ResolutionContractConfiguration.install_defaults!(workspace: self)
     end
 
     def install_default_health_scorecard
