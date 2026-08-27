@@ -106,7 +106,7 @@ Implement the milestones in order unless the owner explicitly selects a narrower
 | Milestone | Outcome | Depends on | Status | Completion evidence |
 |---|---|---|---|---|
 | M0 | Rebaselined release candidate | Current main | Complete | `933136dd`; fresh-cache and exact-SHA `bin/ci` green: 547 Rails tests, 45 browser tests, Go checks/builds, audits, contract, seeds, and SBOM. Host omissions are recorded in `RELEASE_CANDIDATE.md`. |
-| M1 | Proofed resolutions and explainability | M0 | Not started | Add commit or PR and exact checks |
+| M1 | Proofed resolutions and explainability | M0 | In progress | M1.1-M1.2 on `phase/m1-resolution-contracts` at `a325a9246cf583b30b014837cb60abb25458ce12`: 567 Rails tests with 3,484 assertions, 46 system tests with 679 assertions, 35 focused tests with 338 assertions, 28 Ruby files linted, and 107 migrated schema facts matched the tracked structure. M1.3-M1.5 remain. |
 | M2 | Durable customer dossier | M1 | Not started | Add commit or PR and exact checks |
 | M3 | Support-to-renewal outcome loop | M2 | Not started | Add commit or PR and exact checks |
 | M4 | Operational ownership and portability | M3 | Not started | Add commit or PR and exact checks |
