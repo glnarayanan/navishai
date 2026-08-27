@@ -51,6 +51,15 @@ class WorkspacePortability
     usage_cost_snapshots.public_web_search_id
   ].to_set.freeze
   MAPPED_REFERENCE_COLUMNS = { "conversation_id" => "conversations" }.freeze
+  PORTABLE_MEMORY_INDEX_STATE = {
+    "status" => "pending",
+    "attempt_count" => 0,
+    "external_document_id" => nil,
+    "external_status" => nil,
+    "failure_code" => nil,
+    "last_attempted_at" => nil,
+    "indexed_at" => nil
+  }.freeze
 
   class InvalidArchive < StandardError; end
 
@@ -143,7 +152,6 @@ class WorkspacePortability
         metadata: { table_count: tables.size, record_count:, attachment_count: attachment_objects.size },
         occurred_at: imported_at
       )
-      reset_memory_index!(target)
       MemoryPortability.reconstruct_index!(workspace: target, membership: target_actor) if target.memory_records.exists?
     end
     target
@@ -308,6 +316,7 @@ class WorkspacePortability
         old_id = row.fetch("id")
         attributes = row.except("id")
         attributes = remap_keys(attributes, table, models.fetch(table), key_replacements)
+        attributes = attributes.merge(PORTABLE_MEMORY_INDEX_STATE) if table == "memory_index_entries"
         attributes["workspace_id"] = target.id
         foreign_keys.fetch(table, {}).each do |column, key|
           old_value = row[column]
@@ -487,20 +496,15 @@ class WorkspacePortability
   end
   private_class_method :ensure_owner!
 
-  def self.reset_memory_index!(workspace)
-    workspace.memory_index_entries.update_all(
-      status: MemoryIndexEntry.statuses.fetch("pending"), attempt_count: 0, external_document_id: nil,
-      external_status: nil, failure_code: nil, last_attempted_at: nil, indexed_at: nil
-    )
-  end
-  private_class_method :reset_memory_index!
-
   def self.workspace_rows(table, workspace_id)
     connection = ActiveRecord::Base.connection
     quoted_table = connection.quote_table_name(table)
-    connection.select_all(
+    rows = connection.select_all(
       "SELECT * FROM #{quoted_table} WHERE workspace_id = #{connection.quote(workspace_id)} ORDER BY id"
     ).to_a
+    return rows unless table == "memory_index_entries"
+
+    rows.map { |row| row.merge(PORTABLE_MEMORY_INDEX_STATE) }
   end
   private_class_method :workspace_rows
 
