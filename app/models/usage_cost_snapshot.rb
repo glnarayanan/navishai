@@ -13,7 +13,9 @@ class UsageCostSnapshot < ApplicationRecord
   validates :captured_at, presence: true
   validates :currency, format: { with: /\A[A-Z]{3}\z/ }, allow_nil: true
   validates :amount_micros, :observed_input_units, :observed_output_units, :observed_search_units,
-    numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+    numericality: {
+      only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: RunnerProtocol::BIGINT_MAX
+    }, allow_nil: true
   validate :shape_is_consistent
 
   def readonly? = persisted?

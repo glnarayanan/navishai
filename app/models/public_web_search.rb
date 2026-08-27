@@ -15,7 +15,9 @@ class PublicWebSearch < ApplicationRecord
   validates :query, presence: true, length: { in: 2..500 }
   validates :status, inclusion: { in: STATUSES }
   validates :policy_decision, inclusion: { in: %w[allowed redacted] }
-  validates :cost_units, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :cost_units, numericality: {
+    only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: RunnerProtocol::BIGINT_MAX
+  }
   validates :provider_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validates :failure_code, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validate :assignment_is_consistent

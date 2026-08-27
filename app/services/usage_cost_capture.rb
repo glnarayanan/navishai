@@ -30,8 +30,12 @@ class UsageCostCapture
     if reported_amounts.any?
       currency = usage.filter_map { |event| event["currency"] }.uniq.sole
       status = reported_amounts.size == usage.size ? "complete" : "partial"
+      amount_micros = reported_amounts.sum
+      if amount_micros > RunnerProtocol::BIGINT_MAX
+        return unknown("execution_events", "reported_amount_out_of_range").merge(observed)
+      end
       return observed.merge(
-        status:, source: "adapter_reported", currency:, amount_micros: reported_amounts.sum,
+        status:, source: "adapter_reported", currency:, amount_micros:,
         calculation_provenance: {
           "source" => "execution_events", "adapter_key" => run.selected_adapter_key,
           "usage_event_count" => usage.size,
@@ -77,6 +81,8 @@ class UsageCostCapture
     return unknown("configured_rate", "required_rate_unavailable") if known.empty?
 
     amount = known.sum { |_name, values| Rational(values.fetch("units") * values.fetch("rate_micros_per_million"), UNITS_PER_RATE) }.round
+    return unknown("configured_rate", "calculated_amount_out_of_range") if amount > RunnerProtocol::BIGINT_MAX
+
     {
       status: missing.empty? ? "complete" : "partial",
       source: "configured_rate", currency: version.currency, amount_micros: amount,
