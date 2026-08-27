@@ -225,7 +225,8 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     64.times do |index|
       @workspace.account_health_inputs.create!(
         account:, input_key: "active_users", value_kind: :number, numeric_value: index,
-        source_kind: :api, source_key: "dossier:active-users:#{index}",
+        source_kind: :api, source_namespace: "performance", source_key: "dossier:active-users:#{index}",
+        source_digest: Digest::SHA256.hexdigest([ "active_users", "number", index.to_d.to_s("F") ].join("\n")),
         source_locator: "api://accounts/acme/active-users/#{index}", observed_at: index.seconds.ago
       )
     end
@@ -252,6 +253,46 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_select ".account-context-card", text: /Account context/
     assert_operator case_queries.size, :<=, 75
     assert_operator case_elapsed, :<, 5.seconds
+  end
+
+  test "health evidence freezes exact totals and bounds drill-down detail" do
+    account = @workspace.accounts.create!(name: "Bounded health evidence")
+    contact = @workspace.contacts.create!(account:, name: "Evidence contact")
+    now = Time.current.change(usec: 0)
+    conversation_ids = Conversation.insert_all!(101.times.map do |index|
+      {
+        workspace_id: @workspace.id, contact_id: contact.id, subject: "Evidence case #{index}",
+        started_at: now - index.minutes, last_message_at: now - index.minutes,
+        created_at: now, updated_at: now
+      }
+    end, returning: %w[id]).rows.flatten
+    SupportCase.insert_all!(conversation_ids.map do |conversation_id|
+      {
+        workspace_id: @workspace.id, conversation_id:, status: "new", priority: "normal",
+        status_changed_at: now, created_at: now, updated_at: now
+      }
+    end)
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account:, trigger_kind: "human_request", membership: @membership, at: now
+    )
+    signal = assessment.signals.find_by!(signal_key: "open_cases")
+
+    assert_equal 101, signal.numeric_value
+    assert_equal AccountHealth::MAX_EVIDENCE_REFS, signal.evidence_refs.size
+    assert_equal 1, signal.evidence_omitted_count
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    queries = capture_sql do
+      get health_evidence_workspace_account_path(
+        @workspace, account, assessment_id: assessment.id, signal_key: signal.signal_key
+      )
+    end
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert_response :success
+    assert_select ".dossier-record", count: AccountHealth::MAX_EVIDENCE_REFS
+    assert_select ".dossier-limit", text: /1 additional reference/
+    assert_operator queries.size, :<=, 20
+    assert_operator elapsed, :<, 5.seconds
   end
 
   private

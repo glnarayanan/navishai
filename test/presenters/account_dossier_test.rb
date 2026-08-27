@@ -123,9 +123,11 @@ class AccountDossierTest < ActiveSupport::TestCase
 
   private
     def create_input(key, date_value:, observed_at:)
+      source_key = "dossier:#{key}:#{observed_at.to_i}"
       @workspace.account_health_inputs.create!(
         account: @account, input_key: key, value_kind: :date, date_value:,
-        source_kind: :api, source_key: "dossier:#{key}:#{observed_at.to_i}",
+        source_kind: :api, source_namespace: "dossier_test", source_key:,
+        source_digest: Digest::SHA256.hexdigest([ key, "date", date_value.iso8601 ].join("\n")),
         source_locator: "api://accounts/acme/#{key}/#{observed_at.to_i}", observed_at:
       )
     end

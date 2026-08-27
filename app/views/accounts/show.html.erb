@@ -59,11 +59,14 @@
           <tbody>
             <% @assessment.signals.each do |signal| %>
               <tr>
-                <th scope="row"><%= signal.signal_key.humanize %></th>
+                <th scope="row"><%= health_signal_label(signal) %></th>
                 <td><%= signal.value_kind == "date" ? signal.date_value.to_fs(:long) : number_with_delimiter(signal.numeric_value) %></td>
                 <td><span><%= signal.source_kind.humanize %></span><code><%= signal.source_locator %></code><small><%= signal.range_starts_at&.to_fs(:short) || "All retained history" %> – <%= signal.range_ends_at.to_fs(:short) %></small></td>
                 <td><%= signal.weight %></td>
-                <td><strong><%= signal.risk_points %></strong><small><%= signal.citation_uri %></small></td>
+                <td><strong><%= signal.risk_points %></strong><small><%= signal.citation_uri %></small>
+                  <%= link_to "View evidence", health_evidence_workspace_account_path(
+                    @workspace, @account, assessment_id: @assessment.id, signal_key: signal.signal_key
+                  ) if signal.evidence_refs.any? %></td>
               </tr>
             <% end %>
           </tbody>
@@ -75,7 +78,7 @@
             <details class="signal-card">
               <summary>
                 <span>
-                  <strong><%= signal.signal_key.humanize %></strong>
+                  <strong><%= health_signal_label(signal) %></strong>
                   <small>Weight <%= signal.weight %></small>
                 </span>
                 <b><%= signal.risk_points %> pts</b>
@@ -86,6 +89,9 @@
                 <div><dt>Weight</dt><dd><%= signal.weight %></dd></div>
                 <div><dt>Risk points</dt><dd><%= signal.risk_points %></dd></div>
                 <div><dt>Citation</dt><dd><code><%= signal.citation_uri %></code></dd></div>
+                <% if signal.evidence_refs.any? %><div><dt>Evidence</dt><dd><%= link_to "View contributing records", health_evidence_workspace_account_path(
+                  @workspace, @account, assessment_id: @assessment.id, signal_key: signal.signal_key
+                ) %></dd></div><% end %>
               </dl>
             </details>
           </li>

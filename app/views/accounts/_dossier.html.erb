@@ -85,7 +85,10 @@
                   <b><%= dossier_input_value(input) %></b>
                   <span><%= input == group.effective ? "Effective source value" : "Retained prior value" %></span>
                   <code><%= input.source_locator %></code>
-                  <small><%= input.source_kind.upcase %> · observed <%= input.observed_at.to_fs(:short) %> · source-record authority</small>
+                  <small><%= input.source_namespace %> · <%= input.source_kind.upcase %> · observed <%= input.observed_at.to_fs(:short) %> · source-record authority</small>
+                  <small>Digest <code><%= input.source_digest.first(12) %>…</code>
+                    <% if input.valid_from || input.valid_until %> · valid <%= input.valid_from&.to_fs(:short) || "open" %> – <%= input.valid_until&.to_fs(:short) || "open" %><% end %>
+                    <% if input.corrects_input %> · corrects source <code><%= input.corrects_input.source_key %></code><% end %></small>
                 </div>
               <% end %>
             </li>

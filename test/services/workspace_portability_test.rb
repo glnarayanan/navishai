@@ -57,6 +57,16 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       detected_content_type: "text/plain", scan_status: :available, scan_result_code: "clean", scanned_at: Time.current
     )
     attachment.file.attach(io: StringIO.new(content), filename: "proof.txt", content_type: "text/plain")
+    AccountDataImport.import_api!(workspace: source, membership: memberships(:owner_support), rows: [ {
+      source_id: "portable-health-1", source_namespace: "portable.crm", account_name: accounts(:acme).name,
+      observed_at: 2.days.ago.iso8601, active_users: 25
+    } ])
+    AccountDataImport.import_api!(workspace: source, membership: memberships(:owner_support), rows: [ {
+      source_id: "portable-health-2", source_namespace: "portable.crm", corrects_source_id: "portable-health-1",
+      account_name: accounts(:acme).name, observed_at: 1.day.ago.iso8601, active_users: 30
+    } ])
+    source_correction = source.account_health_inputs.find_by!(source_key: "portable-health-2")
+    source_signal = accounts(:acme).current_health_assessment.signals.find_by!(signal_key: "customer_inactivity_days")
     source_audit_count = source.audit_events.count
     compressed = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
 
@@ -80,6 +90,19 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       @imported.shared_email_inboxes.order(:id).first.webhook_key
     assert_equal content, @imported.stored_attachments.sole.download_verified!
     assert_equal @imported.id, @imported.source_identities.find_by!(entity_kind: "account").account.workspace_id
+    restored_correction = @imported.account_health_inputs.find_by!(source_key: source_correction.source_key)
+    assert_equal "portable-health-1", restored_correction.corrects_input.source_key
+    assert_not_equal source_correction.id, restored_correction.id
+    restored_signal = @imported.account_health_signals.find_by!(
+      signal_key: source_signal.signal_key, source_locator: source_signal.source_locator
+    )
+    restored_signal.evidence_refs.each do |reference|
+      table = WorkspacePortability::HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
+      assert ActiveRecord::Base.connection.select_value(
+        "SELECT 1 FROM #{ActiveRecord::Base.connection.quote_table_name(table)} " \
+        "WHERE workspace_id = #{@imported.id} AND id = #{Integer(reference.fetch('id'))}"
+      )
+    end
     assert @imported.audit_events.exists?(action: "workspace.imported", actor: users(:owner))
   end
 

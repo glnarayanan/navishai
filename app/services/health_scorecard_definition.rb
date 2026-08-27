@@ -10,6 +10,18 @@ class HealthScorecardDefinition
       label: "SLA breaches", detail: "Adds 10 risk points per breached case clock.",
       value_kind: "number", default_weight: 25, strategy: "per_unit", rate: 10, base_weight: 25
     },
+    "recurring_issue_tags_90d" => {
+      label: "Repeated supported issues", detail: "Adds 3 risk points per retained human-applied recurring case-tag link in 90 days.",
+      value_kind: "number", default_weight: 15, strategy: "per_unit", rate: 3, base_weight: 15
+    },
+    "reopened_cases_90d" => {
+      label: "Reopened cases", detail: "Adds 8 risk points per retained case reopen in 90 days.",
+      value_kind: "number", default_weight: 20, strategy: "per_unit", rate: 8, base_weight: 20
+    },
+    "resolutions_without_proof_90d" => {
+      label: "Resolutions without contract proof", detail: "Adds 5 risk points per resolved case without a complete retained resolution result in 90 days.",
+      value_kind: "number", default_weight: 15, strategy: "per_unit", rate: 5, base_weight: 15
+    },
     "customer_inactivity_days" => {
       label: "Customer inactivity", detail: "Adds risk after 14, 30, and 60 days without an inbound message.",
       value_kind: "number", default_weight: 20, strategy: "thresholds", base_weight: 20,
@@ -26,12 +38,15 @@ class HealthScorecardDefinition
       thresholds: [ [ 60, 8 ], [ 30, 15 ] ]
     }
   }.freeze
-  CONTEXT_KEYS = %w[internal_notes_90d contract_value].freeze
+  DEFAULT_SIGNAL_KEYS = %w[
+    open_cases sla_breaches customer_inactivity_days renewal_on seat_utilization_percent
+  ].freeze
+  CONTEXT_KEYS = %w[internal_notes_90d contract_value proofed_resolutions_90d].freeze
   DEFAULT_PROMPT = "Use the NavishAI starting scorecard."
 
   def self.default
     build(healthy_min: 75, watch_min: 50,
-      weights: CATALOG.transform_values { |entry| entry.fetch(:default_weight) })
+      weights: CATALOG.slice(*DEFAULT_SIGNAL_KEYS).transform_values { |entry| entry.fetch(:default_weight) })
   end
 
   def self.build(healthy_min:, watch_min:, weights:)

@@ -23,6 +23,31 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select "small", text: assessment.signals.first.citation_uri
     assert_select ".health-context dd", text: "Version #{assessment.health_scorecard_version.version_number}"
     assert_select "h2", text: "Renewal-risk work"
+
+    signal = assessment.signals.find_by!(signal_key: "open_cases")
+    get health_evidence_workspace_account_path(
+      @workspace, @account, assessment_id: assessment.id, signal_key: signal.signal_key
+    )
+    assert_response :success
+    assert_select "h1", text: "Open support cases"
+    assert_select "code", text: signal.citation_uri
+  end
+
+  test "health evidence rejects foreign Accounts assessments and signals" do
+    assessment = AccountHealth.recalculate!(workspace: @workspace, account: @account,
+      trigger_kind: "human_request", membership: memberships(:owner_support))
+    beta = workspaces(:beta_support)
+    beta_assessment = AccountHealth.recalculate!(workspace: beta, account: accounts(:beta),
+      trigger_kind: "human_request", membership: memberships(:outsider_beta))
+
+    get health_evidence_workspace_account_path(
+      @workspace, @account, assessment_id: beta_assessment.id, signal_key: "open_cases"
+    )
+    assert_response :not_found
+    get health_evidence_workspace_account_path(
+      @workspace, accounts(:beta), assessment_id: assessment.id, signal_key: "open_cases"
+    )
+    assert_response :not_found
   end
 
   test "paginates accounts without loading contacts or assessment history" do

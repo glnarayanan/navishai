@@ -15,7 +15,7 @@
           <div class="field">
             <%= form.label :file, "CSV file" %>
             <%= form.file_field :file, accept: ".csv,text/csv", required: true %>
-            <span class="field-hint">Use source_id, account_name, and any of account_domain, contact_name, contact_email, renewal_on, contract_value, active_users, or licensed_seats.</span>
+            <span class="field-hint">Use source_id, account_name, and any health field. Optional source_namespace, observed_at, valid_from, valid_until, and corrects_source_id preserve provenance and correction history.</span>
           </div>
           <%= form.submit "Import and recalculate", class: "button button-primary" %>
         <% end %>

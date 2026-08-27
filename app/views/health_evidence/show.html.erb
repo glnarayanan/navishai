@@ -1,0 +1,46 @@
+<% content_for :title, "#{health_signal_label(@evidence.signal)} evidence — NavishAI" %>
+
+<main class="account-health-page page-family-record">
+  <header class="account-health-heading">
+    <div>
+      <%= link_to "#{@evidence.account.name} health", workspace_account_path(@evidence.workspace, @evidence.account, anchor: "health-assessment"), class: "back-link" %>
+      <h1><%= health_signal_label(@evidence.signal) %></h1>
+      <p>Frozen record references show which retained facts produced this deterministic signal.</p>
+    </div>
+  </header>
+
+  <section class="health-overview" aria-labelledby="evidence-summary-title">
+    <div class="health-score-panel health-score-panel-<%= @evidence.assessment.risk_level.dasherize %>">
+      <span>Signal value</span>
+      <strong><%= @evidence.signal.value %></strong>
+      <b id="evidence-summary-title"><%= @evidence.signal.risk_points %> risk points</b>
+      <time datetime="<%= @evidence.assessment.calculated_at.iso8601 %>">Frozen <%= @evidence.assessment.calculated_at.to_fs(:long) %></time>
+    </div>
+    <dl class="health-context">
+      <div><dt>Source</dt><dd><%= @evidence.signal.source_kind.humanize %></dd></div>
+      <div><dt>Window starts</dt><dd><%= @evidence.signal.range_starts_at&.to_fs(:long) || "All retained history" %></dd></div>
+      <div><dt>Window ends</dt><dd><%= @evidence.signal.range_ends_at.to_fs(:long) %></dd></div>
+      <div><dt>Citation</dt><dd><code><%= @evidence.signal.citation_uri %></code></dd></div>
+    </dl>
+  </section>
+
+  <section class="dossier-panel" aria-labelledby="evidence-records-title">
+    <header><div><h2 id="evidence-records-title">Contributing records</h2><p>Each link opens the authoritative Workspace record. Redacted or removed content stays marked by its source record.</p></div></header>
+    <% if @evidence.entries.any? %>
+      <ol class="dossier-record-list">
+        <% @evidence.entries.each do |entry| %>
+          <li class="dossier-record">
+            <div class="dossier-record-heading"><strong><%= entry.title %></strong><span><%= entry.kind.humanize %></span></div>
+            <p><%= entry.detail %></p>
+            <%= link_to "Open source record", entry.path, class: "button button-secondary" if entry.path %>
+          </li>
+        <% end %>
+      </ol>
+      <% if @evidence.signal.evidence_omitted_count.positive? %>
+        <p class="dossier-limit"><%= pluralize(@evidence.signal.evidence_omitted_count, "additional reference") %> omitted from this bounded snapshot.</p>
+      <% end %>
+    <% else %>
+      <p class="muted-copy">This retained snapshot predates record-level evidence references or had no contributing record.</p>
+    <% end %>
+  </section>
+</main>
