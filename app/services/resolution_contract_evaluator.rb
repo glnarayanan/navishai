@@ -15,6 +15,7 @@ class ResolutionContractEvaluator
   POLICY_CHECK_KEYS = %w[check status].sort.freeze
   CLAIM_STATES = %w[supported uncertain conflicted refused].freeze
   POLICY_CHECK_STATUSES = %w[passed failed needs_human].freeze
+  POLICY_CHECK_STATUS_RANK = { "passed" => 0, "needs_human" => 1, "failed" => 2 }.freeze
   BLOCKER_REMEDIATION = {
     "uncertain" => "Add current evidence or qualify the claim for human review.",
     "conflicted" => "Resolve the conflict or state which authoritative source controls.",
@@ -23,7 +24,8 @@ class ResolutionContractEvaluator
     "expired" => "Replace the expired source with current evidence.",
     "deleted" => "Replace the deleted source with available evidence.",
     "unavailable" => "Use an available source from this Workspace and task scope.",
-    "not_yet_valid" => "Use evidence that is valid at the evaluation time."
+    "not_yet_valid" => "Use evidence that is valid at the evaluation time.",
+    "superseded" => "Use the accepted replacement instead of the superseded memory."
   }.freeze
 
   def initialize(workspace:, task:, run:, contract_version:, evaluated_at: Time.current)
@@ -37,6 +39,7 @@ class ResolutionContractEvaluator
 
   def evaluate!(payload:, citations:, conflicts:)
     validate_contract!
+    bounded_text(payload.fetch("uncertainty"), 4_000, "Uncertainty")
     required_facts = required_facts!(payload.fetch("required_facts"))
     citation_refs = citations.to_set { |citation| [ citation.fetch("kind"), citation.fetch("locator") ] }
     claims = material_claims!(payload.fetch("material_claims"), citation_refs)
@@ -165,7 +168,12 @@ class ResolutionContractEvaluator
             POLICY_CHECK_STATUSES.include?(value.fetch("status"))
           raise InvalidPayload, "A policy check does not match the schema."
         end
-        value.slice("check", "status")
+        key = value.fetch("check")
+        derived = derived_policy_check_status(key, claims:, conflicts:)
+        {
+          "check" => key,
+          "status" => conservative_status(value.fetch("status"), derived)
+        }
       end
       raise InvalidPayload, "Policy checks must be distinct." unless checks.map { |check| check.fetch("check") }.uniq.size == checks.size
 
@@ -173,14 +181,40 @@ class ResolutionContractEvaluator
       @contract.mandatory_review_checks.each do |key|
         by_key[key] ||= { "check" => key, "status" => "failed" }
       end
-      if by_key.key?("claims_grounded") && claims.any? { |claim| claim.fetch("state") != "supported" }
-        by_key.fetch("claims_grounded")["status"] = "failed"
-      end
-      if by_key.key?("conflicts_resolved") &&
-          (claims.any? { |claim| claim.fetch("state") == "conflicted" } || conflicts.any? { |conflict| conflict.fetch("severity") != "info" })
-        by_key.fetch("conflicts_resolved")["status"] = "failed"
-      end
       by_key.values.sort_by { |check| check.fetch("check") }
+    end
+
+    def derived_policy_check_status(key, claims:, conflicts:)
+      case key
+      when "claims_grounded"
+        grounded = claims.all? do |claim|
+          claim.fetch("state") == "supported" &&
+            claim.fetch("evidence").all? { |evidence| evidence.fetch("status") == "available" }
+        end
+        grounded ? "passed" : "failed"
+      when "conflicts_resolved"
+        resolved = claims.none? { |claim| claim.fetch("state") == "conflicted" } &&
+          claims.all? do |claim|
+            claim.fetch("evidence").none? { |evidence| evidence.fetch("status") == "conflicted" }
+          end && conflicts.none? { |conflict| conflict.fetch("severity") != "info" }
+        resolved ? "passed" : "failed"
+      when "uncertainty_stated"
+        typed_unresolved?(claims, conflicts) ? "needs_human" : "passed"
+      when "human_authority_preserved"
+        # Publishing proposed action text has no path to create, send, or schedule an external effect.
+        "passed"
+      end
+    end
+
+    def typed_unresolved?(claims, conflicts)
+      claims.any? do |claim|
+        claim.fetch("state") != "supported" ||
+          claim.fetch("evidence").any? { |evidence| evidence.fetch("status") != "available" }
+      end || conflicts.any? { |conflict| conflict.fetch("severity") != "info" }
+    end
+
+    def conservative_status(submitted, derived)
+      [ submitted, derived ].max_by { |status| POLICY_CHECK_STATUS_RANK.fetch(status) }
     end
 
     def blockers_for(claims, checks, conflicts)

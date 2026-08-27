@@ -262,22 +262,97 @@ BEGIN
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE execution_runs
-  SET input_context = '[Expired by retention policy]', output = CASE WHEN output IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
-      last_admission_error = NULL, runtime_selection_detail = NULL, memory_context_detail = NULL, updated_at = CURRENT_TIMESTAMP
+  SET input_context = '[Expired by retention policy]',
+      output = CASE WHEN output IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      last_admission_error = NULL,
+      runtime_selection_detail = '[Expired by retention policy]',
+      memory_context_detail = CASE
+        WHEN memory_context_status = 'degraded' THEN '[Expired by retention policy]'
+        ELSE NULL
+      END,
+      updated_at = CURRENT_TIMESTAMP
   WHERE workspace_id = target_workspace_id AND created_at < cutoff AND
     (input_context IS DISTINCT FROM '[Expired by retention policy]' OR
      (output IS NOT NULL AND output <> '[Expired by retention policy]') OR
-     last_admission_error IS NOT NULL OR runtime_selection_detail IS NOT NULL OR memory_context_detail IS NOT NULL);
+     last_admission_error IS NOT NULL OR
+     runtime_selection_detail IS DISTINCT FROM '[Expired by retention policy]' OR
+     memory_context_detail IS DISTINCT FROM CASE
+       WHEN memory_context_status = 'degraded' THEN '[Expired by retention policy]'
+       ELSE NULL
+     END);
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE execution_events SET data = '{}'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
   WHERE workspace_id = target_workspace_id AND occurred_at < cutoff AND data <> '{}'::jsonb;
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
-  UPDATE crew_artifacts
-  SET body = '[Expired by retention policy]', uncertainty = '[Expired by retention policy]', citations = '[]'::jsonb,
-      conflicts = '[]'::jsonb, change_requests = '[]'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
-  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  UPDATE crew_artifacts AS artifacts
+  SET body = '[Expired by retention policy]', uncertainty = '[Expired by retention policy]',
+      citations = '[]'::jsonb, conflicts = '[]'::jsonb, change_requests = '[]'::jsonb,
+      required_facts = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(to_jsonb('expired_claim_' || claim_position) ORDER BY claim_position)
+        FROM jsonb_array_elements(artifacts.material_claims) WITH ORDINALITY AS claims(claim, claim_position)
+        WHERE artifacts.required_facts ? (claim->>'key')
+      ), '[]'::jsonb) ELSE required_facts END,
+      material_claims = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'key', 'expired_claim_' || claim_position,
+          'category', claim->>'category',
+          'text', '[Expired by retention policy]',
+          'state', CASE
+            WHEN jsonb_array_length(claim->'evidence') = 0 THEN 'refused'
+            WHEN claim->>'state' = 'supported' THEN 'uncertain'
+            ELSE claim->>'state'
+          END,
+          'evidence', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'kind', evidence->>'kind',
+              'locator', format(
+                'retention-expired://crew-artifacts/%s/claims/%s/evidence/%s',
+                artifacts.id, claim_position, evidence_position
+              ),
+              'status', 'expired',
+              'observed_at', NULL,
+              'valid_until', NULL,
+              'fresh_until', NULL
+            ) ORDER BY evidence_position)
+            FROM jsonb_array_elements(claim->'evidence') WITH ORDINALITY AS evidence_items(evidence, evidence_position)
+          ), '[]'::jsonb)
+        ) ORDER BY claim_position)
+        FROM jsonb_array_elements(artifacts.material_claims) WITH ORDINALITY AS claims(claim, claim_position)
+      ), '[]'::jsonb) ELSE material_claims END,
+      proposed_actions = CASE WHEN schema_version = 2 THEN '[]'::jsonb ELSE proposed_actions END,
+      contract_blockers = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(blocker || jsonb_build_object(
+          'claim_key', NULL,
+          'message', '[Expired by retention policy]',
+          'remediation', '[Expired by retention policy]'
+        ) ORDER BY blocker_position)
+        FROM jsonb_array_elements(artifacts.contract_blockers) WITH ORDINALITY AS blockers(blocker, blocker_position)
+      ), '[]'::jsonb) ELSE contract_blockers END,
+      payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND (
+    body <> '[Expired by retention policy]' OR uncertainty <> '[Expired by retention policy]' OR
+    citations <> '[]'::jsonb OR conflicts <> '[]'::jsonb OR change_requests <> '[]'::jsonb OR
+    (schema_version = 2 AND (
+      proposed_actions <> '[]'::jsonb OR
+      EXISTS (
+        SELECT 1 FROM jsonb_array_elements(material_claims) AS claims(claim)
+        WHERE claim->>'text' <> '[Expired by retention policy]' OR
+          claim->>'key' NOT LIKE 'expired_claim_%' OR
+          EXISTS (
+            SELECT 1 FROM jsonb_array_elements(claim->'evidence') AS evidence_items(evidence)
+            WHERE evidence->>'locator' NOT LIKE 'retention-expired://crew-artifacts/%'
+          )
+      ) OR
+      EXISTS (
+        SELECT 1 FROM jsonb_array_elements(contract_blockers) AS blockers(blocker)
+        WHERE blocker->>'message' <> '[Expired by retention policy]' OR
+          blocker->>'remediation' <> '[Expired by retention policy]' OR
+          blocker->'claim_key' <> 'null'::jsonb
+      )
+    ))
+  );
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE public_web_searches SET query = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
@@ -1702,7 +1777,7 @@ BEGIN
          jsonb_typeof(evidence->'status') <> 'string' OR
          octet_length(btrim(evidence->>'locator')) NOT BETWEEN 1 AND 2000 OR
          evidence->>'kind' NOT IN ('knowledge','conversation','case','account','health_signal','public_web','memory') OR
-         evidence->>'status' NOT IN ('available','stale','expired','deleted','unavailable','conflicted','not_yet_valid') OR
+         evidence->>'status' NOT IN ('available','stale','expired','deleted','unavailable','conflicted','not_yet_valid','superseded') OR
          jsonb_typeof(evidence->'observed_at') NOT IN ('string','null') OR
          jsonb_typeof(evidence->'valid_until') NOT IN ('string','null') OR
          jsonb_typeof(evidence->'fresh_until') NOT IN ('string','null') THEN
@@ -12276,6 +12351,9 @@ ALTER TABLE ONLY public.resolution_contract_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260827202000'),
+('20260827201000'),
+('20260827200000'),
 ('20260827193000'),
 ('20260827190000'),
 ('20260826140000'),

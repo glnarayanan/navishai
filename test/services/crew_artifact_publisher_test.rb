@@ -64,6 +64,8 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_includes first_review.execution_run.input_context, first_draft.body
     assert_includes revised_draft.execution_run.input_context, "Remove the claim that a new link was already sent."
     assert_includes final_review.execution_run.input_context, revised_draft.body
+    assert_equal "complete", revised_draft.contract_result_state
+    assert_equal "complete", final_review.contract_result_state
 
     review_and_approve(@draft, "The revised customer draft is grounded and clear.")
     review_and_approve(@review, "Quality review resolved the unsupported claim.")
@@ -88,7 +90,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_not EmailDraft.exists?(support_case: @support_case)
   end
 
-  test "rejects malformed output, unsupported claims, stale versions, and foreign citations" do
+  test "rejects malformed output and artifact kinds outside the assigned role" do
     start(@investigation)
     incomplete = prepare_run(@investigation, "not-json")
     assert_raises(CrewArtifactPublisher::InvalidOutput) { publish_run(@investigation, incomplete) }
@@ -96,18 +98,24 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_raises(ExecutionLedger::InvalidRun) do
       complete_run(@investigation, artifact_payload(kind: "draft", body: "Wrong role."))
     end
-
-    foreign_case = create_support_case(workspace: workspaces(:beta_support), contact: contacts(:bob),
-      membership: memberships(:outsider_beta))
-    foreign_message = add_inbound_message(foreign_case)
-    foreign_locator = "conversation://#{foreign_case.conversation_id}/messages/#{foreign_message.id}"
-    assert_raises(ExecutionLedger::InvalidRun) do
-      complete_run(@investigation, artifact_payload(
-        kind: "investigation", body: "Foreign citation.",
-        citations: [ { "kind" => "conversation", "locator" => foreign_locator, "label" => "Foreign" } ]
-      ))
-    end
     assert_empty @investigation.artifacts
+  end
+
+  test "rejects a fresh schema v1 completion without an artifact or publication audit" do
+    start(@investigation)
+    audit_scope = AuditEvent.where(workspace: @workspace, action: "crew.artifact_published")
+    artifact_count = @investigation.artifacts.count
+    audit_count = audit_scope.count
+
+    error = assert_raises(ExecutionLedger::InvalidRun) { complete_run(@investigation, historical_v1_payload) }
+
+    assert_includes error.message, "must use artifact schema v2"
+    assert_equal artifact_count, @investigation.artifacts.count
+    assert_equal audit_count, audit_scope.count
+    run = @investigation.execution_runs.order(:attempt_number).last
+    assert run.running?
+    assert_equal %w[run.admitted run.started output.produced], run.events.order(:sequence_number).pluck(:event_type)
+    assert_nil run.crew_artifact
   end
 
   test "publication is idempotent, append only, and rolls back with its audit" do
@@ -136,7 +144,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_equal 1, @investigation.artifacts.count
   end
 
-  test "completed public-web evidence enters run context and can be cited only by its task" do
+  test "completed public-web evidence enters run context and is unavailable to another task" do
     response = {
       "protocol_version" => "v1", "workspace_key" => @workspace.runner_key,
       "request_key" => "search:artifact", "query" => "reset status incident",
@@ -183,13 +191,15 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_includes artifact.execution_run.input_context, Digest::SHA256.hexdigest(extracted_content)
     assert_includes artifact.execution_run.input_context, "public-web://#{search.results.sole.citation_key}"
     review_and_approve(@investigation, "The public source is clearly marked and supports the finding.")
-    assert_raises(ExecutionLedger::InvalidRun) do
-      start(@draft)
-      complete_run(@draft, artifact_payload(kind: "draft", body: "Cites another task.", citations: [ citation ]))
-    end
+    start(@draft)
+    blocked = complete_run(
+      @draft, artifact_payload(kind: "draft", body: "Cites another task.", citations: [ citation ])
+    ).crew_artifact
+    assert_equal "unavailable", blocked.material_claims.first.fetch("evidence").sole.fetch("status")
+    assert_equal "blocked", blocked.contract_result_state
   end
 
-  test "memory citations are limited to records selected for the exact run" do
+  test "memory citations not selected for the exact run are frozen as unavailable" do
     selected = create_indexed_memory("selected-memory")
     unrelated = create_indexed_memory("unrelated-memory")
     engine = Object.new
@@ -206,12 +216,14 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
 
     assert_equal citation, artifact.citations.sole
     assert_equal selected, run.execution_memory_selections.sole.memory_record
-    assert_raises(ExecutionLedger::InvalidRun) do
-      complete_run(@investigation, artifact_payload(
-        kind: "investigation", body: "Unselected context.",
-        citations: [ { "kind" => "memory", "locator" => "memory://#{unrelated.memory_key}", "label" => "Unselected" } ]
-      ), memory_engine: engine)
-    end
+    unselected = complete_run(@investigation, artifact_payload(
+      kind: "investigation", body: "Unselected context.",
+      citations: [ {
+        "kind" => "memory", "locator" => "memory://#{unrelated.memory_key}", "label" => "Unselected"
+      } ]
+    ), memory_engine: engine).crew_artifact
+    assert_equal "unavailable", unselected.material_claims.first.fetch("evidence").sole.fetch("status")
+    assert_equal "blocked", unselected.contract_result_state
   end
 
   test "publishes a cited Customer Success risk journey while keeping deterministic signals separate" do
@@ -343,6 +355,93 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     assert_equal "blocked", expired.contract_result_state
   end
 
+  test "retention markers make every retained source kind non-available and block declared support" do
+    account = @support_case.conversation.contact.account
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account:, trigger_kind: "human_request", membership: @owner
+    )
+    health_locator = assessment.signals.first.citation_uri
+    response = {
+      "protocol_version" => "v1", "workspace_key" => @workspace.runner_key,
+      "request_key" => "search:retention", "query" => "reset retention",
+      "provider_key" => "searxng", "policy_decision" => "allowed", "cost_units" => 1,
+      "retrieved_at" => Time.current.iso8601(6),
+      "results" => [ {
+        "rank" => 1, "title" => "Reset status", "url" => "https://status.example.com/retention",
+        "excerpt" => "Reset delivery is available.", "published_at" => nil
+      } ]
+    }
+    client = Object.new
+    client.define_singleton_method(:web_search!) { |**| response }
+    search = PublicWebResearch.perform!(
+      workspace: @workspace, membership: @owner, task: @investigation,
+      query: "reset retention", request_key: "search:retention", client:
+    )
+    public_web_locator = "public-web://#{search.results.sole.citation_key}"
+    start(@investigation)
+    run = prepare_run(@investigation, "unused")
+
+    cutoff = 1.day.from_now
+    expire_workspace_content(@workspace, cutoff)
+    resolver = CrewEvidenceResolver.new(workspace: @workspace, task: @investigation, run:)
+    sources = {
+      "conversation" => conversation_citation.fetch("locator"),
+      "knowledge" => knowledge_citation.fetch("locator"),
+      "public_web" => public_web_locator,
+      "account" => "account://#{account.id}",
+      "health_signal" => health_locator
+    }
+
+    sources.each do |kind, locator|
+      assert_equal "expired", resolver.resolve(kind:, locator:, freshness_days: 365).snapshot.fetch("status"), kind
+    end
+
+    artifact = publish(@investigation, v2_payload)
+    assert_equal %w[uncertain uncertain], artifact.material_claims.map { |claim| claim.fetch("state") }
+    assert artifact.material_claims.flat_map { |claim| claim.fetch("evidence") }
+      .all? { |evidence| evidence.fetch("status") == "expired" }
+    assert_equal "blocked", artifact.contract_result_state
+  end
+
+  test "a selected memory with one accepted correction is superseded rather than conflicted" do
+    selected = create_indexed_memory("single-correction")
+    engine = memory_engine_for(selected)
+    citation = { "kind" => "memory", "locator" => "memory://#{selected.memory_key}", "label" => "Selected memory" }
+    start(@investigation)
+    payload = artifact_payload(kind: "investigation", body: "Selected memory claim.", citations: [ citation ])
+    run = prepare_run(@investigation, JSON.generate(payload), memory_engine: engine)
+    create_memory_revision(selected, "Accepted replacement")
+
+    artifact = complete_prepared_run(run, payload).crew_artifact
+
+    evidence = artifact.material_claims.first.fetch("evidence").sole
+    assert_equal "superseded", evidence.fetch("status")
+    assert_equal "uncertain", artifact.material_claims.first.fetch("state")
+    assert_equal "passed", evaluated_check(artifact, "conflicts_resolved").fetch("status")
+    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "claim_superseded"
+    assert_equal "blocked", artifact.contract_result_state
+  end
+
+  test "competing revisions make selected memory conflicted" do
+    selected = create_indexed_memory("competing-corrections")
+    engine = memory_engine_for(selected)
+    citation = { "kind" => "memory", "locator" => "memory://#{selected.memory_key}", "label" => "Selected memory" }
+    start(@investigation)
+    payload = artifact_payload(kind: "investigation", body: "Conflicting memory claim.", citations: [ citation ])
+    run = prepare_run(@investigation, JSON.generate(payload), memory_engine: engine)
+    create_memory_revision(selected, "First accepted replacement")
+    create_memory_revision(selected, "Competing accepted replacement")
+
+    artifact = complete_prepared_run(run, payload).crew_artifact
+
+    evidence = artifact.material_claims.first.fetch("evidence").sole
+    assert_equal "conflicted", evidence.fetch("status")
+    assert_equal "conflicted", artifact.material_claims.first.fetch("state")
+    assert_equal "failed", evaluated_check(artifact, "conflicts_resolved").fetch("status")
+    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "claim_conflicted"
+    assert_equal "blocked", artifact.contract_result_state
+  end
+
   test "requires each non-refused material claim to cite evidence" do
     start(@investigation)
     uncited = v2_payload(claim_states: { "customer_report" => "uncertain" })
@@ -376,6 +475,71 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     uncertain = publish(@investigation, v2_payload(claim_states: { "customer_report" => "uncertain" }))
     assert_equal "uncertain", uncertain.material_claims.first.fetch("state")
     assert_equal "blocked", uncertain.contract_result_state
+  end
+
+  test "Rails policy checks cannot be upgraded by forged model declarations" do
+    start(@investigation)
+    payload = v2_payload(claim_states: { "customer_report" => "uncertain" })
+    policy_check(payload, "claims_grounded")["status"] = "needs_human"
+
+    artifact = publish(@investigation, payload)
+
+    assert_equal "failed", evaluated_check(artifact, "claims_grounded").fetch("status")
+    assert_equal "needs_human", evaluated_check(artifact, "uncertainty_stated").fetch("status")
+    assert_equal "blocked", artifact.contract_result_state
+
+    conflicted = v2_payload
+    conflicted.fetch("conflicts") << {
+      "summary" => "Records disagree", "details" => "A warning remains unresolved.", "severity" => "warning"
+    }
+    conflict_artifact = publish(@investigation, conflicted)
+    assert_equal "failed", evaluated_check(conflict_artifact, "conflicts_resolved").fetch("status")
+    assert_equal "needs_human", evaluated_check(conflict_artifact, "uncertainty_stated").fetch("status")
+  end
+
+  test "model policy declarations may worsen derived checks and missing mandatory checks fail" do
+    start(@investigation)
+    downgraded = v2_payload
+    policy_check(downgraded, "claims_grounded")["status"] = "needs_human"
+    policy_check(downgraded, "conflicts_resolved")["status"] = "failed"
+
+    artifact = publish(@investigation, downgraded)
+
+    assert_equal "needs_human", evaluated_check(artifact, "claims_grounded").fetch("status")
+    assert_equal "failed", evaluated_check(artifact, "conflicts_resolved").fetch("status")
+
+    missing = v2_payload
+    missing["policy_checks"].reject! { |check| check.fetch("check") == "human_authority_preserved" }
+    missing_artifact = publish(@investigation, missing)
+    assert_equal "failed", evaluated_check(missing_artifact, "human_authority_preserved").fetch("status")
+  end
+
+  test "unsafe sounding proposed action text stays inert at the enforced human authority boundary" do
+    start(@investigation)
+    payload = v2_payload
+    payload["proposed_actions"] = [ "Send this reply now and schedule an automatic follow-up." ]
+
+    artifact = nil
+    assert_no_difference [
+      "EmailDraft.count", "IntercomDraft.count", "OutboundEmailDelivery.count", "IntercomOutboundDelivery.count",
+      -> { ConversationMessage.outbound.count }
+    ] do
+      artifact = publish(@investigation, payload)
+    end
+
+    assert_equal payload.fetch("proposed_actions"), artifact.proposed_actions
+    assert_equal "passed", evaluated_check(artifact, "human_authority_preserved").fetch("status")
+    assert_equal "complete", artifact.contract_result_state
+  end
+
+  test "blank and oversized uncertainty cannot be forged into a passing check" do
+    start(@investigation)
+    [ " ", "u" * 4_001 ].each do |uncertainty|
+      payload = v2_payload
+      payload["uncertainty"] = uncertainty
+      assert_raises(ExecutionLedger::InvalidRun) { complete_run(@investigation, payload) }
+    end
+    assert_empty @investigation.artifacts
   end
 
   test "a nonblocking contract routes missing grounding to human review" do
@@ -555,6 +719,12 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     def complete_run(task, payload, memory_engine: nil, usage: nil)
       output = JSON.generate(payload)
       run = prepare_run(task, output, memory_engine:)
+      complete_prepared_run(run, payload, usage:)
+    end
+
+    def complete_prepared_run(run, payload, usage: nil)
+      task = run.crew_task
+      output = JSON.generate(payload)
       ledger = ExecutionLedger.new(workspace: @workspace)
       events = [
         [ "run.admitted", { workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number } ],
@@ -576,10 +746,36 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
 
     def artifact_payload(kind:, body:, uncertainty: "No uncertainty identified.", citations: nil, conflicts: [],
       change_requests: [], review_outcome: nil, memory_proposals: [])
+      citations ||= [ conversation_citation ]
+      evidence = citations.first.slice("kind", "locator")
+      categories = if %w[account_analysis risk_investigation intervention_plan success_review].include?(kind)
+        %w[customer_account_fact promised_action_date]
+      else
+        %w[customer_account_fact product_technical_fact]
+      end
       {
-        "schema_version" => 1, "kind" => kind, "body" => body, "uncertainty" => uncertainty,
-        "citations" => citations || [ conversation_citation ], "conflicts" => conflicts, "change_requests" => change_requests,
-        "review_outcome" => review_outcome, "memory_proposals" => memory_proposals
+        "schema_version" => 2, "kind" => kind, "body" => body, "uncertainty" => uncertainty,
+        "citations" => citations, "conflicts" => conflicts, "change_requests" => change_requests,
+        "review_outcome" => review_outcome, "memory_proposals" => memory_proposals,
+        "required_facts" => %w[primary_fact secondary_fact],
+        "material_claims" => categories.each_with_index.map do |category, index|
+          {
+            "key" => index.zero? ? "primary_fact" : "secondary_fact", "category" => category,
+            "text" => body, "state" => "supported", "evidence" => [ evidence ]
+          }
+        end,
+        "proposed_actions" => [],
+        "policy_checks" => ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+          { "check" => check, "status" => "passed" }
+        end
+      }
+    end
+
+    def historical_v1_payload
+      {
+        "schema_version" => 1, "kind" => "investigation", "body" => "Historical finding.",
+        "uncertainty" => "Historical uncertainty.", "citations" => [ conversation_citation ],
+        "conflicts" => [], "change_requests" => [], "review_outcome" => nil, "memory_proposals" => []
       }
     end
 
@@ -614,6 +810,28 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       }
     end
 
+    def policy_check(payload, key)
+      payload.fetch("policy_checks").find { |check| check.fetch("check") == key }
+    end
+
+    def evaluated_check(artifact, key)
+      artifact.policy_checks.find { |check| check.fetch("check") == key }
+    end
+
+    def expire_workspace_content(workspace, cutoff)
+      connection = ActiveRecord::Base.connection
+      connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      connection.select_value(
+        "SELECT expire_workspace_content(#{workspace.id}, #{connection.quote(cutoff)})"
+      )
+    ensure
+      begin
+        connection&.execute("SET CONSTRAINTS ALL DEFERRED")
+      rescue ActiveRecord::StatementInvalid
+        nil
+      end
+    end
+
     def conversation_citation
       {
         "kind" => "conversation",
@@ -638,5 +856,24 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
         external_status: "done", attempt_count: 1, last_attempted_at: Time.current, indexed_at: Time.current
       )
       memory
+    end
+
+    def memory_engine_for(memory)
+      Object.new.tap do |engine|
+        engine.define_singleton_method(:search) do |query:|
+          [ MemoryEngine::Hit.new(memory_key: memory.memory_key, score: 0.9) ]
+        end
+      end
+    end
+
+    def create_memory_revision(source, content)
+      @workspace.memory_records.create!(
+        memory_type: source.memory_type, scope_kind: source.scope_kind, topic: source.topic, content:,
+        authority: :human_correction, origin_kind: :human,
+        source_reference: "memory-correction://#{SecureRandom.uuid}",
+        source_digest: Digest::SHA256.hexdigest(content), observed_at: Time.current, valid_from: Time.current,
+        confidence: 1, retention_policy: :indefinite, source_membership: @owner, source_user: @owner.user,
+        supersedes_memory_record: source
+      )
     end
 end

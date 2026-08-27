@@ -67,6 +67,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     owner = memberships(:owner_support)
     approve_scripted_runtime(workspace:, membership: owner)
     CrewConfiguration.install_defaults!(workspace: workspace)
+    ResolutionContractConfiguration.install_defaults!(workspace: workspace)
     support_case = create_support_case
     message = add_inbound_message(support_case, body: "The reset link expired before I could use it.")
     profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
@@ -91,14 +92,32 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "Retry runner connection"
 
     ExecutionRecovery.reconcile!(workspace:, membership: owner, task:, run:, client: accepting_runner_client)
+    locator = "conversation://#{support_case.conversation_id}/messages/#{message.id}"
     output = JSON.generate(
-      schema_version: 1, kind: "investigation", body: "The customer used an expired reset link.",
+      schema_version: 2, kind: "investigation", body: "The customer used an expired reset link.",
       uncertainty: "The opening time is not available.", conflicts: [], change_requests: [], review_outcome: nil,
       memory_proposals: [],
       citations: [ {
-        kind: "conversation", locator: "conversation://#{support_case.conversation_id}/messages/#{message.id}",
+        kind: "conversation", locator:,
         label: "Customer report"
-      } ]
+      } ],
+      required_facts: %w[customer_report reset_policy],
+      material_claims: [
+        {
+          key: "customer_report", category: "customer_account_fact",
+          text: "The customer reports an expired reset link.", state: "supported",
+          evidence: [ { kind: "conversation", locator: } ]
+        },
+        {
+          key: "reset_policy", category: "product_technical_fact",
+          text: "The customer used an expired reset link.", state: "supported",
+          evidence: [ { kind: "conversation", locator: } ]
+        }
+      ],
+      proposed_actions: [],
+      policy_checks: ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+        { check:, status: "passed" }
+      end
     )
     ledger = ExecutionLedger.new(workspace:)
     base = run.reload.current_event.occurred_at

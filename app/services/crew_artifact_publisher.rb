@@ -42,6 +42,9 @@ class CrewArtifactPublisher
 
     digest = Digest::SHA256.hexdigest(run.output.to_s)
     payload = parse(run.output)
+    unless payload.fetch("schema_version") == 2
+      raise InvalidOutput, "New crew output must use artifact schema v2."
+    end
     kind = ROLE_KINDS.fetch(run.agent_profile.role_key) do
       raise InvalidOutput, "This specialist cannot publish a crew artifact."
     end
@@ -62,7 +65,7 @@ class CrewArtifactPublisher
 
       target = review_target!(task, run, kind, target_artifact)
       schema_version = payload.fetch("schema_version")
-      citations = citations!(task, run, payload.fetch("citations"), schema_version:)
+      citations = citations!(payload.fetch("citations"))
       conflicts = conflicts!(payload.fetch("conflicts"))
       evaluation = resolution_evaluation(task, run, payload, citations, conflicts)
       review_outcome = review_outcome!(kind, payload, target:, evaluation:)
@@ -147,7 +150,7 @@ class CrewArtifactPublisher
       target
     end
 
-    def citations!(task, run, values, schema_version:)
+    def citations!(values)
       unless values.is_a?(Array) && values.size.in?(1..20)
         raise InvalidOutput, "Citations must contain between 1 and 20 entries."
       end
@@ -158,19 +161,8 @@ class CrewArtifactPublisher
         kind = value.fetch("kind").to_s
         locator = bounded_text(value.fetch("locator"), 2_000, "Citation locator")
         label = bounded_text(value.fetch("label"), 200, "Citation label")
-        validate_locator!(task, run, kind, locator) if schema_version == 1
         { "kind" => kind, "locator" => locator, "label" => label }
       end
-    end
-
-    def validate_locator!(task, run, kind, locator)
-      unless ResolutionContractVersion::SOURCE_KINDS.key?(kind)
-        raise InvalidOutput, "Citation type is not supported."
-      end
-
-      result = CrewEvidenceResolver.new(workspace: @workspace, task:, run:)
-        .resolve(kind:, locator:, freshness_days: ResolutionContractVersion::FRESHNESS_DAYS_RANGE.end)
-      raise InvalidOutput, "#{kind.humanize} citation is unavailable." unless result.available?
     end
 
     def conflicts!(values)

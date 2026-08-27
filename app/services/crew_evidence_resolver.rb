@@ -1,11 +1,14 @@
 class CrewEvidenceResolver
+  EXPIRED_TEXT = "[Expired by retention policy]"
+  EXPIRED_DIGEST = "0" * 64
+
   Result = Data.define(:snapshot) do
     def available?
       snapshot.fetch("status") == "available"
     end
   end
 
-  STATUSES = %w[available stale expired deleted unavailable conflicted not_yet_valid].freeze
+  STATUSES = %w[available stale expired deleted unavailable conflicted not_yet_valid superseded].freeze
 
   def initialize(workspace:, task:, run:, at: Time.current)
     @workspace = workspace
@@ -60,8 +63,16 @@ class CrewEvidenceResolver
       version = source && source.versions.find_by(version_number: match[2].to_i)
       return unavailable unless version&.citation_uri == locator
 
+      status = if source.deleted?
+        "deleted"
+      elsif source.title == EXPIRED_TEXT || version.content == EXPIRED_TEXT || version.content_sha256 == EXPIRED_DIGEST
+        "expired"
+      else
+        "available"
+      end
+
       {
-        status: source.deleted? ? "deleted" : "available",
+        status: status,
         observed_at: version.retrieved_at,
         valid_until: version.expires_at
       }
@@ -79,7 +90,7 @@ class CrewEvidenceResolver
       message = conversation&.conversation_messages&.find_by(id: match[2])
       return unavailable unless conversation&.id == match[1].to_i && message
 
-      { observed_at: message.occurred_at }
+      { status: message.body == EXPIRED_TEXT ? "expired" : "available", observed_at: message.occurred_at }
     end
 
     def case_source(locator)
@@ -92,7 +103,7 @@ class CrewEvidenceResolver
       account = scoped_account
       return unavailable unless account && locator == "account://#{account.id}"
 
-      { observed_at: account.updated_at }
+      { status: account.name.start_with?("Expired account ") ? "expired" : "available", observed_at: account.updated_at }
     end
 
     def health_signal_source(locator)
@@ -103,7 +114,10 @@ class CrewEvidenceResolver
           account_health_assessments: { account_id: account.id })
       return unavailable unless signal&.citation_uri == locator
 
-      { observed_at: signal.range_ends_at }
+      {
+        status: signal.source_locator == EXPIRED_TEXT ? "expired" : "available",
+        observed_at: signal.range_ends_at
+      }
     end
 
     def public_web_source(locator)
@@ -112,7 +126,9 @@ class CrewEvidenceResolver
         .find_by(citation_key: match[1], public_web_searches: { crew_task_id: @task.id, status: "completed" })
       return unavailable unless result
 
-      { observed_at: result.retrieved_at }
+      expired = result.title == EXPIRED_TEXT || result.excerpt == EXPIRED_TEXT ||
+        result.content_digest == EXPIRED_DIGEST || result.url.start_with?("https://expired.invalid/")
+      { status: expired ? "expired" : "available", observed_at: result.retrieved_at }
     end
 
     def memory_source(locator)
@@ -122,10 +138,16 @@ class CrewEvidenceResolver
       record = selection&.memory_record
       return unavailable unless record
 
+      revision_count = record.revisions.limit(2).count
       status = if record.memory_tombstone
         "deleted"
-      elsif record.revisions.exists?
+      elsif record.source_reference.start_with?("retention-expired://") || record.content == EXPIRED_TEXT ||
+          record.content_digest == EXPIRED_DIGEST
+        "expired"
+      elsif revision_count > 1
         "conflicted"
+      elsif revision_count == 1
+        "superseded"
       else
         "available"
       end

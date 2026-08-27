@@ -130,7 +130,8 @@ class CrewWork
         raise InvalidCommand, "This task is not waiting for review." unless task.review_requested?
         outcome = attributes[:review_outcome].to_s
         raise InvalidCommand, "Choose a review outcome." unless CrewTaskEvent::REVIEW_OUTCOMES.include?(outcome)
-        if outcome == "approved" && task.artifacts.order(created_at: :desc, id: :desc).first&.contract_blocking?
+        latest_artifact = task.artifacts.unscope(:order).order(created_at: :desc, id: :desc).first
+        if outcome == "approved" && latest_artifact&.contract_blocking?
           raise InvalidCommand, "A blocking AI result cannot receive an approved outcome review."
         end
         target = outcome == "approved" ? "completed" : "in_progress"

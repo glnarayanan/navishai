@@ -85,7 +85,7 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
 
   test "round trips historical schema v1 artifacts and published contract families without rewriting history" do
     source = workspaces(:acme_support)
-    historical = publish_historical_v1(source)
+    historical = create_historical_v1(source)
     archive = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
 
     imported = WorkspacePortability.import(
@@ -200,7 +200,7 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
   end
 
   private
-    def publish_historical_v1(workspace)
+    def create_historical_v1(workspace)
       owner = memberships(:owner_support)
       approve_scripted_runtime(workspace:, membership: owner)
       CrewConfiguration.install_defaults!(workspace:)
@@ -212,11 +212,6 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       task = CrewWork.create!(
         workspace:, membership: owner, scope: support_case, profile:, title: "Historical investigation",
         input_context: "Use the current case.", expected_output: "Return schema v1 JSON."
-      )
-      settle_deferred_constraints
-      CrewWork.apply!(
-        workspace:, membership: owner, task:, command: :start,
-        expected_sequence: task.current_event.sequence_number
       )
       settle_deferred_constraints
       payload = {
@@ -235,24 +230,15 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
         "memory_proposals" => []
       }
       run = ExecutionLedger.new(workspace:).prepare!(task:, request_key: "archive:v1:#{task.id}")
-      ledger = ExecutionLedger.new(workspace:)
       output = JSON.generate(payload)
-      events = [
-        [ "run.admitted", { "workspace_key" => workspace.runner_key, "task_key" => task.task_key, "attempt" => 1 } ],
-        [ "run.started", { "adapter" => "scripted", "scenario" => "historical v1", "attempt" => 1 } ],
-        [ "output.produced", { "text" => output } ],
-        [ "run.completed", { "outcome" => "completed" } ]
-      ]
-      now = Time.current
-      events.each_with_index do |(event_type, data), index|
-        ledger.ingest!(event: {
-          "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
-          "sequence" => index + 1, "event_type" => event_type,
-          "occurred_at" => (now + (index / 1000.0).seconds).iso8601(6), "data" => data
-        })
-        settle_deferred_constraints
-      end
-      run.reload.crew_artifact
+      artifact = workspace.crew_artifacts.create!(
+        crew_task: task, execution_run: run, version_number: 1, schema_version: 1,
+        artifact_kind: payload.fetch("kind"), body: payload.fetch("body"),
+        uncertainty: payload.fetch("uncertainty"), citations: payload.fetch("citations"),
+        conflicts: [], change_requests: [], payload_digest: Digest::SHA256.hexdigest(output)
+      )
+      settle_deferred_constraints
+      artifact
     end
 
     def settle_deferred_constraints
