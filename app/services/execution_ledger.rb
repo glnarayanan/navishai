@@ -64,6 +64,7 @@ class ExecutionLedger
         workspace: @workspace, profile_version: task.assigned_agent_profile_version,
         additional_data_classes: extra_data
       )
+      usage_rate_version = @workspace.usage_rate_setting&.current_version
       run = @workspace.execution_runs.create!(
         crew_task: task,
         agent_profile: task.assigned_agent_profile,
@@ -80,6 +81,7 @@ class ExecutionLedger
         disclosed_data_classes: selection.data_classes,
         max_input_units: selection.max_input_units,
         max_output_units: selection.max_output_units,
+        usage_rate_version:,
         memory_context_status: memory_context.status,
         memory_context_detail: memory_context.detail,
         input_context:, input_artifact:
@@ -163,6 +165,7 @@ class ExecutionLedger
       if event_record.event_type == "run.completed" && CrewArtifactPublisher.supports?(run)
         CrewArtifactPublisher.publish!(workspace: @workspace, task: run.crew_task, run:)
       end
+      UsageCostCapture.capture_run!(workspace: @workspace, run:) if run.status.in?(ExecutionRun::TERMINAL_STATUSES)
       event_record
     end
   rescue ActiveRecord::RecordInvalid => error
@@ -322,6 +325,10 @@ class ExecutionLedger
       when "output.produced"
         updates[:output] = data.fetch("text")
       when "usage.observed"
+        currencies = run.events.where(event_type: "usage.observed")
+          .where("data ? 'currency'").pluck(Arel.sql("data->>'currency'")).uniq
+        raise EventConflict, "Reported usage currency changed within the run." if currencies.size > 1
+
         input_units = run.input_units + data.fetch("input_units")
         output_units = run.output_units + data.fetch("output_units")
         if input_units > run.max_input_units || output_units > run.max_output_units

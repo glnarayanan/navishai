@@ -10,12 +10,14 @@ class ExecutionRun < ApplicationRecord
   belongs_to :agent_profile
   belongs_to :agent_profile_version
   belongs_to :runtime_installation, optional: true
+  belongs_to :usage_rate_version, optional: true
   belongs_to :current_event, class_name: "ExecutionEvent", optional: true
   belongs_to :input_artifact, class_name: "CrewArtifact", optional: true
   has_many :events, -> { order(:sequence_number) }, class_name: "ExecutionEvent", dependent: :restrict_with_exception
   has_one :crew_artifact, dependent: :restrict_with_exception
   has_many :execution_memory_selections, -> { order(:rank) }, dependent: :restrict_with_exception
   has_many :retrieved_memory_records, through: :execution_memory_selections, source: :memory_record
+  has_one :usage_cost_snapshot, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true
   enum :memory_context_status, MEMORY_CONTEXT_STATUSES.index_by(&:itself), validate: true, prefix: :memory
@@ -58,6 +60,7 @@ class ExecutionRun < ApplicationRecord
       end
       errors.add(:input_artifact, "belongs to another workspace") if input_artifact && input_artifact.workspace_id != workspace_id
       errors.add(:runtime_installation, "belongs to another workspace") if runtime_installation && runtime_installation.workspace_id != workspace_id
+      errors.add(:usage_rate_version, "belongs to another workspace") if usage_rate_version && usage_rate_version.workspace_id != workspace_id
     end
 
     def content_fits

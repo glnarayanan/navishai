@@ -1094,6 +1094,22 @@ $$;
 
 
 --
+-- Name: protect_execution_usage_rate(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_usage_rate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.usage_rate_version_id IS DISTINCT FROM NEW.usage_rate_version_id THEN
+    RAISE EXCEPTION 'execution run usage rate is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_health_scorecard_record(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1488,6 +1504,22 @@ $$;
 
 
 --
+-- Name: protect_public_web_search_usage_rate(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_public_web_search_usage_rate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.usage_rate_version_id IS DISTINCT FROM NEW.usage_rate_version_id THEN
+    RAISE EXCEPTION 'public web search usage rate is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_resolution_contract_family(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1591,6 +1623,59 @@ BEGIN
     RAISE EXCEPTION 'stored attachment files are durable';
   END IF;
   RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+
+--
+-- Name: protect_usage_cost_snapshot(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_usage_cost_snapshot() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'usage cost snapshots are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_usage_rate_setting(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_usage_rate_setting() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP <> 'UPDATE' OR
+     ROW(OLD.id, OLD.workspace_id, OLD.created_at) IS DISTINCT FROM
+     ROW(NEW.id, NEW.workspace_id, NEW.created_at) THEN
+    RAISE EXCEPTION 'usage rate setting identity is durable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_usage_rate_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_usage_rate_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'usage rate versions are append only';
 END;
 $$;
 
@@ -3271,6 +3356,7 @@ CREATE TABLE public.execution_runs (
     max_output_units bigint DEFAULT 25000 NOT NULL,
     memory_context_status character varying DEFAULT 'not_applicable'::character varying NOT NULL,
     memory_context_detail character varying,
+    usage_rate_version_id bigint,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
@@ -4725,6 +4811,7 @@ CREATE TABLE public.public_web_searches (
     retrieved_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    usage_rate_version_id bigint,
     CONSTRAINT public_web_searches_result CHECK (((((status)::text = 'searching'::text) AND (provider_key IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (provider_key IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL)))),
     CONSTRAINT public_web_searches_state CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY (ARRAY[('searching'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((policy_decision)::text = ANY (ARRAY[('allowed'::character varying)::text, ('redacted'::character varying)::text])) AND (cost_units >= 0)))
 );
@@ -5399,6 +5486,129 @@ CREATE SEQUENCE public.tags_id_seq
 --
 
 ALTER SEQUENCE public.tags_id_seq OWNED BY public.tags.id;
+
+
+--
+-- Name: usage_cost_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.usage_cost_snapshots (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    execution_run_id bigint,
+    public_web_search_id bigint,
+    applied_usage_rate_version_id bigint,
+    status character varying NOT NULL,
+    source character varying,
+    currency character varying,
+    amount_micros bigint,
+    observed_input_units bigint,
+    observed_output_units bigint,
+    observed_search_units bigint,
+    calculation_provenance jsonb DEFAULT '{}'::jsonb NOT NULL,
+    captured_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT usage_cost_snapshots_money_shape CHECK (((((status)::text = ANY ((ARRAY['complete'::character varying, 'partial'::character varying])::text[])) AND (source IS NOT NULL) AND (currency IS NOT NULL) AND (amount_micros IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['unavailable'::character varying, 'not_reported'::character varying])::text[])) AND (source IS NULL) AND (currency IS NULL) AND (amount_micros IS NULL)))),
+    CONSTRAINT usage_cost_snapshots_rate_source CHECK ((((source)::text <> 'configured_rate'::text) OR (applied_usage_rate_version_id IS NOT NULL))),
+    CONSTRAINT usage_cost_snapshots_subject CHECK (((((execution_run_id IS NOT NULL))::integer + ((public_web_search_id IS NOT NULL))::integer) = 1)),
+    CONSTRAINT usage_cost_snapshots_values CHECK ((((status)::text = ANY ((ARRAY['complete'::character varying, 'partial'::character varying, 'unavailable'::character varying, 'not_reported'::character varying])::text[])) AND ((source IS NULL) OR ((source)::text = ANY ((ARRAY['configured_rate'::character varying, 'adapter_reported'::character varying])::text[]))) AND ((currency IS NULL) OR ((currency)::text ~ '^[A-Z]{3}$'::text)) AND ((amount_micros IS NULL) OR (amount_micros >= 0)) AND ((observed_input_units IS NULL) OR (observed_input_units >= 0)) AND ((observed_output_units IS NULL) OR (observed_output_units >= 0)) AND ((observed_search_units IS NULL) OR (observed_search_units >= 0)) AND (jsonb_typeof(calculation_provenance) = 'object'::text) AND (octet_length((calculation_provenance)::text) <= 8192)))
+);
+
+
+--
+-- Name: usage_cost_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.usage_cost_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: usage_cost_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.usage_cost_snapshots_id_seq OWNED BY public.usage_cost_snapshots.id;
+
+
+--
+-- Name: usage_rate_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.usage_rate_settings (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: usage_rate_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.usage_rate_settings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: usage_rate_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.usage_rate_settings_id_seq OWNED BY public.usage_rate_settings.id;
+
+
+--
+-- Name: usage_rate_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.usage_rate_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    usage_rate_setting_id bigint NOT NULL,
+    version_number integer NOT NULL,
+    currency character varying NOT NULL,
+    input_rate_micros_per_million bigint,
+    output_rate_micros_per_million bigint,
+    search_rate_micros_per_million bigint,
+    source_name character varying NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    published_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT usage_rate_versions_identity CHECK ((((currency)::text ~ '^[A-Z]{3}$'::text) AND ((octet_length((source_name)::text) >= 1) AND (octet_length((source_name)::text) <= 100)))),
+    CONSTRAINT usage_rate_versions_number CHECK ((version_number > 0)),
+    CONSTRAINT usage_rate_versions_rates CHECK ((((input_rate_micros_per_million IS NOT NULL) OR (output_rate_micros_per_million IS NOT NULL) OR (search_rate_micros_per_million IS NOT NULL)) AND ((input_rate_micros_per_million IS NULL) OR ((input_rate_micros_per_million >= 0) AND (input_rate_micros_per_million <= '1000000000000'::bigint))) AND ((output_rate_micros_per_million IS NULL) OR ((output_rate_micros_per_million >= 0) AND (output_rate_micros_per_million <= '1000000000000'::bigint))) AND ((search_rate_micros_per_million IS NULL) OR ((search_rate_micros_per_million >= 0) AND (search_rate_micros_per_million <= '1000000000000'::bigint)))))
+);
+
+
+--
+-- Name: usage_rate_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.usage_rate_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: usage_rate_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.usage_rate_versions_id_seq OWNED BY public.usage_rate_versions.id;
 
 
 --
@@ -6237,6 +6447,27 @@ ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id
 
 
 --
+-- Name: usage_cost_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots ALTER COLUMN id SET DEFAULT nextval('public.usage_cost_snapshots_id_seq'::regclass);
+
+
+--
+-- Name: usage_rate_settings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_settings ALTER COLUMN id SET DEFAULT nextval('public.usage_rate_settings_id_seq'::regclass);
+
+
+--
+-- Name: usage_rate_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions ALTER COLUMN id SET DEFAULT nextval('public.usage_rate_versions_id_seq'::regclass);
+
+
+--
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6939,6 +7170,30 @@ ALTER TABLE ONLY public.support_cases
 
 ALTER TABLE ONLY public.tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: usage_cost_snapshots usage_cost_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots
+    ADD CONSTRAINT usage_cost_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: usage_rate_settings usage_rate_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_settings
+    ADD CONSTRAINT usage_rate_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: usage_rate_versions usage_rate_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions
+    ADD CONSTRAINT usage_rate_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -7936,6 +8191,13 @@ CREATE INDEX index_execution_runs_on_runtime_installation_id ON public.execution
 
 
 --
+-- Name: index_execution_runs_on_usage_rate_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_usage_rate_version_id ON public.execution_runs USING btree (usage_rate_version_id);
+
+
+--
 -- Name: index_execution_runs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8909,6 +9171,13 @@ CREATE INDEX index_public_web_searches_on_crew_task_id ON public.public_web_sear
 
 
 --
+-- Name: index_public_web_searches_on_usage_rate_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_public_web_searches_on_usage_rate_version_id ON public.public_web_searches USING btree (usage_rate_version_id);
+
+
+--
 -- Name: index_public_web_searches_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9242,6 +9511,62 @@ CREATE INDEX index_tags_on_workspace_id ON public.tags USING btree (workspace_id
 --
 
 CREATE UNIQUE INDEX index_tags_on_workspace_id_and_id ON public.tags USING btree (workspace_id, id);
+
+
+--
+-- Name: index_usage_cost_snapshots_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_cost_snapshots_on_workspace_id_and_id ON public.usage_cost_snapshots USING btree (workspace_id, id);
+
+
+--
+-- Name: index_usage_cost_snapshots_unique_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_cost_snapshots_unique_run ON public.usage_cost_snapshots USING btree (execution_run_id) WHERE (execution_run_id IS NOT NULL);
+
+
+--
+-- Name: index_usage_cost_snapshots_unique_search; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_cost_snapshots_unique_search ON public.usage_cost_snapshots USING btree (public_web_search_id) WHERE (public_web_search_id IS NOT NULL);
+
+
+--
+-- Name: index_usage_rate_settings_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_rate_settings_on_workspace_id ON public.usage_rate_settings USING btree (workspace_id);
+
+
+--
+-- Name: index_usage_rate_settings_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_rate_settings_on_workspace_id_and_id ON public.usage_rate_settings USING btree (workspace_id, id);
+
+
+--
+-- Name: index_usage_rate_versions_on_setting_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_rate_versions_on_setting_version ON public.usage_rate_versions USING btree (usage_rate_setting_id, version_number);
+
+
+--
+-- Name: index_usage_rate_versions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_rate_versions_on_workspace_id_and_id ON public.usage_rate_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_usage_rate_versions_tenant_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_usage_rate_versions_tenant_chain ON public.usage_rate_versions USING btree (workspace_id, usage_rate_setting_id, id);
 
 
 --
@@ -9728,6 +10053,13 @@ CREATE TRIGGER execution_runs_protect_routing BEFORE UPDATE ON public.execution_
 
 
 --
+-- Name: execution_runs execution_runs_usage_rate_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_runs_usage_rate_immutable BEFORE UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_usage_rate();
+
+
+--
 -- Name: health_scorecard_backtests health_scorecard_backtests_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10050,6 +10382,13 @@ CREATE TRIGGER public_web_searches_protect BEFORE DELETE OR UPDATE ON public.pub
 
 
 --
+-- Name: public_web_searches public_web_searches_usage_rate_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER public_web_searches_usage_rate_immutable BEFORE UPDATE ON public.public_web_searches FOR EACH ROW EXECUTE FUNCTION public.protect_public_web_search_usage_rate();
+
+
+--
 -- Name: resolution_contract_families resolution_contract_families_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10145,6 +10484,48 @@ CREATE TRIGGER support_case_status_changes_append_only BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER support_case_status_changes_no_truncate BEFORE TRUNCATE ON public.support_case_status_changes FOR EACH STATEMENT EXECUTE FUNCTION public.prevent_helpdesk_record_mutation();
+
+
+--
+-- Name: usage_cost_snapshots usage_cost_snapshots_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_cost_snapshots_append_only BEFORE DELETE OR UPDATE ON public.usage_cost_snapshots FOR EACH ROW EXECUTE FUNCTION public.protect_usage_cost_snapshot();
+
+
+--
+-- Name: usage_cost_snapshots usage_cost_snapshots_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_cost_snapshots_no_truncate BEFORE TRUNCATE ON public.usage_cost_snapshots FOR EACH STATEMENT EXECUTE FUNCTION public.protect_usage_cost_snapshot();
+
+
+--
+-- Name: usage_rate_settings usage_rate_settings_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_rate_settings_no_truncate BEFORE TRUNCATE ON public.usage_rate_settings FOR EACH STATEMENT EXECUTE FUNCTION public.protect_usage_rate_setting();
+
+
+--
+-- Name: usage_rate_settings usage_rate_settings_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_rate_settings_protect BEFORE DELETE OR UPDATE ON public.usage_rate_settings FOR EACH ROW EXECUTE FUNCTION public.protect_usage_rate_setting();
+
+
+--
+-- Name: usage_rate_versions usage_rate_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_rate_versions_append_only BEFORE DELETE OR UPDATE ON public.usage_rate_versions FOR EACH ROW EXECUTE FUNCTION public.protect_usage_rate_version();
+
+
+--
+-- Name: usage_rate_versions usage_rate_versions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER usage_rate_versions_no_truncate BEFORE TRUNCATE ON public.usage_rate_versions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_usage_rate_version();
 
 
 --
@@ -10369,6 +10750,14 @@ ALTER TABLE ONLY public.execution_runs
 
 
 --
+-- Name: execution_runs fk_execution_runs_usage_rate; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_usage_rate FOREIGN KEY (workspace_id, usage_rate_version_id) REFERENCES public.usage_rate_versions(workspace_id, id);
+
+
+--
 -- Name: execution_runs fk_execution_runs_workspace_runtime; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10574,6 +10963,14 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries
 
 ALTER TABLE ONLY public.outbound_webhook_deliveries
     ADD CONSTRAINT fk_outbound_webhook_delivery_notification FOREIGN KEY (workspace_id, notification_id) REFERENCES public.notifications(workspace_id, id);
+
+
+--
+-- Name: public_web_searches fk_public_web_searches_usage_rate; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.public_web_searches
+    ADD CONSTRAINT fk_public_web_searches_usage_rate FOREIGN KEY (workspace_id, usage_rate_version_id) REFERENCES public.usage_rate_versions(workspace_id, id);
 
 
 --
@@ -12097,6 +12494,14 @@ ALTER TABLE ONLY public.account_health_assessments
 
 
 --
+-- Name: usage_rate_settings fk_rails_c8855db661; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_settings
+    ADD CONSTRAINT fk_rails_c8855db661 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: outbound_email_deliveries fk_rails_c98bb924c2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12193,6 +12598,14 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries
 
 
 --
+-- Name: usage_cost_snapshots fk_rails_d396824a0c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots
+    ADD CONSTRAINT fk_rails_d396824a0c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: knowledge_source_versions fk_rails_d40427c568; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12222,6 +12635,14 @@ ALTER TABLE ONLY public.memory_proposals
 
 ALTER TABLE ONLY public.intercom_drafts
     ADD CONSTRAINT fk_rails_d6dabca820 FOREIGN KEY (workspace_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_conversation_links(workspace_id, id, conversation_id);
+
+
+--
+-- Name: usage_rate_versions fk_rails_dbc87c3d7f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions
+    ADD CONSTRAINT fk_rails_dbc87c3d7f FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -12342,6 +12763,14 @@ ALTER TABLE ONLY public.email_message_links
 
 ALTER TABLE ONLY public.intercom_webhook_deliveries
     ADD CONSTRAINT fk_rails_ef28c0b16b FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: usage_rate_versions fk_rails_f077dd8e71; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions
+    ADD CONSTRAINT fk_rails_f077dd8e71 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -12505,12 +12934,61 @@ ALTER TABLE ONLY public.resolution_contract_versions
 
 
 --
+-- Name: usage_cost_snapshots fk_usage_cost_snapshots_rate; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots
+    ADD CONSTRAINT fk_usage_cost_snapshots_rate FOREIGN KEY (workspace_id, applied_usage_rate_version_id) REFERENCES public.usage_rate_versions(workspace_id, id);
+
+
+--
+-- Name: usage_cost_snapshots fk_usage_cost_snapshots_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots
+    ADD CONSTRAINT fk_usage_cost_snapshots_run FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id);
+
+
+--
+-- Name: usage_cost_snapshots fk_usage_cost_snapshots_search; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_cost_snapshots
+    ADD CONSTRAINT fk_usage_cost_snapshots_search FOREIGN KEY (workspace_id, public_web_search_id) REFERENCES public.public_web_searches(workspace_id, id);
+
+
+--
+-- Name: usage_rate_settings fk_usage_rate_settings_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_settings
+    ADD CONSTRAINT fk_usage_rate_settings_current_version FOREIGN KEY (workspace_id, id, current_version_id) REFERENCES public.usage_rate_versions(workspace_id, usage_rate_setting_id, id);
+
+
+--
+-- Name: usage_rate_versions fk_usage_rate_versions_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions
+    ADD CONSTRAINT fk_usage_rate_versions_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: usage_rate_versions fk_usage_rate_versions_setting; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_rate_versions
+    ADD CONSTRAINT fk_usage_rate_versions_setting FOREIGN KEY (workspace_id, usage_rate_setting_id) REFERENCES public.usage_rate_settings(workspace_id, id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260827220000'),
 ('20260827210000'),
 ('20260827202000'),
 ('20260827201000'),

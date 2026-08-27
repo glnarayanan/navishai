@@ -72,7 +72,8 @@ class PublicWebResearch
         end
         search = @workspace.public_web_searches.create!(
           crew_task: task, request_key: request_key.to_s, query:, policy_decision:,
-          requested_by_membership: @membership, requested_by_user: @membership.user
+          requested_by_membership: @membership, requested_by_user: @membership.user,
+          usage_rate_version: @workspace.usage_rate_setting&.current_version
         )
         AuditEvent.record!(
           action: "public_web.search_requested", source: :web, workspace: @workspace,
@@ -108,6 +109,7 @@ class PublicWebResearch
             retrieved_at:, content_digest: Digest::SHA256.hexdigest(JSON.generate(canonical))
           )
         end
+        UsageCostCapture.capture_search!(workspace: @workspace, search:)
         AuditEvent.record!(
           action: "public_web.search_completed", source: :web, workspace: @workspace,
           actor: @membership.user, subject: search,
@@ -124,6 +126,7 @@ class PublicWebResearch
         return unless search.searching?
 
         search.update!(status: "failed", failure_code: error.class.name.demodulize.underscore.first(100))
+        UsageCostCapture.capture_search!(workspace: @workspace, search:)
         AuditEvent.record!(
           action: "public_web.search_failed", source: :web, workspace: @workspace,
           actor: @membership.user, subject: search,

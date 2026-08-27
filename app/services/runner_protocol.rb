@@ -412,7 +412,14 @@ module RunnerProtocol
       data_keys = DATA_KEYS[event_type] || raise(MalformedMessage, "event.event_type is invalid")
       @occurred_at = parse_time(attributes["occurred_at"])
       data = attributes["data"]
-      object!(data, data_keys, "event.data")
+      if event_type == "usage.observed"
+        valid_keys = [ data_keys.sort, (data_keys + %w[amount_micros currency]).sort ]
+        unless data.is_a?(Hash) && valid_keys.include?(data.keys.sort)
+          raise MalformedMessage, "event.data has unexpected fields"
+        end
+      else
+        object!(data, data_keys, "event.data")
+      end
       validate_data!(event_type, data)
       raise MalformedMessage, "event.data is too large" if JSON.generate(data).bytesize > 128.kilobytes
 
@@ -438,6 +445,12 @@ module RunnerProtocol
         when "usage.observed"
           integer!(data["input_units"], 0, "event.data.input_units")
           integer!(data["output_units"], 0, "event.data.output_units")
+          if data.key?("amount_micros")
+            integer!(data["amount_micros"], 0, "event.data.amount_micros")
+            unless data["currency"].is_a?(String) && data["currency"].match?(/\A[A-Z]{3}\z/)
+              raise MalformedMessage, "event.data.currency is invalid"
+            end
+          end
         when "run.completed"
           equal!(data["outcome"], "completed", "event.data.outcome")
         when "run.failed"
