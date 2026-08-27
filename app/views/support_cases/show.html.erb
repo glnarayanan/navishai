@@ -43,6 +43,12 @@
               <p>Review the exact message, then press Send. Agents and jobs cannot send it.</p>
             <% end %>
           </div>
+          <%
+            email_delivery_record = @email_delivery if @email_delivery&.unknown? || @email_delivery&.sending? || (@email_draft.sent? && !@email_follow_up_available)
+            email_provenance_record = email_delivery_record || (@email_draft unless @email_follow_up_available)
+          %>
+          <%= render "draft_provenance", record: email_provenance_record,
+            delivery_record: email_delivery_record.present?, dom_id: "email-draft-provenance" %>
           <% if @email_delivery&.unknown? || @email_delivery&.sending? %>
             <div class="inline-error" role="status">
               <strong>Delivery outcome needs review</strong>
@@ -78,11 +84,17 @@
               <% end %>
             </div>
           <% elsif @email_draft.sent? && !@email_follow_up_available %>
-            <p class="muted-copy">This draft was sent by <%= @email_delivery.actor_user.email_address %> at <%= @email_delivery.sent_at.to_fs(:short) %>.</p>
+            <p class="delivery-actor">Sent by <strong><%= @email_delivery.actor_user.email_address %></strong> at <time datetime="<%= @email_delivery.sent_at.iso8601 %>"><%= @email_delivery.sent_at.to_fs(:long) %></time>.</p>
+            <div class="message-body delivery-review-body"><%= simple_format(@email_delivery.body) %></div>
           <% elsif @membership.can_write? %>
+            <%= render "draft_source_selector", channel_name: "email", draft: @email_draft,
+              save_path: email_draft_workspace_support_case_path(@workspace, @support_case) %>
             <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
               <%= form.hidden_field :idempotency_key, value: @send_token %>
               <%= form.hidden_field :draft_version, value: @email_draft.persisted? ? @email_draft.lock_version : "new" %>
+              <% if @email_draft.source_crew_artifact_id && !@email_follow_up_available %>
+                <%= form.hidden_field :source_crew_artifact_id, value: @email_draft.source_crew_artifact_id %>
+              <% end %>
               <%= form.hidden_field :expected_recipient_address, value: @email_recipient.address %>
               <%= form.hidden_field :expected_inbound_message_id, value: @email_recipient.inbound_message_id %>
               <div class="recipient-review <%= "recipient-review-warning" unless @email_recipient.trusted %>">
@@ -161,6 +173,13 @@
             <% end %>
           </div>
 
+          <%
+            intercom_delivery_record = @intercom_delivery if @intercom_delivery&.unknown? || @intercom_delivery&.sending? || (@intercom_draft.sent? && !@intercom_follow_up_available)
+            intercom_provenance_record = intercom_delivery_record || (@intercom_draft unless @intercom_follow_up_available)
+          %>
+          <%= render "draft_provenance", record: intercom_provenance_record,
+            delivery_record: intercom_delivery_record.present?, dom_id: "intercom-draft-provenance" %>
+
           <% if @intercom_delivery&.unknown? || @intercom_delivery&.sending? %>
             <div class="inline-error" role="status">
               <strong>Delivery outcome needs review</strong>
@@ -189,11 +208,17 @@
               <% end %>
             </div>
           <% elsif @intercom_draft.sent? && !@intercom_follow_up_available %>
-            <p class="muted-copy">This reply was sent by <%= @intercom_delivery.actor_user.email_address %> at <%= @intercom_delivery.sent_at.to_fs(:short) %>.</p>
+            <p class="delivery-actor">Sent by <strong><%= @intercom_delivery.actor_user.email_address %></strong> at <time datetime="<%= @intercom_delivery.sent_at.iso8601 %>"><%= @intercom_delivery.sent_at.to_fs(:long) %></time>.</p>
+            <div class="message-body delivery-review-body"><%= simple_format(@intercom_delivery.body) %></div>
           <% elsif @membership.can_write? %>
+            <%= render "draft_source_selector", channel_name: "Intercom", draft: @intercom_draft,
+              save_path: intercom_draft_workspace_support_case_path(@workspace, @support_case) %>
             <%= form_with url: intercom_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
               <%= form.hidden_field :idempotency_key, value: @intercom_send_token %>
               <%= form.hidden_field :draft_version, value: @intercom_draft.persisted? ? @intercom_draft.lock_version : "new" %>
+              <% if @intercom_draft.source_crew_artifact_id && !@intercom_follow_up_available %>
+                <%= form.hidden_field :source_crew_artifact_id, value: @intercom_draft.source_crew_artifact_id %>
+              <% end %>
               <%= form.hidden_field :expected_source_part_id, value: @intercom_source_part_id %>
               <div class="recipient-review">
                 <span>To</span>

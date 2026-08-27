@@ -1,10 +1,11 @@
 class HumanIntercomSend
   DELIVERY_LOCK_NAMESPACE = 24_082_426
 
-  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_source_part_id:, client: nil)
+  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    expected_source_part_id:, source_crew_artifact_id: nil, client: nil)
     new(
       workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
-      expected_source_part_id:, client:
+      expected_source_part_id:, source_crew_artifact_id:, client:
     ).send!
   end
 
@@ -73,7 +74,8 @@ class HumanIntercomSend
     end
   end
 
-  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_source_part_id:, client:)
+  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    expected_source_part_id:, source_crew_artifact_id:, client:)
     @workspace = workspace
     @support_case = support_case
     @membership = membership
@@ -81,6 +83,7 @@ class HumanIntercomSend
     @draft_version = draft_version.to_s
     @idempotency_key = idempotency_key.to_s
     @expected_source_part_id = expected_source_part_id.to_s
+    @source_crew_artifact_id = source_crew_artifact_id
     @client = client
   end
 
@@ -190,7 +193,8 @@ class HumanIntercomSend
         end
         draft = IntercomDraftWorkflow.save!(
           workspace: @workspace, support_case: current_case, membership: actor,
-          body: @body, expected_lock_version: @draft_version
+          body: @body, expected_lock_version: @draft_version,
+          source_crew_artifact_id: @source_crew_artifact_id
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
@@ -201,7 +205,8 @@ class HumanIntercomSend
           actor_membership: actor, actor_user: actor.user, idempotency_key: @idempotency_key,
           remote_conversation_id: link.remote_conversation_id, source_part_id: source_part.remote_part_id,
           admin_id: admin_id, body: draft.body,
-          started_at: [ Time.current, link.conversation.last_message_at ].compact.max
+          started_at: [ Time.current, link.conversation.last_message_at ].compact.max,
+          **HumanDraftProvenance.delivery_attributes(draft)
         )
         draft.update!(status: :sending)
         AuditEvent.record!(action: "intercom.send_started", source: :web, workspace: @workspace, actor: actor.user, subject: delivery)

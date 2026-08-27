@@ -109,6 +109,68 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "round trips draft and delivery provenance with remapped artifact and editor links" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    support_case = create_support_case(workspace: source, membership: owner)
+    source.conversation_messages.create!(
+      conversation: support_case.conversation, direction: :inbound, author_kind: :contact,
+      author_contact: support_case.conversation.contact, body: "Portable source evidence",
+      occurred_at: 1.hour.ago
+    )
+    inbox = source.shared_email_inboxes.create!(
+      name: "Portable drafts", email_address: "portable@example.com", credential_key: "portable"
+    )
+    thread = source.email_threads.create!(
+      shared_email_inbox: inbox, conversation: support_case.conversation,
+      thread_key: "portable-thread@example.com"
+    )
+    artifact = create_draft_artifact(
+      workspace: source, support_case:, membership: owner,
+      body: "Portable generated body", result_state: "needs_human"
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: source, support_case:, membership: owner,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: source, support_case:, membership: owner,
+      body: "Portable human final", expected_lock_version: draft.lock_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    delivery = source.outbound_email_deliveries.create!(
+      email_draft: draft, shared_email_inbox: inbox, email_thread: thread,
+      conversation: support_case.conversation, actor_membership: owner, actor_user: owner.user,
+      idempotency_key: "portable-provenance", message_id: "portable@navishai.local",
+      from_address: inbox.email_address, to_address: "customer@example.com",
+      subject: "Portable proof", body: draft.body, started_at: Time.current,
+      **HumanDraftProvenance.delivery_attributes(draft)
+    )
+    settle_deferred_constraints
+    archive = WorkspacePortability.export(workspace: source, membership: owner)
+
+    imported = WorkspacePortability.import(
+      workspace: source, membership: owner, archive_io: archive,
+      name: "Provenance Restore", slug: "provenance-restore"
+    )
+
+    restored_delivery = imported.outbound_email_deliveries.find_by!(idempotency_key: delivery.idempotency_key)
+    restored_draft = restored_delivery.email_draft
+    restored_artifact = restored_delivery.source_crew_artifact
+    assert_not_equal artifact.id, restored_artifact.id
+    assert_equal artifact.body, restored_artifact.body
+    assert_equal restored_artifact, restored_draft.source_crew_artifact
+    assert_equal delivery.generated_body_digest, restored_delivery.generated_body_digest
+    assert_equal "needs_human", restored_delivery.generated_contract_result_state
+    assert_equal owner.user.email_address, restored_delivery.human_edited_by_user.email_address
+    assert_equal restored_delivery.human_edited_by_user, restored_delivery.human_edited_by_membership.user
+    assert_equal delivery.human_edited_at.change(usec: 0), restored_delivery.human_edited_at
+    assert_equal "Portable human final", restored_delivery.body
+  ensure
+    archive&.close!
+  end
+
   test "rejects an archive for another organization before writing" do
     source = workspaces(:acme_support)
     compressed = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))

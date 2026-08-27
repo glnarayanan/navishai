@@ -150,6 +150,66 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     original_text.each { |text| refute_includes retained, text }
   end
 
+  test "expiry redacts generated text while preserving draft and delivery provenance" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    support_case = create_support_case(workspace:, membership: owner)
+    add_inbound_message(support_case, body: "Private provenance evidence")
+    inbox = workspace.shared_email_inboxes.create!(
+      name: "Retention provenance", email_address: "retention@example.com", credential_key: "retention"
+    )
+    thread = workspace.email_threads.create!(
+      shared_email_inbox: inbox, conversation: support_case.conversation,
+      thread_key: "retention-provenance@example.com"
+    )
+    artifact = create_draft_artifact(
+      workspace:, support_case:, membership: owner,
+      body: "Private generated answer", result_state: "blocked"
+    )
+    generated_digest = Digest::SHA256.hexdigest(artifact.body)
+    draft = EmailDraftWorkflow.save!(
+      workspace:, support_case:, membership: owner, body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    edited_at = Time.zone.parse("2026-08-27 14:00:00 UTC")
+    draft = travel_to(edited_at) do
+      EmailDraftWorkflow.save!(
+        workspace:, support_case:, membership: owner, body: "Private human-qualified answer",
+        expected_lock_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id
+      )
+    end
+    delivery = workspace.outbound_email_deliveries.create!(
+      email_draft: draft, shared_email_inbox: inbox, email_thread: thread,
+      conversation: support_case.conversation, actor_membership: owner, actor_user: owner.user,
+      idempotency_key: "retention-provenance", message_id: "retention@navishai.local",
+      from_address: inbox.email_address, to_address: "customer@example.com", subject: "Private final",
+      body: draft.body, started_at: Time.current, **HumanDraftProvenance.delivery_attributes(draft)
+    )
+
+    expire_workspace_content(workspace, 1.day.from_now)
+    artifact.reload
+    draft.reload
+    delivery.reload
+
+    assert_equal "[Expired by retention policy]", artifact.body
+    assert_equal "[Expired by retention policy]", draft.body
+    assert_equal "[Expired by retention policy]", delivery.body
+    [ draft, delivery ].each do |record|
+      assert_equal artifact, record.source_crew_artifact
+      assert_equal generated_digest, record.generated_body_digest
+      assert_equal "blocked", record.generated_contract_result_state
+      assert_equal owner, record.human_edited_by_membership
+      assert_equal owner.user, record.human_edited_by_user
+      assert_equal edited_at, record.human_edited_at
+      assert record.valid?
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      OutboundEmailDelivery.transaction(requires_new: true) do
+        OutboundEmailDelivery.where(id: delivery.id).update_all(generated_body_digest: "0" * 64)
+      end
+    end
+  end
+
   private
     def create_v2_artifact(workspace)
       owner = memberships(:owner_support)

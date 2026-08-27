@@ -171,6 +171,51 @@ class HumanIntercomSendTest < ActiveSupport::TestCase
     assert_equal 2, @support_case.conversation.conversation_messages.outbound.count
   end
 
+  test "claim freezes artifact and edit provenance before the reusable draft becomes a follow-up" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated Intercom answer", result_state: "blocked"
+    )
+    draft = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+
+    delivery = send_reply(
+      client: FakeClient.new, key: "artifact-send", body: "Human-qualified final Intercom reply",
+      draft_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id
+    )
+
+    assert_equal artifact, delivery.source_crew_artifact
+    assert_equal Digest::SHA256.hexdigest(artifact.body), delivery.generated_body_digest
+    assert_equal "blocked", delivery.generated_contract_result_state
+    assert_equal @membership, delivery.human_edited_by_membership
+    assert_equal @membership.user, delivery.human_edited_by_user
+    assert delivery.human_edited_at
+    assert_equal "Human-qualified final Intercom reply", delivery.body
+    assert_equal @membership.user, delivery.actor_user
+
+    travel_to(delivery.sent_at + 5.minutes) do
+      add_customer_part("artifact_follow_up", at: Time.current)
+      IntercomDraftWorkflow.save!(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: "New human-authored Intercom follow-up", expected_lock_version: draft.reload.lock_version.to_s
+      )
+    end
+
+    assert_nil draft.reload.source_crew_artifact
+    assert_nil draft.generated_body_digest
+    assert_equal artifact, delivery.reload.source_crew_artifact
+    assert_equal "blocked", delivery.generated_contract_result_state
+    assert_equal "Human-qualified final Intercom reply", delivery.body
+    assert_raises(ActiveRecord::StatementInvalid) do
+      IntercomOutboundDelivery.transaction(requires_new: true) do
+        IntercomOutboundDelivery.where(id: delivery.id).update_all(source_crew_artifact_id: nil)
+      end
+    end
+  end
+
   test "a viewer cannot send and a key cannot cross cases" do
     viewer = User.create!(email_address: "intercom-viewer@example.com", password: "password12345", verified_at: Time.current)
     viewer_membership = @workspace.memberships.create!(user: viewer, role: :viewer)
@@ -262,10 +307,12 @@ class HumanIntercomSendTest < ActiveSupport::TestCase
 
   private
     def send_reply(client:, key: "send-key", body: "A human reply", draft_version: "new",
-      expected_source_part_id: @source_part.remote_part_id, membership: @membership, support_case: @support_case)
+      source_crew_artifact_id: nil, expected_source_part_id: @source_part.remote_part_id,
+      membership: @membership, support_case: @support_case)
       HumanIntercomSend.send!(
         workspace: @workspace, support_case: support_case, membership: membership,
         body: body, draft_version: draft_version, idempotency_key: key,
+        source_crew_artifact_id: source_crew_artifact_id,
         expected_source_part_id: expected_source_part_id, client: client
       )
     end

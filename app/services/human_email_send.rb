@@ -2,8 +2,14 @@ class HumanEmailSend
   DELIVERY_LOCK_NAMESPACE = 24_081_126
   RecipientPreview = Data.define(:address, :trusted, :inbound_message_id)
 
-  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address: nil, expected_inbound_message_id: nil, confirmed_recipient_address: nil, transport: SharedEmailSmtpTransport.new)
-    new(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address:, expected_inbound_message_id:, confirmed_recipient_address:, transport:).send!
+  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    source_crew_artifact_id: nil, expected_recipient_address: nil, expected_inbound_message_id: nil,
+    confirmed_recipient_address: nil, transport: SharedEmailSmtpTransport.new)
+    new(
+      workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+      source_crew_artifact_id:, expected_recipient_address:, expected_inbound_message_id:,
+      confirmed_recipient_address:, transport:
+    ).send!
   end
 
   def self.recipient_preview(workspace:, support_case:)
@@ -84,13 +90,16 @@ class HumanEmailSend
   end
   private_class_method :try_delivery_lock
 
-  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_recipient_address:, expected_inbound_message_id:, confirmed_recipient_address:, transport:)
+  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    source_crew_artifact_id:, expected_recipient_address:, expected_inbound_message_id:,
+    confirmed_recipient_address:, transport:)
     @workspace = workspace
     @support_case = support_case
     @membership = membership
     @body = body
     @draft_version = draft_version.to_s
     @idempotency_key = idempotency_key.to_s
+    @source_crew_artifact_id = source_crew_artifact_id
     @expected_recipient_address = expected_recipient_address.to_s
     @expected_inbound_message_id = expected_inbound_message_id.to_s
     @confirmed_recipient_address = confirmed_recipient_address.to_s
@@ -168,7 +177,8 @@ class HumanEmailSend
 
         draft = EmailDraftWorkflow.save!(
           workspace: @workspace, support_case: current_case, membership: actor,
-          body: @body, expected_lock_version: @draft_version
+          body: @body, expected_lock_version: @draft_version,
+          source_crew_artifact_id: @source_crew_artifact_id
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
@@ -202,7 +212,8 @@ class HumanEmailSend
           to_address: destination,
           subject: reply_subject(current_case.conversation.subject),
           body: draft.body,
-          started_at: [ Time.current, current_case.conversation.last_message_at ].compact.max
+          started_at: [ Time.current, current_case.conversation.last_message_at ].compact.max,
+          **HumanDraftProvenance.delivery_attributes(draft)
         )
         attachments.each do |attachment|
           @workspace.outbound_email_delivery_attachments.create!(

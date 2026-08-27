@@ -9,7 +9,8 @@ class EmailDraftWorkflow
     latest_direction == "inbound"
   end
 
-  def self.save!(workspace:, support_case:, membership:, body:, expected_lock_version: nil)
+  def self.save!(workspace:, support_case:, membership:, body:, expected_lock_version: nil,
+    source_crew_artifact_id: nil, adopt_source: false)
     EmailDraft.transaction do
       actor = workspace.memberships.lock.find(membership.id)
       raise Current::RoleAccessDenied unless actor.can_write?
@@ -20,7 +21,8 @@ class EmailDraftWorkflow
       if expected_lock_version && expected_lock_version != (draft.persisted? ? draft.lock_version.to_s : "new")
         raise ActiveRecord::StaleObjectError.new(draft, "save")
       end
-      if draft.sent?
+      follow_up = draft.sent?
+      if follow_up
         raise ArgumentError, "a new customer message is required before another reply" unless follow_up_available?(draft)
 
         draft.email_draft_attachments.destroy_all
@@ -29,6 +31,10 @@ class EmailDraftWorkflow
         raise ArgumentError, "sent or sending drafts cannot be edited"
       end
 
+      HumanDraftProvenance.apply!(
+        draft:, workspace:, support_case: current_case, membership: actor, body:,
+        source_crew_artifact_id:, adopt_source:, follow_up:
+      )
       draft.assign_attributes(email_thread: thread, conversation: current_case.conversation, updated_by: actor.user, body: body)
       draft.save!
       AuditEvent.record!(action: "email.draft_saved", source: :web, workspace: workspace, actor: actor.user, subject: draft)
