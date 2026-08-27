@@ -42,6 +42,11 @@ Rails.application.routes.draw do
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
     end
+    resource :usage_rates, path: "usage-rates", only: %i[ show create ], controller: "usage_rates" do
+      post :rollback
+    end
+    get "explain/:subject_type/:subject_id", to: "outcome_explanations#show",
+      as: :outcome_explanation, constraints: { subject_type: /case|account|run|health-assessment/ }
     resource :health_scorecard, path: "scorecard", only: :show do
       post :propose
       post :backtest

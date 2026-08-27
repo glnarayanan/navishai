@@ -1,0 +1,99 @@
+<% content_for :title, "Usage rates · #{@workspace.name} — NavishAI" %>
+<% form_values = @submitted_rates || {} %>
+
+<main class="page-shell usage-rates-page page-family-config">
+  <header class="page-heading usage-rates-heading">
+    <div>
+      <h1>Usage and cost rates</h1>
+      <p>Observed units come from immutable run and search ledgers. Money appears only when a frozen rate or adapter amount supports it.</p>
+    </div>
+  </header>
+
+  <%= render "shared/notice", kind: "info", title: "Cost stays informational",
+    body: "Configured calculations are estimates. Publishing or rolling back a rate affects only new runs and searches; it cannot change a historical snapshot." %>
+
+  <% if @rate_error %>
+    <%= render "shared/notice", kind: "destructive", title: "Rates not changed", body: @rate_error %>
+  <% end %>
+
+  <section class="route-status usage-rate-current" aria-labelledby="current-rate-title">
+    <h2 id="current-rate-title">Current version</h2>
+    <% if @current_version %>
+      <dl>
+        <div><dt>Version</dt><dd>v<%= @current_version.version_number %></dd></div>
+        <div><dt>Currency</dt><dd><%= @current_version.currency %></dd></div>
+        <div><dt>Source</dt><dd><%= @current_version.source_name %></dd></div>
+        <div><dt>Published</dt><dd><%= time_tag @current_version.published_at, @current_version.published_at.to_fs(:long) %></dd></div>
+      </dl>
+    <% else %>
+      <p>No rate is published. Usage stays visible, and money is shown as unavailable rather than zero.</p>
+    <% end %>
+  </section>
+
+  <% if @can_configure %>
+    <section class="usage-rate-editor" aria-labelledby="rate-editor-title">
+      <header>
+        <h2 id="rate-editor-title">Publish a new version</h2>
+        <p>Enter currency units per one million observed units. Leave a rate blank when it is not known.</p>
+      </header>
+      <%= form_with url: workspace_usage_rates_path(@workspace), scope: :usage_rate, class: "usage-rate-form" do |form| %>
+        <%= form.hidden_field :expected_current_version_id,
+          value: form_values.fetch("expected_current_version_id", @current_version&.id) %>
+        <div class="usage-rate-grid">
+          <div class="field">
+            <%= form.label :currency, "Currency" %>
+            <%= form.text_field :currency, value: form_values.fetch("currency", @current_version&.currency || "USD"),
+              required: true, maxlength: 3, pattern: "[A-Za-z]{3}", autocomplete: "off" %>
+          </div>
+          <div class="field">
+            <%= form.label :source_name, "Rate source" %>
+            <%= form.text_field :source_name,
+              value: form_values.fetch("source_name", @current_version&.source_name), required: true,
+              maxlength: 100, placeholder: "Admin-entered vendor rate card" %>
+          </div>
+          <% %w[input output search].each do |kind| %>
+            <% current_micros = @current_version&.public_send("#{kind}_rate_micros_per_million") %>
+            <div class="field">
+              <%= form.label "#{kind}_rate", "#{kind.humanize} rate per 1M units" %>
+              <%= form.number_field "#{kind}_rate",
+                value: form_values.fetch("#{kind}_rate", UsageRateConfiguration.display_rate(current_micros)),
+                min: 0, max: UsageRateConfiguration::MAX_PRICE_PER_MILLION, step: "0.000001" %>
+            </div>
+          <% end %>
+        </div>
+        <%= form.submit "Publish rate version", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="usage-rate-history" aria-labelledby="rate-history-title">
+    <header><h2 id="rate-history-title">Version history</h2><p>Applied versions remain immutable and keep historical estimates reproducible.</p></header>
+    <% if @versions.any? %>
+      <ol>
+        <% @versions.each do |version| %>
+          <li class="usage-rate-version <%= "is-current" if version == @current_version %>">
+            <div>
+              <strong>v<%= version.version_number %> · <%= version.currency %></strong>
+              <span><%= version.source_name %> · <%= version.created_by_user.email_address %></span>
+              <small>
+                Input <%= UsageRateConfiguration.display_rate(version.input_rate_micros_per_million) || "not set" %> ·
+                Output <%= UsageRateConfiguration.display_rate(version.output_rate_micros_per_million) || "not set" %> ·
+                Search <%= UsageRateConfiguration.display_rate(version.search_rate_micros_per_million) || "not set" %>
+              </small>
+            </div>
+            <% if version == @current_version %>
+              <span class="status-badge status-success">Current</span>
+            <% elsif @can_configure %>
+              <%= button_to "Use for new ledgers", rollback_workspace_usage_rates_path(@workspace),
+                params: { version_id: version.id, expected_current_version_id: @current_version.id },
+                class: "button button-secondary",
+                data: { turbo_confirm: "Use rate version #{version.version_number} for new runs and searches? Historical estimates will not change." } %>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No versions have been published.</p>
+    <% end %>
+  </section>
+</main>

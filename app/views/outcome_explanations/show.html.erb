@@ -1,0 +1,351 @@
+<% content_for :title, "Explain #{@explanation.title} · NavishAI" %>
+<% usage = @explanation.usage %>
+
+<main class="outcome-explanation page-family-record">
+  <header class="explanation-heading">
+    <div>
+      <%= link_to "Back to #{@explanation.subject_label.downcase}", explanation_back_path(@explanation), class: "back-link" %>
+      <h1>Explain this outcome</h1>
+      <p><strong><%= @explanation.title %></strong> · <%= @explanation.subject_label %> · Read-only reconstruction.</p>
+    </div>
+    <span class="explanation-state explanation-state-<%= @explanation.outcome_state.dasherize %>"><%= @explanation.outcome_state.humanize %></span>
+  </header>
+
+  <section class="explanation-summary" aria-labelledby="explanation-summary-title">
+    <h2 id="explanation-summary-title" class="visually-hidden">Current outcome</h2>
+    <div class="explanation-outcome">
+      <span>Current outcome</span>
+      <strong><%= @explanation.outcome %></strong>
+      <small>Built now from authoritative records; no explanation narrative is stored.</small>
+    </div>
+    <dl>
+      <div><dt>Blockers</dt><dd><%= @explanation.blockers.any? ? pluralize(@explanation.blockers.size, "recorded blocker") : "None recorded" %></dd></div>
+      <div><dt>Source freshness</dt><dd><%= @explanation.freshness %></dd></div>
+      <div><dt>Responsible actor</dt><dd><%= @explanation.responsible_actor %></dd></div>
+      <div><dt>Next action</dt><dd><%= @explanation.next_action %></dd></div>
+    </dl>
+  </section>
+
+  <% if @explanation.omitted_history.any? %>
+    <section class="route-status explanation-history-limit" aria-labelledby="history-limit-title">
+      <h2 id="history-limit-title">Recent detail shown</h2>
+      <p>Usage, budget, and cost totals still cover every scoped ledger. To keep this page usable, the detailed history omits:</p>
+      <ul>
+        <% @explanation.omitted_history.each do |label, count| %>
+          <li><%= number_with_delimiter(count) %> <%= count == 1 ? label.singularize : label %></li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
+
+  <% if @explanation.blockers.any? %>
+    <section class="explanation-blockers" aria-labelledby="explanation-blockers-title">
+      <h2 id="explanation-blockers-title">What blocks or needs review</h2>
+      <ol>
+        <% @explanation.blockers.each do |blocker| %>
+          <li><strong><%= blocker.fetch("message") %></strong><span><%= blocker.fetch("remediation") %></span></li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
+
+  <section class="explanation-usage" aria-labelledby="usage-title">
+    <header>
+      <div><h2 id="usage-title">Usage and budget</h2><p>Reconciled from immutable run and search ledgers.</p></div>
+      <span class="usage-state usage-state-<%= usage.state.dasherize %>"><%= usage.state.humanize %></span>
+    </header>
+    <div class="usage-metric-container">
+      <div class="usage-metric-grid">
+        <article>
+          <span>Input units</span>
+          <% if usage.input_units.nil? %><strong>Not reported</strong><% else %><strong><%= number_with_delimiter(usage.input_units) %></strong><% end %>
+          <small><%= usage.run_state == "partial" ? "Known units; one or more runs did not report usage." : "Observed by run events." %></small>
+        </article>
+        <article>
+          <span>Output units</span>
+          <% if usage.output_units.nil? %><strong>Not reported</strong><% else %><strong><%= number_with_delimiter(usage.output_units) %></strong><% end %>
+          <small><%= usage.run_state == "partial" ? "Known units; one or more runs did not report usage." : "Observed by run events." %></small>
+        </article>
+        <article>
+          <span>Search cost units</span>
+          <% if usage.search_state == "unavailable" %>
+            <strong>Unavailable by run</strong><small>Searches are task-scoped and cannot be assigned to one run.</small>
+          <% elsif usage.search_units.nil? %>
+            <strong>Not reported</strong><small>No completed search ledger reported cost units.</small>
+          <% else %>
+            <strong><%= number_with_delimiter(usage.search_units) %></strong><small><%= usage.search_state == "partial" ? "Known units; an open or failed search reported no units." : "Observed by completed search ledgers." %></small>
+          <% end %>
+        </article>
+        <article>
+          <span>Budget use</span>
+          <% if usage.run_state == "not_reported" %>
+            <strong>Not reported</strong><small>Frozen budget: <%= number_with_delimiter(usage.budget_units) %> units.</small>
+          <% else %>
+            <strong><%= number_with_delimiter(usage.budget_used_units) %> / <%= number_with_delimiter(usage.budget_units) %></strong>
+            <small><%= usage.run_state == "partial" ? "Known use only; missing usage is not counted as zero." : "Observed input and output against frozen run budgets." %></small>
+          <% end %>
+        </article>
+      </div>
+    </div>
+
+    <div class="usage-cost-summary usage-cost-summary-<%= usage.cost_state.dasherize %>">
+      <div>
+        <span>Optional money</span>
+        <strong><%= usage.cost_state.humanize %></strong>
+      </div>
+      <% if usage.amounts_by_currency.any? %>
+        <ul>
+          <% usage.amounts_by_currency.each do |currency, amount| %>
+            <li><strong><%= format_usage_money(currency, amount) %></strong></li>
+          <% end %>
+        </ul>
+        <p>
+          <% if usage.has_configured_estimates %>
+            Calculated amounts are estimates from frozen rate versions.
+          <% end %>
+          <% if usage.has_adapter_amounts %>
+            Adapter-reported amounts are marked in the detail below.
+          <% end %>
+          Missing components are not treated as zero.
+        </p>
+      <% elsif usage.cost_state == "unavailable" %>
+        <p>Observed units exist, but no trustworthy frozen rate or adapter amount can price them.</p>
+      <% else %>
+        <p>No money was reported or calculated. This is not a zero-cost claim.</p>
+      <% end %>
+      <%= link_to "Review configured rates", workspace_usage_rates_path(@workspace), class: "button button-quiet" %>
+    </div>
+
+    <% if usage.cost_snapshots.any? %>
+      <details class="explanation-disclosure">
+        <summary>Cost calculation provenance</summary>
+        <ol class="cost-snapshot-list">
+          <% usage.cost_snapshots.each do |snapshot| %>
+            <li>
+              <div><strong><%= snapshot.execution_run ? "Run #{snapshot.execution_run.run_key.to_s.first(8)}" : "Search #{snapshot.public_web_search_id}" %></strong><span><%= snapshot.status.humanize %></span></div>
+              <% if snapshot.amount_micros && (!snapshot.partial? || snapshot.amount_micros.positive?) %>
+                <p><%= snapshot.configured_rate? ? "Estimated" : "Reported" %> <%= format_usage_money(snapshot.currency, snapshot.amount_micros) %></p>
+              <% elsif snapshot.partial? %>
+                <p>No non-zero known amount. Missing components are not zero.</p>
+              <% else %>
+                <p><%= snapshot.calculation_provenance.fetch("reason", "No amount available").humanize %></p>
+              <% end %>
+              <% if snapshot.applied_usage_rate_version %>
+                <small>Rate v<%= snapshot.applied_usage_rate_version.version_number %> · <%= snapshot.calculation_provenance.fetch("source") %> · rounded once to one-millionth of <%= snapshot.currency %>.</small>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+      </details>
+    <% end %>
+  </section>
+
+  <% if @explanation.assessment %>
+    <section class="explanation-section" aria-labelledby="health-lineage-title">
+      <header><h2 id="health-lineage-title">Health outcome and evidence</h2><p>Deterministic score facts stay separate from crew analysis.</p></header>
+      <dl class="explanation-facts">
+        <div><dt>Score</dt><dd><%= @explanation.assessment.score %>/100 · <%= @explanation.assessment.risk_level.humanize %></dd></div>
+        <div><dt>Calculated</dt><dd><%= time_tag @explanation.assessment.calculated_at, @explanation.assessment.calculated_at.to_fs(:long) %></dd></div>
+        <div><dt>Trigger</dt><dd><%= @explanation.assessment.trigger_kind.humanize %></dd></div>
+        <div><dt>Scorecard</dt><dd>v<%= @explanation.assessment.health_scorecard_version.version_number %></dd></div>
+      </dl>
+      <details class="explanation-disclosure">
+        <summary><%= pluralize(@explanation.signals.size, "deterministic signal") %></summary>
+        <ul class="explanation-record-list">
+          <% @explanation.signals.each do |signal| %>
+            <li><strong><%= signal.signal_key.humanize %> · <%= signal.value %></strong><span><%= signal.source_kind.humanize %> · <code><%= signal.source_locator %></code> · <%= signal.risk_points %> risk points</span></li>
+          <% end %>
+        </ul>
+      </details>
+      <% if @explanation.investigations.any? %>
+        <details class="explanation-disclosure">
+          <summary><%= pluralize(@explanation.investigations.size, "linked risk investigation") %></summary>
+          <ol class="explanation-record-list">
+            <% @explanation.investigations.each do |investigation| %>
+              <li><strong><%= investigation.trigger_kind.humanize %> · <%= investigation.status.humanize %></strong><span>Opened <%= time_tag investigation.opened_at, investigation.opened_at.to_fs(:long) %><%= " · resolved #{investigation.resolved_at.to_fs(:long)}" if investigation.resolved_at %></span><small><%= investigation.crew_task ? "Crew task #{investigation.crew_task.title}" : "No crew task linked" %></small></li>
+            <% end %>
+          </ol>
+        </details>
+      <% end %>
+    </section>
+  <% end %>
+
+  <section class="explanation-section" aria-labelledby="proof-title">
+    <header><h2 id="proof-title">Resolution proof</h2><p>Claims show their frozen evaluation state. Human replacement never changes the AI artifact.</p></header>
+    <% if @explanation.artifacts.any? %>
+      <ol class="explanation-artifact-list">
+        <% @explanation.artifacts.each do |artifact| %>
+          <li>
+            <article>
+              <header>
+                <div><strong><%= artifact.artifact_kind.humanize %> · v<%= artifact.version_number %></strong><span>Run <%= artifact.execution_run.run_key.to_s.first(8) %></span></div>
+                <span class="explanation-state explanation-state-<%= (artifact.contract_result_state || "unavailable").dasherize %>"><%= (artifact.contract_result_state || "unavailable").humanize %></span>
+              </header>
+              <% if artifact.schema_version == 2 %>
+                <p>Resolution contract v<%= artifact.resolution_contract_version.version_number %> · evaluated <%= time_tag artifact.contract_evaluated_at, artifact.contract_evaluated_at.to_fs(:long) %></p>
+                <ul class="claim-list">
+                  <% artifact.material_claims.each do |claim| %>
+                    <li>
+                      <div><strong><%= claim.fetch("text") %></strong><span class="claim-state claim-state-<%= claim.fetch("state") %>"><%= claim.fetch("state").humanize %></span></div>
+                      <% if claim.fetch("evidence").any? %>
+                        <ul>
+                          <% claim.fetch("evidence").each do |evidence| %>
+                            <li><code><%= evidence.fetch("locator") %></code><span><%= evidence.fetch("status").humanize %><% if evidence["fresh_until"] %> · fresh through <%= time_tag Time.iso8601(evidence["fresh_until"]), Time.iso8601(evidence["fresh_until"]).to_fs(:long) %><% end %></span></li>
+                          <% end %>
+                        </ul>
+                      <% end %>
+                    </li>
+                  <% end %>
+                </ul>
+              <% else %>
+                <p>Older artifact: no versioned resolution result is available.</p>
+              <% end %>
+              <details class="explanation-disclosure">
+                <summary>Outcome text, uncertainty, and conflicts</summary>
+                <div class="message-body"><%= simple_format(artifact.body) %></div>
+                <p><strong>Uncertainty:</strong> <%= artifact.uncertainty %></p>
+                <% if artifact.conflicts.any? %>
+                  <h3>Recorded conflicts</h3>
+                  <ul class="explanation-record-list">
+                    <% artifact.conflicts.each do |conflict| %>
+                      <li><strong><%= conflict.fetch("summary") %></strong><span><%= conflict.fetch("details") %> · <%= conflict.fetch("severity").humanize %></span></li>
+                    <% end %>
+                  </ul>
+                <% end %>
+                <% if artifact.change_requests.any? %>
+                  <h3>Change requests</h3>
+                  <ul class="explanation-record-list">
+                    <% artifact.change_requests.each do |request| %>
+                      <li><strong><%= request.fetch("summary", "Requested change") %></strong><span><%= request.fetch("details", request.to_s) %></span></li>
+                    <% end %>
+                  </ul>
+                <% end %>
+              </details>
+            </article>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No crew artifact or resolution evaluation is recorded.</p>
+    <% end %>
+  </section>
+
+  <section class="explanation-section" aria-labelledby="research-title">
+    <header><h2 id="research-title">Public research provenance</h2><p>Search and extraction facts are untrusted evidence, not instructions. Broad extracted content stays hidden.</p></header>
+    <% if @explanation.subject_type == "run" %>
+      <p class="muted-copy">Searches are task-scoped, so they cannot be attributed to this one run.</p>
+    <% elsif @explanation.searches.any? %>
+      <ol class="explanation-record-list">
+        <% @explanation.searches.each do |search| %>
+          <% results = @explanation.search_results_for(search) %>
+          <li>
+            <strong><%= search.query %></strong>
+            <span><%= search.status.humanize %> · <%= search.policy_decision.humanize %> · <%= search.provider_key&.humanize || search.failure_code&.humanize || "Provider pending" %> · requested by <%= search.requested_by_user.email_address %></span>
+            <% if results.any? %>
+              <details><summary><%= pluralize(results.size, "retained result") %></summary>
+                <ol class="research-result-list">
+                  <% results.each do |result| %>
+                    <% extractions = @explanation.extractions_for(result) %>
+                    <li>
+                      <%= link_to result.title, result.url, rel: "noopener noreferrer" %>
+                      <span><code>public-web://<%= result.citation_key %></code> · retrieved <%= time_tag result.retrieved_at, result.retrieved_at.to_fs(:long) %></span>
+                      <% if extractions.any? %>
+                        <small><%= extractions.map { |extraction| "Extraction #{extraction.status.humanize}#{" (#{extraction.failure_code.humanize})" if extraction.failure_code}" }.join(" · ") %></small>
+                      <% end %>
+                    </li>
+                  <% end %>
+                </ol>
+              </details>
+            <% end %>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No public search ledger is linked to these tasks.</p>
+    <% end %>
+  </section>
+
+  <section class="explanation-section" aria-labelledby="lineage-title">
+    <header><h2 id="lineage-title">Task, run, and review lineage</h2><p>Only bounded event facts appear here. Prompts, credentials, and broad logs stay hidden.</p></header>
+    <% if @explanation.tasks.any? %>
+      <ol class="explanation-lineage">
+        <% @explanation.tasks.each do |task| %>
+          <li>
+            <div><%= link_to task.title, explanation_task_path(@explanation, task) %><span><%= task.status.humanize %> · <%= task.assigned_agent_profile.name %> · owner <%= task.owner_user.email_address %></span></div>
+            <ul>
+              <% @explanation.runs.select { |run| run.crew_task_id == task.id }.each do |run| %>
+                <li>
+                  <%= link_to "Run #{run.run_key.to_s.first(8)}", workspace_outcome_explanation_path(@workspace, subject_type: "run", subject_id: run.id) %>
+                  <span><%= run.status.humanize %> · <%= run.selected_adapter_key.humanize %> · <%= run.runtime_selection_reason.humanize %></span>
+                  <small><%= run.runtime_selection_detail %><% if run.failure_code %> · <%= run.failure_code.humanize %><% end %></small>
+                </li>
+              <% end %>
+            </ul>
+          </li>
+        <% end %>
+      </ol>
+      <details class="explanation-disclosure">
+        <summary><%= pluralize(@explanation.task_events.size, "task ledger event") %> and bounded run metadata</summary>
+        <ol class="explanation-event-list">
+          <% @explanation.task_events.each do |event| %>
+            <li><strong><%= event.event_kind.humanize %></strong><span><%= event.actor_user&.email_address || event.source.humanize %> · <%= time_tag event.created_at, event.created_at.to_fs(:long) %></span><% if event.review_outcome %><small>Review: <%= event.review_outcome.humanize %></small><% end %></li>
+          <% end %>
+          <% @explanation.runs.each do |run| %>
+            <% @explanation.run_events_for(run).each do |event| %>
+              <li><strong><%= event.event_type.tr(".", " ").humanize %></strong><span>Run <%= run.run_key.to_s.first(8) %> · sequence <%= event.sequence_number %> · <%= time_tag event.occurred_at, event.occurred_at.to_fs(:long) %></span></li>
+            <% end %>
+          <% end %>
+        </ol>
+      </details>
+    <% else %>
+      <p class="muted-copy">No specialist task or run is linked to this outcome.</p>
+    <% end %>
+  </section>
+
+  <section class="explanation-section" aria-labelledby="memory-title">
+    <header><h2 id="memory-title">Selected memory and provenance</h2><p>Selection is shown only when the current memory access rule allows it.</p></header>
+    <% if !@explanation.memory_visible? %>
+      <p class="muted-copy">Your current role cannot inspect selected memory.</p>
+    <% elsif @explanation.memory_selections.any? %>
+      <ol class="explanation-record-list">
+        <% @explanation.memory_selections.each do |selection| %>
+          <% memory = selection.memory_record %>
+          <li><strong><%= memory.topic %></strong><span>Rank <%= selection.rank %> · <%= memory.scope_kind.humanize %> · <%= memory.authority.humanize %> · <code><%= memory.source_reference %></code></span><small>Observed <%= time_tag memory.observed_at, memory.observed_at.to_fs(:long) %><%= " · superseded" if @explanation.memory_superseded?(memory) %><%= " · deleted" if memory.memory_tombstone %></small></li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No accessible memory was selected for these runs.</p>
+    <% end %>
+  </section>
+
+  <section class="explanation-section" aria-labelledby="communication-title">
+    <header><h2 id="communication-title">Human draft and final action</h2><p>The exact sender and frozen delivery remain the communication authority.</p></header>
+    <% drafts = @explanation.email_drafts + @explanation.intercom_drafts %>
+    <% deliveries = @explanation.email_deliveries + @explanation.intercom_deliveries %>
+    <% if drafts.any? || deliveries.any? %>
+      <ol class="explanation-record-list">
+        <% drafts.each do |draft| %>
+          <li><strong><%= draft.class.name.delete_suffix("Draft") %> draft · <%= draft.status.humanize %></strong><span><%= draft.source_crew_artifact ? "Crew draft v#{draft.source_crew_artifact.version_number}" : "Human-authored" %><%= " · human-edited by #{draft.human_edited_by_user.email_address}" if draft.human_edited_at? %></span><small>Updated by <%= draft.updated_by.email_address %> · <%= time_tag draft.updated_at, draft.updated_at.to_fs(:long) %></small></li>
+        <% end %>
+        <% deliveries.each do |delivery| %>
+          <li><strong><%= delivery.class.name.include?("Intercom") ? "Intercom" : "Email" %> delivery · <%= delivery.status.humanize %></strong><span>Human actor <%= delivery.actor_user.email_address %><%= " · human-edited by #{delivery.human_edited_by_user.email_address}" if delivery.human_edited_at? %></span><small>Claimed <%= time_tag delivery.started_at, delivery.started_at.to_fs(:long) %><%= " · sent #{delivery.sent_at.to_fs(:long)}" if delivery.sent_at %></small><details><summary>Exact frozen message</summary><div class="message-body"><%= simple_format(delivery.body) %></div></details></li>
+        <% end %>
+        <% @explanation.communication_reviews.each do |review| %>
+          <li><strong>Human send decision · <%= review.metadata.fetch("outcome").humanize %></strong><span><%= review.actor.email_address %> · <%= review.subject_type.underscore.humanize %></span><small><%= time_tag review.occurred_at, review.occurred_at.to_fs(:long) %></small></li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No outbound draft, delivery, or final human send is linked.</p>
+    <% end %>
+  </section>
+
+  <% if @explanation.recovery_events.any? || @explanation.runs.any? { |run| run.failure_code || run.last_admission_error } %>
+    <section class="explanation-section" aria-labelledby="recovery-title">
+      <header><h2 id="recovery-title">Failure and recovery</h2><p>Definite failures and admission reconciliation stay attributable.</p></header>
+      <ol class="explanation-event-list">
+        <% @explanation.runs.select { |run| run.failure_code || run.last_admission_error }.each do |run| %><li><strong>Run <%= run.run_key.to_s.first(8) %></strong><span><%= (run.failure_code || run.last_admission_error).humanize %> · <%= run.status.humanize %></span></li><% end %>
+        <% @explanation.recovery_events.each do |event| %><li><strong><%= event.action.tr(".", " ").humanize %></strong><span><%= event.actor&.email_address || event.actor_kind.humanize %> · <%= time_tag event.occurred_at, event.occurred_at.to_fs(:long) %></span></li><% end %>
+      </ol>
+    </section>
+  <% end %>
+</main>
