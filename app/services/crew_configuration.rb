@@ -42,6 +42,10 @@ class CrewConfiguration
     profile = @workspace.agent_profiles.find(agent_profile.id)
     expected_version_number = strict_integer(attributes[:expected_version_number])
     values = normalized_values(profile, attributes)
+    if bounded_policy_changed?(profile.current_version, values)
+      raise InvalidConfiguration,
+        "Routing, fallback, review, and execution budgets require Governed policy preview and an explicit canary."
+    end
     AgentProfile.transaction do
       profile.lock!
       unless profile.current_version.version_number == expected_version_number
@@ -104,6 +108,12 @@ class CrewConfiguration
 
     def same_version?(version, values)
       values.all? { |attribute, value| version.public_send(attribute) == value }
+    end
+
+    def bounded_policy_changed?(version, values)
+      GovernedPolicyChange::PROFILE_POLICY_FIELDS.any? do |attribute|
+        version.public_send(attribute) != values.fetch(attribute)
+      end
     end
 
     def strict_integer(value)

@@ -13,6 +13,10 @@ class CrewTaskEvent < ApplicationRecord
   belongs_to :to_agent_profile, class_name: "AgentProfile"
   belongs_to :from_agent_profile_version, class_name: "AgentProfileVersion", optional: true
   belongs_to :to_agent_profile_version, class_name: "AgentProfileVersion"
+  belongs_to :from_governed_policy_publication, class_name: "GovernedPolicyPublication", optional: true
+  belongs_to :to_governed_policy_publication, class_name: "GovernedPolicyPublication", optional: true
+  belongs_to :from_resolution_contract_version, class_name: "ResolutionContractVersion", optional: true
+  belongs_to :to_resolution_contract_version, class_name: "ResolutionContractVersion", optional: true
 
   enum :event_kind, KINDS.index_by(&:itself), validate: true
   enum :source, SOURCES.index_by(&:itself), prefix: true, validate: true
@@ -22,6 +26,7 @@ class CrewTaskEvent < ApplicationRecord
   validates :review_outcome, inclusion: { in: REVIEW_OUTCOMES }, allow_nil: true
   validates :outcome_kind, inclusion: { in: OUTCOME_KINDS }, allow_nil: true
   validate :actor_is_consistent
+  validate :policy_history_is_consistent
   validate :content_fits
 
   def readonly?
@@ -41,5 +46,18 @@ class CrewTaskEvent < ApplicationRecord
     def content_fits
       errors.add(:body, "must be 20,000 bytes or less") if body.to_s.bytesize > 20_000
       errors.add(:evidence_locator, "must be 2,000 bytes or less") if evidence_locator.to_s.bytesize > 2_000
+    end
+
+    def policy_history_is_consistent
+      %w[from to].each do |direction|
+        publication = public_send("#{direction}_governed_policy_publication")
+        next unless publication
+
+        unless publication.workspace_id == workspace_id &&
+            publication.resolution_contract_version_id == public_send("#{direction}_resolution_contract_version_id") &&
+            publication.agent_profile_version_id == public_send("#{direction}_agent_profile_version_id")
+          errors.add("#{direction}_governed_policy_publication", "does not match frozen policy history")
+        end
+      end
     end
 end

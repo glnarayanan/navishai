@@ -144,6 +144,85 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "round trips governed policy evidence with remapped typed facts and bound digests" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace: source, membership: owner)
+    ResolutionContractConfiguration.install_defaults!(workspace: source)
+    CrewConfiguration.install_defaults!(workspace: source)
+    support_case = create_support_case(
+      subject: "Portable governed policy", workspace: source, membership: owner
+    )
+    family = source.resolution_contract_families.find_by!(family_key: "support_resolution")
+    profile = source.agent_profiles.find_by!(role_key: "support_investigator")
+    contract = family.current_version
+    profile_version = profile.current_version
+    proposal = GovernedPolicyChange.propose!(
+      workspace: source, membership: owner, family:, profile:,
+      scope_kind: "support_case", scope_ids: [ support_case.id ],
+      contract_attributes: {
+        required_claim_categories: contract.required_claim_categories,
+        evidence_freshness_days: contract.evidence_freshness_days,
+        mandatory_review_checks: contract.mandatory_review_checks,
+        execution_budget_units: contract.execution_budget_units - 1,
+        missing_items_block: contract.missing_items_block
+      },
+      profile_attributes: {
+        runtime_profile_key: profile_version.runtime_profile_key,
+        fallback_profile_keys: profile_version.fallback_profile_keys,
+        timeout_seconds: profile_version.timeout_seconds,
+        max_steps: profile_version.max_steps,
+        max_tool_calls: profile_version.max_tool_calls,
+        review_policy: "on_policy_flag"
+      },
+      reason: "Portable governed policy"
+    )
+    first_preview = GovernedPolicyChange.preview!(workspace: source, membership: owner, proposal:)
+    publication = GovernedPolicyChange.publish!(
+      workspace: source, membership: owner, proposal:, preview: first_preview
+    )
+    task = CrewWork.create!(
+      workspace: source, membership: owner, scope: support_case, profile:,
+      title: "Portable governed task", input_context: "Use retained facts.",
+      expected_output: "Return a bounded result."
+    )
+    run = ExecutionLedger.new(workspace: source).prepare!(
+      task:, request_key: "portable-governed-policy"
+    )
+    preview = GovernedPolicyChange.preview!(workspace: source, membership: owner, proposal:)
+    settle_deferred_constraints
+
+    verification = WorkspacePortability.verify_round_trip(
+      workspace: source, membership: owner, name: "Governed Policy Restore",
+      slug: "governed-policy-restore", source_commit: "9" * 40
+    )
+    imported = verification.workspace
+    restored_proposal = imported.governed_policy_proposals.find_by!(reason: proposal.reason)
+    restored_preview = restored_proposal.previews.detect do |candidate|
+      candidate.source_snapshot.fetch("scope_publications").any?
+    end
+    assert restored_preview
+    restored_publication = imported.governed_policy_publications.find_by!(reason: publication.reason)
+    restored_task = imported.crew_tasks.find_by!(title: task.title)
+    restored_run = imported.execution_runs.find_by!(request_key: run.request_key)
+
+    assert_not_equal proposal.id, restored_proposal.id
+    assert_not_equal preview.id, restored_preview.id
+    assert_not_equal publication.id, restored_publication.id
+    assert_equal restored_proposal.id, restored_preview.source_snapshot.dig("proposal", "id")
+    assert_equal restored_task.id,
+      restored_preview.source_snapshot.dig("retained_records", "tasks").sole.fetch("id")
+    assert_equal restored_run.id,
+      restored_preview.source_snapshot.dig("retained_records", "runs").sole.fetch("id")
+    assert_equal restored_publication.id, restored_preview.source_snapshot.fetch("scope_publications").sole.first
+    assert_equal restored_preview.evidence_digest,
+      GovernedPolicyChange.digest(restored_preview.source_snapshot)
+    assert_equal restored_preview.results_digest, GovernedPolicyChange.digest(restored_preview.results)
+    assert_equal restored_publication, restored_task.governed_policy_publication
+    assert_equal restored_publication, restored_run.governed_policy_publication
+    assert_equal "passed", verification.operational_check.result
+  end
+
   test "round trips draft and delivery provenance with remapped artifact and editor links" do
     source = workspaces(:acme_support)
     owner = memberships(:owner_support)

@@ -48,6 +48,13 @@ class AuditEvent < ApplicationRecord
       "from_version" => Integer,
       "to_version" => Integer
     },
+    "governed_policy.proposed" => {
+      "scope_kind" => GovernedPolicyProposal::SCOPE_KINDS, "subject_count" => Integer
+    },
+    "governed_policy.canary_published" => {
+      "preview_digest" => String, "scope_kind" => GovernedPolicyProposal::SCOPE_KINDS
+    },
+    "governed_policy.rolled_back" => { "superseded_publication_id" => Integer },
     "execution.run_reconciled" => {},
     "execution.run_requested" => {},
     "attachment.downloaded" => {},

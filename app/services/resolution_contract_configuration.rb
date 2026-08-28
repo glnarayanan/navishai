@@ -59,41 +59,9 @@ class ResolutionContractConfiguration
 
   def publish!(family:, attributes:)
     authorize!
-    family = @workspace.resolution_contract_families.find(family.id)
-    expected_current_version_id = strict_integer(attributes[:expected_current_version_id], "Contract version is invalid.")
-    values = normalized_values(family, attributes)
-
-    ResolutionContractFamily.transaction do
-      family.lock!
-      unless family.current_version_id == expected_current_version_id
-        raise StalePublication, "The published contract changed after the page loaded. Review it and try again."
-      end
-      return family.current_version if same_version?(family.current_version, values)
-
-      previous = family.current_version
-      version = family.versions.create!(
-        workspace: @workspace,
-        version_number: family.versions.maximum(:version_number).to_i + 1,
-        **values,
-        created_by_membership: @membership,
-        created_by_user: @membership.user
-      )
-      family.update!(current_version: version)
-      AuditEvent.record!(
-        action: "resolution_contract.published", source: :web, workspace: @workspace,
-        actor: @membership.user, subject: version,
-        metadata: {
-          "family" => family.family_key,
-          "from_version" => previous.version_number,
-          "to_version" => version.version_number
-        }
-      )
-      version
-    end
-  rescue ActiveRecord::RecordInvalid => error
-    raise InvalidConfiguration, error.record.errors.full_messages.to_sentence
-  rescue ActiveRecord::RecordNotUnique
-    raise StalePublication, "The published contract changed concurrently. Review it and try again."
+    @workspace.resolution_contract_families.find(family.id)
+    raise InvalidConfiguration,
+      "Resolution policy requires an immutable proposal, retained-fact preview, and explicit canary."
   end
 
   private

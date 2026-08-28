@@ -9,6 +9,8 @@ class ExecutionRun < ApplicationRecord
   belongs_to :crew_task
   belongs_to :agent_profile
   belongs_to :agent_profile_version
+  belongs_to :governed_policy_publication, optional: true
+  belongs_to :resolution_contract_version, optional: true
   belongs_to :runtime_installation, optional: true
   belongs_to :usage_rate_version, optional: true
   belongs_to :current_event, class_name: "ExecutionEvent", optional: true
@@ -59,8 +61,26 @@ class ExecutionRun < ApplicationRecord
         errors.add(:agent_profile_version, "does not match this workspace and profile")
       end
       errors.add(:input_artifact, "belongs to another workspace") if input_artifact && input_artifact.workspace_id != workspace_id
+      errors.add(:governed_policy_publication, "belongs to another workspace") if
+        governed_policy_publication && governed_policy_publication.workspace_id != workspace_id
+      errors.add(:resolution_contract_version, "belongs to another workspace") if
+        resolution_contract_version && resolution_contract_version.workspace_id != workspace_id
       errors.add(:runtime_installation, "belongs to another workspace") if runtime_installation && runtime_installation.workspace_id != workspace_id
       errors.add(:usage_rate_version, "belongs to another workspace") if usage_rate_version && usage_rate_version.workspace_id != workspace_id
+      if governed_policy_publication &&
+          (governed_policy_publication.resolution_contract_version_id != resolution_contract_version_id ||
+          governed_policy_publication.agent_profile_version_id != agent_profile_version_id)
+        errors.add(:governed_policy_publication, "does not match the frozen contract and profile")
+      end
+      if crew_task && crew_task.assigned_agent_profile_version_id != agent_profile_version_id
+        errors.add(:crew_task, "does not match the frozen profile")
+      end
+      if crew_task && crew_task.resolution_contract_version_id != resolution_contract_version_id
+        errors.add(:crew_task, "does not match the frozen contract")
+      end
+      if crew_task && crew_task.governed_policy_publication_id != governed_policy_publication_id
+        errors.add(:crew_task, "does not match the frozen publication")
+      end
     end
 
     def content_fits

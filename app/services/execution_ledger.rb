@@ -65,10 +65,13 @@ class ExecutionLedger
         additional_data_classes: extra_data
       )
       usage_rate_version = @workspace.usage_rate_setting&.current_version
+      max_input_units, max_output_units = frozen_unit_limits(task, selection)
       run = @workspace.execution_runs.create!(
         crew_task: task,
         agent_profile: task.assigned_agent_profile,
         agent_profile_version: task.assigned_agent_profile_version,
+        governed_policy_publication: task.governed_policy_publication,
+        resolution_contract_version: task.resolution_contract_version,
         request_key:,
         attempt_number: attempt,
         runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key,
@@ -79,8 +82,7 @@ class ExecutionLedger
         runtime_selection_reason: selection.reason,
         runtime_selection_detail: selection.detail,
         disclosed_data_classes: selection.data_classes,
-        max_input_units: selection.max_input_units,
-        max_output_units: selection.max_output_units,
+        max_input_units:, max_output_units:,
         usage_rate_version:,
         memory_context_status: memory_context.status,
         memory_context_detail: memory_context.detail,
@@ -177,6 +179,22 @@ class ExecutionLedger
   end
 
   private
+    def frozen_unit_limits(task, selection)
+      return [ selection.max_input_units, selection.max_output_units ] unless task.governed_policy_publication
+
+      budget = task.resolution_contract_version.execution_budget_units
+      available = [ budget, selection.max_input_units + selection.max_output_units ].min
+      proportional_input = available * selection.max_input_units /
+        (selection.max_input_units + selection.max_output_units)
+      input = [ selection.max_input_units, [ proportional_input, 1 ].max ].min
+      output = [ selection.max_output_units, available - input ].min
+      if output.zero?
+        output = 1
+        input -= 1
+      end
+      [ input, output ]
+    end
+
     def lock_memory_context!(memory_context)
       return unless memory_context.present?
 

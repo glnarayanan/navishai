@@ -543,57 +543,71 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
   end
 
   test "a nonblocking contract routes missing grounding to human review" do
-    family = ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
-      .find_by!(family_key: "support_resolution")
-    current = family.current_version
-    ResolutionContractConfiguration.publish!(
-      workspace: @workspace, membership: @owner, family:,
-      attributes: contract_attributes(current).merge(missing_items_block: false)
-    )
-    start(@investigation)
+    publish_policy(@profiles.fetch("support_investigator"), missing_items_block: false)
+    task = create_task(@profiles.fetch("support_investigator"), "Nonblocking investigation")
+    start(task)
 
-    artifact = publish(@investigation, v2_payload(claim_states: { "customer_report" => "uncertain" }))
+    artifact = publish(task, v2_payload(claim_states: { "customer_report" => "uncertain" }))
 
     assert_equal "needs_human", artifact.contract_result_state
     assert artifact.contract_blockers.all? { |blocker| blocker.fetch("severity") == "review" }
   end
 
-  test "each artifact freezes the contract version used at publication" do
+  test "each artifact keeps the contract version frozen when its task was created" do
     start(@investigation)
     first = publish(@investigation, v2_payload)
-    family = first.resolution_contract_version.resolution_contract_family
-    current = family.current_version
-    ResolutionContractConfiguration.publish!(
-      workspace: @workspace, membership: @owner, family:,
-      attributes: contract_attributes(current).merge(execution_budget_units: 90_000)
-    )
+    publish_policy(@profiles.fetch("support_investigator"), execution_budget_units: 90_000)
 
     second = publish(@investigation, v2_payload)
 
     assert_equal 1, first.resolution_contract_version.version_number
-    assert_equal 2, second.resolution_contract_version.version_number
+    assert_equal 1, second.resolution_contract_version.version_number
     assert_equal 100_000, first.resolution_contract_version.execution_budget_units
-    assert_equal 90_000, second.resolution_contract_version.execution_budget_units
+    assert_equal 100_000, second.resolution_contract_version.execution_budget_units
     assert_equal "complete", first.contract_result_state
   end
 
-  test "blocks an artifact when observed use exceeds the published threshold" do
-    family = ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
-      .find_by!(family_key: "support_resolution")
-    current = family.current_version
-    ResolutionContractConfiguration.publish!(
-      workspace: @workspace, membership: @owner, family:,
-      attributes: contract_attributes(current).merge(execution_budget_units: 50)
-    )
-    start(@investigation)
+  test "governed contract budget stops excess usage before artifact publication" do
+    publish_policy(@profiles.fetch("support_investigator"), execution_budget_units: 50)
+    task = create_task(@profiles.fetch("support_investigator"), "Budgeted investigation")
+    start(task)
 
-    artifact = publish_run(
-      @investigation,
-      complete_run(@investigation, v2_payload, usage: { input_units: 40, output_units: 20 })
-    )
+    error = assert_raises(ExecutionLedger::EventConflict) do
+      complete_run(task, v2_payload, usage: { input_units: 40, output_units: 20 })
+    end
+    assert_match(/frozen runtime budget/, error.message)
+    assert_empty task.artifacts
+  end
 
-    assert_equal "blocked", artifact.contract_result_state
-    assert_includes artifact.contract_blockers.map { |blocker| blocker.fetch("code") }, "execution_budget_exceeded"
+  test "database binds an artifact to its run's exact shared-version rollback publication" do
+    first_canary = publish_policy(@profiles.fetch("support_investigator"))
+    first_rollback = GovernedPolicyChange.rollback!(
+      workspace: @workspace, membership: @owner, publication: first_canary,
+      expected_publication_id: first_canary.id, reason: "First artifact rollback"
+    )
+    task = create_task(@profiles.fetch("support_investigator"), "Rollback artifact")
+    start(task)
+    artifact = publish(task, v2_payload)
+
+    second_canary = publish_policy(@profiles.fetch("support_investigator"))
+    second_rollback = GovernedPolicyChange.rollback!(
+      workspace: @workspace, membership: @owner, publication: second_canary,
+      expected_publication_id: second_canary.id, reason: "Second artifact rollback"
+    )
+    assert_equal first_rollback.resolution_contract_version, second_rollback.resolution_contract_version
+    assert_equal first_rollback, artifact.governed_policy_publication
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ActiveRecord::Base.transaction(requires_new: true) do
+        CrewArtifact.insert_all!([ artifact.attributes.except("id").merge(
+          "artifact_key" => SecureRandom.uuid,
+          "version_number" => artifact.version_number + 100,
+          "supersedes_artifact_id" => nil,
+          "governed_policy_publication_id" => second_rollback.id,
+          "created_at" => Time.current, "updated_at" => Time.current
+        ) ])
+      end
+    end
   end
 
   test "foreign evidence fails closed as unavailable without leaking another Workspace" do
@@ -669,6 +683,27 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
   end
 
   private
+    def publish_policy(profile, **contract_changes)
+      family = @workspace.resolution_contract_families.find_by!(family_key: "support_resolution")
+      version = profile.current_version
+      proposal = GovernedPolicyChange.propose!(
+        workspace: @workspace, membership: @owner, family:, profile:,
+        scope_kind: "support_case", scope_ids: [ @support_case.id ],
+        contract_attributes: contract_attributes(family.current_version).merge(contract_changes),
+        profile_attributes: {
+          runtime_profile_key: version.runtime_profile_key,
+          fallback_profile_keys: version.fallback_profile_keys,
+          timeout_seconds: version.timeout_seconds,
+          max_steps: version.max_steps,
+          max_tool_calls: version.max_tool_calls,
+          review_policy: version.review_policy
+        },
+        reason: "Artifact contract test"
+      )
+      preview = GovernedPolicyChange.preview!(workspace: @workspace, membership: @owner, proposal:)
+      GovernedPolicyChange.publish!(workspace: @workspace, membership: @owner, proposal:, preview:)
+    end
+
     def create_task(profile, title, dependencies: [])
       CrewWork.create!(
         workspace: @workspace, membership: @owner, scope: @support_case, profile:, title:,

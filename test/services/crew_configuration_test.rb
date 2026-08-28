@@ -19,7 +19,7 @@ class CrewConfigurationTest < ActiveSupport::TestCase
     assert_not_includes AgentPolicy::TOOLS, "customer_send"
   end
 
-  test "an Admin appends a bounded immutable profile version with attribution" do
+  test "an Admin can version instructions and tools but bounded policy requires governed preview" do
     admin_user = User.create!(
       email_address: "crew-admin@example.com", password: "password12345", verified_at: Time.current
     )
@@ -33,15 +33,15 @@ class CrewConfigurationTest < ActiveSupport::TestCase
         expected_version_number: original.version_number,
         instructions: "Investigate with current evidence and state every material uncertainty.",
         allowed_tools: %w[conversation_read case_read knowledge_search],
-        runtime_profile_key: "thorough", fallback_profile_keys: %w[workspace_default fast],
-        timeout_seconds: "420", max_steps: "12", max_tool_calls: "24",
-        review_policy: "required"
+        runtime_profile_key: original.runtime_profile_key, fallback_profile_keys: original.fallback_profile_keys,
+        timeout_seconds: original.timeout_seconds, max_steps: original.max_steps,
+        max_tool_calls: original.max_tool_calls, review_policy: original.review_policy
       }
     )
 
     assert_equal 2, version.version_number
     assert_equal %w[case_read conversation_read knowledge_search], version.allowed_tools
-    assert_equal %w[workspace_default fast], version.fallback_profile_keys
+    assert_equal original.fallback_profile_keys, version.fallback_profile_keys
     assert_equal admin, version.created_by_membership
     assert_equal admin_user, version.created_by_user
     assert_equal version, profile.reload.current_version
@@ -50,6 +50,15 @@ class CrewConfigurationTest < ActiveSupport::TestCase
       action: "agent.profile_updated", actor: admin_user,
       subject_type: "AgentProfileVersion", subject_id: version.id
     ).exists?
+
+    assert_no_difference [ "AgentProfileVersion.count", "AuditEvent.count" ] do
+      assert_raises(CrewConfiguration::InvalidConfiguration) do
+        CrewConfiguration.update_profile!(
+          workspace: @workspace, membership: admin, agent_profile: profile,
+          attributes: attributes_for(version).merge(runtime_profile_key: "thorough")
+        )
+      end
+    end
 
     assert_no_difference [ "AgentProfileVersion.count", "AuditEvent.count" ] do
       CrewConfiguration.update_profile!(

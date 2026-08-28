@@ -7,12 +7,8 @@ class ResolutionContractsController < ApplicationController
   def update
     workspace = Current.require_workspace!
     family = workspace.resolution_contract_families.find(params[:id])
-    ResolutionContractConfiguration.publish!(
-      workspace:, membership: Current.require_membership!, family:,
-      attributes: contract_params.to_h.deep_symbolize_keys
-    )
-    redirect_to workspace_crew_templates_path(workspace, anchor: "contract-#{family.id}"),
-      notice: "#{family.name} contract published."
+    raise ResolutionContractConfiguration::InvalidConfiguration,
+      "Resolution policy now requires an immutable proposal, retained-fact preview, and explicit canary. Use Governed policy."
   rescue ResolutionContractConfiguration::InvalidConfiguration => error
     @contract_error = error.message
     @editing_contract_id = params[:id].to_i

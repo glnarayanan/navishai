@@ -45,6 +45,12 @@ Rails.application.routes.draw do
       resources :agent_profiles, only: :update
     end
     resources :resolution_contracts, path: "resolution-contracts", only: :update
+    resource :governed_policy, path: "policies", only: :show, controller: "governed_policies" do
+      post :propose
+      post "proposals/:proposal_id/preview", action: :preview, as: :preview
+      post "proposals/:proposal_id/publish", action: :publish, as: :publish
+      post "publications/:publication_id/rollback", action: :rollback, as: :rollback
+    end
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
     end

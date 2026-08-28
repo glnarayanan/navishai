@@ -8,10 +8,10 @@ class ResolutionContractsControllerTest < ActionDispatch::IntegrationTest
     @version = @family.current_version
   end
 
-  test "an Owner publishes bounded contract configuration" do
+  test "an Owner must use the governed policy path" do
     sign_in_as users(:owner)
 
-    assert_difference [ "ResolutionContractVersion.count", "AuditEvent.count" ], 1 do
+    assert_no_difference [ "ResolutionContractVersion.count", "AuditEvent.count" ] do
       patch workspace_resolution_contract_path(@workspace, @family), params: {
         resolution_contract: attributes_for(@version).merge(
           execution_budget_units: "80000",
@@ -20,8 +20,9 @@ class ResolutionContractsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_redirected_to workspace_crew_templates_path(@workspace, anchor: "contract-#{@family.id}")
-    assert_equal 80_000, @family.reload.current_version.execution_budget_units
+    assert_response :unprocessable_content
+    assert_select ".inline-error", text: /immutable proposal.*preview.*explicit canary/i
+    assert_equal @version, @family.reload.current_version
   end
 
   test "invalid input rerenders its open contract without losing values" do
@@ -38,8 +39,7 @@ class ResolutionContractsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :unprocessable_content
     assert_select "#contract-#{@family.id}[open]"
-    assert_select ".inline-error", text: /Execution budget units/
-    assert_select "input[name='resolution_contract[execution_budget_units]'][value='0']"
+    assert_select ".inline-error", text: /immutable proposal.*preview.*explicit canary/i
   end
 
   test "members and foreign contract paths fail closed" do

@@ -72,6 +72,13 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     user = users(:owner)
     owner = memberships(:owner_support)
     account = accounts(:acme)
+    policy_proposal, policy_preview, policy_publication = create_governed_policy_canary(
+      workspace:, membership: owner
+    )
+    policy_ids = {
+      proposal: policy_proposal.id, subject: policy_proposal.subject_ids.sole,
+      preview: policy_preview.id, publication: policy_publication.id
+    }
     at = Time.current.change(usec: 0)
     before_assessment = AccountHealth.recalculate!(
       workspace:, account:, trigger_kind: "human_request", membership: owner, at:
@@ -119,6 +126,10 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     refute CustomerSuccessIntervention.exists?(intervention_id)
     refute CustomerSuccessInterventionOutcomeReview.exists?(review_id)
     refute OperationalCheck.exists?(operational_check_id)
+    refute GovernedPolicyProposal.exists?(policy_ids.fetch(:proposal))
+    refute GovernedPolicySubject.exists?(policy_ids.fetch(:subject))
+    refute GovernedPolicyPreview.exists?(policy_ids.fetch(:preview))
+    refute GovernedPolicyPublication.exists?(policy_ids.fetch(:publication))
     assert_empty purged
     assert User.exists?(user.id)
     assert_equal workspace_id, tombstone.former_workspace_id
