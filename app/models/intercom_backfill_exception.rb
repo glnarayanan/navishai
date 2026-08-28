@@ -8,10 +8,18 @@ class IntercomBackfillException < ApplicationRecord
   belongs_to :intercom_backfill_run, optional: true
   belongs_to :source_identity, optional: true
 
+  scope :keyless_identity, -> {
+    where(remote_record_type: "identity", exception_kind: "unsupported_field", recovery_action: "restart_preview")
+  }
+
   enum :status, %w[open resolved].index_by(&:itself), validate: true
   validates :exception_kind, inclusion: { in: KINDS }
   validates :recovery_action, inclusion: { in: RECOVERY_ACTIONS }
   validates :source_digest, format: { with: /\A[0-9a-f]{64}\z/ }
   validates :remote_record_id, length: { in: 1..255 }
   validates :detail, length: { in: 1..MAX_DETAIL_BYTES }
+
+  def keyless_identity?
+    remote_record_type == "identity" && exception_kind == "unsupported_field" && recovery_action == "restart_preview"
+  end
 end

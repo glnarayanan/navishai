@@ -87,6 +87,7 @@ class AuditEvent < ApplicationRecord
     "intercom.connection_updated" => { "active" => %w[true false] },
     "intercom.backfill_previewed" => { "conversation_count" => Integer },
     "intercom.backfill_confirmed" => { "conversation_count" => Integer },
+    "intercom.backfill_blocked" => { "failure_code" => String },
     "intercom.backfill_resumed" => { "cursor_position" => Integer },
     "intercom.backfill_completed" => { "conversation_count" => Integer },
     "intercom.backfill_enqueue_failed" => { "cursor_position" => Integer },
