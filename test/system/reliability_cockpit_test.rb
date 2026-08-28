@@ -61,6 +61,7 @@ class ReliabilityCockpitSystemTest < ApplicationSystemTestCase
     assert_selector "#email-#{inbox.id} a", text: "Inspect email"
     assert_selector "#runtime-#{runtime.id} a", text: "Inspect runtime"
     assert_selector "#run-#{runner_failure.id} button", text: "Retry definite failure"
+    assert_selector "#queue.status-not-configured", text: "Workspace-specific queue evidence is unavailable because the queue is shared."
     assert_selector "#email-send-#{unknown_delivery.id} a", text: "Investigate exact send"
     assert_no_selector "#email-send-#{unknown_delivery.id} form"
     assert_no_selector "#backup_verification .reliability-action"

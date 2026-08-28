@@ -2,6 +2,9 @@ class IntercomHistoricalBackfill
   MAX_RECORDS = 500
   MANIFEST_TTL = 30.minutes
   DEFAULT_BATCH_SIZE = 25
+  KEYLESS_IDENTITY_EXCEPTION_KIND = "unsupported_field"
+  KEYLESS_IDENTITY_RECOVERY_ACTION = "restart_preview"
+  KEYLESS_IDENTITY_FAILURE_CODE = "identity_missing_key"
   COUNT_KEYS = %w[discovered imported matched skipped ambiguous unsupported failed pending attachments notes].freeze
   SUPPORTED_CONVERSATION_FIELDS = %w[
     type id created_at updated_at state title contacts source conversation_parts tags company companies
@@ -83,9 +86,10 @@ class IntercomHistoricalBackfill
       ).tap do |created|
         current.intercom_backfill_exceptions.update_all(intercom_backfill_run_id: created.id, updated_at: confirmed_at)
         audit!("intercom.backfill_confirmed", created, actor, conversation_count: current.counts.fetch("conversations"))
+        block_keyless_run!(created, actor:) if keyless_identity_exceptions?(created)
       end
     end
-    IntercomBackfillJob.enqueue_after_commit(run) if enqueue
+    IntercomBackfillJob.enqueue_after_commit(run) if enqueue && run.pending?
     run
   end
 
@@ -94,12 +98,13 @@ class IntercomHistoricalBackfill
     scoped_run = @connection.intercom_backfill_runs.find(run.id)
     scoped_run.with_lock do
       raise ArgumentError, "This backfill cannot resume." unless scoped_run.failed? ||
-        (scoped_run.blocked? && scoped_run.intercom_backfill_exceptions.open.none? { |item| item.exception_kind == "ambiguous_identity" })
+        (scoped_run.blocked? && scoped_run.intercom_backfill_exceptions.open.where(recovery_action: KEYLESS_IDENTITY_RECOVERY_ACTION).none? &&
+          scoped_run.intercom_backfill_exceptions.open.none? { |item| item.exception_kind == "ambiguous_identity" })
 
       scoped_run.update!(status: :pending, failure_code: nil, completed_at: nil)
       audit!("intercom.backfill_resumed", scoped_run, actor, cursor_position: scoped_run.cursor_position)
     end
-    IntercomBackfillJob.enqueue_after_commit(scoped_run) if enqueue
+    IntercomBackfillJob.enqueue_after_commit(scoped_run) if enqueue && scoped_run.pending?
     scoped_run
   end
 
@@ -108,6 +113,13 @@ class IntercomHistoricalBackfill
 
     run = @connection.intercom_backfill_runs.find(run.id)
     records = run.intercom_backfill_manifest.discovery_records
+    return run if run.completed? || run.blocked?
+
+    if keyless_identity_exceptions?(run)
+      block_keyless_run!(run)
+      return run
+    end
+
     batch = claim_batch!(run, records.length, batch_size.to_i)
     return run unless batch
 
@@ -171,11 +183,18 @@ class IntercomHistoricalBackfill
           key = [ identity.fetch(:kind), identity.fetch(:id) ]
           next unless identity_keys.add?(key)
 
-          if preview_identity(identity) == :ambiguous
+          case classify_identity(identity)
+          when :ambiguous
             counts["ambiguous"] += 1
             exceptions << exception_attributes(
               type: "identity", id: identity.fetch(:id), digest: remote_digest,
               kind: "ambiguous_identity", action: "review_identity", detail: "Identity has more than one exact Workspace match."
+            )
+          when :keyless
+            exceptions << exception_attributes(
+              type: "identity", id: identity.fetch(:id), digest: remote_digest,
+              kind: KEYLESS_IDENTITY_EXCEPTION_KIND, action: KEYLESS_IDENTITY_RECOVERY_ACTION,
+              detail: keyless_identity_detail(identity)
             )
           else
             counts["deterministic_matches"] += 1
@@ -217,14 +236,14 @@ class IntercomHistoricalBackfill
       { kind:, id: item.fetch("id").to_s, keys: }
     end
 
-    def preview_identity(identity)
+    def classify_identity(identity)
       existing = @workspace.source_identities.find_by(
         source_namespace: "intercom:#{@connection.id}", source_record_type: identity.fetch(:kind),
         source_record_id: identity.fetch(:id)
       )
       return :ambiguous if existing&.ambiguous?
       return :matched if existing
-      return :matched if identity.fetch(:keys).empty?
+      return :keyless if identity.fetch(:keys).empty?
 
       roots = identity.fetch(:keys).flat_map do |kind, value|
         SourceIdentityKey.current.where(workspace: @workspace, kind:, normalized_value: value)
@@ -234,6 +253,18 @@ class IntercomHistoricalBackfill
         end
       end.uniq
       roots.length > 1 ? :ambiguous : :matched
+    end
+
+    def keyless_identity_detail(identity)
+      if identity.fetch(:kind) == :contact
+        "Contact has no deterministic email key. Update the source and start a new dry run."
+      else
+        "Company has no deterministic domain key. Update the source and start a new dry run."
+      end
+    end
+
+    def keyless_identity_exceptions?(run)
+      run.intercom_backfill_exceptions.open.keyless_identity.exists?
     end
 
     def claim_batch!(run, record_count, batch_size)
@@ -269,6 +300,11 @@ class IntercomHistoricalBackfill
         return :stop
       end
 
+      if (identity = keyless_identity_for(remote))
+        block_keyless_run!(run, batch:, record:, identity:)
+        return :stop
+      end
+
       prepared_attachments = []
       IntercomBackfillRun.transaction(requires_new: true) do
         link, outcome = IntercomSync.new(connection: @connection, client: @client).sync_historical_conversation!(remote)
@@ -286,13 +322,22 @@ class IntercomHistoricalBackfill
       )
       block_run!(run, batch, "identity_ambiguous")
       :stop
+    rescue ArgumentError => error
+      raise unless missing_deterministic_key_error?(error) && remote
+
+      prepared_attachments&.each(&:purge!)
+      identity = identity_without_deterministic_key_for(remote)
+      raise unless identity
+
+      block_keyless_run!(run, batch:, record:, identity:)
+      :stop
     rescue StandardError
       prepared_attachments&.each(&:purge!)
       raise
     end
 
     def persist_ambiguous_identity!(remote)
-      item = identities_for(remote).find { |identity| preview_identity(identity) == :ambiguous }
+      item = identities_for(remote).find { |identity| classify_identity(identity) == :ambiguous }
       return unless item
 
       result = SourceIdentityResolver.resolve!(
@@ -302,6 +347,26 @@ class IntercomHistoricalBackfill
         attributes: { name: identity_name(remote, item.fetch(:kind)) }
       )
       result.source_identity if result.ambiguous?
+    end
+
+    def keyless_identity_for(remote)
+      identities_for(remote).find { |identity| classify_identity(identity) == :keyless }
+    end
+
+    def identity_without_deterministic_key_for(remote)
+      identities_for(remote).find { |identity| identity.fetch(:keys).empty? }
+    end
+
+    def missing_deterministic_key_error?(error)
+      error.message == "identity requires a deterministic key"
+    end
+
+    def upsert_keyless_identity_exception!(run, record, identity)
+      record_exception!(
+        manifest: run.intercom_backfill_manifest, run:, type: "identity", id: identity.fetch(:id),
+        digest: record.fetch("source_digest"), kind: KEYLESS_IDENTITY_EXCEPTION_KIND,
+        action: KEYLESS_IDENTITY_RECOVERY_ACTION, detail: keyless_identity_detail(identity)
+      )
     end
 
     def identity_name(remote, kind)
@@ -427,18 +492,62 @@ class IntercomHistoricalBackfill
 
     def block_run!(run, batch, code)
       run.with_lock do
-        batch.update!(status: :blocked, completed_at: Time.current)
+        batch&.update!(status: :blocked, completed_at: Time.current)
         counts = final_counts(run, ambiguous: code == "identity_ambiguous" ? 1 : 0)
         run.update!(status: :blocked, counts:, failure_code: code, completed_at: Time.current)
       end
     end
 
-    def fail_run!(run, batch, code, error)
+    def block_keyless_run!(run, batch: nil, record: nil, identity: nil, actor: nil)
+      IntercomBackfillRun.transaction do
+        run.with_lock do
+          upsert_keyless_identity_exception!(run, record, identity) if record && identity
+          blocked_at = Time.current
+          running_batches = run.intercom_backfill_batches.where(status: :running).lock.to_a
+          if batch&.persisted? && batch.running? && running_batches.none? { |current| current.id == batch.id }
+            running_batches << batch
+          end
+          running_batches.each { |current| current.update!(status: :blocked, completed_at: blocked_at) }
+
+          unless run.blocked? && run.failure_code == KEYLESS_IDENTITY_FAILURE_CODE
+            run.update!(
+              status: :blocked, counts: final_counts(run), failure_code: KEYLESS_IDENTITY_FAILURE_CODE,
+              completed_at: blocked_at
+            )
+          end
+          record_keyless_block_audit!(run, actor:) unless keyless_block_audit_exists?(run)
+        end
+      end
+      run
+    end
+
+    def keyless_block_audit_exists?(run)
+      AuditEvent.where(
+        workspace: @workspace, action: "intercom.backfill_blocked",
+        subject_type: run.class.base_class.name, subject_id: run.id
+      ).exists?
+    end
+
+    def record_keyless_block_audit!(run, actor:)
+      if actor
+        audit!("intercom.backfill_blocked", run, actor, failure_code: KEYLESS_IDENTITY_FAILURE_CODE)
+      else
+        AuditEvent.record!(
+          action: "intercom.backfill_blocked", source: :job, workspace: @workspace,
+          actor_kind: :system, subject: run, metadata: { failure_code: KEYLESS_IDENTITY_FAILURE_CODE }
+        )
+      end
+    end
+
+    def fail_run!(run, _batch, code, error)
       return run unless run&.persisted?
 
       run.with_lock do
-        batch&.update!(status: :failed, completed_at: Time.current) if batch&.running?
-        run.update!(status: :failed, counts: final_counts(run, failed: 1), failure_code: code, completed_at: Time.current)
+        failed_at = Time.current
+        run.intercom_backfill_batches.where(status: :running).lock.each do |current|
+          current.update!(status: :failed, completed_at: failed_at)
+        end
+        run.update!(status: :failed, counts: final_counts(run, failed: 1), failure_code: code, completed_at: failed_at)
       end
       Rails.logger.error("Intercom backfill run #{run.id} stopped: #{error.class}")
       run
@@ -449,9 +558,9 @@ class IntercomHistoricalBackfill
       counts = initial_run_counts(run.intercom_backfill_manifest).merge(run.counts)
       counts["ambiguous"] = ambiguous unless ambiguous.nil?
       counts["failed"] = failed unless failed.nil?
-      counts["unsupported"] = run.intercom_backfill_exceptions.open.where(
-        exception_kind: %w[unsupported_field attachment_rejected attachment_unavailable]
-      ).count
+      counts["unsupported"] = run.intercom_backfill_exceptions.open
+        .where(exception_kind: %w[unsupported_field attachment_rejected attachment_unavailable])
+        .where.not(remote_record_type: "identity").count
       decided = %w[imported matched skipped ambiguous failed].sum { |key| counts.fetch(key, 0) }
       counts["pending"] = [ discovered - decided, 0 ].max
       counts

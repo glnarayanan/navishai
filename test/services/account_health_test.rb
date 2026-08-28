@@ -189,6 +189,120 @@ class AccountHealthTest < ActiveSupport::TestCase
     end
   end
 
+  test "selects a correction before a later observation and freezes its evidence" do
+    baseline = create_input(
+      "renewal_on", value: Date.new(2027, 1, 15), source_key: "health-baseline", observed_at: @at - 3.days
+    )
+    correction = create_input(
+      "renewal_on", value: Date.new(2027, 2, 15), source_key: "health-correction", observed_at: @at - 2.days,
+      corrects_input: baseline, source_locator: "correction://health/renewal"
+    )
+    later_observation = create_input(
+      "renewal_on", value: Date.new(2027, 3, 15), source_key: "health-later", observed_at: @at - 1.day
+    )
+
+    assert_equal correction, AccountHealth.latest_input(@account, "renewal_on", at: @at)
+
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner, at: @at
+    )
+    signal = assessment.signals.find_by!(signal_key: "renewal_on")
+
+    assert_equal correction.date_value, signal.date_value
+    assert_equal correction.source_locator, signal.source_locator
+    assert_equal [ { "kind" => "account_health_input", "id" => correction.id } ], signal.evidence_refs
+    assert_not_includes signal.evidence_refs, { "kind" => "account_health_input", "id" => baseline.id }
+    assert_not_includes signal.evidence_refs, { "kind" => "account_health_input", "id" => later_observation.id }
+  end
+
+  test "resolves correction chains before validity and deterministic observation ordering" do
+    baseline = create_input(
+      "renewal_on", value: Date.new(2027, 1, 15), source_key: "chain-baseline", observed_at: @at - 4.days
+    )
+    first_correction = create_input(
+      "renewal_on", value: Date.new(2027, 2, 15), source_key: "chain-first", observed_at: @at - 3.days,
+      corrects_input: baseline
+    )
+    terminal_correction = create_input(
+      "renewal_on", value: Date.new(2027, 3, 15), source_key: "chain-terminal", observed_at: @at - 2.days,
+      corrects_input: first_correction
+    )
+    later_observation = create_input(
+      "renewal_on", value: Date.new(2027, 4, 15), source_key: "chain-later", observed_at: @at - 1.day
+    )
+
+    effective = AccountHealthInput.effective_for(
+      workspace: @workspace, account_ids: [ @account.id ], input_key: "renewal_on", at: @at
+    ).to_a
+
+    assert_equal [ terminal_correction.id, later_observation.id ], effective.map(&:id)
+    assert_not_includes effective.map(&:id), baseline.id
+    assert_not_includes effective.map(&:id), first_correction.id
+    assert_equal terminal_correction, AccountHealth.latest_input(@account, "renewal_on", at: @at)
+
+    future_base = create_input(
+      "active_users", value: 10, source_key: "future-base", observed_at: @at - 3.days
+    )
+    future_head = create_input(
+      "active_users", value: 20, source_key: "future-head", observed_at: @at - 2.days,
+      valid_from: @at + 1.hour, corrects_input: future_base
+    )
+    expired_base = create_input(
+      "contract_value", value: 100, source_key: "expired-base", observed_at: @at - 3.days
+    )
+    expired_head = create_input(
+      "contract_value", value: 200, source_key: "expired-head", observed_at: @at - 2.days,
+      valid_until: @at - 1.hour, corrects_input: expired_base
+    )
+
+    assert_empty AccountHealthInput.effective_for(
+      workspace: @workspace, account_ids: [ @account.id ], input_key: "active_users", at: @at
+    )
+    assert_empty AccountHealthInput.effective_for(
+      workspace: @workspace, account_ids: [ @account.id ], input_key: "contract_value", at: @at
+    )
+    assert_nil AccountHealth.latest_input(@account, "active_users", at: @at)
+    assert_nil AccountHealth.latest_input(@account, "contract_value", at: @at)
+    assert_equal future_base, future_head.corrects_input
+    assert_equal expired_base, expired_head.corrects_input
+
+    first_tie = create_input(
+      "licensed_seats", value: 100, source_key: "tie-first", observed_at: @at - 1.day
+    )
+    second_tie = create_input(
+      "licensed_seats", value: 110, source_key: "tie-second", observed_at: @at - 1.day
+    )
+
+    assert_equal second_tie, AccountHealth.latest_input(@account, "licensed_seats", at: @at)
+    assert_operator second_tie.id, :>, first_tie.id
+  end
+
+  test "scopes correction exclusion to the workspace account set and input key" do
+    local = create_input(
+      "renewal_on", value: Date.new(2027, 1, 15), source_key: "boundary-local", observed_at: @at - 2.days
+    )
+    local_correction = create_input(
+      "renewal_on", value: Date.new(2027, 2, 15), source_key: "boundary-correction", observed_at: @at - 1.day,
+      corrects_input: local
+    )
+    other_account = @workspace.accounts.create!(name: "Other Health Boundary")
+    create_input(
+      "renewal_on", value: Date.new(2027, 4, 15), source_key: "boundary-other-account",
+      observed_at: @at + 1.day, account: other_account
+    )
+    create_input(
+      "renewal_on", value: Date.new(2027, 5, 15), source_key: "boundary-other-workspace",
+      observed_at: @at + 2.days, workspace: workspaces(:beta_support), account: accounts(:beta)
+    )
+
+    effective = AccountHealthInput.effective_for(
+      workspace: @workspace, account_ids: [ @account.id ], input_key: "renewal_on", at: @at
+    ).to_a
+
+    assert_equal [ local_correction ], effective
+    assert_equal local_correction, AccountHealth.latest_input(@account, "renewal_on", at: @at)
+  end
+
   test "derives frozen support lifecycle evidence while new score rules stay disabled" do
     event_time = Time.current.change(usec: 0)
     contact = @workspace.contacts.create!(account: @account, name: "Lifecycle contact")
@@ -241,5 +355,17 @@ class AccountHealthTest < ActiveSupport::TestCase
       AccountDataImport.import_api!(workspace: @workspace, membership: @owner, rows: [ {
         source_id:, observed_at: @at.iso8601, account_name: @account.name, **values
       } ])
+    end
+
+    def create_input(key, value:, source_key:, observed_at:, corrects_input: nil, valid_from: nil, valid_until: nil,
+      workspace: @workspace, account: @account, source_namespace: "health_test", source_locator: nil)
+      value_kind = value.is_a?(Date) ? "date" : "number"
+      workspace.account_health_inputs.create!(
+        workspace:, account:, input_key: key, value_kind:, numeric_value: value_kind == "number" ? value : nil,
+        date_value: value_kind == "date" ? value : nil, source_kind: :api, source_namespace:, source_key:,
+        source_digest: Digest::SHA256.hexdigest([ source_namespace, source_key, key, value.to_s ].join("\n")),
+        source_locator: source_locator || "evidence://#{source_namespace}/#{source_key}/#{key}", observed_at:,
+        valid_from:, valid_until:, corrects_input:
+      )
     end
 end

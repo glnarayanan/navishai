@@ -14,12 +14,23 @@ class AccountDossierTest < ApplicationSystemTestCase
     tag = CaseWorkflow.create_tag!(workspace: @workspace, membership: @owner, name: "Recurring access")
     CaseWorkflow.tag!(workspace: @workspace, support_case: first_case, membership: @owner, tag:)
     CaseWorkflow.tag!(workspace: @workspace, support_case: second_case, membership: @owner, tag:)
+    now = Time.current.change(usec: 0)
+    baseline = create_input(
+      source_key: "system-dossier-baseline", date_value: Date.new(2026, 10, 1), observed_at: now - 3.days
+    )
+    correction = create_input(
+      source_key: "system-dossier-correction", date_value: Date.new(2026, 11, 1), observed_at: now - 2.days,
+      corrects_input: baseline
+    )
+    later = create_input(
+      source_key: "system-dossier-later", date_value: Date.new(2026, 12, 1), observed_at: now - 1.day
+    )
     AccountHealth.recalculate!(
-      workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner
+      workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner, at: now
     )
     original = create_memory("support-window", "Support ends at 18:00 UTC.")
     create_memory("support-window", "Support ends at 19:00 UTC.")
-    correction = MemoryGovernance.propose_correction!(
+    memory_correction = MemoryGovernance.propose_correction!(
       workspace: @workspace, membership: @owner, memory_record: original,
       content: "Support ends at 18:30 UTC.", confidence: 1,
       retention_policy: :indefinite, proposed_at: Time.current
@@ -39,10 +50,17 @@ class AccountDossierTest < ApplicationSystemTestCase
     assert_selector "h2", text: "Account dossier"
     assert_text "Current facts lead."
     assert_text "Conflict retained"
+    correction_line = find(".dossier-source-line", text: correction.source_locator)
+    within correction_line do
+      assert_text /November 0?1, 2026/
+      assert_text "Effective source value"
+    end
+    later_line = find(".dossier-source-line", text: later.source_locator)
+    within(later_line) { assert_text "Retained prior value" }
     assert_text "Stale"
     assert_text "Deleted"
     assert_text "Recurring access"
-    assert_text correction.content
+    assert_text memory_correction.content
     assert_text "Corrects"
     assert_text "Current health facts"
     assert_link "Inspect record and correction history"
@@ -58,7 +76,7 @@ class AccountDossierTest < ApplicationSystemTestCase
     if ENV["CAPTURE_M6_VISUAL_PROOF"]
       visit workspace_account_path(@workspace, @account)
       page.current_window.resize_to(1440, 1000)
-      assert_dossier_visual_evidence(correction)
+      assert_dossier_visual_evidence(memory_correction)
       capture_viewport(
         Rails.root.join(".amp/in/artifacts/account-dossier-correction-desktop.png"),
         find(".dossier-memory-group", text: "support-window"), height: 1_000
@@ -70,7 +88,7 @@ class AccountDossierTest < ApplicationSystemTestCase
       page.current_window.resize_to(320, 844)
       visit workspace_account_path(@workspace, @account)
       assert_no_horizontal_overflow
-      assert_dossier_visual_evidence(correction)
+      assert_dossier_visual_evidence(memory_correction)
       capture_viewport(
         Rails.root.join(".amp/in/artifacts/account-dossier-correction-mobile.png"),
         find(".dossier-memory-group", text: "support-window"), height: 1_600
@@ -135,6 +153,15 @@ class AccountDossierTest < ApplicationSystemTestCase
       assert_selector "#dossier-health-title", text: "Current health facts"
       assert_selector "#dossier-work-title", text: "Commitments, decisions, and work"
       assert_text "No Account or case work is recorded."
+    end
+
+    def create_input(source_key:, date_value:, observed_at:, corrects_input: nil)
+      @workspace.account_health_inputs.create!(
+        account: @account, input_key: "renewal_on", value_kind: :date, date_value:,
+        source_kind: :api, source_namespace: "system_dossier", source_key:,
+        source_digest: Digest::SHA256.hexdigest([ source_key, date_value.iso8601 ].join("\n")),
+        source_locator: "api://system-dossier/#{source_key}", observed_at:, corrects_input:
+      )
     end
 
     def create_memory(topic, content, valid_until: nil)

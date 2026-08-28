@@ -74,9 +74,7 @@ class ReliabilityRecoveryTest < ActiveSupport::TestCase
     assert_raises(ReliabilityRecovery::InvalidAction) do
       ReliabilityRecovery.retry_run!(workspace: @workspace, membership: @owner, run:, client: accepting_client)
     end
-    cockpit = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, queue_snapshot: { status: "not_configured" }
-    )
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner)
     terminal_item = cockpit.groups.index_by(&:key).fetch("execution").items.find do |item|
       item.key == "run-#{run.id}"
     end

@@ -94,8 +94,9 @@ class HumanIntercomSend
     return replay if replay
 
     client = @client || IntercomClient.new(connection: connection)
-    admin_id = resolve_admin_id!(client)
     acquire_conversation_lock!
+    preflight_sendability!
+    admin_id = resolve_admin_id!(client)
     delivery, claimed = claim!(admin_id)
     return delivery unless claimed
 
@@ -170,6 +171,16 @@ class HumanIntercomSend
       admin.fetch("id").to_s
     end
 
+    def preflight_sendability!
+      draft = @workspace.intercom_drafts.find_by(support_case_id: @support_case.id)
+      return unless draft&.ready?
+      return unless draft.source_crew_artifact_id.present?
+      return if draft.generated_contract_result_state == "complete"
+      return unless Digest::SHA256.hexdigest(@body.to_s) == draft.generated_body_digest
+
+      raise ArgumentError, HumanDraftProvenance::SEND_REVIEW_MESSAGE
+    end
+
     def claim!(admin_id)
       IntercomOutboundDelivery.transaction do
         raise ArgumentError, "idempotency key is required" if @idempotency_key.blank? || @idempotency_key.length > 100
@@ -198,6 +209,7 @@ class HumanIntercomSend
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
+        HumanDraftProvenance.require_sendable!(draft)
 
         delivery = @workspace.intercom_outbound_deliveries.create!(
           intercom_draft: draft, intercom_connection: link.intercom_connection,
