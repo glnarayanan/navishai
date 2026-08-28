@@ -4043,7 +4043,13 @@ td {
 .health-context > div:nth-child(odd) { border-right: 1px solid var(--line); }
 .health-context > div:nth-last-child(-n + 2) { border-bottom: 0; }
 .health-context dt { color: var(--muted); font-size: 0.8125rem; }
-.health-context dd { margin: 0; font-weight: var(--weight-semibold); }
+.health-context dd {
+  min-width: 0;
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+.health-context code { white-space: normal; word-break: break-word; }
 
 .health-signals,
 .risk-workspace,

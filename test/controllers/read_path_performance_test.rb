@@ -225,10 +225,19 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     64.times do |index|
       @workspace.account_health_inputs.create!(
         account:, input_key: "active_users", value_kind: :number, numeric_value: index,
-        source_kind: :api, source_key: "dossier:active-users:#{index}",
+        source_kind: :api, source_namespace: "performance", source_key: "dossier:active-users:#{index}",
+        source_digest: Digest::SHA256.hexdigest([ "active_users", "number", index.to_d.to_s("F") ].join("\n")),
         source_locator: "api://accounts/acme/active-users/#{index}", observed_at: index.seconds.ago
       )
     end
+    baseline = create_health_input(
+      account:, input_key: "renewal_on", date_value: Date.new(2026, 10, 1),
+      source_key: "performance-renewal-baseline", observed_at: 2.days.ago
+    )
+    correction = create_health_input(
+      account:, input_key: "renewal_on", date_value: Date.new(2026, 11, 1),
+      source_key: "performance-renewal-correction", observed_at: 1.day.ago, corrects_input: baseline
+    )
     support_case = create_support_case(subject: "Dossier query guard")
 
     account_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -239,7 +248,8 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_select ".dossier-memory-group", count: AccountDossier::LIMITS.fetch(:memories)
     assert_select ".dossier-identity .dossier-record", count: AccountDossier::LIMITS.fetch(:identities)
     assert_select ".dossier-source-line", count: AccountDossier::LIMITS.fetch(:facts)
-    assert_select ".dossier-limit", text: /newest 60/
+    assert_select ".dossier-source-line", text: /#{Regexp.escape(correction.source_locator)}/
+    assert_select ".dossier-limit", text: /up to 60/
     assert_select ".dossier-limit", text: /newest 40/
     assert_operator account_queries.size, :<=, 70
     assert_operator account_elapsed, :<, 5.seconds
@@ -254,6 +264,46 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_operator case_elapsed, :<, 5.seconds
   end
 
+  test "health evidence freezes exact totals and bounds drill-down detail" do
+    account = @workspace.accounts.create!(name: "Bounded health evidence")
+    contact = @workspace.contacts.create!(account:, name: "Evidence contact")
+    now = Time.current.change(usec: 0)
+    conversation_ids = Conversation.insert_all!(101.times.map do |index|
+      {
+        workspace_id: @workspace.id, contact_id: contact.id, subject: "Evidence case #{index}",
+        started_at: now - index.minutes, last_message_at: now - index.minutes,
+        created_at: now, updated_at: now
+      }
+    end, returning: %w[id]).rows.flatten
+    SupportCase.insert_all!(conversation_ids.map do |conversation_id|
+      {
+        workspace_id: @workspace.id, conversation_id:, status: "new", priority: "normal",
+        status_changed_at: now, created_at: now, updated_at: now
+      }
+    end)
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account:, trigger_kind: "human_request", membership: @membership, at: now
+    )
+    signal = assessment.signals.find_by!(signal_key: "open_cases")
+
+    assert_equal 101, signal.numeric_value
+    assert_equal AccountHealth::MAX_EVIDENCE_REFS, signal.evidence_refs.size
+    assert_equal 1, signal.evidence_omitted_count
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    queries = capture_sql do
+      get health_evidence_workspace_account_path(
+        @workspace, account, assessment_id: assessment.id, signal_key: signal.signal_key
+      )
+    end
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert_response :success
+    assert_select ".dossier-record", count: AccountHealth::MAX_EVIDENCE_REFS
+    assert_select ".dossier-limit", text: /1 additional reference/
+    assert_operator queries.size, :<=, 20
+    assert_operator elapsed, :<, 5.seconds
+  end
+
   private
     def capture_sql
       queries = []
@@ -266,6 +316,18 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
 
     def table_query_count(queries, table)
       queries.count { |sql| sql.match?(/\bFROM "#{Regexp.escape(table)}"\b/) }
+    end
+
+    def create_health_input(account:, input_key:, source_key:, observed_at:, date_value: nil, numeric_value: nil,
+      corrects_input: nil)
+      value_kind = date_value ? "date" : "number"
+      value = date_value || numeric_value
+      @workspace.account_health_inputs.create!(
+        workspace: @workspace, account:, input_key:, value_kind:, date_value:, numeric_value:,
+        source_kind: :api, source_namespace: "performance", source_key:,
+        source_digest: Digest::SHA256.hexdigest([ input_key, value.to_s, source_key ].join("\n")),
+        source_locator: "performance://#{source_key}", observed_at:, corrects_input:
+      )
     end
 
     def ingest_performance_event(run, sequence, event_type, **data)

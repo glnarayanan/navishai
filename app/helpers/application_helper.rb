@@ -4,6 +4,7 @@ module ApplicationHelper
     "support_case_commands" => "Cases",
     "accounts" => "Accounts",
     "account_imports" => "Accounts",
+    "health_evidence" => "Accounts",
     "knowledge_sources" => "Knowledge",
     "memory_records" => "Memory",
     "memory_corrections" => "Memory",
@@ -113,6 +114,14 @@ module ApplicationHelper
       "waiting_internal" => "Waiting internally",
       "awaiting_human_review" => "Awaiting human review"
     }.fetch(status.to_s, status.to_s.titleize)
+  end
+
+  def health_signal_label(signal)
+    HealthScorecardDefinition::CATALOG.dig(signal.signal_key, :label) || {
+      "internal_notes_90d" => "Internal notes in 90 days",
+      "contract_value" => "Contract value",
+      "proofed_resolutions_90d" => "Proofed resolutions in 90 days"
+    }.fetch(signal.signal_key, signal.signal_key.humanize)
   end
 
   def audit_action_label(action)

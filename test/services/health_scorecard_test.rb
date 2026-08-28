@@ -27,6 +27,21 @@ class HealthScorecardTest < ActiveSupport::TestCase
     end
   end
 
+  test "keeps new support evidence disabled until a human proposes previews and an Admin publishes it" do
+    original = @scorecard.current_version
+    assert_empty original.definition.fetch("rules").pluck("signal_key") & %w[
+      recurring_issue_tags_90d reopened_cases_90d resolutions_without_proof_90d
+    ]
+    version = propose(weights: { "recurring_issue_tags_90d" => 15, "reopened_cases_90d" => 20 })
+
+    assert_equal %w[recurring_issue_tags_90d reopened_cases_90d], version.definition.fetch("rules").pluck("signal_key")
+    assert_equal original, @scorecard.reload.current_version
+    HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at)
+    HealthScorecardPublisher.publish!(workspace: @workspace, membership: @owner, version:,
+      expected_current_version_id: original.id)
+    assert_equal version, @scorecard.reload.current_version
+  end
+
   test "retains a replayable preview and requires it before publish" do
     version = propose(weights: { "open_cases" => 40 })
 

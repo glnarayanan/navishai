@@ -60,6 +60,16 @@ class WorkspacePortability
     "last_attempted_at" => nil,
     "indexed_at" => nil
   }.freeze
+  HEALTH_EVIDENCE_TABLES = {
+    "account_health_input" => "account_health_inputs",
+    "support_case" => "support_cases",
+    "case_sla" => "case_slas",
+    "case_note" => "case_notes",
+    "conversation_message" => "conversation_messages",
+    "support_case_status_change" => "support_case_status_changes",
+    "tag" => "tags",
+    "crew_artifact" => "crew_artifacts"
+  }.freeze
 
   class InvalidArchive < StandardError; end
 
@@ -369,6 +379,17 @@ class WorkspacePortability
       end
       models.fetch("audit_events").where(id: mappings.fetch("audit_events").fetch(row.fetch("id")))
         .update_all(metadata: remapped_metadata)
+    end
+    tables.fetch("account_health_signals").each do |row|
+      references = row.fetch("evidence_refs")
+      references = JSON.parse(references) if references.is_a?(String)
+      remapped_references = references.map do |reference|
+        target_table = HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
+        reference.merge("id" => mappings.fetch(target_table).fetch(reference.fetch("id")))
+      end
+      models.fetch("account_health_signals")
+        .where(id: mappings.fetch("account_health_signals").fetch(row.fetch("id")))
+        .update_all(evidence_refs: remapped_references)
     end
     connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
     tables.keys.each { |table| connection.execute("ALTER TABLE #{connection.quote_table_name(table)} ENABLE TRIGGER USER") }

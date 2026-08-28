@@ -79,19 +79,28 @@
         <ol class="dossier-record-list">
           <% dossier.fact_groups.each do |group| %>
             <li class="dossier-record <%= "dossier-record-conflict" if group.conflicted %>">
-              <div class="dossier-record-heading"><strong><%= group.label %></strong><span><%= group.conflicted ? "Conflicting history" : "Current" %></span></div>
+              <div class="dossier-record-heading"><strong><%= group.label %></strong><span><%= if group.effective.nil?
+                "Retained history"
+              elsif group.conflicted
+                "Conflicting history"
+              else
+                "Current"
+              end %></span></div>
               <% group.items.each do |input| %>
                 <div class="dossier-source-line">
                   <b><%= dossier_input_value(input) %></b>
                   <span><%= input == group.effective ? "Effective source value" : "Retained prior value" %></span>
                   <code><%= input.source_locator %></code>
-                  <small><%= input.source_kind.upcase %> · observed <%= input.observed_at.to_fs(:short) %> · source-record authority</small>
+                  <small><%= input.source_namespace %> · <%= input.source_kind.upcase %> · observed <%= input.observed_at.to_fs(:short) %> · source-record authority</small>
+                  <small>Digest <code><%= input.source_digest.first(12) %>…</code>
+                    <% if input.valid_from || input.valid_until %> · valid <%= input.valid_from&.to_fs(:short) || "open" %> – <%= input.valid_until&.to_fs(:short) || "open" %><% end %>
+                    <% if input.corrects_input %> · corrects source <code><%= input.corrects_input.source_key %></code><% end %></small>
                 </div>
               <% end %>
             </li>
           <% end %>
         </ol>
-        <% if dossier.truncated?(:facts) %><p class="dossier-limit">More source observations are retained. This view shows the newest <%= AccountDossier::LIMITS.fetch(:facts) %>.</p><% end %>
+        <% if dossier.truncated?(:facts) %><p class="dossier-limit">More source observations are retained. This view shows up to <%= AccountDossier::LIMITS.fetch(:facts) %>, including current effective values.</p><% end %>
       <% else %>
         <p class="muted-copy">No imported relationship facts are recorded.</p>
       <% end %>

@@ -2146,11 +2146,18 @@ CREATE TABLE public.account_health_inputs (
     supplied_by_user_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    source_namespace character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    valid_from timestamp(6) without time zone,
+    valid_until timestamp(6) without time zone,
+    corrects_account_health_input_id bigint,
+    CONSTRAINT account_health_inputs_business_source CHECK ((((source_namespace)::text ~ '^[a-z][a-z0-9_.:-]{0,99}$'::text) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT account_health_inputs_key CHECK (((input_key)::text = ANY (ARRAY[('renewal_on'::character varying)::text, ('contract_value'::character varying)::text, ('active_users'::character varying)::text, ('licensed_seats'::character varying)::text]))),
     CONSTRAINT account_health_inputs_source CHECK (((octet_length((source_key)::text) >= 1) AND (octet_length((source_key)::text) <= 255) AND ((octet_length((source_locator)::text) >= 1) AND (octet_length((source_locator)::text) <= 1000)))),
     CONSTRAINT account_health_inputs_source_kind CHECK (((source_kind)::text = ANY (ARRAY[('csv'::character varying)::text, ('api'::character varying)::text]))),
     CONSTRAINT account_health_inputs_supplier CHECK ((((supplied_by_membership_id IS NULL) AND (supplied_by_user_id IS NULL)) OR ((supplied_by_membership_id IS NOT NULL) AND (supplied_by_user_id IS NOT NULL)))),
-    CONSTRAINT account_health_inputs_typed_value CHECK ((((value_kind)::text = ANY (ARRAY[('date'::character varying)::text, ('number'::character varying)::text])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL)))))
+    CONSTRAINT account_health_inputs_typed_value CHECK ((((value_kind)::text = ANY (ARRAY[('date'::character varying)::text, ('number'::character varying)::text])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL))))),
+    CONSTRAINT account_health_inputs_validity CHECK (((valid_until IS NULL) OR (valid_from IS NULL) OR (valid_until >= valid_from)))
 );
 
 
@@ -2193,8 +2200,11 @@ CREATE TABLE public.account_health_signals (
     range_ends_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    evidence_refs jsonb DEFAULT '[]'::jsonb NOT NULL,
+    evidence_omitted_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT account_health_signals_evidence CHECK (((jsonb_typeof(evidence_refs) = 'array'::text) AND (jsonb_array_length(evidence_refs) <= 100) AND (evidence_omitted_count >= 0))),
     CONSTRAINT account_health_signals_source CHECK (((octet_length((source_locator)::text) >= 1) AND (octet_length((source_locator)::text) <= 1000))),
-    CONSTRAINT account_health_signals_source_kind CHECK (((source_kind)::text = ANY (ARRAY[('account_input'::character varying)::text, ('support_cases'::character varying)::text, ('sla'::character varying)::text, ('conversation'::character varying)::text, ('case_notes'::character varying)::text]))),
+    CONSTRAINT account_health_signals_source_kind CHECK (((source_kind)::text = ANY ((ARRAY['account_input'::character varying, 'support_cases'::character varying, 'sla'::character varying, 'conversation'::character varying, 'case_notes'::character varying, 'case_tags'::character varying, 'case_status'::character varying, 'resolution_contract'::character varying])::text[]))),
     CONSTRAINT account_health_signals_typed_value CHECK ((((value_kind)::text = ANY (ARRAY[('date'::character varying)::text, ('number'::character varying)::text])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL))))),
     CONSTRAINT account_health_signals_weight CHECK (((weight >= 0) AND (weight <= 100) AND ((risk_points >= 0) AND (risk_points <= weight))))
 );
@@ -7400,6 +7410,13 @@ CREATE UNIQUE INDEX index_account_health_assessments_on_workspace_id_and_id ON p
 
 
 --
+-- Name: index_account_health_inputs_correction_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_account_health_inputs_correction_target ON public.account_health_inputs USING btree (workspace_id, account_id, input_key, id);
+
+
+--
 -- Name: index_account_health_inputs_for_latest; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7407,10 +7424,10 @@ CREATE INDEX index_account_health_inputs_for_latest ON public.account_health_inp
 
 
 --
--- Name: index_account_health_inputs_on_source; Type: INDEX; Schema: public; Owner: -
+-- Name: index_account_health_inputs_on_business_source; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_account_health_inputs_on_source ON public.account_health_inputs USING btree (workspace_id, source_kind, source_key, input_key);
+CREATE UNIQUE INDEX index_account_health_inputs_on_business_source ON public.account_health_inputs USING btree (workspace_id, source_namespace, source_key, input_key);
 
 
 --
@@ -10558,6 +10575,14 @@ ALTER TABLE ONLY public.account_health_assessments
 
 
 --
+-- Name: account_health_inputs fk_account_health_inputs_correction; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_health_inputs
+    ADD CONSTRAINT fk_account_health_inputs_correction FOREIGN KEY (workspace_id, account_id, input_key, corrects_account_health_input_id) REFERENCES public.account_health_inputs(workspace_id, account_id, input_key, id);
+
+
+--
 -- Name: account_health_inputs fk_account_health_inputs_supplier; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12988,6 +13013,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260828210000'),
 ('20260827220000'),
 ('20260827210000'),
 ('20260827202000'),

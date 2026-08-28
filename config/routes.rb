@@ -56,6 +56,8 @@ Rails.application.routes.draw do
     resources :accounts, only: %i[ index show ] do
       post :recalculate, on: :member
       post :request_risk_review, on: :member
+      get "health-evidence/:assessment_id/:signal_key", to: "health_evidence#show", on: :member,
+        as: :health_evidence
       post "risk-reviews/:investigation_id/start", action: :start_risk_review, on: :member,
         as: :start_risk_review
       post "risk-reviews/:investigation_id/resolve", action: :resolve_risk_review, on: :member,

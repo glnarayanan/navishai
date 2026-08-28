@@ -14,8 +14,19 @@ class AccountDossierTest < ApplicationSystemTestCase
     tag = CaseWorkflow.create_tag!(workspace: @workspace, membership: @owner, name: "Recurring access")
     CaseWorkflow.tag!(workspace: @workspace, support_case: first_case, membership: @owner, tag:)
     CaseWorkflow.tag!(workspace: @workspace, support_case: second_case, membership: @owner, tag:)
+    now = Time.current.change(usec: 0)
+    baseline = create_input(
+      source_key: "system-dossier-baseline", date_value: Date.new(2026, 10, 1), observed_at: now - 3.days
+    )
+    correction = create_input(
+      source_key: "system-dossier-correction", date_value: Date.new(2026, 11, 1), observed_at: now - 2.days,
+      corrects_input: baseline
+    )
+    later = create_input(
+      source_key: "system-dossier-later", date_value: Date.new(2026, 12, 1), observed_at: now - 1.day
+    )
     AccountHealth.recalculate!(
-      workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner
+      workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner, at: now
     )
     create_memory("support-window", "Support ends at 18:00 UTC.")
     create_memory("support-window", "Support ends at 19:00 UTC.")
@@ -34,6 +45,13 @@ class AccountDossierTest < ApplicationSystemTestCase
     assert_selector "h2", text: "Account dossier"
     assert_text "Current facts lead."
     assert_text "Conflict retained"
+    correction_line = find(".dossier-source-line", text: correction.source_locator)
+    within correction_line do
+      assert_text /November 0?1, 2026/
+      assert_text "Effective source value"
+    end
+    later_line = find(".dossier-source-line", text: later.source_locator)
+    within(later_line) { assert_text "Retained prior value" }
     assert_text "Stale"
     assert_text "Deleted"
     assert_text "Recurring access"
@@ -90,6 +108,15 @@ class AccountDossierTest < ApplicationSystemTestCase
   end
 
   private
+    def create_input(source_key:, date_value:, observed_at:, corrects_input: nil)
+      @workspace.account_health_inputs.create!(
+        account: @account, input_key: "renewal_on", value_kind: :date, date_value:,
+        source_kind: :api, source_namespace: "system_dossier", source_key:,
+        source_digest: Digest::SHA256.hexdigest([ source_key, date_value.iso8601 ].join("\n")),
+        source_locator: "api://system-dossier/#{source_key}", observed_at:, corrects_input:
+      )
+    end
+
     def create_memory(topic, content, valid_until: nil)
       @workspace.memory_records.create!(
         memory_type: :profile, scope_kind: :account, account: @account, topic:, content:,
