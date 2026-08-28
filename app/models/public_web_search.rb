@@ -5,7 +5,9 @@ class PublicWebSearch < ApplicationRecord
   belongs_to :crew_task
   belongs_to :requested_by_membership, class_name: "Membership"
   belongs_to :requested_by_user, class_name: "User"
+  belongs_to :usage_rate_version, optional: true
   has_many :results, -> { order(:rank) }, class_name: "PublicWebSearchResult", dependent: :restrict_with_exception
+  has_one :usage_cost_snapshot, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_with(&:itself)
 
@@ -13,7 +15,9 @@ class PublicWebSearch < ApplicationRecord
   validates :query, presence: true, length: { in: 2..500 }
   validates :status, inclusion: { in: STATUSES }
   validates :policy_decision, inclusion: { in: %w[allowed redacted] }
-  validates :cost_units, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :cost_units, numericality: {
+    only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: RunnerProtocol::BIGINT_MAX
+  }
   validates :provider_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validates :failure_code, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validate :assignment_is_consistent
@@ -28,6 +32,7 @@ class PublicWebSearch < ApplicationRecord
           requested_by_membership.user_id == requested_by_user_id
         errors.add(:workspace, "does not match the task and actor")
       end
+      errors.add(:usage_rate_version, "belongs to another workspace") if usage_rate_version && usage_rate_version.workspace_id != workspace_id
     end
 
     def result_is_consistent

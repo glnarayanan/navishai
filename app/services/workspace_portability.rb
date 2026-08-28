@@ -38,12 +38,17 @@ class WorkspacePortability
   NON_DEFERRED_FOREIGN_KEYS = %w[
     email_drafts.human_edited_by_membership_id
     email_drafts.source_crew_artifact_id
+    execution_runs.usage_rate_version_id
     intercom_drafts.human_edited_by_membership_id
     intercom_drafts.source_crew_artifact_id
     intercom_outbound_deliveries.human_edited_by_membership_id
     intercom_outbound_deliveries.source_crew_artifact_id
     outbound_email_deliveries.human_edited_by_membership_id
     outbound_email_deliveries.source_crew_artifact_id
+    public_web_searches.usage_rate_version_id
+    usage_cost_snapshots.applied_usage_rate_version_id
+    usage_cost_snapshots.execution_run_id
+    usage_cost_snapshots.public_web_search_id
   ].to_set.freeze
   MAPPED_REFERENCE_COLUMNS = { "conversation_id" => "conversations" }.freeze
 

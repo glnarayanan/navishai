@@ -39,6 +39,9 @@
           </div>
           <time datetime="<%= latest_run.created_at.iso8601 %>"><%= latest_run.created_at.to_fs(:short) %></time>
         </header>
+        <%= link_to "Explain this run",
+          workspace_outcome_explanation_path(Current.workspace, subject_type: "run", subject_id: latest_run.id),
+          class: "button button-quiet run-explanation-link", data: { turbo_frame: "_top" } %>
 
         <% if latest_run.admitting? && latest_run.last_admission_error.present? %>
           <%= render "shared/notice", kind: "degraded", title: "Runner connection degraded",
@@ -187,7 +190,7 @@
         <summary>Earlier attempts (<%= @runs.size - 1 %>)</summary>
         <ol>
           <% @runs.drop(1).each do |run| %>
-            <li><span>Attempt <%= run.attempt_number %></span><strong><%= run.status.humanize %></strong><time datetime="<%= run.created_at.iso8601 %>"><%= run.created_at.to_fs(:short) %></time></li>
+            <li><span>Attempt <%= run.attempt_number %></span><strong><%= run.status.humanize %></strong><time datetime="<%= run.created_at.iso8601 %>"><%= run.created_at.to_fs(:short) %></time><%= link_to "Explain", workspace_outcome_explanation_path(Current.workspace, subject_type: "run", subject_id: run.id), data: { turbo_frame: "_top" } %></li>
           <% end %>
         </ol>
       </details>

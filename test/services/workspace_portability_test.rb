@@ -171,6 +171,105 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "round trips configured usage estimates in final immutable shape" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace: source, membership: owner)
+    CrewConfiguration.install_defaults!(workspace: source)
+    support_case = create_support_case(subject: "Portable usage", workspace: source, membership: owner)
+    coordinator = source.agent_profiles.find_by!(role_key: "support_coordinator")
+    investigator = source.agent_profiles.find_by!(role_key: "support_investigator")
+    run_task = CrewWork.create!(
+      workspace: source, membership: owner, scope: support_case, profile: coordinator,
+      title: "Portable run usage", input_context: "Use retained facts.",
+      expected_output: "Return a bounded result."
+    )
+    search_task = CrewWork.create!(
+      workspace: source, membership: owner, scope: support_case, profile: investigator,
+      title: "Portable search usage", input_context: "Use retained facts.",
+      expected_output: "Return a bounded result."
+    )
+    version = UsageRateConfiguration.publish!(
+      workspace: source, membership: owner,
+      attributes: {
+        expected_current_version_id: nil, currency: "USD", source_name: "Portable public rate card",
+        input_rate: "2", output_rate: "4", search_rate: "5"
+      },
+      published_at: Time.zone.parse("2026-08-27 14:00:00")
+    )
+    run = ExecutionLedger.new(workspace: source).prepare!(
+      task: run_task, request_key: "portable-usage-run"
+    )
+    ingest_execution(source, run, 1, "run.admitted",
+      workspace_key: source.runner_key, task_key: run_task.task_key, attempt: run.attempt_number)
+    ingest_execution(source, run, 2, "run.started",
+      adapter: "scripted", scenario: "portable usage", attempt: run.attempt_number)
+    ingest_execution(source, run, 3, "usage.observed", input_units: 100, output_units: 50)
+    ingest_execution(source, run, 4, "run.failed", code: "portable_failure", retryable: false)
+    run_snapshot = run.reload.usage_cost_snapshot
+
+    response = {
+      "protocol_version" => "v1", "workspace_key" => source.runner_key,
+      "request_key" => "portable-usage-search", "query" => "public status history",
+      "provider_key" => "searxng", "policy_decision" => "allowed", "cost_units" => 200,
+      "retrieved_at" => Time.zone.parse("2026-08-27 14:05:00").iso8601(6), "results" => []
+    }
+    client = Object.new
+    client.define_singleton_method(:web_search!) { |**| response }
+    search = PublicWebResearch.perform!(
+      workspace: source, membership: owner, task: search_task, query: "public status history",
+      request_key: "portable-usage-search", client:
+    )
+    search_snapshot = search.usage_cost_snapshot
+    source_run_snapshot = run_snapshot.attributes
+    source_search_snapshot = search_snapshot.attributes
+    settle_deferred_constraints
+    archive = WorkspacePortability.export(workspace: source, membership: owner)
+
+    imported = WorkspacePortability.import(
+      workspace: source, membership: owner, archive_io: archive,
+      name: "Usage Restore", slug: "usage-restore"
+    )
+
+    restored_version = imported.usage_rate_setting.current_version
+    restored_run = imported.execution_runs.find_by!(request_key: run.request_key)
+    restored_search = imported.public_web_searches.find_by!(request_key: search.request_key)
+    restored_run_snapshot = restored_run.usage_cost_snapshot
+    restored_search_snapshot = restored_search.usage_cost_snapshot
+
+    assert_not_equal version.id, restored_version.id
+    assert_equal version.attributes.except("id", "workspace_id", "usage_rate_setting_id",
+      "created_by_membership_id", "created_by_user_id", "created_at", "updated_at"),
+      restored_version.attributes.except("id", "workspace_id", "usage_rate_setting_id",
+        "created_by_membership_id", "created_by_user_id", "created_at", "updated_at")
+    assert_equal owner.user, restored_version.created_by_user
+    assert_not_equal owner.id, restored_version.created_by_membership_id
+    assert_equal restored_version.created_by_user, restored_version.created_by_membership.user
+    assert_equal imported, restored_version.created_by_membership.workspace
+
+    assert_not_equal run.id, restored_run.id
+    assert_not_equal search.id, restored_search.id
+    assert_equal restored_version, restored_run.usage_rate_version
+    assert_equal restored_version, restored_search.usage_rate_version
+    assert_equal restored_version, restored_run_snapshot.applied_usage_rate_version
+    assert_equal restored_version, restored_search_snapshot.applied_usage_rate_version
+    assert_not_equal run_snapshot.id, restored_run_snapshot.id
+    assert_not_equal search_snapshot.id, restored_search_snapshot.id
+    assert_usage_snapshot_equal(run_snapshot, restored_run_snapshot)
+    assert_usage_snapshot_equal(search_snapshot, restored_search_snapshot)
+    assert_equal 400, restored_run_snapshot.amount_micros
+    assert_equal 1_000, restored_search_snapshot.amount_micros
+    assert_equal imported.id, restored_run_snapshot.execution_run.workspace_id
+    assert_equal imported.id, restored_search_snapshot.public_web_search.workspace_id
+    assert_equal imported.id, restored_run_snapshot.applied_usage_rate_version.workspace_id
+    assert_equal source_run_snapshot, run_snapshot.reload.attributes
+    assert_equal source_search_snapshot, search_snapshot.reload.attributes
+    refute imported.usage_rate_versions.where(workspace_id: workspaces(:beta_support).id).exists?
+    refute imported.usage_cost_snapshots.where(workspace_id: workspaces(:beta_support).id).exists?
+  ensure
+    archive&.close!
+  end
+
   test "rejects an archive for another organization before writing" do
     source = workspaces(:acme_support)
     compressed = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
@@ -307,6 +406,25 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       connection = ActiveRecord::Base.connection
       connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
       connection.execute("SET CONSTRAINTS ALL DEFERRED")
+    end
+
+    def ingest_execution(workspace, run, sequence, event_type, **data)
+      event = ExecutionLedger.new(workspace:).ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => event_type,
+        "occurred_at" => (Time.zone.parse("2026-08-27 14:00:00") + sequence.seconds).iso8601(6),
+        "data" => data.stringify_keys
+      })
+      settle_deferred_constraints
+      event
+    end
+
+    def assert_usage_snapshot_equal(source, restored)
+      attributes = %w[
+        status source currency amount_micros observed_input_units observed_output_units
+        observed_search_units calculation_provenance captured_at
+      ]
+      assert_equal source.attributes.slice(*attributes), restored.attributes.slice(*attributes)
     end
 
     def archive_manifest(archive)

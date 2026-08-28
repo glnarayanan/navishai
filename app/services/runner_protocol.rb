@@ -7,6 +7,7 @@ module RunnerProtocol
   RUNTIME_DETECTION_PATH = "/v1/runtimes/detect"
   WEB_SEARCH_PATH = "/v1/tools/web-search"
   MAX_BODY_BYTES = 256.kilobytes
+  BIGINT_MAX = 9_223_372_036_854_775_807
   UUID_PATTERN = /\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i
   KEY_PATTERN = /\A[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}\z/
   POLICY_KEY_PATTERN = /\A[a-z][a-z0-9_]{0,63}\z/
@@ -262,7 +263,8 @@ module RunnerProtocol
           attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
           attributes["request_key"] == request_key && attributes["query"] == query &&
           attributes["provider_key"].is_a?(String) && attributes["provider_key"].match?(POLICY_KEY_PATTERN) &&
-          attributes["policy_decision"] == "allowed" && attributes["cost_units"].is_a?(Integer) && attributes["cost_units"] >= 0 &&
+          attributes["policy_decision"] == "allowed" && attributes["cost_units"].is_a?(Integer) &&
+          attributes["cost_units"].between?(0, BIGINT_MAX) &&
           valid_time?(attributes["retrieved_at"]) && valid_results?(attributes["results"])
         raise MalformedMessage, "web search response is invalid"
       end
@@ -412,7 +414,14 @@ module RunnerProtocol
       data_keys = DATA_KEYS[event_type] || raise(MalformedMessage, "event.event_type is invalid")
       @occurred_at = parse_time(attributes["occurred_at"])
       data = attributes["data"]
-      object!(data, data_keys, "event.data")
+      if event_type == "usage.observed"
+        valid_keys = [ data_keys.sort, (data_keys + %w[amount_micros currency]).sort ]
+        unless data.is_a?(Hash) && valid_keys.include?(data.keys.sort)
+          raise MalformedMessage, "event.data has unexpected fields"
+        end
+      else
+        object!(data, data_keys, "event.data")
+      end
       validate_data!(event_type, data)
       raise MalformedMessage, "event.data is too large" if JSON.generate(data).bytesize > 128.kilobytes
 
@@ -438,6 +447,12 @@ module RunnerProtocol
         when "usage.observed"
           integer!(data["input_units"], 0, "event.data.input_units")
           integer!(data["output_units"], 0, "event.data.output_units")
+          if data.key?("amount_micros")
+            integer!(data["amount_micros"], 0, "event.data.amount_micros", maximum: BIGINT_MAX)
+            unless data["currency"].is_a?(String) && data["currency"].match?(/\A[A-Z]{3}\z/)
+              raise MalformedMessage, "event.data.currency is invalid"
+            end
+          end
         when "run.completed"
           equal!(data["outcome"], "completed", "event.data.outcome")
         when "run.failed"
@@ -464,8 +479,9 @@ module RunnerProtocol
         raise MalformedMessage, "#{name} is invalid" unless value.is_a?(String) && value.match?(UUID_PATTERN)
       end
 
-      def integer!(value, minimum, name)
-        raise MalformedMessage, "#{name} is invalid" unless value.is_a?(Integer) && value >= minimum
+      def integer!(value, minimum, name, maximum: nil)
+        valid = value.is_a?(Integer) && value >= minimum && (maximum.nil? || value <= maximum)
+        raise MalformedMessage, "#{name} is invalid" unless valid
       end
 
       def string!(value, maximum, name)

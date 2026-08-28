@@ -122,6 +122,84 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_operator table_query_count(queries, "resolution_contract_versions"), :<=, 1
   end
 
+  test "case and Account explanations bound detail while aggregating five thousand runs" do
+    approve_scripted_runtime(workspace: @workspace, membership: @membership)
+    CrewConfiguration.install_defaults!(workspace: @workspace)
+    support_case = create_support_case(subject: "Large explanation ledger")
+    account = support_case.conversation.contact.account
+    profile = @workspace.agent_profiles.find_by!(role_key: "support_coordinator")
+    task = CrewWork.create!(
+      workspace: @workspace, membership: @membership, scope: support_case, profile:,
+      title: "Large retained ledger", input_context: "Use retained facts.",
+      expected_output: "Return a bounded result."
+    )
+    first = ExecutionLedger.new(workspace: @workspace).prepare!(
+      task:, request_key: "read-path:large:1"
+    )
+    base = first.attributes.except("id")
+    now = Time.current.change(usec: 0)
+    (2..5_000).each_slice(500) do |attempts|
+      ExecutionRun.insert_all!(attempts.map do |attempt|
+        base.merge(
+          "run_key" => SecureRandom.uuid, "request_key" => "read-path:large:#{attempt}",
+          "attempt_number" => attempt, "created_at" => now - attempt.seconds,
+          "updated_at" => now - attempt.seconds
+        )
+      end)
+    end
+    ingest_performance_event(first, 1, "run.admitted",
+      workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: 1)
+    ingest_performance_event(first, 2, "run.started",
+      adapter: "scripted", scenario: "large ledger", attempt: 1)
+    ingest_performance_event(first, 3, "usage.observed", input_units: 321, output_units: 123)
+    ingest_performance_event(first, 4, "run.failed", code: "large_fixture_failure", retryable: false)
+    PublicWebSearch.insert_all!(75.times.map do |index|
+      {
+        workspace_id: @workspace.id, crew_task_id: task.id,
+        request_key: "read-path:search:#{index}", query: "public status #{index}",
+        provider_key: "searxng", status: "completed", policy_decision: "allowed",
+        cost_units: 7, requested_by_membership_id: @membership.id,
+        requested_by_user_id: @membership.user_id, retrieved_at: now - index.seconds,
+        created_at: now - index.seconds, updated_at: now - index.seconds
+      }
+    end)
+
+    case_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    case_queries = capture_sql do
+      get workspace_outcome_explanation_path(
+        @workspace, subject_type: "case", subject_id: support_case.id
+      )
+    end
+    case_elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - case_started
+
+    assert_response :success
+    assert_select ".explanation-lineage > li > ul > li", count: OutcomeExplanation::DETAIL_LIMITS.fetch(:runs)
+    assert_select ".explanation-record-list > li", minimum: OutcomeExplanation::DETAIL_LIMITS.fetch(:searches)
+    assert_select ".explanation-history-limit", text: /4,960 execution runs/
+    assert_select ".explanation-history-limit", text: /25 public searches/
+    assert_select ".explanation-usage", text: /321/
+    assert_select ".explanation-usage", text: /123/
+    assert_select ".explanation-usage", text: /525/
+    assert_select ".explanation-usage", text: /625,000,000/
+    assert_operator case_queries.size, :<=, 75
+    assert_operator case_elapsed, :<, 5.seconds
+
+    account_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    account_queries = capture_sql do
+      get workspace_outcome_explanation_path(
+        @workspace, subject_type: "account", subject_id: account.id
+      )
+    end
+    account_elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - account_started
+
+    assert_response :success
+    assert_select ".explanation-lineage > li > ul > li", count: OutcomeExplanation::DETAIL_LIMITS.fetch(:runs)
+    assert_select ".explanation-history-limit", text: /4,960 execution runs/
+    assert_select ".explanation-usage", text: /625,000,000/
+    assert_operator account_queries.size, :<=, 80
+    assert_operator account_elapsed, :<, 5.seconds
+  end
+
   private
     def capture_sql
       queries = []
@@ -134,5 +212,18 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
 
     def table_query_count(queries, table)
       queries.count { |sql| sql.match?(/\bFROM "#{Regexp.escape(table)}"\b/) }
+    end
+
+    def ingest_performance_event(run, sequence, event_type, **data)
+      event = ExecutionLedger.new(workspace: @workspace).ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => event_type,
+        "occurred_at" => (Time.current.change(usec: 0) + sequence.seconds).iso8601(6),
+        "data" => data.stringify_keys
+      })
+      connection = ActiveRecord::Base.connection
+      connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      connection.execute("SET CONSTRAINTS ALL DEFERRED")
+      event
     end
 end

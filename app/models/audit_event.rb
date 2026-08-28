@@ -105,6 +105,8 @@ class AuditEvent < ApplicationRecord
     "runtime.installation_approved" => {},
     "runtime.installation_revoked" => {},
     "runtime.installations_checked" => { "detected_count" => Integer },
+    "usage_rate.published" => { "from_version" => Integer, "to_version" => Integer },
+    "usage_rate.rolled_back" => { "from_version" => Integer, "to_version" => Integer },
     "scorecard.backtested" => { "version" => Integer, "sample_count" => Integer },
     "scorecard.proposed" => { "version" => Integer },
     "scorecard.published" => { "from_version" => Integer, "to_version" => Integer },

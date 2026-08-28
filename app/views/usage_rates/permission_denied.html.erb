@@ -1,0 +1,9 @@
+<% content_for :title, "Usage rate access denied — NavishAI" %>
+
+<main class="page-shell" aria-labelledby="permission-title">
+  <div class="empty-state">
+    <h1 id="permission-title">You can’t change usage rates</h1>
+    <p>Your Workspace role can inspect rate history, but only an Admin or Owner can publish or roll back a rate.</p>
+    <%= link_to "Back to usage rates", workspace_usage_rates_path(Current.workspace), class: "button button-secondary" %>
+  </div>
+</main>

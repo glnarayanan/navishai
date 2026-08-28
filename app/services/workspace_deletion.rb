@@ -6,7 +6,8 @@ class WorkspaceDeletion
     "execution_runs" => %w[current_event_id input_artifact_id],
     "health_scorecards" => "current_version_id",
     "knowledge_sources" => "current_version_id",
-    "resolution_contract_families" => "current_version_id"
+    "resolution_contract_families" => "current_version_id",
+    "usage_rate_settings" => "current_version_id"
   }.freeze
 
   class CleanupChanged < StandardError; end

@@ -12,6 +12,9 @@
         <%= button_to "Open risk review", request_risk_review_workspace_account_path(@workspace, @account), class: "button button-primary" %>
       <% end %>
       <div class="account-health-secondary">
+        <%= link_to "Explain this outcome",
+          workspace_outcome_explanation_path(@workspace, subject_type: "account", subject_id: @account.id),
+          class: "button button-primary" %>
         <%= link_to "Scorecard", workspace_health_scorecard_path(@workspace), class: "button button-quiet" %>
         <%= link_to "Crew work", workspace_account_crew_tasks_path(@workspace, @account), class: "button button-secondary" %>
       </div>
@@ -26,7 +29,7 @@
   <% end %>
 
   <% if @assessment %>
-    <section class="health-overview" aria-labelledby="health-title">
+    <section class="health-overview" id="health-assessment" aria-labelledby="health-title">
       <div class="health-score-panel health-score-panel-<%= @assessment.risk_level.dasherize %>">
         <span>Current health</span>
         <strong><%= @assessment.score %><small>/100</small></strong>
@@ -41,6 +44,9 @@
         <div><dt>Scorecard</dt><dd>Version <%= @assessment.health_scorecard_version.version_number %></dd></div>
         <div><dt>Scored rules</dt><dd><%= pluralize(@assessment.health_scorecard_version.definition.fetch("rules").size, "signal") %></dd></div>
       </dl>
+      <%= link_to "Explain this health assessment",
+        workspace_outcome_explanation_path(@workspace, subject_type: "health-assessment", subject_id: @assessment.id),
+        class: "button button-secondary" %>
     </section>
 
     <section class="health-signals" aria-labelledby="signals-title">

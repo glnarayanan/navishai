@@ -13,6 +13,9 @@
       </div>
       <span class="status-badge status-<%= @support_case.status.dasherize %>"><%= case_status_label(@support_case.status) %></span>
     </div>
+    <%= link_to "Explain this outcome",
+      workspace_outcome_explanation_path(@workspace, subject_type: "case", subject_id: @support_case.id),
+      class: "button button-secondary" %>
   </header>
 
   <div class="case-workspace-grid">

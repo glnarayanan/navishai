@@ -2,6 +2,7 @@ require "test_helper"
 
 class RunnerProtocolTest < ActiveSupport::TestCase
   FIXTURE_PATH = Rails.root.join("test/fixtures/files/runner_protocol/v1")
+  BIGINT_MAX = 9_223_372_036_854_775_807
 
   test "parses the shared admission fixture" do
     request = RunnerProtocol::AdmissionRequest.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
@@ -111,6 +112,36 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     assert_raises(RunnerProtocol::MalformedMessage) do
       RunnerProtocol::WebSearchResponse.parse(
         JSON.generate(payload), workspace_key:, request_key: "search:one", query: "status incident"
+      )
+    end
+  end
+
+  test "bounds optional amounts and public search cost units to PostgreSQL bigint" do
+    event = {
+      "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => SecureRandom.uuid,
+      "sequence" => 1, "event_type" => "usage.observed", "occurred_at" => "2026-08-24T12:00:00Z",
+      "data" => {
+        "input_units" => 0, "output_units" => 0,
+        "amount_micros" => BIGINT_MAX, "currency" => "USD"
+      }
+    }
+    assert RunnerProtocol::CanonicalEvent.new(event)
+    event.fetch("data")["amount_micros"] = BIGINT_MAX + 1
+    assert_raises(RunnerProtocol::MalformedMessage) { RunnerProtocol::CanonicalEvent.new(event) }
+
+    workspace_key = SecureRandom.uuid
+    payload = {
+      protocol_version: "v1", workspace_key:, request_key: "search:max", query: "status incident",
+      provider_key: "searxng", policy_decision: "allowed", cost_units: BIGINT_MAX,
+      retrieved_at: "2026-08-24T12:00:00Z", results: []
+    }
+    assert RunnerProtocol::WebSearchResponse.parse(
+      JSON.generate(payload), workspace_key:, request_key: "search:max", query: "status incident"
+    )
+    payload[:cost_units] = BIGINT_MAX + 1
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::WebSearchResponse.parse(
+        JSON.generate(payload), workspace_key:, request_key: "search:max", query: "status incident"
       )
     end
   end

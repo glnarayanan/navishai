@@ -46,6 +46,9 @@ class Workspace < ApplicationRecord
   has_many :crew_task_dependencies, dependent: :restrict_with_exception
   has_many :execution_runs, dependent: :restrict_with_exception
   has_many :execution_events, dependent: :restrict_with_exception
+  has_one :usage_rate_setting, dependent: :restrict_with_exception
+  has_many :usage_rate_versions, dependent: :restrict_with_exception
+  has_many :usage_cost_snapshots, dependent: :restrict_with_exception
   has_many :crew_artifacts, dependent: :restrict_with_exception
   has_many :resolution_contract_families, dependent: :restrict_with_exception
   has_many :resolution_contract_versions, dependent: :restrict_with_exception
