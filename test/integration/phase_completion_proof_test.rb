@@ -40,27 +40,25 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
     @workspace = workspaces(:acme_support)
     @owner = memberships(:owner_support)
     @account = accounts(:acme)
-    @now = Time.zone.parse("2026-08-28 12:00:00 UTC")
+    @now = Time.current.change(usec: 0)
     Current.session = @owner.user.sessions.create!(authentication_method: :local, expires_at: 12.hours.from_now)
   end
 
   test "Support proof, explanation, dossier, health intervention, and governed rollback remain one lineage" do
     support_case = receive_support_case
     support_case.conversation.contact.update!(account: @account)
-    blocked = create_draft_artifact(
-      workspace: @workspace, support_case:, membership: @owner,
-      body: "The legacy policy guarantees access today.", result_state: "blocked",
-      evidence_status: "stale", claim_state: "conflicted",
-      blocker_message: "The retained policy conflicts with the current customer report.",
-      remediation: "Use the current report and qualify the answer."
+    stale_policy = create_policy_source("stale", retrieved_at: @now - 60.days)
+    current_policy = create_policy_source("current", retrieved_at: @now)
+    blocked = publish_draft_artifact(
+      support_case:, body: "The legacy policy guarantees access today.",
+      citation: knowledge_citation(stale_policy)
     )
-    corrected = create_draft_artifact(
-      workspace: @workspace, support_case:, membership: @owner,
-      body: "The current report confirms the fault; timing remains unconfirmed."
+    corrected = publish_draft_artifact(
+      support_case:, body: "The current report confirms the fault; timing remains unconfirmed.",
+      citation: knowledge_citation(current_policy), usage: { input_units: 120, output_units: 45 }
     )
     quality_review = create_quality_review(support_case, corrected)
-    fail_run(blocked.execution_run, code: "stale_evidence")
-    observe_run_usage(corrected.execution_run, input_units: 120, output_units: 45)
+    failed_run = create_failed_run(support_case, code: "stale_evidence")
     memory = create_corrected_memory
     corrected.execution_run.execution_memory_selections.create!(
       workspace: @workspace, memory_record: memory, rank: 1, relevance_score: 0.95
@@ -87,7 +85,13 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
     )
 
     assert blocked.contract_blocking?
+    assert_equal "complete", corrected.contract_result_state
+    assert_equal Digest::SHA256.hexdigest(blocked.execution_run.output), blocked.payload_digest
+    assert_equal Digest::SHA256.hexdigest(corrected.execution_run.output), corrected.payload_digest
     assert_equal "approved", quality_review.review_outcome
+    assert_equal corrected, quality_review.target_artifact
+    assert_equal corrected, quality_review.execution_run.input_artifact
+    assert quality_review.crew_task.reload.completed?
     assert delivery.sent?
     assert_equal @owner, delivery.human_edited_by_membership
     assert_equal final_body, transport.deliveries.sole.fetch(:body)
@@ -110,8 +114,9 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
     assert_equal 120, explanation.usage.input_units
     assert_equal 45, explanation.usage.output_units
     assert_equal "partial", explanation.usage.run_state
-    assert_equal "stale_evidence", blocked.execution_run.failure_code
+    assert_equal "stale_evidence", failed_run.failure_code
     assert explanation.blockers.any? { |item| item.fetch("code") == "claim_stale" }
+    assert explanation.blockers.any? { |item| item.fetch("code") == "stale_evidence" }
     assert_equal @owner, delivery.human_edited_by_membership
 
     resolve_case(support_case)
@@ -256,11 +261,7 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
       checked_at: @now - 1.hour
     )
 
-    cockpit = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: { status: "healthy", ready_count: 0, overdue_count: 0, failed_count: 0,
-        oldest_ready_at: nil, last_heartbeat_at: @now }
-    )
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
     groups = cockpit.groups.index_by(&:key)
     assert_equal "blocked", groups.fetch("connectors").status
     assert_equal "blocked", groups.fetch("execution").status
@@ -341,37 +342,84 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
   end
 
   private
-    def ingest_run_event(run, sequence, event_type, data)
+    def ingest_run_event(run, sequence, event_type, data, occurred_at: nil)
       ExecutionLedger.new(workspace: @workspace).ingest!(event: {
         "protocol_version" => RunnerProtocol::VERSION,
         "event_id" => SecureRandom.uuid,
         "run_id" => run.run_key,
         "sequence" => sequence,
         "event_type" => event_type,
-        "occurred_at" => (Time.current.change(usec: 0) + (sequence / 1_000.0).seconds).iso8601(6),
+        "occurred_at" => (occurred_at || Time.current.change(usec: 0) + (sequence / 1_000.0).seconds).iso8601(6),
         "data" => data.stringify_keys
       })
     end
 
-    def begin_run(run)
+    def begin_run(run, base: Time.current.change(usec: 0))
       ingest_run_event(run, 1, "run.admitted", {
         workspace_key: @workspace.runner_key, task_key: run.crew_task.task_key,
         attempt: run.attempt_number
-      })
+      }, occurred_at: base + 0.001.seconds)
       ingest_run_event(run, 2, "run.started", {
         adapter: run.selected_adapter_key, scenario: "m6-phase-proof", attempt: run.attempt_number
-      })
+      }, occurred_at: base + 0.002.seconds)
+      base
     end
 
-    def observe_run_usage(run, input_units:, output_units:)
-      begin_run(run)
-      ingest_run_event(run, 3, "usage.observed", { input_units:, output_units: })
+    def publish_draft_artifact(support_case:, body:, citation:, usage: nil)
+      install_crew_test_dependencies(workspace: @workspace, membership: @owner)
+      task = CrewWork.create!(
+        workspace: @workspace, membership: @owner, scope: support_case,
+        profile: @workspace.agent_profiles.find_by!(role_key: "resolution_drafter"),
+        title: "Draft current support answer", input_context: "Use the current support evidence.",
+        expected_output: "Return a typed draft with cited claims."
+      )
+      start_task(task)
+      payload = artifact_payload(kind: "draft", body:, citations: [ citation ])
+      run = complete_run(task, payload, usage:)
+      run.crew_artifact || raise("Expected the completed draft run to publish an artifact.")
+    end
+
+    def start_task(task)
+      CrewWork.apply!(
+        workspace: @workspace, membership: @owner, task:, command: :start,
+        expected_sequence: task.current_event.sequence_number, attributes: {}
+      )
+    end
+
+    def complete_run(task, payload, usage: nil)
+      @output_counter = @output_counter.to_i + 1
+      run = ExecutionLedger.new(workspace: @workspace).prepare!(
+        task:, request_key: "m6-artifact:#{task.id}:#{@output_counter}"
+      )
+      base = Time.current.change(usec: 0)
+      ingest_run_event(run, 1, "run.admitted", {
+        workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number
+      }, occurred_at: base + 0.001.seconds)
+      ingest_run_event(run, 2, "run.started", {
+        adapter: run.selected_adapter_key, scenario: "m6-phase-proof", attempt: run.attempt_number
+      }, occurred_at: base + 0.002.seconds)
+      ingest_run_event(run, 3, "output.produced", { text: JSON.generate(payload) }, occurred_at: base + 0.003.seconds)
+      sequence = 4
+      if usage
+        ingest_run_event(run, sequence, "usage.observed", usage, occurred_at: base + (sequence / 1_000.0).seconds)
+        sequence += 1
+      end
+      ingest_run_event(run, sequence, "run.completed", { outcome: "completed" }, occurred_at: base + (sequence / 1_000.0).seconds)
       run.reload
     end
 
-    def fail_run(run, code:)
-      begin_run(run)
-      ingest_run_event(run, 3, "run.failed", { code:, retryable: false })
+    def create_failed_run(support_case, code:)
+      install_crew_test_dependencies(workspace: @workspace, membership: @owner)
+      task = CrewWork.create!(
+        workspace: @workspace, membership: @owner, scope: support_case,
+        profile: @workspace.agent_profiles.find_by!(role_key: "support_investigator"),
+        title: "Record the failed support attempt", input_context: "Use retained support evidence.",
+        expected_output: "Return a bounded investigation."
+      )
+      start_task(task)
+      run = ExecutionLedger.new(workspace: @workspace).prepare!(task:, request_key: "m6-failed-support")
+      base = begin_run(run)
+      ingest_run_event(run, 3, "run.failed", { code:, retryable: false }, occurred_at: base + 0.003.seconds)
       run.reload
     end
 
@@ -388,8 +436,8 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
         expected_sequence: task.current_event.sequence_number, attributes: {}
       )
       run = ExecutionLedger.new(workspace: @workspace).prepare!(task: task.reload, request_key: "m6-runner-failure")
-      begin_run(run)
-      ingest_run_event(run, 3, "run.failed", { code: "runner_unavailable", retryable: true })
+      base = begin_run(run)
+      ingest_run_event(run, 3, "run.failed", { code: "runner_unavailable", retryable: true }, occurred_at: base + 0.003.seconds)
       run.reload
     end
 
@@ -434,24 +482,73 @@ class PhaseCompletionProofTest < ActiveSupport::TestCase
     end
 
     def create_quality_review(support_case, target)
+      install_crew_test_dependencies(workspace: @workspace, membership: @owner)
       profile = @workspace.agent_profiles.find_by!(role_key: "support_reviewer")
       task = CrewWork.create!(
         workspace: @workspace, membership: @owner, scope: support_case, profile:,
         title: "Review the qualified result", input_context: "Review current proof.",
         expected_output: "Approve only a grounded result."
       )
-      run = ExecutionLedger.new(workspace: @workspace).prepare!(task:, request_key: "m6-quality-review")
-      @workspace.crew_artifacts.create!(
-        crew_task: task, execution_run: run, version_number: 1, schema_version: 2,
-        artifact_kind: "quality_review", target_artifact: target, review_outcome: "approved",
-        body: "The qualified result matches current evidence and preserves human send authority.",
-        uncertainty: "The timing remains explicitly unconfirmed.", citations: target.citations,
-        conflicts: [], change_requests: [], payload_digest: Digest::SHA256.hexdigest("m6-quality-review"),
-        resolution_contract_version: run.resolution_contract_version,
-        required_facts: target.required_facts, material_claims: target.material_claims,
-        proposed_actions: [], policy_checks: target.policy_checks,
-        contract_result_state: "complete", contract_blockers: [], contract_evaluated_at: @now
+      start_task(task)
+      payload = artifact_payload(
+        kind: "quality_review", body: "The qualified result matches current evidence and preserves human send authority.",
+        uncertainty: "The timing remains explicitly unconfirmed.", citations: target.citations, review_outcome: "approved"
       )
+      review = complete_run(task, payload).crew_artifact
+      raise("Expected the completed review run to publish an artifact.") unless review
+      review_and_approve(task, "The qualified result is grounded and ready for human send.")
+      review
+    end
+
+    def review_and_approve(task, body)
+      task.reload
+      CrewWork.apply!(
+        workspace: @workspace, membership: @owner, task:, command: :request_review,
+        expected_sequence: task.current_event.sequence_number, attributes: { body: }
+      )
+      task.reload
+      CrewWork.apply!(
+        workspace: @workspace, membership: @owner, task:, command: :review,
+        expected_sequence: task.current_event.sequence_number,
+        attributes: { review_outcome: "approved", body: }
+      )
+    end
+
+    def artifact_payload(kind:, body:, citations:, uncertainty: "No uncertainty identified.", conflicts: [], review_outcome: nil)
+      evidence = citations.first.slice("kind", "locator")
+      categories = if %w[account_analysis risk_investigation intervention_plan success_review].include?(kind)
+        %w[customer_account_fact promised_action_date]
+      else
+        %w[customer_account_fact product_technical_fact]
+      end
+      {
+        "schema_version" => 2, "kind" => kind, "body" => body, "uncertainty" => uncertainty,
+        "citations" => citations, "conflicts" => conflicts, "change_requests" => [],
+        "review_outcome" => review_outcome, "memory_proposals" => [],
+        "required_facts" => %w[customer_report reset_policy],
+        "material_claims" => categories.each_with_index.map do |category, index|
+          {
+            "key" => index.zero? ? "customer_report" : "reset_policy", "category" => category,
+            "text" => body, "state" => "supported", "evidence" => [ evidence ]
+          }
+        end,
+        "proposed_actions" => [],
+        "policy_checks" => ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+          { "check" => check, "status" => "passed" }
+        end
+      }
+    end
+
+    def create_policy_source(label, retrieved_at:)
+      KnowledgeIngestion.ingest_integration!(
+        workspace: @workspace, source_kind: :intercom_help_center,
+        title: "M6 #{label} policy", content: "The #{label} support policy.",
+        external_id: "m6-#{label}-policy", source_updated_at: retrieved_at, retrieved_at:
+      )
+    end
+
+    def knowledge_citation(source)
+      { "kind" => "knowledge", "locator" => source.current_version.citation_uri, "label" => source.title }
     end
 
     def create_corrected_memory

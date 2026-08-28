@@ -56,22 +56,37 @@ class AccountDossier
   end
 
   def fact_groups
-    @fact_groups ||= bounded(
-      workspace.account_health_inputs
-        .where(account_id: account_ids)
+    @fact_groups ||= begin
+      limit = LIMITS.fetch(:facts)
+      history = workspace.account_health_inputs
+        .where(workspace_id: workspace.id, account_id: account_ids)
+        .includes(:corrects_input)
         .order(observed_at: :desc, id: :desc)
-        .limit(LIMITS.fetch(:facts) + 1)
-        .to_a,
-      :facts
-    )
-      .group_by(&:input_key)
-      .map do |key, items|
-        FactGroup.new(
-          key:, label: key.humanize, items:, effective: items.first,
-          conflicted: items.map { |item| [ item.numeric_value, item.date_value ] }.uniq.many?
-        )
-      end
-      .sort_by(&:label)
+        .limit(limit + 1)
+        .to_a
+      effective = AccountHealthInput.effective_for(
+        workspace:, account_ids:, at: now, one_per_key: true
+      ).includes(:corrects_input).to_a
+      visible = visible_fact_history(history, effective, limit)
+      effective_by_key = effective.index_by(&:input_key)
+      conflicted_keys = AccountHealthInput.effective_for(
+        workspace:, account_ids:, at: now
+      ).reorder(nil)
+        .group(:input_key)
+        .having("COUNT(DISTINCT (account_health_inputs.numeric_value, account_health_inputs.date_value)) > 1")
+        .pluck(:input_key)
+        .to_set
+
+      @truncated[:facts] = history.length > limit
+      visible.group_by(&:input_key)
+        .map do |key, items|
+          FactGroup.new(
+            key:, label: key.humanize, items:, effective: effective_by_key[key],
+            conflicted: conflicted_keys.include?(key)
+          )
+        end
+        .sort_by(&:label)
+    end
   end
 
   def memory_groups
@@ -221,6 +236,19 @@ class AccountDossier
   end
 
   private
+    def visible_fact_history(history, effective, limit)
+      visible = history.first(limit).dup
+      effective_ids = effective.map(&:id).to_set
+      effective.each do |input|
+        next if visible.any? { |candidate| candidate.id == input.id }
+
+        replacement_index = visible.rindex { |candidate| !effective_ids.include?(candidate.id) }
+        visible.delete_at(replacement_index) if replacement_index
+        visible << input if replacement_index
+      end
+      visible.sort_by { |input| [ -input.observed_at.to_f, -input.id ] }
+    end
+
     def account_ids
       @account_ids ||= [ account.id ] + workspace.account_merges.active.where(target_id: account.id).pluck(:source_id)
     end

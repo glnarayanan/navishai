@@ -42,11 +42,16 @@ class IntercomConnectionsTest < ApplicationSystemTestCase
       source_digest: digest, discovery_records: [ { "id" => "history-1", "source_digest" => digest } ],
       counts: {
         "conversations" => 1, "parts" => 3, "notes" => 1, "attachments" => 1,
-        "deterministic_matches" => 1, "ambiguous" => 0, "unsupported_fields" => 0,
-        "expected_exceptions" => 0
+        "deterministic_matches" => 0, "ambiguous" => 0, "unsupported_fields" => 0,
+        "expected_exceptions" => 1
       },
       available_from: 2.days.ago, available_to: 1.day.ago,
       discovered_at: Time.current, expires_at: 30.minutes.from_now
+    )
+    manifest.intercom_backfill_exceptions.create!(
+      workspace:, remote_record_type: "identity", remote_record_id: "contact-keyless",
+      source_digest: digest, exception_kind: "unsupported_field", recovery_action: "restart_preview",
+      detail: "Contact has no deterministic email key. Update the source and start a new dry run."
     )
     sign_in(users(:owner))
     visit workspace_intercom_connections_path(workspace)
@@ -55,6 +60,10 @@ class IntercomConnectionsTest < ApplicationSystemTestCase
       assert_text "Review"
       assert_button "Confirm exact manifest"
       assert_text "Frozen digest"
+      assert_text "Expected exceptions"
+      assert_text "Expected identity exception"
+      assert_text "Contact has no deterministic email key"
+      assert_text "Start a new dry run below"
     end
 
     manifest.update!(expires_at: 1.minute.ago)

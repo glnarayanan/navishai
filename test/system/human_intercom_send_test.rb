@@ -2,13 +2,15 @@ require "application_system_test_case"
 
 class HumanIntercomSendTest < ApplicationSystemTestCase
   class RecordingClient
-    attr_reader :replies
+    attr_reader :admin_requests, :replies
 
     def initialize
+      @admin_requests = 0
       @replies = []
     end
 
     def admins
+      @admin_requests += 1
       { "admins" => [ { "id" => "admin_owner", "email" => "owner@example.com" } ] }
     end
 
@@ -78,6 +80,7 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
       remediation: "Supply current technical evidence or keep the refusal in human review."
     )
     sign_in_in_browser(users(:owner))
+    client = RecordingClient.new
     page.current_window.resize_to(320, 844)
     visit workspace_support_case_path(support_case.workspace, support_case)
 
@@ -114,6 +117,8 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
       assert_text "Needs human"
     end
     assert_equal artifact.body, find("#intercom-reply textarea[name='body']").value
+    assert_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
+    assert_button "Send to Intercom", disabled: true
     if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
       page.execute_script(
         "arguments[0].scrollIntoView({ block: 'start' })",
@@ -135,6 +140,8 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
     end
     assert_no_horizontal_overflow
     assert_operator find_button("Send to Intercom").rect.height, :>=, 48
+    assert_button "Send to Intercom", disabled: false
+    refute_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
     if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
       page.execute_script(
         "arguments[0].scrollIntoView({ block: 'start' })",
@@ -142,6 +149,18 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
       )
       save_screenshot Rails.root.join(".amp/in/artifacts/intercom-draft-authority-edited-mobile.png")
     end
+
+    page.current_window.resize_to(1440, 1000)
+    with_client(client) do
+      within "#intercom-reply" do
+        accept_confirm { click_button "Send to Intercom" }
+      end
+      assert_text "Intercom reply sent."
+      assert_text "Human-qualified Intercom answer"
+      assert_text "Sent by owner@example.com"
+    end
+    assert_equal 1, client.admin_requests
+    assert_equal "Human-qualified Intercom answer", client.replies.sole[:body]
   end
 
   private

@@ -1,6 +1,6 @@
 # Phase release-candidate record
 
-NavishAI is build-complete and pilot-ready for owner review. This record describes the source stack, not a published package, launch, live deployment, security certification, product validation, or market result.
+NavishAI is pilot-ready for owner review; M6 completion proof remains in progress. This record describes the source stack, not a published package, launch, live deployment, security certification, product validation, or market result.
 
 ## Included review boundary
 
@@ -19,11 +19,11 @@ The stacked source includes:
 
 ## Phase-completion checkpoint
 
-The deterministic M6 proof is at `5e74ed6cce04cb730c376b0328c7a814812feae1`, strengthened at `2f1f876884866ac0046a81b5795e7570669ee96d`. It joins the accepted M0-M5 seams without adding product scope. The proof covers the Support resolution and human-send journey, full outcome explanation, Account dossier, health intervention and observed review, safe reliability recovery, GET-only Intercom backfill through verified Workspace restoration and Memory reconstruction, and governed canary and future-only rollback. The only integrated fix, `1a890c664babf93766f6c88ecaf9c0ed9d7419ac`, isolates Active Storage roots by Rails test worker so archive digest checks cannot race another worker's files.
+The deterministic M6 proof is being repaired on PR #82. The former integrated proof directly inserted approved artifact and contract-result state, so it did not establish real artifact publication, deterministic evaluation, quality-review gating, or the resulting transition. The current source repair exercises the accepted M0-M5 seams through ordered `ExecutionLedger` terminal events, `CrewArtifactPublisher`, `ResolutionContractEvaluator`, and `CrewWork` review transitions without adding product scope. M6 remains in progress until that repaired path is committed and the remaining repository-native checks are rerun.
 
-On Linux 6.1 x86-64 with Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, and pgvector 0.8.6, three integrated tests passed with 90 assertions and 172 focused adversarial tests passed with 1,530 assertions. The full `bin/ci` checkpoint passed style checks for 509 Ruby files and Go, both dependency audits, Brakeman with no warnings, 718 Rails tests with 5,104 assertions, 60 browser tests with 957 assertions, Go vet and tests, all three native Linux builds, the Rails-to-runner contract, seed replant, and the 84-component SBOM. A native custom-format PostgreSQL backup with SHA-256 `83ad5f35cc32d063518a8773718b0ac939d70a912e13f49bb5c39cdc57ac76d1` restored into an isolated database with 105 public tables, 61 applied migrations, and pgvector 0.8.6.
+In the current checkout, the repaired integration proof passes 3 tests with 97 assertions, the elevated repository-native real-Chrome M4/M5/M6 system run passes 6 tests with 142 assertions, and the serial full Rails suite passes 741 tests with 5,412 assertions. The repaired journey derives blocked and complete artifacts through the real publisher and evaluator, publishes the quality review through the same terminal-event path, and records review approval through `CrewWork`; the separate failure, human-send, dossier, intervention, reliability, backfill, archive, and policy assertions remain covered. This is source evidence only; no completion commit or full release checkpoint is claimed yet.
 
-The browser suite covered desktop and 320-pixel mobile views, keyboard focus, semantic structure, reduced motion, safe wrapping, and failure, degraded, and recovery states. Inspected final captures showed no visible clipping or overflow, and an Impeccable layout scan found no defects. Ui.sh was unavailable in this thread. These checks are source evidence only. They do not mean NavishAI has been launched, certified, deployed, or validated.
+The elevated browser run covered the merged desktop and 320-pixel mobile dossier, governed-policy, and reliability states, including keyboard focus, safe wrapping, the shared-queue boundary, and recovery controls. Ui.sh was not invoked for this source proof; no categorical availability claim is made. These checks are source evidence only. They do not mean NavishAI has been launched, certified, deployed, or validated.
 
 The 27 August rebaseline started from `fbf65f0b3c268f650a2489035236d7fb82e9467d` on Linux 6.1 x86-64 with Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, pgvector 0.8.6, and Chrome for Testing 152.0.7977.64. A fresh orb exposed a system-test setup defect: Selenium downloaded Chrome only after the test class had already resolved its browser path, so all 45 browser tests failed before making an assertion. Commit `3f06a961797870e4aa2b3a4f96fc37c5fbf9336d` now asks Selenium Manager for Chrome before driver setup. With an empty Selenium browser cache, the first plain `bin/rails test:system` invocation passed 45 tests and 656 assertions without skips. The full `bin/ci` checkpoint then passed 422-file Ruby style, Go style, gem and Importmap audits, Brakeman with no warnings, 547 Rails tests with 3,341 assertions, 45 browser tests with 656 assertions, the native Linux Go suite and three Linux binary builds, the Rails-to-runner contract, seed replant, and the 84-component SBOM check.
 
@@ -34,7 +34,7 @@ Focused release checks passed 14 tests with 75 assertions for backup, verificati
 ### Host boundaries
 
 - Production image construction, a live pgvector 0.8.1-to-0.8.6 volume upgrade, the full Compose backup and isolated restore, and Compose upgrade preflight still need a Linux host with Docker Engine and Compose v2. The Linux orb rebaseline covered their source-controlled regression tests and the native PostgreSQL restore described above, not these live Compose paths.
-- The M6 orb had neither Docker nor Podman, so it could not add live container evidence for those paths.
+- No running local Linux container backend was available for the M6 check, so it could not add live container evidence for those paths.
 - The Helm chart is experimental. It does not yet have the same live upgrade, restore, and platform-security evidence as Compose and native Linux.
 
 ### Credential boundaries

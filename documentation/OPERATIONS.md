@@ -6,7 +6,7 @@ Do not copy a live local file or Supermemory store. Stop every writer before tak
 
 ## Reliability cockpit
 
-Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Solid Queue, runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. This view aids diagnosis; it does not replace host alerts or an external monitor.
+Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Workspace-scoped runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. Shared Solid Queue rows and process heartbeats are not Workspace evidence and are excluded from this view. This view aids diagnosis; it does not replace host alerts or an external monitor.
 
 The cockpit can reconcile one saved runner admission, start an idempotent retry after a definite retryable run failure, and rebuild missing, failed, unknown, or stale Memory index work from PostgreSQL. Each action rechecks the signed-in role and asks for confirmation. An unknown customer send offers only a link to the exact Case. Check the external channel before any new human send; never retry from the cockpit.
 
@@ -39,7 +39,7 @@ NavishAI never guesses an ambiguous identity. Choose one candidate in the existi
 
 The complete state shows discovered, imported, matched, skipped, ambiguous, unsupported, failed, and pending counts plus the full report digest. Do not call the run complete while any count remains failed or pending. The backfill has no remote-write recovery command. Use normal Intercom reconciliation for later source changes.
 
-The M6 deterministic proof at `2f1f876884866ac0046a81b5795e7570669ee96d` links one GET-only imported conversation to its exact discovered, imported, matched, pending, failed, and unsupported counts and report digest. A verified Workspace archive round trip retains that row and report, then rebuilds its available Memory record from PostgreSQL without an engine-private document ID. This source proof does not replace a deployment-owned backup, restore rehearsal, credential smoke test, or external Intercom check.
+The M6 deterministic proof links one GET-only imported conversation to its exact discovered, imported, matched, pending, failed, and unsupported counts and report digest. A verified Workspace archive round trip retains that row and report, then rebuilds its available Memory record from PostgreSQL without an engine-private document ID. This source proof does not replace a deployment-owned backup, restore rehearsal, credential smoke test, or external Intercom check.
 
 ## Governed policy change
 

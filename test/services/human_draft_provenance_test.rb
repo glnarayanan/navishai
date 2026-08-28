@@ -108,6 +108,54 @@ class HumanDraftProvenanceTest < ActiveSupport::TestCase
     assert_nil draft.human_edited_at
   end
 
+  test "send readiness follows the frozen contract result and current body digest" do
+    human_draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Entirely human answer", expected_lock_version: "new"
+    )
+    assert HumanDraftProvenance.ready_for_send?(human_draft)
+
+    complete_artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Complete generated answer", result_state: "complete"
+    )
+    complete_draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: complete_artifact.body, expected_lock_version: human_draft.lock_version.to_s,
+      source_crew_artifact_id: complete_artifact.id, adopt_source: true
+    )
+    assert HumanDraftProvenance.ready_for_send?(complete_draft)
+    assert_nil complete_draft.human_edited_at
+
+    %w[blocked needs_human].each do |result_state|
+      artifact = create_draft_artifact(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: "#{result_state} generated answer", result_state: result_state
+      )
+      draft = EmailDraftWorkflow.save!(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: artifact.body, expected_lock_version: complete_draft.lock_version.to_s,
+        source_crew_artifact_id: artifact.id, adopt_source: true
+      )
+      refute HumanDraftProvenance.ready_for_send?(draft)
+      edited = EmailDraftWorkflow.save!(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: "Human-qualified #{result_state} answer", expected_lock_version: draft.lock_version.to_s,
+        source_crew_artifact_id: artifact.id
+      )
+      assert HumanDraftProvenance.ready_for_send?(edited)
+
+      reverted = EmailDraftWorkflow.save!(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: artifact.body, expected_lock_version: edited.lock_version.to_s,
+        source_crew_artifact_id: artifact.id
+      )
+      assert reverted.human_edited_at
+      refute HumanDraftProvenance.ready_for_send?(reverted)
+      complete_draft = reverted
+    end
+  end
+
   test "Intercom has the same adoption edit and stale-write rules" do
     artifact = create_draft_artifact(
       workspace: @workspace, support_case: @support_case, membership: @membership,
