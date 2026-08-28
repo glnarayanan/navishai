@@ -240,7 +240,10 @@ class IntercomHistoricalBackfill
       run.with_lock do
         return if run.completed? || run.blocked?
         return if run.running?
-        return complete!(run) if run.cursor_position >= record_count
+        if run.cursor_position >= record_count
+          complete!(run)
+          return
+        end
 
         run.update!(status: :running, failure_code: nil, started_at: run.started_at || Time.current)
         ending = [ run.cursor_position + batch_size, record_count ].min

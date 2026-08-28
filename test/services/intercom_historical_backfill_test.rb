@@ -76,6 +76,33 @@ class IntercomHistoricalBackfillTest < ActiveSupport::TestCase
     assert @client.assert_get_only!
   end
 
+  test "empty history completes with an exact zero preservation report" do
+    client = FakeClient.new(remotes: {}, attachment_bodies: {}, requests: [])
+    customer_counts = customer_counts()
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client:)
+    run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest:, membership: @owner, client:, enqueue: false
+    )
+
+    IntercomHistoricalBackfill.perform!(run:, client:)
+
+    expected_counts = IntercomHistoricalBackfill::COUNT_KEYS.index_with { 0 }
+    report = run.reload.intercom_backfill_report
+    assert run.completed?
+    assert_empty run.intercom_backfill_batches
+    assert_equal customer_counts, customer_counts()
+    assert_equal 1, IntercomBackfillReport.where(intercom_backfill_run: run).count
+    assert_equal expected_counts, report.counts
+    assert report.complete?
+    assert report.reconciled?
+    assert_equal Digest::SHA256.hexdigest(JSON.generate(expected_counts.sort.to_h)), report.report_digest
+    assert_equal 1, AuditEvent.where(
+      action: "intercom.backfill_completed", subject_type: "IntercomBackfillRun", subject_id: run.id
+    ).count
+    assert_equal [ [ :conversations, nil ], [ :conversations, nil ] ], client.requests
+    assert client.assert_get_only!
+  end
+
   test "confirmation rejects stale or changed manifests before customer writes" do
     manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
     before = customer_counts()
