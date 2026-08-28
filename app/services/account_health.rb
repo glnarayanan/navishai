@@ -19,17 +19,15 @@ class AccountHealth
 
   def self.recalculate_due!(workspace:, at: Time.current)
     workspace.accounts.order(:id).map do |account|
-      renewal = latest_input(account, "renewal_on", at:)&.date_value
+      renewal = latest_input(account, "renewal_on", at:, workspace:)&.date_value
       trigger = renewal && renewal.between?(at.to_date, at.to_date + RENEWAL_WINDOW_DAYS) ? "renewal_window" : "schedule"
       recalculate!(workspace:, account:, trigger_kind: trigger, at:)
     end
   end
 
-  def self.latest_input(account, key, at: Time.current)
-    account.health_inputs.where(input_key: key).where(observed_at: ..at)
-      .where("valid_from IS NULL OR valid_from <= ?", at)
-      .where("valid_until IS NULL OR valid_until >= ?", at)
-      .order(observed_at: :desc, id: :desc).first
+  def self.latest_input(account, key, at: Time.current, workspace: nil)
+    workspace ||= account.workspace
+    AccountHealthInput.effective_for(workspace:, account_ids: [ account.id ], input_key: key, at:).first
   end
 
   def initialize(workspace:, membership: nil)
@@ -156,7 +154,7 @@ class AccountHealth
     end
 
     def latest(account, key)
-      self.class.latest_input(account, key, at: @calculated_at)
+      self.class.latest_input(account, key, at: @calculated_at, workspace: @workspace)
     end
 
     def repeated_human_taggings(cases, starts_at, ends_at)
