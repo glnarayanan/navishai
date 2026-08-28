@@ -10,13 +10,14 @@ class MemoryIndexer
       return entry if entry.memory_record.memory_tombstone
       return entry if entry.failure_code == "retention_expired"
 
+      preclaimed = entry.indexing?
       entry.update!(
         status: :indexing,
-        attempt_count: entry.attempt_count + 1,
+        attempt_count: preclaimed ? entry.attempt_count : entry.attempt_count + 1,
         external_document_id: nil,
         external_status: nil,
         failure_code: nil,
-        last_attempted_at: attempted_at,
+        last_attempted_at: preclaimed ? entry.last_attempted_at : attempted_at,
         indexed_at: nil
       )
     end

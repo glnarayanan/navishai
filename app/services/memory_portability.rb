@@ -69,11 +69,20 @@ class MemoryPortability
   def self.reconstruct_index!(workspace:, membership:)
     actor = manager!(workspace, membership)
     count = 0
+    requested_at = Time.current
     MemoryIndexEntry.transaction do
       workspace.memory_records.current.available.find_each do |record|
-        entry = workspace.memory_index_entries.find_or_create_by!(memory_record: record)
-        next if entry.indexed? || entry.indexing?
+        entry = workspace.memory_index_entries.find_or_initialize_by(memory_record: record)
+        missing_entry = entry.new_record?
+        entry.save! if missing_entry
+        stale_claim = entry.indexing? && entry.last_attempted_at && entry.last_attempted_at < requested_at - 5.minutes
+        next unless missing_entry || entry.failed? || entry.unknown? || stale_claim
 
+        entry.update!(
+          status: :indexing, attempt_count: entry.attempt_count + 1,
+          failure_code: nil, external_document_id: nil,
+          external_status: nil, indexed_at: nil, last_attempted_at: requested_at
+        )
         MemoryIndexJob.enqueue_after_commit(entry, force: true)
         count += 1
       end

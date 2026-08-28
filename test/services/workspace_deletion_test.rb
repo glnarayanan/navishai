@@ -98,6 +98,12 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     )
     intervention_id = intervention.id
     review_id = review.id
+    operational_check = OperationalCheck.record!(
+      workspace:, membership: owner, check_kind: "backup_verification",
+      result: "passed", result_code: "verified",
+      evidence_digest: Digest::SHA256.hexdigest("deletion check"), source_commit: "f" * 40
+    )
+    operational_check_id = operational_check.id
     purged = []
     request = WorkspaceDeletion.request!(
       workspace:, membership: memberships(:owner_support), confirmation: workspace.slug
@@ -112,6 +118,7 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     refute Membership.exists?(workspace_id:)
     refute CustomerSuccessIntervention.exists?(intervention_id)
     refute CustomerSuccessInterventionOutcomeReview.exists?(review_id)
+    refute OperationalCheck.exists?(operational_check_id)
     assert_empty purged
     assert User.exists?(user.id)
     assert_equal workspace_id, tombstone.former_workspace_id

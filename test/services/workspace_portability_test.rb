@@ -65,6 +65,13 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       source_id: "portable-health-2", source_namespace: "portable.crm", corrects_source_id: "portable-health-1",
       account_name: accounts(:acme).name, observed_at: 1.day.ago.iso8601, active_users: 30
     } ])
+    source_check = OperationalCheck.record!(
+      workspace: source, membership: memberships(:owner_support), check_kind: "restore_rehearsal",
+      result: "passed", result_code: "round_trip_verified",
+      evidence_digest: Digest::SHA256.hexdigest("portable restore evidence"),
+      source_commit: "e" * 40, checked_at: 2.hours.ago,
+      archive_format: WorkspacePortability::FORMAT, counts: { table: 4, record: 40 }
+    )
     source_correction = source.account_health_inputs.find_by!(source_key: "portable-health-2")
     source_signal = accounts(:acme).current_health_assessment.signals.find_by!(signal_key: "customer_inactivity_days")
     source_audit_count = source.audit_events.count
@@ -103,6 +110,11 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
         "WHERE workspace_id = #{@imported.id} AND id = #{Integer(reference.fetch('id'))}"
       )
     end
+    restored_check = @imported.operational_checks.find_by!(check_kind: source_check.check_kind)
+    assert_equal source_check.evidence_digest, restored_check.evidence_digest
+    assert_equal 40, restored_check.record_count
+    assert_equal users(:owner), restored_check.recorded_by_user
+    assert_equal restored_check.recorded_by_user, restored_check.recorded_by_membership.user
     assert @imported.audit_events.exists?(action: "workspace.imported", actor: users(:owner))
   end
 
