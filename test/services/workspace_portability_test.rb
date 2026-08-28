@@ -118,6 +118,54 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     assert @imported.audit_events.exists?(action: "workspace.imported", actor: users(:owner))
   end
 
+  test "skips empty health evidence updates while preserving remapped references" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    support_case = create_support_case(
+      subject: "Portable health evidence", workspace: source, membership: owner
+    )
+    assessment = AccountHealth.recalculate!(
+      workspace: source, account: accounts(:acme), trigger_kind: "human_request", membership: owner,
+      at: Time.zone.parse("2026-08-28 18:42:00")
+    )
+    empty_signal = assessment.signals.detect { |signal| signal.evidence_refs.empty? }
+    referenced_signal = assessment.signals.detect do |signal|
+      signal.evidence_refs.include?({ "kind" => "support_case", "id" => support_case.id })
+    end
+    source_signals = source.account_health_signals.to_a
+    nonempty_reference_count = source_signals.count { |signal| signal.evidence_refs.any? }
+    assert_operator source_signals.size, :>, nonempty_reference_count
+    assert empty_signal
+    assert referenced_signal
+    assert_equal 1, nonempty_reference_count
+    archive = WorkspacePortability.export(workspace: source, membership: owner)
+    evidence_updates = []
+    subscriber = lambda do |_name, _started, _finished, _id, payload|
+      sql = payload.fetch(:sql)
+      evidence_updates << sql if sql.match?(/\AUPDATE "account_health_signals" SET "evidence_refs"/)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      @imported = WorkspacePortability.import(
+        workspace: source, membership: owner, archive_io: archive,
+        name: "Health Evidence Restore", slug: "health-evidence-restore"
+      )
+    end
+
+    assert_equal 1, evidence_updates.size
+    restored_assessment = @imported.account_health_assessments.find_by!(calculated_at: assessment.calculated_at)
+    restored_empty = restored_assessment.signals.find_by!(signal_key: empty_signal.signal_key)
+    restored_reference = restored_assessment.signals.find_by!(signal_key: referenced_signal.signal_key)
+    restored_case = @imported.support_cases.joins(:conversation)
+      .find_by!(conversations: { subject: support_case.conversation.subject })
+    assert_empty restored_empty.evidence_refs
+    assert_includes restored_reference.evidence_refs, { "kind" => "support_case", "id" => restored_case.id }
+    refute_includes restored_reference.evidence_refs, { "kind" => "support_case", "id" => support_case.id }
+    refute_equal support_case.id, restored_case.id
+  ensure
+    archive&.close!
+  end
+
   test "round trips historical schema v1 artifacts and published contract families without rewriting history" do
     source = workspaces(:acme_support)
     historical = create_historical_v1(source)
