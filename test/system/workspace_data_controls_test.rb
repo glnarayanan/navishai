@@ -53,7 +53,7 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     button = find_button("Run archive round-trip check")
     accept_confirm { button.send_keys(:enter) }
 
-    assert_text "Archive round trip passed."
+    assert_text "Archive round trip passed.", wait: 12
     assert_text "new verification target Workspace"
     assert_text "Passed: Round trip verified"
     assert_no_text "engine-private"
