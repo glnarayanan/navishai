@@ -87,6 +87,7 @@
             <p class="delivery-actor">Sent by <strong><%= @email_delivery.actor_user.email_address %></strong> at <time datetime="<%= @email_delivery.sent_at.iso8601 %>"><%= @email_delivery.sent_at.to_fs(:long) %></time>.</p>
             <div class="message-body delivery-review-body"><%= simple_format(@email_delivery.body) %></div>
           <% elsif @membership.can_write? %>
+            <% email_send_blocked = !HumanDraftProvenance.ready_for_send?(@email_draft) %>
             <%= render "draft_source_selector", channel_name: "email", draft: @email_draft,
               save_path: email_draft_workspace_support_case_path(@workspace, @support_case) %>
             <%= form_with url: email_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
@@ -132,10 +133,13 @@
                   <p class="field-hint" role="status">Send stays blocked until every attachment passes malware scanning. Remove blocked files to continue.</p>
                 <% end %>
               <% end %>
+              <% if email_send_blocked %>
+                <p class="field-hint" role="status"><%= HumanDraftProvenance::SEND_REVIEW_MESSAGE %></p>
+              <% end %>
               <div class="reply-actions">
                 <%= form.submit "Save draft", formaction: email_draft_workspace_support_case_path(@workspace, @support_case), class: "button button-secondary" %>
                 <%= form.submit "Send email", class: "button button-primary",
-                  disabled: @draft_attachments.any? { |attachment| !attachment.available? },
+                  disabled: email_send_blocked || @draft_attachments.any? { |attachment| !attachment.available? },
                   data: { turbo_confirm: "Send this exact message to the customer now?" } %>
               </div>
             <% end %>
@@ -211,6 +215,7 @@
             <p class="delivery-actor">Sent by <strong><%= @intercom_delivery.actor_user.email_address %></strong> at <time datetime="<%= @intercom_delivery.sent_at.iso8601 %>"><%= @intercom_delivery.sent_at.to_fs(:long) %></time>.</p>
             <div class="message-body delivery-review-body"><%= simple_format(@intercom_delivery.body) %></div>
           <% elsif @membership.can_write? %>
+            <% intercom_send_blocked = !HumanDraftProvenance.ready_for_send?(@intercom_draft) %>
             <%= render "draft_source_selector", channel_name: "Intercom", draft: @intercom_draft,
               save_path: intercom_draft_workspace_support_case_path(@workspace, @support_case) %>
             <%= form_with url: intercom_send_workspace_support_case_path(@workspace, @support_case), class: "email-reply-form" do |form| %>
@@ -230,9 +235,13 @@
                   required: true, rows: 8, maxlength: IntercomDraft::MAX_BODY_BYTES %>
                 <span class="field-hint">Plain text. The signed-in human sends this reply as their matching Intercom admin.</span>
               </div>
+              <% if intercom_send_blocked %>
+                <p class="field-hint" role="status"><%= HumanDraftProvenance::SEND_REVIEW_MESSAGE %></p>
+              <% end %>
               <div class="reply-actions">
                 <%= form.submit "Save draft", formaction: intercom_draft_workspace_support_case_path(@workspace, @support_case), class: "button button-secondary" %>
                 <%= form.submit "Send to Intercom", class: "button button-primary",
+                  disabled: intercom_send_blocked,
                   data: { turbo_confirm: "Send this exact reply to the customer in Intercom now?" } %>
               </div>
             <% end %>

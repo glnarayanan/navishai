@@ -182,6 +182,7 @@ class HumanEmailSend
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
+        HumanDraftProvenance.require_sendable!(draft)
         attachments = draft.stored_attachments.to_a
         unless attachments.all? { |attachment| attachment.available? && attachment.file.attached? }
           raise AttachmentIntake::InvalidAttachment, "Every attachment must pass malware scanning before send."
