@@ -7,7 +7,9 @@ class IntercomRepliesController < SupportCasesController
     IntercomDraftWorkflow.save!(
       workspace: Current.workspace, support_case: @support_case,
       membership: Current.require_membership!, body: params[:body],
-      expected_lock_version: params[:draft_version]
+      expected_lock_version: params[:draft_version],
+      source_crew_artifact_id: params[:source_crew_artifact_id],
+      adopt_source: params[:adopt_source] == "1"
     )
     redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "intercom-reply"), notice: "Intercom draft saved."
   end
@@ -17,6 +19,7 @@ class IntercomRepliesController < SupportCasesController
       workspace: Current.workspace, support_case: @support_case,
       membership: Current.require_membership!, body: params[:body],
       draft_version: params[:draft_version], idempotency_key: params[:idempotency_key],
+      source_crew_artifact_id: params[:source_crew_artifact_id],
       expected_source_part_id: params[:expected_source_part_id]
     )
     message = if delivery.sent?

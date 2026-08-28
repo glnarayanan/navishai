@@ -37,6 +37,12 @@ class SupportCasesController < ApplicationController
       @cited_evidence = CrewTaskEvent.where(crew_task_id: @crew_tasks.map(&:id)).where.not(evidence_locator: [ nil, "" ]).order(created_at: :desc).limit(8)
       @memory_degraded = ExecutionRun.where(crew_task_id: @crew_tasks.map(&:id), memory_context_status: "degraded").exists?
       @policy_reviews = @crew_tasks.select(&:review_requested?)
+      @draft_artifacts = @workspace.crew_artifacts
+        .joins(:crew_task)
+        .includes(:crew_task, :resolution_contract_version, execution_run: :agent_profile)
+        .where(artifact_kind: "draft", crew_tasks: { scope_kind: "support_case", support_case_id: @support_case.id })
+        .order(created_at: :desc, id: :desc)
+        .limit(8)
       contact = @support_case.conversation.contact.canonical
       account = contact.account&.canonical
       @contact_emails = identity_values(contact, :email)

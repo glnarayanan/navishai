@@ -1,0 +1,68 @@
+<% result_state = artifact.contract_result_state || "unavailable" %>
+<% unresolved_claims = artifact.material_claims.select { |claim| claim.fetch("state") != "supported" || claim.fetch("evidence").any? { |evidence| evidence.fetch("status") != "available" } } %>
+
+<div class="artifact-proof-summary artifact-proof-summary-<%= result_state.dasherize %>">
+  <dl>
+    <div>
+      <dt>Contract result</dt>
+      <dd><span class="draft-proof-state draft-proof-state-<%= result_state.dasherize %>"><%= result_state.humanize %></span></dd>
+    </div>
+    <div>
+      <dt>Checked</dt>
+      <dd>
+        <% if artifact.contract_evaluated_at %>
+          <time datetime="<%= artifact.contract_evaluated_at.iso8601 %>"><%= artifact.contract_evaluated_at.to_fs(:long) %></time>
+        <% else %>
+          Not recorded
+        <% end %>
+      </dd>
+    </div>
+  </dl>
+
+  <% if artifact.schema_version == 1 %>
+    <div class="artifact-proof-section artifact-blockers">
+      <strong>Proof unavailable</strong>
+      <p>This older artifact has no resolution contract result. Add current evidence or choose a v2 Crew draft before relying on its proof.</p>
+    </div>
+  <% elsif unresolved_claims.any? %>
+    <div class="artifact-proof-section">
+      <strong>Claims that need judgment</strong>
+      <ul class="artifact-claim-list">
+        <% unresolved_claims.each do |claim| %>
+          <li>
+            <span><strong><%= claim.fetch("text") %></strong> · <%= claim.fetch("state").humanize %></span>
+            <% unavailable_evidence = claim.fetch("evidence").reject { |evidence| evidence.fetch("status") == "available" } %>
+            <% if unavailable_evidence.any? %>
+              <ul>
+                <% unavailable_evidence.each do |evidence| %>
+                  <li><%= evidence.fetch("status").humanize %> <%= evidence.fetch("kind").humanize.downcase %>: <code><%= evidence.fetch("locator") %></code></li>
+                <% end %>
+              </ul>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% else %>
+    <p class="artifact-proof-complete"><%= pluralize(artifact.material_claims.size, "material claim") %> passed with available evidence.</p>
+  <% end %>
+
+  <% if artifact.contract_blockers.any? %>
+    <div class="artifact-proof-section artifact-blockers">
+      <strong>Blockers and next steps</strong>
+      <ol>
+        <% artifact.contract_blockers.each do |blocker| %>
+          <li>
+            <strong><%= blocker.fetch("message") %></strong>
+            <span><%= blocker.fetch("remediation") %></span>
+          </li>
+        <% end %>
+      </ol>
+    </div>
+  <% end %>
+
+  <div class="artifact-proof-section">
+    <strong>Recorded uncertainty</strong>
+    <p><%= artifact.uncertainty %></p>
+  </div>
+</div>

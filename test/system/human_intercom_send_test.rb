@@ -2,13 +2,15 @@ require "application_system_test_case"
 
 class HumanIntercomSendTest < ApplicationSystemTestCase
   class RecordingClient
-    attr_reader :replies
+    attr_reader :admin_requests, :replies
 
     def initialize
+      @admin_requests = 0
       @replies = []
     end
 
     def admins
+      @admin_requests += 1
       { "admins" => [ { "id" => "admin_owner", "email" => "owner@example.com" } ] }
     end
 
@@ -62,11 +64,103 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
       end
       assert_text "Intercom reply sent."
       assert_text "Exact answer sent by the owner"
-      assert_text "This reply was sent by owner@example.com"
+      assert_text "Sent by owner@example.com"
     end
 
     assert_equal "Exact answer sent by the owner", client.replies.sole[:body]
     assert_equal "admin_owner", client.replies.sole[:admin_id]
+  end
+
+  test "a human adopts refused proof and keeps edit authority on mobile" do
+    support_case = intercom_support_case
+    artifact = create_draft_artifact(
+      workspace: support_case.workspace, support_case:, membership: memberships(:owner_support),
+      body: "Generated Intercom answer with proof", result_state: "needs_human", claim_state: "refused",
+      blocker_message: "Current technical evidence was refused.",
+      remediation: "Supply current technical evidence or keep the refusal in human review."
+    )
+    sign_in_in_browser(users(:owner))
+    client = RecordingClient.new
+    page.current_window.resize_to(320, 844)
+    visit workspace_support_case_path(support_case.workspace, support_case)
+
+    within "#intercom-reply" do
+      assert_text "Human-authored draft"
+      assert_text "Agents and jobs cannot send it."
+      assert_button "Send to Intercom"
+    end
+    source_summary = find("#intercom-reply summary", text: "Choose an AI draft")
+    source_summary.send_keys(:enter)
+    assert page.evaluate_script("document.activeElement === arguments[0]", source_summary)
+    candidate_summary = find("#intercom-reply .draft-source-candidate > summary")
+    candidate_summary.send_keys(:enter)
+    assert_selector "#intercom-reply .draft-source-candidate[open]"
+    within "#intercom-reply .draft-source-candidate" do
+      assert_text "Refused"
+      assert_text "Current technical evidence was refused."
+      assert_text "Supply current technical evidence or keep the refusal in human review."
+    end
+    assert_no_horizontal_overflow
+    if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+      page.execute_script(
+        "document.documentElement.style.scrollBehavior = 'auto'; arguments[0].scrollIntoView({ block: 'center' })",
+        find("#intercom-reply .artifact-blockers")
+      )
+      save_screenshot Rails.root.join(".amp/in/artifacts/intercom-draft-authority-refused-mobile.png")
+    end
+
+    within "#intercom-reply .draft-source-candidate" do
+      click_button "Use this AI draft"
+    end
+    within "#intercom-draft-provenance" do
+      assert_text "AI source · Generated body"
+      assert_text "Needs human"
+    end
+    assert_equal artifact.body, find("#intercom-reply textarea[name='body']").value
+    assert_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
+    assert_button "Send to Intercom", disabled: true
+    if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+      page.execute_script(
+        "arguments[0].scrollIntoView({ block: 'start' })",
+        find("#intercom-draft-provenance h3")
+      )
+      save_screenshot Rails.root.join(".amp/in/artifacts/intercom-draft-authority-generated-mobile.png")
+    end
+
+    find("#intercom-reply textarea[name='body']").set("Human-qualified Intercom answer")
+    within "#intercom-reply" do
+      click_button "Save draft"
+    end
+    assert_text "Intercom draft saved."
+    within "#intercom-draft-provenance" do
+      assert_text "AI source · Human-edited"
+      assert_text "Edited by owner@example.com"
+      assert_text "No sentence-level authorship is inferred."
+      assert_selector "time[datetime]", minimum: 2
+    end
+    assert_no_horizontal_overflow
+    assert_operator find_button("Send to Intercom").rect.height, :>=, 48
+    assert_button "Send to Intercom", disabled: false
+    refute_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
+    if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+      page.execute_script(
+        "arguments[0].scrollIntoView({ block: 'start' })",
+        find("#intercom-draft-provenance h3")
+      )
+      save_screenshot Rails.root.join(".amp/in/artifacts/intercom-draft-authority-edited-mobile.png")
+    end
+
+    page.current_window.resize_to(1440, 1000)
+    with_client(client) do
+      within "#intercom-reply" do
+        accept_confirm { click_button "Send to Intercom" }
+      end
+      assert_text "Intercom reply sent."
+      assert_text "Human-qualified Intercom answer"
+      assert_text "Sent by owner@example.com"
+    end
+    assert_equal 1, client.admin_requests
+    assert_equal "Human-qualified Intercom answer", client.replies.sole[:body]
   end
 
   private

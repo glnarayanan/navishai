@@ -9,7 +9,9 @@ class EmailRepliesController < SupportCasesController
       support_case: @support_case,
       membership: Current.require_membership!,
       body: params[:body],
-      expected_lock_version: params[:draft_version]
+      expected_lock_version: params[:draft_version],
+      source_crew_artifact_id: params[:source_crew_artifact_id],
+      adopt_source: params[:adopt_source] == "1"
     )
     redirect_to workspace_support_case_path(Current.workspace, @support_case, anchor: "email-reply"), notice: "Draft saved."
   end
@@ -22,6 +24,7 @@ class EmailRepliesController < SupportCasesController
       body: params[:body],
       draft_version: params[:draft_version],
       idempotency_key: params[:idempotency_key],
+      source_crew_artifact_id: params[:source_crew_artifact_id],
       expected_recipient_address: params[:expected_recipient_address],
       expected_inbound_message_id: params[:expected_inbound_message_id],
       confirmed_recipient_address: params[:confirmed_recipient_address]

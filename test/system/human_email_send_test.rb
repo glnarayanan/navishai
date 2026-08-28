@@ -51,10 +51,109 @@ class HumanEmailSendTest < ApplicationSystemTestCase
         assert_text "Email sent."
       end
       assert_text "Exact answer sent by the owner"
-      assert_text "This draft was sent by owner@example.com"
+      assert_text "Sent by owner@example.com"
       assert_equal "Exact answer sent by the owner", transport.deliveries.sole[:body]
       save_screenshot Rails.root.join(".amp/in/artifacts/human-email-send-desktop.png") if ENV["CAPTURE_HUMAN_EMAIL_SEND"]
     end
+  end
+
+  test "a human adopts blocked proof and keeps edit authority on desktop and mobile" do
+    support_case = email_support_case
+    artifact = create_draft_artifact(
+      workspace: support_case.workspace, support_case:, membership: memberships(:owner_support),
+      body: "Generated answer with proof", result_state: "blocked", evidence_status: "stale",
+      blocker_message: "Current reset evidence is stale.",
+      remediation: "Refresh the reset evidence or qualify the final human message."
+    )
+    sign_in_in_browser(users(:owner))
+    transport = RecordingTransport.new
+
+    with_transport(transport) do
+      page.current_window.resize_to(1440, 1000)
+      visit workspace_support_case_path(support_case.workspace, support_case)
+
+      within "#email-reply" do
+        assert_text "Human-authored draft"
+        assert_text "No AI artifact is linked."
+      end
+      if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+        page.execute_script(
+          "document.documentElement.style.scrollBehavior = 'auto'; arguments[0].scrollIntoView({ block: 'start' })",
+          find("#email-draft-provenance h3")
+        )
+        save_screenshot Rails.root.join(".amp/in/artifacts/human-draft-authority-human-desktop.png")
+      end
+
+      source_summary = find("summary", text: "Choose an AI draft")
+      source_summary.send_keys(:enter)
+      assert page.evaluate_script("document.activeElement === arguments[0]", source_summary)
+      assert_selector ".draft-source-selector[open]"
+      candidate_summary = find(".draft-source-candidate > summary")
+      candidate_summary.send_keys(:enter)
+      assert_selector ".draft-source-candidate[open]"
+      within ".draft-source-candidate" do
+        assert_text "Blocked"
+        assert_text "Stale conversation"
+        assert_text "Current reset evidence is stale."
+        assert_text "Refresh the reset evidence or qualify the final human message."
+        assert_text "A blocked or unresolved source stays blocked or unresolved."
+        click_button "Use this AI draft"
+      end
+
+      within "#email-draft-provenance" do
+        assert_text "AI source · Generated body"
+        assert_text "This message still matches the generated body exactly."
+        assert_text "Blocked"
+      end
+      assert_equal artifact.body, find("#email-reply textarea[name='body']").value
+      assert_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
+      assert_button "Send email", disabled: true
+      if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+        page.execute_script(
+          "arguments[0].scrollIntoView({ block: 'center' })",
+          find("#email-draft-provenance .artifact-blockers")
+        )
+        save_screenshot Rails.root.join(".amp/in/artifacts/human-draft-authority-blocked-desktop.png")
+        page.execute_script(
+          "arguments[0].scrollIntoView({ block: 'start' })",
+          find("#email-draft-provenance h3")
+        )
+        save_screenshot Rails.root.join(".amp/in/artifacts/human-draft-authority-generated-desktop.png")
+      end
+
+      find("#email-reply textarea[name='body']").set("Human-qualified final answer")
+      click_button "Save draft"
+      assert_text "Draft saved."
+      within "#email-draft-provenance" do
+        assert_text "AI source · Human-edited"
+        assert_text "Edited by owner@example.com"
+        assert_text "No sentence-level authorship is inferred."
+        assert_selector "time[datetime]", minimum: 2
+      end
+      assert_button "Send email", disabled: false
+      refute_text HumanDraftProvenance::SEND_REVIEW_MESSAGE
+
+      page.current_window.resize_to(320, 844)
+      assert_no_horizontal_overflow
+      assert_operator find("#email-draft-provenance").rect.width, :<=, page.evaluate_script("window.innerWidth")
+      assert_operator find_button("Send email").rect.height, :>=, 48
+      if ENV["CAPTURE_HUMAN_DRAFT_AUTHORITY"]
+        page.execute_script(
+          "arguments[0].scrollIntoView({ block: 'start' })",
+          find("#email-draft-provenance h3")
+        )
+        save_screenshot Rails.root.join(".amp/in/artifacts/human-draft-authority-edited-mobile.png")
+      end
+
+      page.current_window.resize_to(1440, 1000)
+      assert_difference "ConversationMessage.outbound.count", 1 do
+        accept_confirm { click_button "Send email" }
+        assert_text "Email sent."
+      end
+      assert_text "Human-qualified final answer"
+      assert_text "Sent by owner@example.com"
+    end
+    assert_equal "Human-qualified final answer", transport.deliveries.sole[:body]
   end
 
   test "a viewer can read an email case but cannot draft or send" do

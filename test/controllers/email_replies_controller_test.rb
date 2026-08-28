@@ -38,6 +38,110 @@ class EmailRepliesControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
     assert_equal "Draft answer", @support_case.email_draft.body
+
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select "#email-draft-provenance", text: /Human-authored draft/
+    assert_select "#email-reply input[name='source_crew_artifact_id']", count: 0
+  end
+
+  test "a writer explicitly adopts and then edits a blocked Crew draft" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: memberships(:owner_support),
+      body: "Exact generated email body", result_state: "blocked", evidence_status: "stale",
+      blocker_message: "Reset policy evidence is stale.",
+      remediation: "Refresh the reset policy source and run the specialist again."
+    )
+
+    get workspace_support_case_path(@workspace, @support_case)
+
+    assert_response :success
+    assert_select "#email-reply .draft-source-form" do
+      assert_select "input[name='source_crew_artifact_id'][value='#{artifact.id}']"
+      assert_select "input[name='adopt_source'][value='1']"
+      assert_select "input[type='submit'][value='Use this AI draft']"
+    end
+    assert_select "#email-reply", text: /Reset policy evidence is stale\./
+    assert_select "#email-reply", text: /Refresh the reset policy source and run the specialist again\./
+    assert_select "#email-reply", text: /Stale conversation/
+
+    post email_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: artifact.body, draft_version: "new", source_crew_artifact_id: artifact.id, adopt_source: "1"
+    }
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
+    draft = @support_case.reload.email_draft
+    assert_equal artifact, draft.source_crew_artifact
+    assert_nil draft.human_edited_at
+
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select "#email-draft-provenance", text: /AI source · Generated body/
+    assert_select "#email-reply input[name='source_crew_artifact_id'][value='#{artifact.id}']"
+    assert_select "#email-reply", text: /Change and save this AI draft before sending\./
+    assert_select "#email-reply input[type='submit'][value='Send email'][disabled]"
+
+    transport = RecordingTransport.new
+    with_transport(transport) do
+      assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+        post email_send_workspace_support_case_path(@workspace, @support_case), params: recipient_binding.merge(
+          body: artifact.body, draft_version: draft.lock_version, idempotency_key: "blocked-controller",
+          source_crew_artifact_id: artifact.id
+        )
+      end
+    end
+    assert_response :unprocessable_content
+    assert_select ".command-error[role='alert']", text: /Change and save this AI draft before sending\./
+    assert_empty transport.deliveries
+    assert_nil @support_case.reload.email_draft.human_edited_at
+
+    post email_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: "Human-qualified email body", draft_version: draft.lock_version,
+      source_crew_artifact_id: artifact.id
+    }
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "email-reply")
+
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select "#email-draft-provenance", text: /AI source · Human-edited/
+    assert_select "#email-draft-provenance", text: /Edited by owner@example\.com/
+    assert_select "#email-draft-provenance", text: /replacement text does not inherit its grounding/
+    assert_select "#email-reply input[type='submit'][value='Send email'][disabled]", count: 0
+
+    with_transport(transport) do
+      assert_difference [ "OutboundEmailDelivery.sent.count", "ConversationMessage.outbound.count" ], 1 do
+        post email_send_workspace_support_case_path(@workspace, @support_case), params: recipient_binding.merge(
+          body: "Human-qualified email body", draft_version: draft.reload.lock_version,
+          idempotency_key: "edited-controller", source_crew_artifact_id: artifact.id
+        )
+      end
+    end
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case)
+    assert_equal "Human-qualified email body", @workspace.outbound_email_deliveries.sole.body
+    assert_equal 1, transport.deliveries.size
+  end
+
+  test "a blocked email source cannot be sent unchanged through a forged POST" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: memberships(:owner_support),
+      body: "Exact blocked controller body", result_state: "blocked"
+    )
+    post email_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: artifact.body, draft_version: "new", source_crew_artifact_id: artifact.id, adopt_source: "1"
+    }
+    draft = @support_case.reload.email_draft
+    transport = RecordingTransport.new
+
+    with_transport(transport) do
+      assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count", "AuditEvent.count" ] do
+        post email_send_workspace_support_case_path(@workspace, @support_case), params: recipient_binding.merge(
+          body: artifact.body, draft_version: draft.lock_version, idempotency_key: "blocked-forged-post",
+          source_crew_artifact_id: artifact.id
+        )
+      end
+    end
+
+    assert_response :unprocessable_content
+    assert_select ".command-error", text: /Change and save this AI draft before sending\./
+    assert_empty transport.deliveries
+    assert_equal artifact, draft.reload.source_crew_artifact
+    assert_nil draft.human_edited_at
   end
 
   test "a fresh authenticated POST sends and attributes the exact content" do

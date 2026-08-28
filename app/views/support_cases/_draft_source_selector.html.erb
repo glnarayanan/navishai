@@ -1,0 +1,41 @@
+<details class="draft-source-selector">
+  <summary>
+    <span>Choose an AI draft</span>
+    <span><%= @draft_artifacts.size %> available</span>
+  </summary>
+  <div class="draft-source-selector-body">
+    <p>Selecting a source copies its exact body and frozen proof result into this <%= channel_name %> draft. It does not send anything.</p>
+    <% if @draft_artifacts.any? %>
+      <ol class="draft-source-list">
+        <% @draft_artifacts.each do |artifact| %>
+          <% result_state = artifact.contract_result_state || "unavailable" %>
+          <li>
+            <details class="draft-source-candidate">
+              <summary>
+                <span>
+                  <strong><%= artifact.crew_task.title %> · v<%= artifact.version_number %></strong>
+                  <small><%= artifact.execution_run.agent_profile.name %> · <%= artifact.created_at.to_fs(:short) %></small>
+                </span>
+                <span class="draft-proof-state draft-proof-state-<%= result_state.dasherize %>"><%= result_state.humanize %></span>
+              </summary>
+              <div class="draft-source-candidate-body">
+                <div class="message-body"><%= simple_format(artifact.body) %></div>
+                <%= render "artifact_proof", artifact: artifact %>
+                <p class="draft-authority-note">A blocked or unresolved source stays blocked or unresolved. You may still select it, then qualify or replace the text before a deliberate human Send.</p>
+                <%= form_with url: save_path, class: "draft-source-form" do |form| %>
+                  <%= form.hidden_field :body, value: artifact.body, id: nil %>
+                  <%= form.hidden_field :source_crew_artifact_id, value: artifact.id, id: nil %>
+                  <%= form.hidden_field :adopt_source, value: "1", id: nil %>
+                  <%= form.hidden_field :draft_version, value: draft.persisted? ? draft.lock_version : "new", id: nil %>
+                  <%= form.submit "Use this AI draft", class: "button button-secondary" %>
+                <% end %>
+              </div>
+            </details>
+          </li>
+        <% end %>
+      </ol>
+    <% else %>
+      <p class="muted-copy">No Crew draft artifact is available for this case. You can still write and send a human-authored draft.</p>
+    <% end %>
+  </div>
+</details>

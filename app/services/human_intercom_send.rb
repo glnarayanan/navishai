@@ -1,10 +1,11 @@
 class HumanIntercomSend
   DELIVERY_LOCK_NAMESPACE = 24_082_426
 
-  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_source_part_id:, client: nil)
+  def self.send!(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    expected_source_part_id:, source_crew_artifact_id: nil, client: nil)
     new(
       workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
-      expected_source_part_id:, client:
+      expected_source_part_id:, source_crew_artifact_id:, client:
     ).send!
   end
 
@@ -73,7 +74,8 @@ class HumanIntercomSend
     end
   end
 
-  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:, expected_source_part_id:, client:)
+  def initialize(workspace:, support_case:, membership:, body:, draft_version:, idempotency_key:,
+    expected_source_part_id:, source_crew_artifact_id:, client:)
     @workspace = workspace
     @support_case = support_case
     @membership = membership
@@ -81,6 +83,7 @@ class HumanIntercomSend
     @draft_version = draft_version.to_s
     @idempotency_key = idempotency_key.to_s
     @expected_source_part_id = expected_source_part_id.to_s
+    @source_crew_artifact_id = source_crew_artifact_id
     @client = client
   end
 
@@ -91,8 +94,9 @@ class HumanIntercomSend
     return replay if replay
 
     client = @client || IntercomClient.new(connection: connection)
-    admin_id = resolve_admin_id!(client)
     acquire_conversation_lock!
+    preflight_sendability!
+    admin_id = resolve_admin_id!(client)
     delivery, claimed = claim!(admin_id)
     return delivery unless claimed
 
@@ -167,6 +171,16 @@ class HumanIntercomSend
       admin.fetch("id").to_s
     end
 
+    def preflight_sendability!
+      draft = @workspace.intercom_drafts.find_by(support_case_id: @support_case.id)
+      return unless draft&.ready?
+      return unless draft.source_crew_artifact_id.present?
+      return if draft.generated_contract_result_state == "complete"
+      return unless Digest::SHA256.hexdigest(@body.to_s) == draft.generated_body_digest
+
+      raise ArgumentError, HumanDraftProvenance::SEND_REVIEW_MESSAGE
+    end
+
     def claim!(admin_id)
       IntercomOutboundDelivery.transaction do
         raise ArgumentError, "idempotency key is required" if @idempotency_key.blank? || @idempotency_key.length > 100
@@ -190,10 +204,12 @@ class HumanIntercomSend
         end
         draft = IntercomDraftWorkflow.save!(
           workspace: @workspace, support_case: current_case, membership: actor,
-          body: @body, expected_lock_version: @draft_version
+          body: @body, expected_lock_version: @draft_version,
+          source_crew_artifact_id: @source_crew_artifact_id
         )
         draft.lock!
         raise ArgumentError, "draft is already being sent" unless draft.ready?
+        HumanDraftProvenance.require_sendable!(draft)
 
         delivery = @workspace.intercom_outbound_deliveries.create!(
           intercom_draft: draft, intercom_connection: link.intercom_connection,
@@ -201,7 +217,8 @@ class HumanIntercomSend
           actor_membership: actor, actor_user: actor.user, idempotency_key: @idempotency_key,
           remote_conversation_id: link.remote_conversation_id, source_part_id: source_part.remote_part_id,
           admin_id: admin_id, body: draft.body,
-          started_at: [ Time.current, link.conversation.last_message_at ].compact.max
+          started_at: [ Time.current, link.conversation.last_message_at ].compact.max,
+          **HumanDraftProvenance.delivery_attributes(draft)
         )
         draft.update!(status: :sending)
         AuditEvent.record!(action: "intercom.send_started", source: :web, workspace: @workspace, actor: actor.user, subject: delivery)

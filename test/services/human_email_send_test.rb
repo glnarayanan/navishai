@@ -63,6 +63,141 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     ).exists?
   end
 
+  test "blocks unchanged blocked or needs-human source text before delivery or SMTP" do
+    current_draft = nil
+    %w[blocked needs_human].each do |result_state|
+      artifact = create_draft_artifact(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: "Unsendable #{result_state} answer", result_state: result_state
+      )
+      draft = if current_draft
+        EmailDraftWorkflow.save!(
+          workspace: @workspace, support_case: @support_case, membership: @membership,
+          body: artifact.body, expected_lock_version: current_draft.reload.lock_version.to_s,
+          source_crew_artifact_id: artifact.id, adopt_source: true
+        )
+      else
+        EmailDraftWorkflow.save!(
+          workspace: @workspace, support_case: @support_case, membership: @membership,
+          body: artifact.body, expected_lock_version: "new",
+          source_crew_artifact_id: artifact.id, adopt_source: true
+        )
+      end
+      transport = RecordingTransport.new
+
+      assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+        error = assert_raises(ArgumentError) do
+          send_email(
+            key: "unchanged-#{result_state}", body: artifact.body,
+            draft_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id,
+            transport: transport
+          )
+        end
+        assert_equal HumanDraftProvenance::SEND_REVIEW_MESSAGE, error.message
+      end
+
+      assert_empty transport.deliveries
+      assert draft.reload.ready?
+      assert_equal artifact, draft.source_crew_artifact
+      assert_nil draft.human_edited_at
+      current_draft = draft
+    end
+  end
+
+  test "sends an unchanged complete AI source without human edit attribution" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Complete generated answer", result_state: "complete"
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    transport = RecordingTransport.new
+
+    delivery = send_email(
+      key: "complete-source", body: artifact.body, draft_version: draft.lock_version.to_s,
+      source_crew_artifact_id: artifact.id, transport: transport
+    )
+
+    assert delivery.sent?
+    assert_equal artifact, delivery.source_crew_artifact
+    assert_equal "complete", delivery.generated_contract_result_state
+    assert_nil delivery.human_edited_at
+    assert_equal artifact.body, delivery.body
+    assert_equal artifact.body, transport.deliveries.sole[:body]
+  end
+
+  test "a blocked source cannot be sent after a human edit is reverted to the AI body" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated answer to revert", result_state: "blocked"
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    edited = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Human-qualified answer", expected_lock_version: draft.lock_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    reverted = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: edited.lock_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    transport = RecordingTransport.new
+
+    assert reverted.human_edited_at
+    refute HumanDraftProvenance.ready_for_send?(reverted)
+    assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+      error = assert_raises(ArgumentError) do
+        send_email(
+          key: "reverted-source", body: artifact.body, draft_version: reverted.lock_version.to_s,
+          source_crew_artifact_id: artifact.id, transport: transport
+        )
+      end
+      assert_equal HumanDraftProvenance::SEND_REVIEW_MESSAGE, error.message
+    end
+    assert_empty transport.deliveries
+    assert_equal artifact.body, reverted.reload.body
+    assert reverted.ready?
+  end
+
+  test "a stale source draft cannot overwrite or claim an email delivery" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated stale-source answer", result_state: "blocked"
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    stale_version = draft.lock_version
+    current = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Current human-qualified answer", expected_lock_version: stale_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    transport = RecordingTransport.new
+
+    assert_no_difference [ "OutboundEmailDelivery.count", "ConversationMessage.outbound.count" ] do
+      assert_raises(ActiveRecord::StaleObjectError) do
+        send_email(
+          key: "stale-source", body: "Stale human answer", draft_version: stale_version.to_s,
+          source_crew_artifact_id: artifact.id, transport: transport
+        )
+      end
+    end
+    assert_empty transport.deliveries
+    assert_equal "Current human-qualified answer", current.reload.body
+    assert current.human_edited_at
+  end
+
   test "uses the newest trusted inbound reply target and parent despite delayed processing" do
     SharedEmailIntake.receive!(
       inbox: @inbox,
@@ -156,6 +291,56 @@ class HumanEmailSendTest < ActiveSupport::TestCase
     assert_equal "follow-up@example.net", second.in_reply_to_message_id
     assert_equal "Second human reply", second.conversation_message.body
     assert_equal 2, @support_case.conversation.conversation_messages.outbound.count
+  end
+
+  test "claim freezes artifact and edit provenance before the reusable draft becomes a follow-up" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated email answer", result_state: "needs_human"
+    )
+    draft = EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+
+    delivery = send_email(
+      key: "artifact-send", body: "Human-qualified final email",
+      draft_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id
+    )
+
+    assert_equal artifact, delivery.source_crew_artifact
+    assert_equal Digest::SHA256.hexdigest(artifact.body), delivery.generated_body_digest
+    assert_equal "needs_human", delivery.generated_contract_result_state
+    assert_equal @membership, delivery.human_edited_by_membership
+    assert_equal @membership.user, delivery.human_edited_by_user
+    assert delivery.human_edited_at
+    assert_equal "Human-qualified final email", delivery.body
+    assert_equal @membership.user, delivery.actor_user
+
+    SharedEmailIntake.receive!(
+      inbox: @inbox,
+      raw_email: raw_email(
+        message_id: "provenance-follow-up@example.net", references: delivery.message_id,
+        body: "Customer follow-up"
+      ),
+      received_at: delivery.sent_at + 5.minutes
+    )
+    EmailDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "New human-authored follow-up", expected_lock_version: draft.reload.lock_version.to_s
+    )
+
+    assert_nil draft.reload.source_crew_artifact
+    assert_nil draft.generated_body_digest
+    assert_equal artifact, delivery.reload.source_crew_artifact
+    assert_equal "needs_human", delivery.generated_contract_result_state
+    assert_equal "Human-qualified final email", delivery.body
+    assert_raises(ActiveRecord::StatementInvalid) do
+      OutboundEmailDelivery.transaction(requires_new: true) do
+        OutboundEmailDelivery.where(id: delivery.id).update_all(source_crew_artifact_id: nil)
+      end
+    end
   end
 
   test "sends only scanned draft attachments and links the frozen file to the outbound message" do
@@ -516,7 +701,9 @@ class HumanEmailSendTest < ActiveSupport::TestCase
   end
 
   private
-    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new", expected_recipient_address: nil, expected_inbound_message_id: nil, confirmed_recipient_address: nil, transport: RecordingTransport.new)
+    def send_email(support_case: @support_case, key: "send-key", body: "A human reply", draft_version: "new",
+      source_crew_artifact_id: nil, expected_recipient_address: nil, expected_inbound_message_id: nil,
+      confirmed_recipient_address: nil, transport: RecordingTransport.new)
       preview = HumanEmailSend.recipient_preview(workspace: @workspace, support_case: support_case)
       HumanEmailSend.send!(
         workspace: @workspace,
@@ -525,6 +712,7 @@ class HumanEmailSendTest < ActiveSupport::TestCase
         body: body,
         draft_version: draft_version,
         idempotency_key: key,
+        source_crew_artifact_id: source_crew_artifact_id,
         expected_recipient_address: expected_recipient_address || preview.address,
         expected_inbound_message_id: expected_inbound_message_id || preview.inbound_message_id,
         confirmed_recipient_address: confirmed_recipient_address,

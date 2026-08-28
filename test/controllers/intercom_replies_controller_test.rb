@@ -2,13 +2,15 @@ require "test_helper"
 
 class IntercomRepliesControllerTest < ActionDispatch::IntegrationTest
   class FakeClient
-    attr_reader :replies
+    attr_reader :admin_requests, :replies
 
     def initialize
+      @admin_requests = 0
       @replies = []
     end
 
     def admins
+      @admin_requests += 1
       { "admins" => [ { "id" => "admin_owner", "email" => "owner@example.com" } ] }
     end
 
@@ -54,6 +56,7 @@ class IntercomRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#intercom-reply input[name='expected_source_part_id'][value='controller_customer']"
     assert_select "#intercom-reply", text: /Agents and jobs cannot send it/
+    assert_select "#intercom-draft-provenance", text: /Human-authored draft/
     client = FakeClient.new
 
     with_client(client) do
@@ -68,6 +71,92 @@ class IntercomRepliesControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to workspace_support_case_path(@workspace, @support_case)
     assert_equal "Exact Intercom answer", @workspace.intercom_outbound_deliveries.sole.body
     assert_equal 1, client.replies.size
+  end
+
+  test "a writer explicitly adopts and edits a Crew draft with exact proof details" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: memberships(:owner_support),
+      body: "Exact generated Intercom body", result_state: "needs_human",
+      claim_state: "refused", blocker_message: "Required technical evidence was refused.",
+      remediation: "Supply the required evidence or keep the refusal in human review."
+    )
+
+    get workspace_support_case_path(@workspace, @support_case)
+
+    assert_response :success
+    assert_select "#intercom-reply .draft-source-form" do
+      assert_select "input[name='source_crew_artifact_id'][value='#{artifact.id}']"
+      assert_select "input[name='adopt_source'][value='1']"
+      assert_select "input[type='submit'][value='Use this AI draft']"
+    end
+    assert_select "#intercom-reply", text: /Required technical evidence was refused\./
+    assert_select "#intercom-reply", text: /Supply the required evidence or keep the refusal in human review\./
+
+    post intercom_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: artifact.body, draft_version: "new", source_crew_artifact_id: artifact.id, adopt_source: "1"
+    }
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "intercom-reply")
+    draft = @support_case.reload.intercom_draft
+    assert_equal artifact, draft.source_crew_artifact
+    assert_nil draft.human_edited_at
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select "#intercom-reply", text: /Change and save this AI draft before sending\./
+    assert_select "#intercom-reply input[type='submit'][value='Send to Intercom'][disabled]"
+
+    post intercom_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: "Human-qualified Intercom body", draft_version: draft.lock_version,
+      source_crew_artifact_id: artifact.id
+    }
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case, anchor: "intercom-reply")
+
+    get workspace_support_case_path(@workspace, @support_case)
+    assert_select "#intercom-draft-provenance", text: /AI source · Human-edited/
+    assert_select "#intercom-draft-provenance", text: /Edited by owner@example\.com/
+    assert_select "#intercom-draft-provenance", text: /No sentence-level authorship is inferred/
+    assert_select "#intercom-reply input[name='source_crew_artifact_id'][value='#{artifact.id}']"
+    assert_select "#intercom-reply input[type='submit'][value='Send to Intercom'][disabled]", count: 0
+
+    client = FakeClient.new
+    with_client(client) do
+      assert_difference [ "IntercomOutboundDelivery.sent.count", "ConversationMessage.outbound.count" ], 1 do
+        post intercom_send_workspace_support_case_path(@workspace, @support_case), params: {
+          body: "Human-qualified Intercom body", draft_version: draft.reload.lock_version,
+          idempotency_key: "edited-controller", source_crew_artifact_id: artifact.id,
+          expected_source_part_id: "controller_customer"
+        }
+      end
+    end
+    assert_redirected_to workspace_support_case_path(@workspace, @support_case)
+    assert_equal "Human-qualified Intercom body", @workspace.intercom_outbound_deliveries.sole.body
+    assert_equal 1, client.replies.size
+  end
+
+  test "a blocked Intercom source cannot be sent unchanged through a forged POST" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: memberships(:owner_support),
+      body: "Exact blocked controller body", result_state: "blocked"
+    )
+    post intercom_draft_workspace_support_case_path(@workspace, @support_case), params: {
+      body: artifact.body, draft_version: "new", source_crew_artifact_id: artifact.id, adopt_source: "1"
+    }
+    draft = @support_case.reload.intercom_draft
+    client = FakeClient.new
+
+    with_client(client) do
+      assert_no_difference [ "IntercomOutboundDelivery.count", "ConversationMessage.outbound.count", "AuditEvent.count" ] do
+        post intercom_send_workspace_support_case_path(@workspace, @support_case), params: {
+          body: artifact.body, draft_version: draft.lock_version, idempotency_key: "blocked-forged-post",
+          source_crew_artifact_id: artifact.id, expected_source_part_id: "controller_customer"
+        }
+      end
+    end
+
+    assert_response :unprocessable_content
+    assert_select ".command-error", text: /Change and save this AI draft before sending\./
+    assert_equal 0, client.admin_requests
+    assert_empty client.replies
+    assert_equal artifact, draft.reload.source_crew_artifact
+    assert_nil draft.human_edited_at
   end
 
   test "a stale binding returns 422 without contacting Intercom" do

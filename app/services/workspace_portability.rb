@@ -35,6 +35,17 @@ class WorkspacePortability
     "policy_id" => "sla_policies",
     "tag_id" => "tags"
   }.freeze
+  NON_DEFERRED_FOREIGN_KEYS = %w[
+    email_drafts.human_edited_by_membership_id
+    email_drafts.source_crew_artifact_id
+    intercom_drafts.human_edited_by_membership_id
+    intercom_drafts.source_crew_artifact_id
+    intercom_outbound_deliveries.human_edited_by_membership_id
+    intercom_outbound_deliveries.source_crew_artifact_id
+    outbound_email_deliveries.human_edited_by_membership_id
+    outbound_email_deliveries.source_crew_artifact_id
+  ].to_set.freeze
+  MAPPED_REFERENCE_COLUMNS = { "conversation_id" => "conversations" }.freeze
 
   class InvalidArchive < StandardError; end
 
@@ -370,9 +381,20 @@ class WorkspacePortability
       rows.each do |row|
         next unless result.key?(row.fetch("source_table"))
 
+        source_table = row.fetch("source_table")
+        source_column = row.fetch("source_column")
         result.fetch(row.fetch("source_table"))[row.fetch("source_column")] = {
-          table: row.fetch("target_table"), nullable: !row.fetch("required")
+          table: row.fetch("target_table"),
+          nullable: !row.fetch("required") && !NON_DEFERRED_FOREIGN_KEYS.include?("#{source_table}.#{source_column}")
         }
+      end
+      result.each do |table, keys|
+        columns = ActiveRecord::Base.connection.columns(table).index_by(&:name)
+        MAPPED_REFERENCE_COLUMNS.each do |column, target_table|
+          next unless columns.key?(column)
+
+          keys[column] = { table: target_table, nullable: columns.fetch(column).null }
+        end
       end
     end
   end
