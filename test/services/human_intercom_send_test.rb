@@ -2,14 +2,18 @@ require "test_helper"
 
 class HumanIntercomSendTest < ActiveSupport::TestCase
   class FakeClient
-    attr_reader :replies
+    attr_reader :admin_open_transactions, :admin_requests, :replies
 
     def initialize(error: nil)
       @error = error
+      @admin_open_transactions = []
+      @admin_requests = 0
       @replies = []
     end
 
     def admins
+      @admin_open_transactions << IntercomOutboundDelivery.connection.open_transactions
+      @admin_requests += 1
       { "admins" => [ { "id" => "admin_owner", "email" => "owner@example.com" } ] }
     end
 
@@ -80,6 +84,150 @@ class HumanIntercomSendTest < ActiveSupport::TestCase
       action: "intercom.send_succeeded", subject_type: "IntercomOutboundDelivery",
       subject_id: @delivery.id, actor: users(:owner)
     ).exists?
+  end
+
+  test "resolves the Intercom admin outside the delivery transaction" do
+    transaction_depth_before_send = IntercomOutboundDelivery.connection.open_transactions
+    client = FakeClient.new
+
+    send_reply(client: client)
+
+    assert_equal [ transaction_depth_before_send ], client.admin_open_transactions
+  end
+
+  test "blocks unchanged blocked or needs-human source text before delivery or Intercom" do
+    current_draft = nil
+    %w[blocked needs_human].each do |result_state|
+      artifact = create_draft_artifact(
+        workspace: @workspace, support_case: @support_case, membership: @membership,
+        body: "Unsendable #{result_state} answer", result_state: result_state
+      )
+      draft = if current_draft
+        IntercomDraftWorkflow.save!(
+          workspace: @workspace, support_case: @support_case, membership: @membership,
+          body: artifact.body, expected_lock_version: current_draft.reload.lock_version.to_s,
+          source_crew_artifact_id: artifact.id, adopt_source: true
+        )
+      else
+        IntercomDraftWorkflow.save!(
+          workspace: @workspace, support_case: @support_case, membership: @membership,
+          body: artifact.body, expected_lock_version: "new",
+          source_crew_artifact_id: artifact.id, adopt_source: true
+        )
+      end
+      client = FakeClient.new
+
+      assert_no_difference [ "IntercomOutboundDelivery.count", "ConversationMessage.outbound.count" ] do
+        error = assert_raises(ArgumentError) do
+          send_reply(
+            client: client, key: "unchanged-#{result_state}", body: artifact.body,
+            draft_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id
+          )
+        end
+        assert_equal HumanDraftProvenance::SEND_REVIEW_MESSAGE, error.message
+      end
+
+      assert_empty client.replies
+      assert_equal 0, client.admin_requests
+      assert draft.reload.ready?
+      assert_equal artifact, draft.source_crew_artifact
+      assert_nil draft.human_edited_at
+      current_draft = draft
+    end
+  end
+
+  test "sends an unchanged complete AI source without human edit attribution" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Complete generated answer", result_state: "complete"
+    )
+    draft = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    client = FakeClient.new
+
+    delivery = send_reply(
+      client: client, key: "complete-source", body: artifact.body,
+      draft_version: draft.lock_version.to_s, source_crew_artifact_id: artifact.id
+    )
+
+    assert delivery.sent?
+    assert_equal artifact, delivery.source_crew_artifact
+    assert_equal "complete", delivery.generated_contract_result_state
+    assert_nil delivery.human_edited_at
+    assert_equal artifact.body, delivery.body
+    assert_equal artifact.body, client.replies.sole[:body]
+  end
+
+  test "a blocked source cannot be sent after a human edit is reverted to the AI body" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated answer to revert", result_state: "blocked"
+    )
+    draft = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    edited = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Human-qualified answer", expected_lock_version: draft.lock_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    reverted = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: edited.lock_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    client = FakeClient.new
+
+    assert reverted.human_edited_at
+    refute HumanDraftProvenance.ready_for_send?(reverted)
+    assert_no_difference [ "IntercomOutboundDelivery.count", "ConversationMessage.outbound.count" ] do
+      error = assert_raises(ArgumentError) do
+        send_reply(
+          client: client, key: "reverted-source", body: artifact.body,
+          draft_version: reverted.lock_version.to_s, source_crew_artifact_id: artifact.id
+        )
+      end
+      assert_equal HumanDraftProvenance::SEND_REVIEW_MESSAGE, error.message
+    end
+    assert_empty client.replies
+    assert_equal artifact.body, reverted.reload.body
+    assert reverted.ready?
+  end
+
+  test "a stale source draft cannot overwrite or claim an Intercom delivery" do
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Generated stale-source answer", result_state: "blocked"
+    )
+    draft = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: artifact.body, expected_lock_version: "new",
+      source_crew_artifact_id: artifact.id, adopt_source: true
+    )
+    stale_version = draft.lock_version
+    current = IntercomDraftWorkflow.save!(
+      workspace: @workspace, support_case: @support_case, membership: @membership,
+      body: "Current human-qualified answer", expected_lock_version: stale_version.to_s,
+      source_crew_artifact_id: artifact.id
+    )
+    client = FakeClient.new
+
+    assert_no_difference [ "IntercomOutboundDelivery.count", "ConversationMessage.outbound.count" ] do
+      assert_raises(ActiveRecord::StaleObjectError) do
+        send_reply(
+          client: client, key: "stale-source", body: "Stale human answer",
+          draft_version: stale_version.to_s, source_crew_artifact_id: artifact.id
+        )
+      end
+    end
+    assert_empty client.replies
+    assert_equal "Current human-qualified answer", current.reload.body
+    assert current.human_edited_at
   end
 
   test "rejects a stale source binding before the remote reply" do

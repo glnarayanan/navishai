@@ -7,43 +7,40 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
     @now = Time.zone.parse("2026-08-28 15:00:00 UTC")
   end
 
-  test "uses explicit queue thresholds and never treats absent evidence as healthy" do
-    cockpit = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: {
-        status: "blocked", ready_count: 8, overdue_count: 3, failed_count: 1,
-        oldest_ready_at: @now - 3.minutes, last_heartbeat_at: @now - 5.minutes
-      }
-    )
+  test "reports unavailable Workspace-specific queue evidence without global metrics" do
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
 
     queue = cockpit.groups.index_by(&:key).fetch("queue")
-    assert_equal "blocked", queue.status
-    assert_equal "8 ready jobs, 3 overdue jobs, and 1 failed job.", queue.summary
+    item = queue.items.sole
+    assert_equal "not_configured", queue.status
+    assert_equal "Workspace-specific queue evidence is unavailable because the queue is shared.", queue.summary
+    assert_equal queue.summary, item.summary
+    assert_equal "Shared queue state is intentionally excluded from Workspace health.", item.detail
+    assert_nil item.occurred_at
+    assert_nil item.record
+    assert_nil item.action
     data = cockpit.groups.index_by(&:key).fetch("data")
     checks = data.items.index_by(&:key)
     assert_equal "not_configured", checks.fetch("backup_verification").status
     assert_equal "not_configured", checks.fetch("restore_rehearsal").status
-    assert_equal "blocked", cockpit.overall_status
   end
 
-  test "does not infer queue health from an empty queue without a fresh worker heartbeat" do
-    unknown = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: {
-        status: "unknown", ready_count: 0, overdue_count: 0, failed_count: 0,
-        oldest_ready_at: nil, last_heartbeat_at: nil
-      }
-    ).groups.index_by(&:key).fetch("queue")
-    attention = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: {
-        status: "attention", ready_count: 0, overdue_count: 0, failed_count: 0,
-        oldest_ready_at: nil, last_heartbeat_at: @now - 2.minutes
-      }
-    ).groups.index_by(&:key).fetch("queue")
+  test "does not let global queue state or foreign execution records alter the current cockpit" do
+    foreign_workspace = workspaces(:beta_support)
+    create_foreign_execution_records(foreign_workspace)
+    baseline = cockpit_projection(build_cockpit)
 
-    assert_equal "unknown", unknown.status
-    assert_equal "attention", attention.status
+    global_states = [
+      { ready_count: 0, overdue_count: 0, failed_count: 0, claimed_count: 0, heartbeat_at: nil },
+      { ready_count: 8, overdue_count: 3, failed_count: 5, claimed_count: 2, heartbeat_at: @now - 5.minutes }
+    ]
+    global_states.each do |state|
+      reads = []
+      projected = with_global_queue_state(state, reads) { cockpit_projection(build_cockpit) }
+
+      assert_equal baseline, projected
+      assert_empty reads
+    end
   end
 
   test "surfaces failed checks, stale connectors, index failure, and bounded detail" do
@@ -68,11 +65,7 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
       checked_at: @now - 1.hour
     )
 
-    cockpit = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: { status: "healthy", ready_count: 0, overdue_count: 0, failed_count: 0,
-        oldest_ready_at: nil, last_heartbeat_at: @now }
-    )
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
     groups = cockpit.groups.index_by(&:key)
     assert_equal "blocked", groups.fetch("connectors").status
     assert_equal "blocked", groups.fetch("memory").status
@@ -100,10 +93,7 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
       last_attempted_at: @now - 2.days, processed_at: @now - 2.days
     )
 
-    cockpit = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: { status: "not_configured" }
-    )
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
 
     connectors = cockpit.groups.index_by(&:key).fetch("connectors")
     item = connectors.items.find { |candidate| candidate.record == inbox }
@@ -120,10 +110,8 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
     end
     blocked = create_runtime("blocked_after_cap", health_status: "unhealthy")
 
-    execution = ReliabilityCockpit.build(
-      workspace: @workspace, membership: @owner, now: @now,
-      queue_snapshot: { status: "not_configured" }
-    ).groups.index_by(&:key).fetch("execution")
+    execution = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
+      .groups.index_by(&:key).fetch("execution")
 
     assert_equal "blocked", execution.status
     assert_includes execution.items.map(&:record), blocked
@@ -136,17 +124,101 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
       role: :member
     )
     assert_raises(Current::RoleAccessDenied) do
-      ReliabilityCockpit.build(workspace: @workspace, membership: member, queue_snapshot: { status: "not_configured" })
+      ReliabilityCockpit.build(workspace: @workspace, membership: member)
     end
     assert_raises(ActiveRecord::RecordNotFound) do
       ReliabilityCockpit.build(
-        workspace: @workspace, membership: memberships(:teammate_success),
-        queue_snapshot: { status: "not_configured" }
+        workspace: @workspace, membership: memberships(:teammate_success)
       )
     end
   end
 
   private
+    def build_cockpit
+      ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
+    end
+
+    def cockpit_projection(cockpit)
+      {
+        overall_status: cockpit.overall_status,
+        status_counts: cockpit.status_counts,
+        groups: cockpit.groups.map do |group|
+          {
+            key: group.key, title: group.title, status: group.status, summary: group.summary,
+            items: group.items.map do |item|
+              [ item.key, item.title, item.status, item.summary, item.detail, item.occurred_at,
+                item.record && [ item.record.class.name, item.record.id ], item.action ]
+            end
+          }
+        end
+      }
+    end
+
+    def create_foreign_execution_records(workspace)
+      membership = memberships(:outsider_beta)
+      install_crew_test_dependencies(workspace:, membership:)
+      support_case = create_support_case(workspace:, contact: contacts(:bob), membership:)
+      profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+
+      %w[admitting running failed].each_with_index do |status, index|
+        task = CrewWork.create!(
+          workspace:, membership:, scope: support_case, profile:,
+          title: "Foreign execution #{index}", input_context: "Use retained facts.",
+          expected_output: "Return a finding."
+        )
+        run = ExecutionLedger.new(workspace:).prepare!(
+          task:, request_key: "reliability-foreign-#{index}"
+        )
+        next if status == "admitting"
+
+        ledger = ExecutionLedger.new(workspace:)
+        ingest_foreign_event(ledger, run, 1, "run.admitted",
+          workspace_key: workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number)
+        ingest_foreign_event(ledger, run, 2, "run.started",
+          adapter: run.selected_adapter_key, scenario: "reliability", attempt: run.attempt_number)
+        if status == "failed"
+          ingest_foreign_event(ledger, run, 3, "run.failed", code: "foreign_failure", retryable: false)
+        end
+      end
+    end
+
+    def ingest_foreign_event(ledger, run, sequence, event_type, **data)
+      ledger.ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => event_type,
+        "occurred_at" => (Time.current - (10 - sequence).minutes).iso8601(6),
+        "data" => data.deep_stringify_keys
+      })
+    end
+
+    def with_global_queue_state(state, reads)
+      relation = Object.new
+      relation.define_singleton_method(:count) do
+        reads << :scheduled_count
+        state.fetch(:overdue_count)
+      end
+
+      readers = [
+        [ SolidQueue::ReadyExecution, :count, -> { reads << :ready_count; state.fetch(:ready_count) } ],
+        [ SolidQueue::ReadyExecution, :minimum, ->(*) { reads << :ready_minimum; nil } ],
+        [ SolidQueue::ScheduledExecution, :where, ->(*) { reads << :scheduled_where; relation } ],
+        [ SolidQueue::FailedExecution, :count, -> { reads << :failed_count; state.fetch(:failed_count) } ],
+        [ SolidQueue::ClaimedExecution, :count, -> { reads << :claimed_count; state.fetch(:claimed_count) } ],
+        [ SolidQueue::Process, :maximum, ->(*) { reads << :heartbeat; state[:heartbeat_at] } ]
+      ]
+      originals = readers.map do |klass, method_name, implementation|
+        original = klass.method(method_name)
+        klass.define_singleton_method(method_name, &implementation)
+        [ klass, method_name, original ]
+      end
+
+      yield
+    ensure
+      originals&.reverse_each do |klass, method_name, original|
+        klass.define_singleton_method(method_name, &original)
+      end
+    end
+
     def create_runtime(key, approved: false, health_status: "available")
       @workspace.runtime_installations.create!(
         detection_key: Digest::SHA256.hexdigest(key), adapter_key: key,

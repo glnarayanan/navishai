@@ -1,6 +1,8 @@
 require "test_helper"
 
 class IntercomHistoricalBackfillTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
   CleanScanner = Class.new do
     def scan(data:, content_type:, filename:)
       AttachmentScanner::Result.new(status: :clean, code: "clean")
@@ -42,6 +44,12 @@ class IntercomHistoricalBackfillTest < ActiveSupport::TestCase
     def enqueue_at(*) = raise ActiveJob::EnqueueError, "queue offline"
   end
 
+  RaisingIntercomSync = Class.new do
+    def sync_historical_conversation!(_remote)
+      raise ArgumentError, "identity requires a deterministic key"
+    end
+  end
+
   setup do
     @workspace = workspaces(:acme_support)
     @connection = @workspace.intercom_connections.create!(
@@ -74,6 +82,196 @@ class IntercomHistoricalBackfillTest < ActiveSupport::TestCase
     assert_operator manifest.discovery_records.to_json.bytesize, :<=, IntercomBackfillManifest::MAX_DISCOVERY_BYTES
     assert_equal 1, AuditEvent.where(action: "intercom.backfill_previewed", subject_id: manifest.id).count
     assert @client.assert_get_only!
+  end
+
+  test "a contact without email blocks before customer writes and requires a corrected preview" do
+    @remote.dig("contacts", "contacts").first.delete("email")
+    before = customer_counts()
+
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+
+    assert_equal 0, manifest.counts.fetch("deterministic_matches")
+    assert_equal 0, manifest.counts.fetch("unsupported_fields")
+    assert_equal 1, manifest.counts.fetch("expected_exceptions")
+    exception = manifest.intercom_backfill_exceptions.sole
+    assert exception.keyless_identity?
+    assert_equal "Contact has no deterministic email key. Update the source and start a new dry run.", exception.detail
+    assert_operator exception.detail.bytesize, :<=, IntercomBackfillException::MAX_DETAIL_BYTES
+    refute_match(/history@example|History/i, exception.detail)
+
+    run = nil
+    assert_no_enqueued_jobs(only: IntercomBackfillJob) do
+      run = IntercomHistoricalBackfill.confirm!(
+        connection: @connection, manifest:, membership: @owner, client: @client, enqueue: true
+      )
+    end
+
+    assert run.blocked?
+    assert_equal IntercomHistoricalBackfill::KEYLESS_IDENTITY_FAILURE_CODE, run.failure_code
+    assert_equal 0, run.cursor_position
+    assert_equal 0, run.counts.fetch("matched")
+    assert_equal 0, run.counts.fetch("unsupported")
+    assert_equal 1, run.counts.fetch("pending")
+    assert_empty run.intercom_backfill_batches
+    assert_equal before, customer_counts()
+    assert AuditEvent.where(
+      action: "intercom.backfill_blocked", subject_type: run.class.name, subject_id: run.id
+    ).exists?
+    blocked_audits = AuditEvent.where(
+      action: "intercom.backfill_blocked", subject_type: run.class.name, subject_id: run.id
+    ).count
+    IntercomHistoricalBackfill.new(connection: @connection, client: @client).send(:block_keyless_run!, run, actor: @owner)
+    assert_equal blocked_audits, AuditEvent.where(
+      action: "intercom.backfill_blocked", subject_type: run.class.name, subject_id: run.id
+    ).count
+    assert_raises(ArgumentError) do
+      IntercomHistoricalBackfill.resume!(run:, membership: @owner, client: @client, enqueue: false)
+    end
+
+    requests_before_process = @client.requests.dup
+    IntercomHistoricalBackfill.perform!(run:, client: @client)
+    assert_equal requests_before_process, @client.requests
+    assert_equal before, customer_counts()
+
+    @remote.dig("contacts", "contacts").first["email"] = "corrected@example.net"
+    corrected_manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+    assert_equal 1, corrected_manifest.counts.fetch("deterministic_matches")
+    assert_equal 0, corrected_manifest.counts.fetch("expected_exceptions")
+    corrected_run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest: corrected_manifest, membership: @owner, client: @client, enqueue: false
+    )
+
+    IntercomHistoricalBackfill.perform!(run: corrected_run, client: @client, scanner: CleanScanner.new)
+    assert corrected_run.reload.completed?
+    assert_equal 1, corrected_run.intercom_backfill_report.counts.fetch("imported")
+    assert @client.assert_get_only!
+  end
+
+  test "a company without domain is an expected exception and multiple keyless identities stay unprocessed" do
+    @remote.dig("contacts", "contacts").first.delete("email")
+    @remote["company"] = { "type" => "company", "id" => "company_history", "name" => "Acme" }
+    before = customer_counts()
+
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+
+    assert_equal 0, manifest.counts.fetch("deterministic_matches")
+    assert_equal 0, manifest.counts.fetch("unsupported_fields")
+    assert_equal 2, manifest.counts.fetch("expected_exceptions")
+    assert_equal [
+      "Company has no deterministic domain key. Update the source and start a new dry run.",
+      "Contact has no deterministic email key. Update the source and start a new dry run."
+    ], manifest.intercom_backfill_exceptions.order(:remote_record_id).pluck(:detail)
+    assert manifest.intercom_backfill_exceptions.all?(&:keyless_identity?)
+
+    run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest:, membership: @owner, client: @client, enqueue: false
+    )
+
+    assert run.blocked?
+    assert_equal 0, run.counts.fetch("matched")
+    assert_equal 0, run.counts.fetch("unsupported")
+    assert_equal 1, run.counts.fetch("pending")
+    assert_equal 2, run.intercom_backfill_exceptions.open.keyless_identity.count
+    assert_empty run.intercom_backfill_batches
+    assert_equal before, customer_counts()
+    assert @client.assert_get_only!
+  end
+
+  test "an older keyless manifest blocks its running batch before historical sync" do
+    @remote.dig("contacts", "contacts").first.delete("email")
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+    IntercomBackfillException.where(intercom_backfill_manifest: manifest).delete_all
+    manifest.update!(counts: manifest.counts.merge("expected_exceptions" => 0, "deterministic_matches" => 1))
+    run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest:, membership: @owner, client: @client, enqueue: false
+    )
+    before = customer_counts()
+
+    IntercomHistoricalBackfill.perform!(run:, client: @client, scanner: CleanScanner.new)
+
+    batch = run.reload.intercom_backfill_batches.sole
+    assert run.blocked?
+    assert batch.blocked?
+    assert_equal IntercomHistoricalBackfill::KEYLESS_IDENTITY_FAILURE_CODE, run.failure_code
+    assert_equal 0, run.cursor_position
+    assert_equal 0, run.counts.fetch("matched")
+    assert_equal 0, run.counts.fetch("unsupported")
+    assert_equal 1, run.intercom_backfill_exceptions.open.keyless_identity.count
+    assert_equal before, customer_counts()
+    assert_empty @connection.intercom_conversation_links
+    assert @client.assert_get_only!
+  end
+
+  test "the missing-key resolver failure blocks a claimed batch without raising" do
+    @remote.dig("contacts", "contacts").first.delete("email")
+    contact = @workspace.contacts.create!(name: "Mapped contact")
+    @workspace.source_identities.create!(
+      entity_kind: :contact, source_namespace: "intercom:#{@connection.id}", source_record_type: :contact,
+      source_record_id: "contact_history", status: :matched, contact:, resolution_method: :created,
+      resolved_at: Time.current
+    )
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+    assert_equal 1, manifest.counts.fetch("deterministic_matches")
+
+    run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest:, membership: @owner, client: @client, enqueue: false
+    )
+    before = customer_counts()
+    original_new = IntercomSync.method(:new)
+    IntercomSync.define_singleton_method(:new) { |*_args, **_kwargs| RaisingIntercomSync.new }
+
+    IntercomHistoricalBackfill.perform!(run:, client: @client, scanner: CleanScanner.new)
+
+    batch = run.reload.intercom_backfill_batches.sole
+    assert run.blocked?
+    assert batch.blocked?
+    assert_equal IntercomHistoricalBackfill::KEYLESS_IDENTITY_FAILURE_CODE, run.failure_code
+    assert_equal 0, run.cursor_position
+    assert_equal 0, run.counts.fetch("matched")
+    assert_equal 0, run.counts.fetch("unsupported")
+    assert_equal 1, run.intercom_backfill_exceptions.open.keyless_identity.count
+    assert_equal before, customer_counts()
+    assert_empty @connection.intercom_conversation_links
+    assert @client.assert_get_only!
+  ensure
+    IntercomSync.define_singleton_method(:new, original_new) if original_new
+  end
+
+  test "an atomic keyless block rolls back before the outer failure terminalizes the run" do
+    @remote.dig("contacts", "contacts").first.delete("email")
+    manifest = IntercomHistoricalBackfill.preview!(connection: @connection, membership: @owner, client: @client)
+    IntercomBackfillException.where(intercom_backfill_manifest: manifest).delete_all
+    manifest.update!(counts: manifest.counts.merge("expected_exceptions" => 0, "deterministic_matches" => 1))
+    run = IntercomHistoricalBackfill.confirm!(
+      connection: @connection, manifest:, membership: @owner, client: @client, enqueue: false
+    )
+    before = customer_counts()
+    original_record = AuditEvent.method(:record!)
+    AuditEvent.define_singleton_method(:record!) do |**attributes|
+      raise ActiveRecord::RecordInvalid, AuditEvent.new if attributes.fetch(:action) == "intercom.backfill_blocked"
+
+      original_record.call(**attributes)
+    end
+
+    IntercomHistoricalBackfill.perform!(run:, client: @client, scanner: CleanScanner.new)
+
+    batch = run.reload.intercom_backfill_batches.sole
+    assert run.failed?
+    refute run.running?
+    assert batch.failed?
+    refute batch.running?
+    assert_equal "persistence_failed", run.failure_code
+    assert_equal 0, run.cursor_position
+    assert_equal 0, run.counts.fetch("matched")
+    assert_empty run.intercom_backfill_exceptions.open.keyless_identity
+    assert_equal 1, run.intercom_backfill_exceptions.open.where(exception_kind: "persistence_failed").count
+    assert_equal 0, AuditEvent.where(
+      action: "intercom.backfill_blocked", subject_type: run.class.name, subject_id: run.id
+    ).count
+    assert_equal before, customer_counts()
+    assert @client.assert_get_only!
+  ensure
+    AuditEvent.define_singleton_method(:record!, original_record) if original_record
   end
 
   test "empty history completes with an exact zero preservation report" do

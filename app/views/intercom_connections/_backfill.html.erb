@@ -26,7 +26,12 @@
     <% elsif run.blocked? %>
       <div class="inline-error" role="alert">
         <strong>Review is required.</strong>
-        <p>NavishAI did not guess or skip the uncertain record.</p>
+        <% blocked_copy = if run.failure_code == IntercomHistoricalBackfill::KEYLESS_IDENTITY_FAILURE_CODE
+          "A source identity lacks a deterministic key. Correct the source and start a new dry run."
+        else
+          "NavishAI did not guess or skip the uncertain record."
+        end %>
+        <p><%= blocked_copy %></p>
       </div>
     <% elsif run.completed? && run.intercom_backfill_report %>
       <div class="backfill-report" role="status">
@@ -40,34 +45,6 @@
       </div>
     <% end %>
 
-    <% if run.intercom_backfill_exceptions.open.any? %>
-      <div class="backfill-exceptions">
-        <h4>Recoverable exceptions</h4>
-        <ul>
-          <% run.intercom_backfill_exceptions.open.each do |exception| %>
-            <li>
-              <div><strong><%= exception.exception_kind.humanize %></strong><p><%= exception.detail %></p></div>
-              <% if exception.recovery_action == "review_identity" && exception.source_identity&.ambiguous? %>
-                <div class="backfill-candidates" aria-label="Identity candidates">
-                  <% exception.source_identity.identity_match_candidates.each do |candidate| %>
-                    <% target = candidate.record.canonical %>
-                    <%= button_to "Use #{target.name.presence || 'this match'}",
-                      backfill_resolve_identity_workspace_intercom_connection_path(
-                        Current.workspace, connection, exception_id: exception.id
-                      ), params: { target_id: target.id }, class: "button button-secondary",
-                      data: { turbo_confirm: "Use this exact recorded identity match?", turbo_submits_with: "Saving…" } %>
-                  <% end %>
-                </div>
-              <% elsif exception.recovery_action == "restart_preview" %>
-                <span class="muted-copy">Start a new dry run below.</span>
-              <% else %>
-                <span class="muted-copy"><%= exception.recovery_action.humanize %></span>
-              <% end %>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
   <% elsif manifest %>
     <% counts = manifest.counts %>
     <dl class="backfill-counts">
@@ -94,6 +71,45 @@
     <% end %>
   <% else %>
     <p class="muted-copy">No dry run exists. Preview reads up to <%= IntercomHistoricalBackfill::MAX_RECORDS %> conversations and makes no customer-data changes.</p>
+  <% end %>
+
+  <% exceptions = if run
+    run.intercom_backfill_exceptions.open
+  elsif manifest
+    manifest.intercom_backfill_exceptions.open
+  else
+    []
+  end %>
+  <% if exceptions.any? %>
+    <div class="backfill-exceptions">
+      <h4><%= run ? "Recoverable exceptions" : "Expected exceptions" %></h4>
+      <ul>
+        <% exceptions.each do |exception| %>
+          <li>
+            <div>
+              <strong><%= exception.keyless_identity? ? "Expected identity exception" : exception.exception_kind.humanize %></strong>
+              <p><%= exception.detail %></p>
+            </div>
+            <% if exception.recovery_action == "review_identity" && exception.source_identity&.ambiguous? %>
+              <div class="backfill-candidates" aria-label="Identity candidates">
+                <% exception.source_identity.identity_match_candidates.each do |candidate| %>
+                  <% target = candidate.record.canonical %>
+                  <%= button_to "Use #{target.name.presence || 'this match'}",
+                    backfill_resolve_identity_workspace_intercom_connection_path(
+                      Current.workspace, connection, exception_id: exception.id
+                    ), params: { target_id: target.id }, class: "button button-secondary",
+                    data: { turbo_confirm: "Use this exact recorded identity match?", turbo_submits_with: "Saving…" } %>
+                <% end %>
+              </div>
+            <% elsif exception.recovery_action == "restart_preview" %>
+              <span class="muted-copy">Start a new dry run below.</span>
+            <% else %>
+              <span class="muted-copy"><%= exception.recovery_action.humanize %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </div>
   <% end %>
 
   <% unless run&.pending? || run&.running? %>

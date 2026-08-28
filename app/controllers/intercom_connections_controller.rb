@@ -57,11 +57,12 @@ class IntercomConnectionsController < ApplicationController
   def backfill_confirm
     connection = Current.require_workspace!.intercom_connections.active.find(params[:id])
     manifest = connection.intercom_backfill_manifests.find(params[:manifest_id])
-    IntercomHistoricalBackfill.confirm!(
+    run = IntercomHistoricalBackfill.confirm!(
       connection:, manifest:, membership: Current.require_membership!, expected_digest: params.require(:source_digest)
     )
     redirect_to workspace_intercom_connections_path(Current.workspace, anchor: "historical-backfill-#{connection.id}"),
-      notice: "Historical backfill confirmed. Bounded background batches have started."
+      notice: run.blocked? ? "Historical backfill needs review. Correct the source and start a new dry run." :
+        "Historical backfill confirmed. Bounded background batches have started."
   rescue IntercomHistoricalBackfill::StaleManifest => error
     redirect_to workspace_intercom_connections_path(Current.workspace), alert: error.message
   end
