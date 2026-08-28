@@ -1,4 +1,5 @@
 ENV["RAILS_ENV"] ||= "test"
+require "etc"
 require_relative "../config/environment"
 require "rails/test_help"
 require_relative "test_helpers/session_test_helper"
@@ -9,7 +10,7 @@ require_relative "test_helpers/intervention_test_helper"
 module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers
-    parallelize(workers: :number_of_processors)
+    parallelize(workers: [ Etc.nprocessors, 4 ].min)
     parallelize_setup do |worker|
       ActiveStorage::Blob.service.root = Rails.root.join("tmp/storage/#{worker}")
       FileUtils.rm_rf(ActiveStorage::Blob.service.root)
