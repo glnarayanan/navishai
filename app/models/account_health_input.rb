@@ -6,6 +6,9 @@ class AccountHealthInput < ApplicationRecord
     "licensed_seats" => "number"
   }.freeze
   SOURCE_KINDS = %w[csv api].freeze
+  CORRECTION_PRIORITY_ORDER = Arel.sql(
+    "CASE WHEN account_health_inputs.corrects_account_health_input_id IS NULL THEN 1 ELSE 0 END ASC"
+  )
 
   belongs_to :workspace
   belongs_to :account
@@ -26,6 +29,37 @@ class AccountHealthInput < ApplicationRecord
   validate :typed_value_matches_key
   validate :validity_is_ordered
   validate :correction_matches_source
+
+  scope :effective_heads, -> {
+    where(<<~SQL.squish)
+      NOT EXISTS (
+        SELECT 1 FROM account_health_inputs corrections
+        WHERE corrections.workspace_id = account_health_inputs.workspace_id
+          AND corrections.account_id = account_health_inputs.account_id
+          AND corrections.input_key = account_health_inputs.input_key
+          AND corrections.corrects_account_health_input_id = account_health_inputs.id
+      )
+    SQL
+  }
+  scope :eligible_at, ->(time) {
+    where("account_health_inputs.observed_at <= ?", time)
+      .where("account_health_inputs.valid_from IS NULL OR account_health_inputs.valid_from <= ?", time)
+      .where("account_health_inputs.valid_until IS NULL OR account_health_inputs.valid_until >= ?", time)
+  }
+  scope :prioritized, -> {
+    order(CORRECTION_PRIORITY_ORDER, observed_at: :desc, id: :desc)
+  }
+
+  def self.effective_for(workspace:, account_ids:, input_key: nil, at: Time.current, one_per_key: false)
+    relation = workspace.account_health_inputs.where(workspace_id: workspace.id, account_id: account_ids)
+    relation = relation.where(input_key:) if input_key
+    relation = relation.effective_heads.eligible_at(at)
+    if one_per_key
+      relation = relation.select("DISTINCT ON (account_health_inputs.input_key) account_health_inputs.*")
+        .reorder(:input_key)
+    end
+    relation.prioritized
+  end
 
   def readonly? = persisted?
 

@@ -79,7 +79,13 @@
         <ol class="dossier-record-list">
           <% dossier.fact_groups.each do |group| %>
             <li class="dossier-record <%= "dossier-record-conflict" if group.conflicted %>">
-              <div class="dossier-record-heading"><strong><%= group.label %></strong><span><%= group.conflicted ? "Conflicting history" : "Current" %></span></div>
+              <div class="dossier-record-heading"><strong><%= group.label %></strong><span><%= if group.effective.nil?
+                "Retained history"
+              elsif group.conflicted
+                "Conflicting history"
+              else
+                "Current"
+              end %></span></div>
               <% group.items.each do |input| %>
                 <div class="dossier-source-line">
                   <b><%= dossier_input_value(input) %></b>
@@ -94,7 +100,7 @@
             </li>
           <% end %>
         </ol>
-        <% if dossier.truncated?(:facts) %><p class="dossier-limit">More source observations are retained. This view shows the newest <%= AccountDossier::LIMITS.fetch(:facts) %>.</p><% end %>
+        <% if dossier.truncated?(:facts) %><p class="dossier-limit">More source observations are retained. This view shows up to <%= AccountDossier::LIMITS.fetch(:facts) %>, including current effective values.</p><% end %>
       <% else %>
         <p class="muted-copy">No imported relationship facts are recorded.</p>
       <% end %>

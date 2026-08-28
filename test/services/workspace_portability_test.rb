@@ -65,7 +65,15 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       source_id: "portable-health-2", source_namespace: "portable.crm", corrects_source_id: "portable-health-1",
       account_name: accounts(:acme).name, observed_at: 1.day.ago.iso8601, active_users: 30
     } ])
-    source_correction = source.account_health_inputs.find_by!(source_key: "portable-health-2")
+    AccountDataImport.import_api!(workspace: source, membership: memberships(:owner_support), rows: [ {
+      source_id: "portable-health-3", source_namespace: "portable.crm", corrects_source_id: "portable-health-2",
+      account_name: accounts(:acme).name, observed_at: 12.hours.ago.iso8601, active_users: 35
+    } ])
+    AccountDataImport.import_api!(workspace: source, membership: memberships(:owner_support), rows: [ {
+      source_id: "portable-health-4", source_namespace: "portable.crm",
+      account_name: accounts(:acme).name, observed_at: 1.hour.ago.iso8601, active_users: 40
+    } ])
+    source_correction = source.account_health_inputs.find_by!(source_key: "portable-health-3")
     source_signal = accounts(:acme).current_health_assessment.signals.find_by!(signal_key: "customer_inactivity_days")
     source_audit_count = source.audit_events.count
     compressed = WorkspacePortability.export(workspace: source, membership: memberships(:owner_support))
@@ -91,8 +99,12 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     assert_equal content, @imported.stored_attachments.sole.download_verified!
     assert_equal @imported.id, @imported.source_identities.find_by!(entity_kind: "account").account.workspace_id
     restored_correction = @imported.account_health_inputs.find_by!(source_key: source_correction.source_key)
-    assert_equal "portable-health-1", restored_correction.corrects_input.source_key
+    assert_equal "portable-health-2", restored_correction.corrects_input.source_key
+    assert_equal "portable-health-1", restored_correction.corrects_input.corrects_input.source_key
     assert_not_equal source_correction.id, restored_correction.id
+    restored_account = @imported.accounts.find_by!(name: accounts(:acme).name)
+    assert_equal "portable-health-3",
+      AccountHealth.latest_input(restored_account, "active_users").source_key
     restored_signal = @imported.account_health_signals.find_by!(
       signal_key: source_signal.signal_key, source_locator: source_signal.source_locator
     )
