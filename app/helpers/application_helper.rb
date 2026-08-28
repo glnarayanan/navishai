@@ -4,6 +4,7 @@ module ApplicationHelper
     "support_case_commands" => "Cases",
     "accounts" => "Accounts",
     "account_imports" => "Accounts",
+    "customer_success_interventions" => "Accounts",
     "health_evidence" => "Accounts",
     "knowledge_sources" => "Knowledge",
     "memory_records" => "Memory",

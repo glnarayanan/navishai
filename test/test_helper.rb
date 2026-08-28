@@ -4,6 +4,7 @@ require "rails/test_help"
 require_relative "test_helpers/session_test_helper"
 require_relative "test_helpers/helpdesk_test_helper"
 require_relative "test_helpers/human_draft_test_helper"
+require_relative "test_helpers/intervention_test_helper"
 
 module ActiveSupport
   class TestCase
@@ -14,6 +15,7 @@ module ActiveSupport
     fixtures :all
     include HelpdeskTestHelper
     include HumanDraftTestHelper
+    include InterventionTestHelper
 
     def approve_scripted_runtime(workspace:, membership:)
       installation = runtime_installations(:acme_scripted)

@@ -10,6 +10,9 @@ class Membership < ApplicationRecord
     foreign_key: :proposed_by_membership_id, dependent: :restrict_with_exception
   has_many :intercom_sync_operations, dependent: :restrict_with_exception
   has_many :notifications, foreign_key: :recipient_membership_id, dependent: :restrict_with_exception
+  has_many :accountable_customer_success_interventions, class_name: "CustomerSuccessIntervention",
+    foreign_key: :accountable_membership_id, dependent: :restrict_with_exception,
+    inverse_of: :accountable_membership
 
   enum :role, ROLES.index_by(&:itself), validate: true
 

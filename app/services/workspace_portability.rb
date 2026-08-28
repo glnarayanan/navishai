@@ -45,6 +45,9 @@ class WorkspacePortability
     intercom_outbound_deliveries.source_crew_artifact_id
     outbound_email_deliveries.human_edited_by_membership_id
     outbound_email_deliveries.source_crew_artifact_id
+    customer_success_interventions.approved_by_membership_id
+    customer_success_interventions.completed_by_membership_id
+    customer_success_interventions.abandoned_by_membership_id
     public_web_searches.usage_rate_version_id
     usage_cost_snapshots.applied_usage_rate_version_id
     usage_cost_snapshots.execution_run_id
@@ -391,11 +394,76 @@ class WorkspacePortability
         .where(id: mappings.fetch("account_health_signals").fetch(row.fetch("id")))
         .update_all(evidence_refs: remapped_references)
     end
+    remap_intervention_records!(tables, mappings, models)
     connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
     tables.keys.each { |table| connection.execute("ALTER TABLE #{connection.quote_table_name(table)} ENABLE TRIGGER USER") }
     mappings
   end
   private_class_method :import_rows!
+
+  def self.remap_intervention_records!(tables, mappings, models)
+    tables.fetch("customer_success_interventions").each do |row|
+      evidence = row.fetch("supporting_evidence")
+      evidence = JSON.parse(evidence) if evidence.is_a?(String)
+      remapped = evidence.map do |item|
+        item.merge("locator" => remap_evidence_locator(item.fetch("locator"), mappings))
+      end
+      models.fetch("customer_success_interventions")
+        .where(id: mappings.fetch("customer_success_interventions").fetch(row.fetch("id")))
+        .update_all(supporting_evidence: remapped)
+    end
+
+    tables.fetch("customer_success_intervention_outcome_reviews").each do |row|
+      attributes = %w[before_snapshot after_snapshot].to_h do |column|
+        snapshot = row.fetch(column)
+        snapshot = JSON.parse(snapshot) if snapshot.is_a?(String)
+        [ column, remap_intervention_snapshot(snapshot, mappings) ]
+      end
+      models.fetch("customer_success_intervention_outcome_reviews")
+        .where(id: mappings.fetch("customer_success_intervention_outcome_reviews").fetch(row.fetch("id")))
+        .update_all(attributes)
+    end
+  end
+  private_class_method :remap_intervention_records!
+
+  def self.remap_intervention_snapshot(snapshot, mappings)
+    return snapshot if snapshot["retention"] == "expired"
+
+    snapshot.merge(
+      "assessment_id" => mappings.fetch("account_health_assessments").fetch(snapshot.fetch("assessment_id")),
+      "scorecard_version_id" => mappings.fetch("health_scorecard_versions").fetch(snapshot.fetch("scorecard_version_id")),
+      "signals" => snapshot.fetch("signals").map do |signal|
+        signal.merge(
+          "id" => mappings.fetch("account_health_signals").fetch(signal.fetch("id")),
+          "source_locator" => remap_evidence_locator(signal.fetch("source_locator"), mappings),
+          "evidence_refs" => signal.fetch("evidence_refs").map do |reference|
+            table = HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
+            reference.merge("id" => mappings.fetch(table).fetch(reference.fetch("id")))
+          end
+        )
+      end
+    )
+  end
+  private_class_method :remap_intervention_snapshot
+
+  def self.remap_evidence_locator(locator, mappings)
+    case locator
+    when %r{\Ahealth://assessments/(\d+)(/signals/.+)\z}
+      "health://assessments/#{mappings.fetch('account_health_assessments').fetch($1.to_i)}#{$2}"
+    when %r{\Aconversation://(\d+)/messages/(\d+)\z}
+      "conversation://#{mappings.fetch('conversations').fetch($1.to_i)}/messages/#{mappings.fetch('conversation_messages').fetch($2.to_i)}"
+    when %r{\Acase://(\d+)\z}
+      "case://#{mappings.fetch('support_cases').fetch($1.to_i)}"
+    when %r{\Aaccount://(\d+)(.*)\z}
+      "account://#{mappings.fetch('accounts').fetch($1.to_i)}#{$2}"
+    when %r{\Aretention-expired://customer-success-interventions/(\d+)/evidence/(\d+)\z}
+      intervention_id = mappings.fetch("customer_success_interventions").fetch($1.to_i)
+      "retention-expired://customer-success-interventions/#{intervention_id}/evidence/#{$2}"
+    else
+      locator
+    end
+  end
+  private_class_method :remap_evidence_locator
 
   def self.foreign_key_columns(tables)
     rows = ActiveRecord::Base.connection.select_all(<<~SQL)

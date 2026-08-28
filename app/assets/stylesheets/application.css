@@ -4221,6 +4221,298 @@ td {
 .risk-artifact header span { color: var(--muted); font-size: 0.8125rem; }
 .risk-artifact summary { color: var(--accent); cursor: pointer; }
 
+.intervention-workspace {
+  display: grid;
+  gap: 1.5rem;
+  min-width: 0;
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.intervention-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.intervention-heading > div {
+  max-width: 70ch;
+}
+
+.intervention-heading h2,
+.intervention-heading p,
+.intervention-proposals h3,
+.intervention-card h3,
+.intervention-card h4 {
+  margin: 0;
+}
+
+.intervention-heading p,
+.intervention-proposal-body > p,
+.intervention-card p {
+  margin-top: 0.5rem;
+  color: var(--muted-foreground);
+}
+
+.intervention-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5rem, 1fr));
+  min-width: 19rem;
+  margin: 0;
+  border-block: 1px solid var(--line);
+}
+
+.intervention-summary > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+}
+
+.intervention-summary dt,
+.intervention-layers section > span,
+.intervention-outcome > span {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.intervention-summary dd {
+  margin: 0;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+}
+
+.intervention-proposals {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 1rem;
+  border-block: 1px solid var(--line);
+}
+
+.intervention-proposal {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+}
+
+.intervention-proposal > summary,
+.intervention-review-form > summary {
+  display: flex;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+
+.intervention-proposal > summary > span:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.intervention-proposal > summary small,
+.intervention-card small,
+.intervention-card time {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.intervention-proposal-body,
+.intervention-review-form[open] {
+  padding: 0 1rem 1rem;
+}
+
+.intervention-form {
+  display: grid;
+  gap: 0.875rem;
+  margin-top: 1rem;
+}
+
+.intervention-form .field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.intervention-form textarea,
+.intervention-form select,
+.intervention-form input[type="date"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+.intervention-form textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.intervention-list {
+  display: grid;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.intervention-card {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+  background: var(--card);
+}
+
+.intervention-card > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.intervention-card > header > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.intervention-card h3 {
+  flex-basis: 100%;
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.intervention-state {
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+}
+
+.intervention-overdue {
+  border-color: var(--warning);
+}
+
+.intervention-layers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-block: 1px solid var(--line);
+}
+
+.intervention-layers > section {
+  min-width: 0;
+  padding: 1rem;
+}
+
+.intervention-layers > section + section {
+  border-left: 1px solid var(--line);
+}
+
+.intervention-layers h4,
+.intervention-outcome h4 {
+  margin-top: 0.35rem;
+}
+
+.intervention-layers code,
+.intervention-outcome code {
+  display: block;
+  margin-top: 0.2rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.intervention-layers ul {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0;
+  padding-left: 1.1rem;
+}
+
+.intervention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 0.625rem;
+}
+
+.intervention-actions form {
+  margin: 0;
+}
+
+.intervention-abandon {
+  position: relative;
+}
+
+.intervention-abandon > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.intervention-abandon > summary::-webkit-details-marker {
+  display: none;
+}
+
+.intervention-abandon[open] .intervention-form {
+  width: min(28rem, 100%);
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+  background: var(--surface);
+}
+
+.intervention-review-form {
+  border-block: 1px solid var(--line);
+}
+
+.intervention-next-step {
+  padding: 0.875rem 1rem;
+  color: var(--warning-foreground) !important;
+  background: var(--warning-soft);
+}
+
+.intervention-outcome {
+  padding: 1rem;
+  background: var(--accent-soft);
+}
+
+.intervention-score-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.intervention-outcome dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  margin: 1rem 0 0;
+}
+
+.intervention-outcome dl > div {
+  padding: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.intervention-outcome dt {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.intervention-outcome dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
 .account-supporting-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4556,6 +4848,19 @@ td {
   .risk-review-actions .button,
   .risk-review-actions form,
   .risk-review-actions form .button { width: 100%; }
+  .intervention-workspace { padding: 1rem; }
+  .intervention-heading,
+  .intervention-card > header { align-items: stretch; flex-direction: column; }
+  .intervention-summary { width: 100%; min-width: 0; }
+  .intervention-layers { grid-template-columns: minmax(0, 1fr); }
+  .intervention-layers > section + section { border-top: 1px solid var(--line); border-left: 0; }
+  .intervention-actions { align-items: stretch; flex-direction: column; }
+  .intervention-actions .button,
+  .intervention-actions form,
+  .intervention-actions form .button,
+  .intervention-abandon { width: 100%; min-height: 3rem; }
+  .intervention-abandon > summary { display: flex; align-items: center; justify-content: center; }
+  .intervention-outcome dl { grid-template-columns: minmax(0, 1fr); }
   .account-dossier { padding: 1rem; }
   .dossier-heading,
   .dossier-panel > header,
@@ -4586,7 +4891,10 @@ td {
   .health-context > div:last-child { border-bottom: 0; }
   .health-signals,
   .risk-workspace,
+  .intervention-workspace,
   .account-supporting-grid > section { padding: 1rem; }
+  .intervention-summary { grid-template-columns: minmax(0, 1fr); }
+  .intervention-summary > div + div { border-top: 1px solid var(--line); }
 }
 
 /* Health scorecard */

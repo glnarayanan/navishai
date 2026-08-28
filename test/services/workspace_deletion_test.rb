@@ -70,6 +70,34 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     workspace = workspaces(:acme_support)
     workspace_id = workspace.id
     user = users(:owner)
+    owner = memberships(:owner_support)
+    account = accounts(:acme)
+    at = Time.current.change(usec: 0)
+    before_assessment = AccountHealth.recalculate!(
+      workspace:, account:, trigger_kind: "human_request", membership: owner, at:
+    )
+    plan, = create_reviewed_intervention_plan(
+      workspace:, account:, membership: owner, assessment: before_assessment
+    )
+    intervention = propose_test_intervention(
+      workspace:, account:, membership: owner, assessment: before_assessment,
+      artifact: plan, at: at + 1.minute
+    )
+    CustomerSuccessInterventionWorkflow.approve!(
+      workspace:, membership: owner, intervention:, at: at + 2.minutes
+    )
+    CustomerSuccessInterventionWorkflow.complete!(
+      workspace:, membership: owner, intervention:, at: at + 3.minutes
+    )
+    after_assessment = AccountHealth.recalculate!(
+      workspace:, account:, trigger_kind: "human_request", membership: owner, at: at + 4.minutes
+    )
+    review = CustomerSuccessInterventionWorkflow.review!(
+      workspace:, membership: owner, intervention:, after_assessment:,
+      uncertainty: "Deletion must remove this frozen review.", at: at + 5.minutes
+    )
+    intervention_id = intervention.id
+    review_id = review.id
     purged = []
     request = WorkspaceDeletion.request!(
       workspace:, membership: memberships(:owner_support), confirmation: workspace.slug
@@ -82,6 +110,8 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     assert_not_nil tombstone
     refute Workspace.exists?(workspace_id)
     refute Membership.exists?(workspace_id:)
+    refute CustomerSuccessIntervention.exists?(intervention_id)
+    refute CustomerSuccessInterventionOutcomeReview.exists?(review_id)
     assert_empty purged
     assert User.exists?(user.id)
     assert_equal workspace_id, tombstone.former_workspace_id

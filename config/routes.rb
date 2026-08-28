@@ -56,6 +56,14 @@ Rails.application.routes.draw do
     resources :accounts, only: %i[ index show ] do
       post :recalculate, on: :member
       post :request_risk_review, on: :member
+      resources :interventions, only: :create, controller: "customer_success_interventions" do
+        member do
+          post :approve
+          post :complete
+          post :abandon
+          post :review
+        end
+      end
       get "health-evidence/:assessment_id/:signal_key", to: "health_evidence#show", on: :member,
         as: :health_evidence
       post "risk-reviews/:investigation_id/start", action: :start_risk_review, on: :member,

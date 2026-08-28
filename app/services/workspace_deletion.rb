@@ -145,6 +145,7 @@ class WorkspaceDeletion
   def self.delete_workspace_records!(workspace, tables)
     connection = ActiveRecord::Base.connection
     trigger_tables = tables + %w[active_storage_attachments active_storage_blobs]
+    connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
     trigger_tables.each do |table|
       connection.execute("ALTER TABLE #{connection.quote_table_name(table)} DISABLE TRIGGER USER")
     end

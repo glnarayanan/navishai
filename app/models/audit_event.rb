@@ -17,6 +17,21 @@ class AuditEvent < ApplicationRecord
     "account.risk_detected" => { "trigger_kind" => AccountRiskInvestigation::TRIGGER_KINDS },
     "account.risk_resolved" => {},
     "account.risk_started" => {},
+    "account.intervention_proposed" => {
+      "from_state" => [ "none" ], "to_state" => CustomerSuccessIntervention::STATUSES
+    },
+    "account.intervention_approved" => {
+      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
+    },
+    "account.intervention_completed" => {
+      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
+    },
+    "account.intervention_abandoned" => {
+      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
+    },
+    "account.intervention_reviewed" => {
+      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
+    },
     "account.unmerged" => {},
     "agent.profile_updated" => {},
     "crew.artifact_published" => {

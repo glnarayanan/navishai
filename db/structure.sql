@@ -129,6 +129,64 @@ CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cuto
     AS $$
 DECLARE
   affected integer;
+  total integer;
+BEGIN
+  total := expire_workspace_content_before_interventions(target_workspace_id, cutoff);
+  LOCK TABLE customer_success_interventions, customer_success_intervention_outcome_reviews
+    IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE customer_success_interventions DISABLE TRIGGER USER;
+  ALTER TABLE customer_success_intervention_outcome_reviews DISABLE TRIGGER USER;
+
+  UPDATE customer_success_interventions AS interventions
+  SET expected_observable_change = '[Expired by retention policy]',
+      reason = '[Expired by retention policy]',
+      abandonment_reason = CASE WHEN abandonment_reason IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      supporting_evidence = COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'kind', evidence->>'kind',
+          'label', '[Expired by retention policy]',
+          'locator', format(
+            'retention-expired://customer-success-interventions/%s/evidence/%s',
+            interventions.id, evidence_position
+          )
+        ) ORDER BY evidence_position)
+        FROM jsonb_array_elements(interventions.supporting_evidence)
+          WITH ORDINALITY AS evidence_items(evidence, evidence_position)
+      ), '[]'::jsonb),
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND proposed_at < cutoff AND
+    expected_observable_change <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE customer_success_intervention_outcome_reviews
+  SET before_snapshot = '{"retention":"expired"}'::jsonb,
+      after_snapshot = '{"retention":"expired"}'::jsonb,
+      changed_facts = '[]'::jsonb,
+      unchanged_facts = '[]'::jsonb,
+      uncertainty = '[Expired by retention policy]',
+      observed_association = '[Expired by retention policy]',
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND reviewed_at < cutoff AND
+    before_snapshot <> '{"retention":"expired"}'::jsonb;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  ALTER TABLE customer_success_intervention_outcome_reviews ENABLE TRIGGER USER;
+  ALTER TABLE customer_success_interventions ENABLE TRIGGER USER;
+  RETURN total;
+END;
+$$;
+
+
+--
+-- Name: expire_workspace_content_before_interventions(bigint, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_workspace_content_before_interventions(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  affected integer;
   total integer := 0;
   table_name text;
   expiry_tables text[] := ARRAY[
@@ -871,6 +929,108 @@ BEGIN
     RETURN OLD;
   END IF;
   RAISE EXCEPTION 'crew template identity is durable';
+END;
+$$;
+
+
+--
+-- Name: protect_customer_success_intervention(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_customer_success_intervention() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'customer success interventions cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'customer success interventions cannot be deleted';
+  END IF;
+  IF ROW(
+    NEW.workspace_id, NEW.account_id, NEW.account_health_assessment_id,
+    NEW.account_risk_investigation_id, NEW.proposing_crew_artifact_id,
+    NEW.accountable_membership_id, NEW.proposed_by_membership_id,
+    NEW.supporting_evidence, NEW.expected_observable_change, NEW.target_on,
+    NEW.reason, NEW.proposed_at, NEW.created_at
+  ) IS DISTINCT FROM ROW(
+    OLD.workspace_id, OLD.account_id, OLD.account_health_assessment_id,
+    OLD.account_risk_investigation_id, OLD.proposing_crew_artifact_id,
+    OLD.accountable_membership_id, OLD.proposed_by_membership_id,
+    OLD.supporting_evidence, OLD.expected_observable_change, OLD.target_on,
+    OLD.reason, OLD.proposed_at, OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'customer success intervention provenance is immutable';
+  END IF;
+  IF OLD.status = 'proposed' AND NEW.status = 'approved' THEN
+    IF NEW.approved_by_membership_id IS NULL OR NEW.approved_at IS NULL OR
+        NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
+        NEW.abandoned_by_membership_id IS NOT NULL OR NEW.abandoned_at IS NOT NULL OR
+        NEW.abandonment_reason IS NOT NULL THEN
+      RAISE EXCEPTION 'invalid customer success intervention approval';
+    END IF;
+  ELSIF OLD.status = 'proposed' AND NEW.status = 'abandoned' THEN
+    IF NEW.approved_by_membership_id IS NOT NULL OR NEW.approved_at IS NOT NULL OR
+        NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
+        NEW.abandoned_by_membership_id IS NULL OR NEW.abandoned_at IS NULL OR
+        NEW.abandonment_reason IS NULL THEN
+      RAISE EXCEPTION 'invalid customer success intervention abandonment';
+    END IF;
+  ELSIF OLD.status = 'approved' AND NEW.status = 'completed' THEN
+    IF ROW(NEW.approved_by_membership_id, NEW.approved_at) IS DISTINCT FROM
+        ROW(OLD.approved_by_membership_id, OLD.approved_at) OR
+        NEW.completed_by_membership_id IS NULL OR NEW.completed_at IS NULL OR
+        NEW.abandoned_by_membership_id IS NOT NULL OR NEW.abandoned_at IS NOT NULL OR
+        NEW.abandonment_reason IS NOT NULL THEN
+      RAISE EXCEPTION 'invalid customer success intervention completion';
+    END IF;
+  ELSIF OLD.status = 'approved' AND NEW.status = 'abandoned' THEN
+    IF ROW(NEW.approved_by_membership_id, NEW.approved_at) IS DISTINCT FROM
+        ROW(OLD.approved_by_membership_id, OLD.approved_at) OR
+        NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
+        NEW.abandoned_by_membership_id IS NULL OR NEW.abandoned_at IS NULL OR
+        NEW.abandonment_reason IS NULL THEN
+      RAISE EXCEPTION 'invalid customer success intervention abandonment';
+    END IF;
+  ELSIF OLD.status = 'completed' AND NEW.status = 'reviewed' THEN
+    IF ROW(
+        NEW.approved_by_membership_id, NEW.approved_at,
+        NEW.completed_by_membership_id, NEW.completed_at
+      ) IS DISTINCT FROM ROW(
+        OLD.approved_by_membership_id, OLD.approved_at,
+        OLD.completed_by_membership_id, OLD.completed_at
+      ) OR NOT EXISTS (
+        SELECT 1 FROM customer_success_intervention_outcome_reviews
+        WHERE customer_success_intervention_id = NEW.id AND workspace_id = NEW.workspace_id
+      ) THEN
+      RAISE EXCEPTION 'invalid customer success intervention outcome review';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'invalid customer success intervention transition';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: protect_customer_success_outcome_review(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_customer_success_outcome_review() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'customer success outcome reviews cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'customer success outcome reviews are append only';
 END;
 $$;
 
@@ -3090,6 +3250,105 @@ CREATE SEQUENCE public.crew_templates_id_seq
 --
 
 ALTER SEQUENCE public.crew_templates_id_seq OWNED BY public.crew_templates.id;
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_success_intervention_outcome_reviews (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    customer_success_intervention_id bigint NOT NULL,
+    before_account_health_assessment_id bigint NOT NULL,
+    after_account_health_assessment_id bigint NOT NULL,
+    reviewed_by_membership_id bigint NOT NULL,
+    before_snapshot jsonb NOT NULL,
+    after_snapshot jsonb NOT NULL,
+    changed_facts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    unchanged_facts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    uncertainty text NOT NULL,
+    observed_association text NOT NULL,
+    reviewed_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT customer_success_outcome_reviews_assessments CHECK ((before_account_health_assessment_id <> after_account_health_assessment_id)),
+    CONSTRAINT customer_success_outcome_reviews_content CHECK ((((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 2000)) AND ((octet_length(observed_association) >= 1) AND (octet_length(observed_association) <= 2000)))),
+    CONSTRAINT customer_success_outcome_reviews_snapshots CHECK (((jsonb_typeof(before_snapshot) = 'object'::text) AND (jsonb_typeof(after_snapshot) = 'object'::text) AND (octet_length((before_snapshot)::text) <= 131072) AND (octet_length((after_snapshot)::text) <= 131072) AND (jsonb_typeof(changed_facts) = 'array'::text) AND (jsonb_array_length(changed_facts) <= 50) AND (jsonb_typeof(unchanged_facts) = 'array'::text) AND (jsonb_array_length(unchanged_facts) <= 50)))
+);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.customer_success_intervention_outcome_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.customer_success_intervention_outcome_reviews_id_seq OWNED BY public.customer_success_intervention_outcome_reviews.id;
+
+
+--
+-- Name: customer_success_interventions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_success_interventions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    account_health_assessment_id bigint NOT NULL,
+    account_risk_investigation_id bigint,
+    proposing_crew_artifact_id bigint NOT NULL,
+    accountable_membership_id bigint NOT NULL,
+    proposed_by_membership_id bigint NOT NULL,
+    status character varying DEFAULT 'proposed'::character varying NOT NULL,
+    supporting_evidence jsonb DEFAULT '[]'::jsonb NOT NULL,
+    expected_observable_change text NOT NULL,
+    target_on date NOT NULL,
+    reason text NOT NULL,
+    proposed_at timestamp(6) without time zone NOT NULL,
+    approved_by_membership_id bigint,
+    approved_at timestamp(6) without time zone,
+    completed_by_membership_id bigint,
+    completed_at timestamp(6) without time zone,
+    abandoned_by_membership_id bigint,
+    abandoned_at timestamp(6) without time zone,
+    abandonment_reason text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT customer_success_interventions_content CHECK ((((octet_length(expected_observable_change) >= 1) AND (octet_length(expected_observable_change) <= 2000)) AND ((octet_length(reason) >= 1) AND (octet_length(reason) <= 1000)) AND ((abandonment_reason IS NULL) OR ((octet_length(abandonment_reason) >= 1) AND (octet_length(abandonment_reason) <= 1000))))),
+    CONSTRAINT customer_success_interventions_evidence CHECK (((jsonb_typeof(supporting_evidence) = 'array'::text) AND ((jsonb_array_length(supporting_evidence) >= 1) AND (jsonb_array_length(supporting_evidence) <= 20)))),
+    CONSTRAINT customer_success_interventions_state CHECK (((((status)::text = 'proposed'::text) AND (approved_by_membership_id IS NULL) AND (approved_at IS NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'approved'::text) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = ANY ((ARRAY['completed'::character varying, 'reviewed'::character varying])::text[])) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NOT NULL) AND (completed_at IS NOT NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'abandoned'::text) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NOT NULL) AND (abandoned_at IS NOT NULL) AND (abandonment_reason IS NOT NULL)))),
+    CONSTRAINT customer_success_interventions_status CHECK (((status)::text = ANY ((ARRAY['proposed'::character varying, 'approved'::character varying, 'completed'::character varying, 'abandoned'::character varying, 'reviewed'::character varying])::text[])))
+);
+
+
+--
+-- Name: customer_success_interventions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.customer_success_interventions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: customer_success_interventions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.customer_success_interventions_id_seq OWNED BY public.customer_success_interventions.id;
 
 
 --
@@ -6065,6 +6324,20 @@ ALTER TABLE ONLY public.crew_templates ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: customer_success_intervention_outcome_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews ALTER COLUMN id SET DEFAULT nextval('public.customer_success_intervention_outcome_reviews_id_seq'::regclass);
+
+
+--
+-- Name: customer_success_interventions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions ALTER COLUMN id SET DEFAULT nextval('public.customer_success_interventions_id_seq'::regclass);
+
+
+--
 -- Name: email_draft_attachments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6727,6 +7000,22 @@ ALTER TABLE ONLY public.crew_templates
 
 
 --
+-- Name: customer_success_intervention_outcome_reviews customer_success_intervention_outcome_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT customer_success_intervention_outcome_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customer_success_interventions customer_success_interventions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT customer_success_interventions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: email_draft_attachments email_draft_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7344,6 +7633,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public
 --
 
 CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public.outbound_email_deliveries USING btree (shared_email_inbox_id, message_id);
+
+
+--
+-- Name: idx_on_workspace_id_82898bf35b; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_82898bf35b ON public.customer_success_intervention_outcome_reviews USING btree (workspace_id);
 
 
 --
@@ -7991,10 +8287,52 @@ CREATE UNIQUE INDEX index_crew_templates_on_workspace_id_and_id ON public.crew_t
 
 
 --
+-- Name: index_cs_interventions_for_account_work; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cs_interventions_for_account_work ON public.customer_success_interventions USING btree (workspace_id, account_id, status, target_on);
+
+
+--
+-- Name: index_cs_interventions_on_proposing_artifact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_interventions_on_proposing_artifact ON public.customer_success_interventions USING btree (proposing_crew_artifact_id);
+
+
+--
+-- Name: index_cs_interventions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_interventions_on_workspace_id_and_id ON public.customer_success_interventions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_cs_outcome_reviews_on_intervention; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_outcome_reviews_on_intervention ON public.customer_success_intervention_outcome_reviews USING btree (customer_success_intervention_id);
+
+
+--
+-- Name: index_cs_outcome_reviews_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_outcome_reviews_on_workspace_id_and_id ON public.customer_success_intervention_outcome_reviews USING btree (workspace_id, id);
+
+
+--
 -- Name: index_current_source_identity_keys; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_current_source_identity_keys ON public.source_identity_keys USING btree (source_identity_id, kind, normalized_value) WHERE (retired_at IS NULL);
+
+
+--
+-- Name: index_customer_success_interventions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_customer_success_interventions_on_workspace_id ON public.customer_success_interventions USING btree (workspace_id);
 
 
 --
@@ -9972,6 +10310,34 @@ CREATE TRIGGER crew_templates_protect_record BEFORE DELETE OR UPDATE ON public.c
 
 
 --
+-- Name: customer_success_interventions customer_success_interventions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER customer_success_interventions_no_truncate BEFORE TRUNCATE ON public.customer_success_interventions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_customer_success_intervention();
+
+
+--
+-- Name: customer_success_interventions customer_success_interventions_transition; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER customer_success_interventions_transition BEFORE DELETE OR UPDATE ON public.customer_success_interventions FOR EACH ROW EXECUTE FUNCTION public.protect_customer_success_intervention();
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews customer_success_outcome_reviews_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER customer_success_outcome_reviews_append_only BEFORE DELETE OR UPDATE ON public.customer_success_intervention_outcome_reviews FOR EACH ROW EXECUTE FUNCTION public.protect_customer_success_outcome_review();
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews customer_success_outcome_reviews_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER customer_success_outcome_reviews_no_truncate BEFORE TRUNCATE ON public.customer_success_intervention_outcome_reviews FOR EACH STATEMENT EXECUTE FUNCTION public.protect_customer_success_outcome_review();
+
+
+--
 -- Name: email_message_links email_message_links_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -10732,6 +11098,110 @@ ALTER TABLE ONLY public.crew_tasks
 
 ALTER TABLE ONLY public.crew_tasks
     ADD CONSTRAINT fk_crew_tasks_owner FOREIGN KEY (workspace_id, owner_membership_id, owner_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_abandoned_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_abandoned_by FOREIGN KEY (workspace_id, abandoned_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_account; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_account FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_accountable; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_accountable FOREIGN KEY (workspace_id, accountable_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_approved_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_approved_by FOREIGN KEY (workspace_id, approved_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_artifact; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_artifact FOREIGN KEY (workspace_id, proposing_crew_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_assessment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_assessment FOREIGN KEY (workspace_id, account_health_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_completed_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_completed_by FOREIGN KEY (workspace_id, completed_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_investigation; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_investigation FOREIGN KEY (workspace_id, account_risk_investigation_id) REFERENCES public.account_risk_investigations(workspace_id, id);
+
+
+--
+-- Name: customer_success_interventions fk_cs_interventions_proposed_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_cs_interventions_proposed_by FOREIGN KEY (workspace_id, proposed_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews fk_cs_outcome_reviews_after_assessment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT fk_cs_outcome_reviews_after_assessment FOREIGN KEY (workspace_id, after_account_health_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews fk_cs_outcome_reviews_before_assessment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT fk_cs_outcome_reviews_before_assessment FOREIGN KEY (workspace_id, before_account_health_assessment_id) REFERENCES public.account_health_assessments(workspace_id, id);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews fk_cs_outcome_reviews_intervention; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT fk_cs_outcome_reviews_intervention FOREIGN KEY (workspace_id, customer_success_intervention_id) REFERENCES public.customer_success_interventions(workspace_id, id);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews fk_cs_outcome_reviews_reviewer; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT fk_cs_outcome_reviews_reviewer FOREIGN KEY (workspace_id, reviewed_by_membership_id) REFERENCES public.memberships(workspace_id, id);
 
 
 --
@@ -12543,6 +13013,14 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: customer_success_interventions fk_rails_ca35eeca1f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_interventions
+    ADD CONSTRAINT fk_rails_ca35eeca1f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: knowledge_source_versions fk_rails_ca93bc035d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12684,6 +13162,14 @@ ALTER TABLE ONLY public.audit_events
 
 ALTER TABLE ONLY public.email_message_links
     ADD CONSTRAINT fk_rails_de7eae5c16 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: customer_success_intervention_outcome_reviews fk_rails_df4b274cee; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
+    ADD CONSTRAINT fk_rails_df4b274cee FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -13013,6 +13499,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260828220000'),
 ('20260828210000'),
 ('20260827220000'),
 ('20260827210000'),
