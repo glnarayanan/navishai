@@ -247,6 +247,263 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "verifies a full round trip with table and attachment digests, tenant links, and Memory claims" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    content = "verified archive bytes"
+    attachment = source.stored_attachments.create!(
+      source: :user_upload, uploaded_by_membership: owner, uploaded_by_user: owner.user,
+      filename: "archive-proof.txt", byte_size: content.bytesize,
+      content_sha256: Digest::SHA256.hexdigest(content), detected_content_type: "text/plain",
+      scan_status: :available, scan_result_code: "clean", scanned_at: Time.current
+    )
+    attachment.file.attach(io: StringIO.new(content), filename: attachment.filename, content_type: "text/plain")
+    support_case = create_support_case(workspace: source, membership: owner)
+    memory = source.memory_records.create!(
+      memory_type: :semantic, scope_kind: :support_case, support_case:, topic: "archive verification",
+      content: "Rebuild this record from PostgreSQL.", authority: :source_record, origin_kind: :system,
+      source_reference: "test://archive-verification", source_digest: Digest::SHA256.hexdigest("source"),
+      observed_at: 1.day.ago, valid_from: 1.day.ago, confidence: 1, retention_policy: :indefinite
+    )
+    source.memory_index_entries.create!(
+      memory_record: memory, status: :indexed, attempt_count: 1,
+      external_document_id: "engine-private-verification-id", external_status: "done",
+      last_attempted_at: Time.current, indexed_at: Time.current
+    )
+    checked_at = Time.zone.parse("2026-08-28 15:00:00 UTC")
+
+    assert_difference -> { ActiveJob::Base.queue_adapter.enqueued_jobs.size }, 1 do
+      @verification = WorkspacePortability.verify_round_trip(
+        workspace: source, membership: owner, name: "Verified Support", slug: "verified-support",
+        source_commit: "a" * 40, checked_at:
+      )
+    end
+
+    imported = @verification.workspace
+    check = @verification.operational_check
+    assert_equal source.organization, imported.organization
+    assert_not_equal source.id, imported.id
+    assert_not_equal source.runner_key, imported.runner_key
+    assert imported.memberships.find_by!(user: owner.user).owner?
+    assert_equal content, imported.stored_attachments.find_by!(filename: attachment.filename).download_verified!
+    restored_entry = imported.memory_records.find_by!(topic: memory.topic).memory_index_entry
+    assert restored_entry.indexing?
+    assert_equal 1, restored_entry.attempt_count
+    assert_nil restored_entry.external_document_id
+    assert_equal "passed", check.result
+    assert_equal "round_trip_verified", check.result_code
+    assert_equal WorkspacePortability::FORMAT, check.archive_format
+    assert_equal source, check.workspace
+    assert_equal owner.user, check.recorded_by_user
+    assert_equal checked_at, check.checked_at
+    assert_operator check.table_count, :>, 0
+    assert_operator check.record_count, :>, 0
+    assert_equal source.stored_attachments.count, check.attachment_count
+    assert_equal source.memory_records.count, check.memory_count
+    assert_equal owner.user, imported.audit_events.find_by!(action: "workspace.imported").actor
+    assert_equal owner.user, imported.audit_events.find_by!(action: "memory.index_reconstructed").actor
+    assert_equal 1, imported.audit_events.where(action: "workspace.imported").count
+    assert_equal 1, imported.audit_events.where(action: "memory.index_reconstructed").count
+    assert_match(/\A[0-9a-f]{64}\z/, check.evidence_digest)
+    refute_includes check.attributes.to_json, memory.content
+    refute_includes check.attributes.to_json, attachment.filename
+    refute imported.accounts.where(id: workspaces(:beta_support).account_ids).exists?
+  end
+
+  test "rolls back the verified target and its objects when the success ledger audit fails" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    2.times do |index|
+      create_archive_attachment(
+        workspace: source, membership: owner, filename: "ledger-#{index}.txt", content: "ledger bytes #{index}"
+      )
+    end
+    workspace_ids = Workspace.ids
+    check_ids = source.operational_check_ids
+    storage_before = storage_objects
+    source_commit = "f" * 40
+    original = AuditEvent.method(:record!)
+    success_ledger_failed = false
+    replacement = lambda do |**arguments|
+      if arguments.fetch(:action) == "operations.check_recorded" && !success_ledger_failed
+        success_ledger_failed = true
+        raise "success ledger unavailable"
+      end
+      original.call(**arguments)
+    end
+
+    with_replaced_class_method(AuditEvent, :record!, replacement) do
+      error = assert_raises(WorkspacePortability::VerificationFailed) do
+        WorkspacePortability.verify_round_trip(
+          workspace: source, membership: owner, name: "Ledger Failure", slug: "ledger-failure",
+          source_commit:
+        )
+      end
+      assert_equal "archive_round_trip_failed", error.result_code
+    end
+
+    assert_equal workspace_ids, Workspace.ids
+    assert_equal storage_before, storage_objects
+    new_checks = source.operational_checks.where.not(id: check_ids)
+    assert_equal 1, new_checks.count
+    check = new_checks.sole
+    assert_equal "failed", check.result
+    assert_equal "archive_round_trip_failed", check.result_code
+    assert_equal source_commit, check.source_commit
+    assert_equal owner.user, check.recorded_by_user
+    assert_operator check.table_count, :>, 0
+    assert_operator check.record_count, :>, 0
+    assert_equal 2, check.attachment_count
+    refute source.operational_checks.where(result: "passed", source_commit:).exists?
+  end
+
+  test "cleans the first uploaded object when a later attachment upload fails" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    source_attachments = 2.times.map do |index|
+      create_archive_attachment(
+        workspace: source, membership: owner, filename: "upload-#{index}.txt", content: "upload bytes #{index}"
+      )
+    end
+    workspace_ids = Workspace.ids
+    storage_before = storage_objects
+    source_bytes = source_attachments.to_h { |attachment| [ attachment.file.key, attachment.file.download ] }
+    original = ActiveStorage::Blob.method(:create_and_upload!)
+    upload_count = 0
+    replacement = lambda do |**arguments|
+      upload_count += 1
+      raise IOError, "second target upload failed" if upload_count == 2
+
+      original.call(**arguments)
+    end
+
+    with_replaced_class_method(ActiveStorage::Blob, :create_and_upload!, replacement) do
+      error = assert_raises(WorkspacePortability::VerificationFailed) do
+        WorkspacePortability.verify_round_trip(
+          workspace: source, membership: owner, name: "Upload Failure", slug: "upload-failure",
+          source_commit: "1" * 40
+        )
+      end
+      assert_equal "archive_round_trip_failed", error.result_code
+    end
+
+    assert_equal 2, upload_count
+    assert_equal workspace_ids, Workspace.ids
+    assert_equal storage_before, storage_objects
+    assert_equal source_bytes, source_attachments.to_h { |attachment| [ attachment.file.key, attachment.file.download ] }
+    check = source.operational_checks.latest_first.first
+    assert_equal "failed", check.result
+    assert_equal "archive_round_trip_failed", check.result_code
+  end
+
+  test "fails closed and records bounded evidence when Memory reconstruction is uncertain" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    source.memory_records.create!(
+      memory_type: :semantic, scope_kind: :workspace, topic: "uncertain archive reconstruction",
+      content: "This record must receive one durable claim.", authority: :source_record, origin_kind: :system,
+      source_reference: "test://uncertain-archive", source_digest: Digest::SHA256.hexdigest("uncertain"),
+      observed_at: 1.day.ago, valid_from: 1.day.ago, confidence: 1, retention_policy: :indefinite
+    )
+    singleton = WorkspacePortability.singleton_class
+    original = WorkspacePortability.method(:reconstruct_imported_memory!)
+    singleton.define_method(:reconstruct_imported_memory!) do |workspace, membership, include_pending:|
+      original.call(workspace, membership, include_pending:)
+      0
+    end
+
+    assert_no_difference "Workspace.count" do
+      error = assert_raises(WorkspacePortability::VerificationFailed) do
+        WorkspacePortability.verify_round_trip(
+          workspace: source, membership: owner, name: "Uncertain Restore", slug: "uncertain-restore",
+          source_commit: "b" * 40
+        )
+      end
+      assert_equal "memory_reconstruction_uncertain", error.result_code, error.detail
+    end
+    check = source.operational_checks.latest_first.first
+    assert_equal "failed", check.result
+    assert_equal "memory_reconstruction_uncertain", check.result_code
+    assert_match(/\A[0-9a-f]{64}\z/, check.evidence_digest)
+  ensure
+    if singleton && original
+      singleton.define_method(:reconstruct_imported_memory!, original)
+      singleton.send(:private, :reconstruct_imported_memory!)
+    end
+  end
+
+  test "fails closed on attachment mismatch without retaining archive content" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    content = "tampered archive bytes"
+    attachment = source.stored_attachments.create!(
+      source: :user_upload, uploaded_by_membership: owner, uploaded_by_user: owner.user,
+      filename: "tampered.txt", byte_size: content.bytesize,
+      content_sha256: Digest::SHA256.hexdigest(content), detected_content_type: "text/plain",
+      scan_status: :available, scan_result_code: "clean", scanned_at: Time.current
+    )
+    attachment.file.attach(io: StringIO.new(content), filename: attachment.filename, content_type: "text/plain")
+    attachment.file.blob.service.upload(
+      attachment.file.blob.key, StringIO.new("x" * content.bytesize)
+    )
+
+    assert_no_difference "Workspace.count" do
+      error = assert_raises(WorkspacePortability::VerificationFailed) do
+        WorkspacePortability.verify_round_trip(
+          workspace: source, membership: owner, name: "Tampered Restore", slug: "tampered-restore",
+          source_commit: "c" * 40
+        )
+      end
+      assert_equal "attachment_mismatch", error.result_code
+    end
+    check = source.operational_checks.latest_first.first
+    assert_equal "failed", check.result
+    assert_equal "attachment_mismatch", check.result_code
+    refute_includes check.attributes.to_json, content
+  end
+
+  test "fails closed on unsupported schema, missing verified user, and cross-Organization archive" do
+    source = workspaces(:acme_support)
+    cases = {
+      "unsupported_schema" => ->(archive) { archive["format"] = "navishai-workspace-v999" },
+      "missing_user" => ->(archive) { archive.fetch("users").first["email_address"] = "missing@example.com" },
+      "cross_organization_archive" => ->(archive) { archive.fetch("organization")["slug"] = "other-org" }
+    }
+
+    cases.each_with_index do |(expected_code, mutation), index|
+      with_mutated_verification_archive(mutation) do
+        assert_verification_failure(
+          expected_code, source:, slug: "invalid-archive-#{index}", source_commit: (index + 4).to_s * 40
+        )
+      end
+    end
+  end
+
+  test "fails closed on partial import, normalized count and digest drift, and tenant-link failure" do
+    source = workspaces(:acme_support)
+    stages = {
+      "partial_import" => [ :verify_import!, ->(**) { raise WorkspacePortability::VerificationFailed, "partial_import" } ],
+      "table_count_mismatch" => [ :verification_generated_row_count, ->(_table, _tables) { 10_000 } ],
+      "table_digest_mismatch" => [ :normalize_imported_row, nil ],
+      "tenant_isolation_failed" => [ :verify_tenant_links!,
+        ->(*) { raise WorkspacePortability::VerificationFailed, "tenant_isolation_failed" } ]
+    }
+
+    stages.each_with_index do |(expected_code, (method_name, replacement)), index|
+      if method_name == :normalize_imported_row
+        original = WorkspacePortability.method(method_name)
+        replacement = lambda do |row, **arguments|
+          original.call(row, **arguments).merge("created_at" => Time.zone.at(0))
+        end
+      end
+      with_workspace_portability_method(method_name, replacement) do
+        assert_verification_failure(
+          expected_code, source:, slug: "verification-drift-#{index}", source_commit: %w[a b c d].fetch(index) * 40
+        )
+      end
+    end
+  end
+
   test "round trips configured usage estimates in final immutable shape" do
     source = workspaces(:acme_support)
     owner = memberships(:owner_support)
@@ -522,6 +779,72 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
   end
 
   private
+    def assert_verification_failure(expected_code, source:, slug:, source_commit:)
+      before_ids = Workspace.ids
+      before_checks = source.operational_checks.count
+      error = assert_raises(WorkspacePortability::VerificationFailed) do
+        WorkspacePortability.verify_round_trip(
+          workspace: source, membership: memberships(:owner_support),
+          name: slug.humanize, slug:, source_commit:
+        )
+      end
+      assert_equal expected_code, error.result_code, error.detail
+      assert_equal before_ids, Workspace.ids
+      assert_equal before_checks + 1, source.operational_checks.count
+      check = source.operational_checks.latest_first.first
+      assert_equal "failed", check.result
+      assert_equal expected_code, check.result_code
+      assert_equal source_commit, check.source_commit
+      assert_equal WorkspacePortability::FORMAT, check.archive_format
+      assert_match(/\A[0-9a-f]{64}\z/, check.evidence_digest)
+    end
+
+    def with_mutated_verification_archive(mutation)
+      original = WorkspacePortability.method(:parse_archive)
+      replacement = lambda do |io|
+        archive, files = original.call(io)
+        mutation.call(archive)
+        [ archive, files ]
+      end
+      with_workspace_portability_method(:parse_archive, replacement) { yield }
+    end
+
+    def with_workspace_portability_method(name, replacement)
+      with_replaced_class_method(WorkspacePortability, name, replacement) { yield }
+    end
+
+    def with_replaced_class_method(owner, name, replacement)
+      singleton = owner.singleton_class
+      original = owner.method(name)
+      visibility = singleton.private_method_defined?(name) ? :private : :public
+      singleton.define_method(name, replacement)
+      singleton.send(visibility, name)
+      yield
+    ensure
+      if singleton && original
+        singleton.define_method(name, original)
+        singleton.send(visibility, name)
+      end
+    end
+
+    def create_archive_attachment(workspace:, membership:, filename:, content:)
+      workspace.stored_attachments.create!(
+        source: :user_upload, uploaded_by_membership: membership, uploaded_by_user: membership.user,
+        filename:, byte_size: content.bytesize, content_sha256: Digest::SHA256.hexdigest(content),
+        detected_content_type: "text/plain", scan_status: :available, scan_result_code: "clean",
+        scanned_at: Time.current
+      ).tap do |attachment|
+        attachment.file.attach(io: StringIO.new(content), filename:, content_type: "text/plain")
+      end
+    end
+
+    def storage_objects
+      root = Pathname(ActiveStorage::Blob.service.root)
+      Dir.glob(root.join("**", "*")).select { |path| File.file?(path) }.sort.to_h do |path|
+        [ Pathname(path).relative_path_from(root).to_s, Digest::SHA256.file(path).hexdigest ]
+      end
+    end
+
     def create_historical_v1(workspace)
       owner = memberships(:owner_support)
       approve_scripted_runtime(workspace:, membership: owner)

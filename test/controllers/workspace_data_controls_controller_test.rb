@@ -52,6 +52,9 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     get workspace_data_controls_path(@workspace)
     assert_response :forbidden
 
+    post verify_archive_workspace_data_controls_path(@workspace)
+    assert_response :forbidden
+
     assert_no_difference "AuditEvent.count" do
       patch workspace_data_controls_path(@workspace), params: {
         workspace_data_policy: { content_retention_days: "30", audit_retention_days: "365" }
@@ -158,4 +161,73 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
   ensure
     file&.close!
   end
+
+  test "owner runs a verified archive round trip and sees the retained target" do
+    sign_in_as users(:owner)
+
+    with_source_commit("a" * 40) do
+      assert_difference [ "Workspace.count", "OperationalCheck.count" ], 1 do
+        post verify_archive_workspace_data_controls_path(@workspace)
+      end
+    end
+
+    assert_redirected_to workspace_data_controls_path(@workspace)
+    follow_redirect!
+    assert_response :success
+    target = @workspace.organization.workspaces.where.not(id: @workspace.id).order(:id).last
+    assert_select ".flash-notice", text: /retained #{Regexp.escape(target.name)}/
+    assert_select "h2", "Archive round-trip check"
+    assert_select "dt", "Latest result"
+    assert_select "dd", /Passed: Round trip verified/
+  end
+
+  test "archive verification failure is bounded and keeps no target" do
+    sign_in_as users(:owner)
+    failure = WorkspacePortability::VerificationFailed.new(
+      "tenant_isolation_failed", detail: "private row and secret detail"
+    )
+
+    with_source_commit("b" * 40) do
+      with_portability_method(:verify_round_trip, ->(**) { raise failure }) do
+        assert_no_difference "Workspace.count" do
+          post verify_archive_workspace_data_controls_path(@workspace)
+        end
+      end
+    end
+
+    assert_redirected_to workspace_data_controls_path(@workspace)
+    follow_redirect!
+    assert_select ".flash-alert", text: /Tenant isolation failed.*No target Workspace was kept/
+    assert_no_match(/private row|secret detail/, response.body)
+  end
+
+  test "foreign Workspace route cannot run archive verification" do
+    sign_in_as users(:owner)
+
+    with_source_commit("c" * 40) do
+      assert_no_difference [ "Workspace.count", "OperationalCheck.count" ] do
+        post verify_archive_workspace_data_controls_path(workspaces(:beta_support))
+      end
+    end
+
+    assert_response :not_found
+  end
+
+  private
+    def with_source_commit(commit)
+      original = ENV["NAVISHAI_SOURCE_COMMIT"]
+      ENV["NAVISHAI_SOURCE_COMMIT"] = commit
+      yield
+    ensure
+      original ? ENV["NAVISHAI_SOURCE_COMMIT"] = original : ENV.delete("NAVISHAI_SOURCE_COMMIT")
+    end
+
+    def with_portability_method(name, replacement)
+      singleton = WorkspacePortability.singleton_class
+      original = WorkspacePortability.method(name)
+      singleton.define_method(name, replacement)
+      yield
+    ensure
+      singleton.define_method(name, original) if singleton && original
+    end
 end

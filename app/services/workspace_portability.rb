@@ -43,6 +43,16 @@ class WorkspacePortability
     intercom_drafts.source_crew_artifact_id
     intercom_outbound_deliveries.human_edited_by_membership_id
     intercom_outbound_deliveries.source_crew_artifact_id
+    memory_proposals.account_id
+    memory_proposals.contact_id
+    memory_proposals.support_case_id
+    memory_records.account_id
+    memory_records.agent_profile_id
+    memory_records.contact_id
+    memory_records.crew_template_id
+    memory_records.organization_id
+    memory_records.support_case_id
+    memory_records.user_id
     outbound_email_deliveries.human_edited_by_membership_id
     outbound_email_deliveries.source_crew_artifact_id
     customer_success_interventions.approved_by_membership_id
@@ -75,6 +85,18 @@ class WorkspacePortability
   }.freeze
 
   class InvalidArchive < StandardError; end
+  class VerificationFailed < InvalidArchive
+    attr_reader :result_code, :detail
+
+    def initialize(result_code, detail: nil)
+      @result_code = result_code
+      @detail = detail
+      super("Workspace archive verification failed: #{result_code.humanize}.")
+    end
+  end
+
+  ImportResult = Data.define(:workspace, :report)
+  VerificationResult = Data.define(:workspace, :operational_check)
 
   def self.export(workspace:, membership:, exported_at: Time.current)
     actor = workspace.memberships.find(membership.id)
@@ -143,31 +165,9 @@ class WorkspacePortability
     raise Current::RoleAccessDenied unless actor.owner?
 
     archive, attachment_files = parse_archive(archive_io)
-    validate_archive!(archive, workspace.organization)
-    target = build_target(workspace.organization, name, slug)
-    users = imported_users(archive.fetch("users"))
-    tables = archive.fetch("tables")
-    key_replacements = global_key_replacements(tables)
-    attachment_objects = validate_attachment_objects!(attachment_files, tables)
-    record_count = tables.sum { |_table, rows| rows.size }
-
-    Workspace.transaction do
-      target_id = Workspace.insert_all!([ target.attributes.except("id").merge(
-        "created_at" => imported_at, "updated_at" => imported_at
-      ) ], returning: %w[id]).first.fetch("id")
-      target = Workspace.find(target_id)
-      mappings = import_rows!(tables, source_workspace_id: archive.dig("workspace", "id"), target:, users:,
-        key_replacements:)
-      attach_objects!(target, attachment_objects, mappings.fetch("stored_attachments", {}))
-      target_actor = ensure_owner!(target, actor.user)
-      AuditEvent.record!(
-        action: "workspace.imported", source: :web, workspace: target, actor: actor.user, subject: target,
-        metadata: { table_count: tables.size, record_count:, attachment_count: attachment_objects.size },
-        occurred_at: imported_at
-      )
-      MemoryPortability.reconstruct_index!(workspace: target, membership: target_actor) if target.memory_records.exists?
-    end
-    target
+    import_archive(
+      workspace:, actor:, archive:, attachment_files:, name:, slug:, imported_at:, verify: false
+    ).workspace
   rescue ActiveRecord::StatementInvalid
     raise InvalidArchive, "Workspace archive data does not satisfy this release."
   rescue Zlib::GzipFile::Error, Gem::Package::TarInvalidError, JSON::ParserError, KeyError, TypeError, ArgumentError,
@@ -176,6 +176,399 @@ class WorkspacePortability
   ensure
     attachment_files&.each_value { |object| object.close! }
   end
+
+  def self.verify_round_trip(workspace:, membership:, name:, slug:, source_commit:, checked_at: Time.current)
+    actor = workspace.memberships.find(membership.id)
+    raise Current::RoleAccessDenied unless actor.owner?
+    raise VerificationFailed, "source_commit_invalid" unless source_commit.to_s.match?(OperationalCheck::COMMIT_FORMAT)
+
+    archive_io = export(workspace:, membership: actor, exported_at: checked_at)
+    archive, attachment_files = parse_archive(archive_io)
+    source_counts = archive_counts(archive)
+    check = nil
+    imported = import_archive(
+      workspace:, actor:, archive:, attachment_files:, name:, slug:, imported_at: checked_at, verify: true
+    ) do |_target, report|
+      evidence_digest = verification_evidence_digest(
+        report:, source_commit:, checked_at:, result_code: "round_trip_verified"
+      )
+      check = OperationalCheck.record!(
+        workspace:, membership: actor, check_kind: "archive_verification", result: "passed",
+        result_code: "round_trip_verified", evidence_digest:, source_commit:, checked_at:,
+        archive_format: FORMAT, counts: source_counts
+      )
+    end
+    VerificationResult.new(workspace: imported.workspace, operational_check: check)
+  rescue Current::RoleAccessDenied
+    raise
+  rescue StandardError => error
+    failure = error.is_a?(VerificationFailed) ? error :
+      VerificationFailed.new(verification_failure_code(error), detail: "#{error.class}: #{error.message}")
+    if actor && source_commit.to_s.match?(OperationalCheck::COMMIT_FORMAT)
+      OperationalCheck.record!(
+        workspace:, membership: actor, check_kind: "archive_verification", result: "failed",
+        result_code: failure.result_code,
+        evidence_digest: verification_evidence_digest(
+          report: source_counts || {}, source_commit:, checked_at:, result_code: failure.result_code
+        ),
+        source_commit:, checked_at:, archive_format: FORMAT, counts: source_counts || {}
+      )
+    end
+    raise failure
+  ensure
+    archive_io&.close!
+    attachment_files&.each_value { |object| object.close! }
+  end
+
+  def self.import_archive(workspace:, actor:, archive:, attachment_files:, name:, slug:, imported_at:, verify:)
+    attached_blobs = []
+    validate_archive!(archive, workspace.organization)
+    target = build_target(workspace.organization, name, slug)
+    users = imported_users(archive.fetch("users"))
+    tables = archive.fetch("tables")
+    key_replacements = global_key_replacements(tables)
+    attachment_objects = validate_attachment_objects!(attachment_files, tables)
+    record_count = tables.sum { |_table, rows| rows.size }
+    report = nil
+
+    Workspace.transaction do
+      target_id = Workspace.insert_all!([ target.attributes.except("id").merge(
+        "created_at" => imported_at, "updated_at" => imported_at
+      ) ], returning: %w[id]).first.fetch("id")
+      target = Workspace.find(target_id)
+      mappings = import_rows!(
+        tables, source_workspace_id: archive.dig("workspace", "id"), target:, users:, key_replacements:
+      )
+      attached_blobs.concat(
+        attach_objects!(target, attachment_objects, mappings.fetch("stored_attachments", {}))
+      )
+      target_actor = ensure_owner!(target, actor.user)
+      AuditEvent.record!(
+        action: "workspace.imported", source: :web, workspace: target, actor: actor.user, subject: target,
+        metadata: { table_count: tables.size, record_count:, attachment_count: attachment_objects.size },
+        occurred_at: imported_at
+      )
+      reconstructed_count = if verify || target.memory_records.exists?
+        reconstruct_imported_memory!(target, target_actor, include_pending: verify)
+      else
+        0
+      end
+      report = verify_import!(
+        archive:, target:, mappings:, users:, key_replacements:, reconstructed_count:
+      ) if verify
+      yield target, report if block_given?
+    end
+    ImportResult.new(workspace: target, report:)
+  rescue StandardError
+    attached_blobs.each { |blob| blob.service.delete(blob.key) }
+    raise
+  end
+  private_class_method :import_archive
+
+  def self.reconstruct_imported_memory!(workspace, membership, include_pending:)
+    MemoryPortability.reconstruct_index!(workspace:, membership:, include_pending:)
+  end
+  private_class_method :reconstruct_imported_memory!
+
+  def self.verify_import!(archive:, target:, mappings:, users:, key_replacements:, reconstructed_count:)
+    tables = archive.fetch("tables")
+    foreign_keys = foreign_key_columns(tables.keys)
+    models = tables.keys.to_h { |table| [ table, model_for(table) ] }
+    reverse_mappings = mappings.transform_values(&:invert)
+    reverse_users = users.invert
+    reverse_keys = key_replacements.invert
+    table_digests = {}
+
+    tables.each do |table, source_rows|
+      table_mapping = mappings.fetch(table)
+      raise VerificationFailed, "table_count_mismatch" unless
+        table_mapping.size == source_rows.size && table_mapping.values.compact.uniq.size == source_rows.size
+
+      target_rows = models.fetch(table).where(id: table_mapping.values).index_by(&:id)
+      raise VerificationFailed, "partial_import" unless target_rows.size == source_rows.size
+
+      expected_count = source_rows.size + verification_generated_row_count(table, tables)
+      raise VerificationFailed, "table_count_mismatch" unless
+        models.fetch(table).where(workspace_id: target.id).count == expected_count
+
+      normalized_source = source_rows.map { |row| normalize_portable_types(row, models.fetch(table)) }
+      normalized_target = source_rows.map do |source_row|
+        imported = target_rows.fetch(table_mapping.fetch(source_row.fetch("id"))).attributes
+        normalize_imported_row(
+          imported, table:, source_row:, archive:, target:, foreign_keys:, models:,
+          reverse_mappings:, reverse_users:, reverse_keys:
+        )
+      end
+      source_digest = digest_rows(normalized_source)
+      unless ActiveSupport::SecurityUtils.secure_compare(source_digest, digest_rows(normalized_target))
+        changed_columns = normalized_source.zip(normalized_target).flat_map do |source, imported|
+          source.keys.select { |column| canonical_value(source[column]) != canonical_value(imported[column]) }
+        end.uniq.sort
+        raise VerificationFailed.new("table_digest_mismatch", detail: "#{table}:#{changed_columns.join(',')}")
+      end
+
+      table_digests[table] = source_digest
+    end
+
+    verify_tenant_links!(target, tables.keys, foreign_keys)
+    attachment_digests = verify_imported_attachments!(target, tables, mappings)
+    memory_count = target.memory_records.current.available.count
+    reconstructed = target.memory_records.current.available.joins(:memory_index_entry)
+      .where(memory_index_entries: { status: :indexing }).count
+    raise VerificationFailed, "memory_reconstruction_uncertain" unless
+      reconstructed_count == memory_count && reconstructed == memory_count
+    raise VerificationFailed, "memory_reconstruction_uncertain" if
+      target.memory_records.current.available.joins(:memory_index_entry)
+        .where.not(memory_index_entries: {
+          external_document_id: nil, external_status: nil, indexed_at: nil, failure_code: nil
+        }).exists?
+
+    archive_counts(archive).merge(
+      table_digests:, attachment_digests:, memory_reconstructed: reconstructed
+    )
+  end
+  private_class_method :verify_import!
+
+  def self.normalize_imported_row(row, table:, source_row:, archive:, target:, foreign_keys:, models:,
+    reverse_mappings:, reverse_users:, reverse_keys:)
+    attributes = normalize_portable_types(row, models.fetch(table))
+    attributes["id"] = source_row.fetch("id")
+    attributes["workspace_id"] = archive.dig("workspace", "id")
+    foreign_keys.fetch(table).each do |column, key|
+      value = attributes[column]
+      next if value.nil?
+
+      target_table = key.fetch(:table)
+      attributes[column] = if target_table == "workspaces" && value == target.id
+        archive.dig("workspace", "id")
+      elsif target_table == "users"
+        reverse_users.fetch(value)
+      elsif reverse_mappings.key?(target_table)
+        reverse_mappings.fetch(target_table).fetch(value)
+      else
+        value
+      end
+    end
+    reverse_polymorphic_subject!(attributes, reverse_mappings, archive, target) if table == "audit_events"
+    reverse_embedded_references!(attributes, table, reverse_mappings)
+    reverse_archive_keys!(attributes, table, models.fetch(table), reverse_keys)
+    if table == "memory_index_entries"
+      attributes.merge!(PORTABLE_MEMORY_INDEX_STATE)
+      attributes["updated_at"] = normalize_portable_types(source_row, models.fetch(table)).fetch("updated_at")
+    end
+    attributes
+  end
+  private_class_method :normalize_imported_row
+
+  def self.verification_generated_row_count(table, tables)
+    return 2 if table == "audit_events"
+    return 0 unless table == "memory_index_entries"
+
+    indexed_memory_ids = tables.fetch("memory_index_entries").pluck("memory_record_id").to_set
+    superseded_memory_ids = tables.fetch("memory_records").pluck("supersedes_memory_record_id").compact.to_set
+    tombstoned_memory_ids = tables.fetch("memory_tombstones").pluck("memory_record_id").to_set
+    tables.fetch("memory_records").count do |row|
+      memory_id = row.fetch("id")
+      !indexed_memory_ids.include?(memory_id) && !superseded_memory_ids.include?(memory_id) &&
+        !tombstoned_memory_ids.include?(memory_id)
+    end
+  end
+  private_class_method :verification_generated_row_count
+
+  def self.normalize_portable_types(row, model)
+    row.each_with_object({}) do |(column, value), result|
+      result[column] = model.type_for_attribute(column).deserialize(value)
+    end
+  end
+  private_class_method :normalize_portable_types
+
+  def self.reverse_polymorphic_subject!(attributes, reverse_mappings, archive, target)
+    return unless attributes["subject_id"]
+
+    target_table = attributes["subject_type"].to_s.safe_constantize&.table_name
+    attributes["subject_id"] = if target_table == "workspaces" && attributes["subject_id"] == target.id
+      archive.dig("workspace", "id")
+    elsif reverse_mappings.key?(target_table)
+      reverse_mappings.fetch(target_table).fetch(attributes["subject_id"])
+    else
+      attributes["subject_id"]
+    end
+  end
+  private_class_method :reverse_polymorphic_subject!
+
+  def self.reverse_embedded_references!(attributes, table, reverse_mappings)
+    case table
+    when "audit_events"
+      attributes["metadata"] = attributes.fetch("metadata").each_with_object({}) do |(key, value), result|
+        target_table = AUDIT_METADATA_ID_TABLES[key]
+        result[key] = if target_table && reverse_mappings.fetch(target_table).key?(value)
+          reverse_mappings.fetch(target_table).fetch(value)
+        else
+          value
+        end
+      end
+    when "account_health_signals"
+      attributes["evidence_refs"] = attributes.fetch("evidence_refs").map do |reference|
+        target_table = HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
+        reference.merge("id" => reverse_mappings.fetch(target_table).fetch(reference.fetch("id")))
+      end
+    when "customer_success_interventions"
+      attributes["supporting_evidence"] = attributes.fetch("supporting_evidence").map do |item|
+        item.merge("locator" => reverse_evidence_locator(item.fetch("locator"), reverse_mappings))
+      end
+    when "customer_success_intervention_outcome_reviews"
+      %w[before_snapshot after_snapshot].each do |column|
+        attributes[column] = reverse_intervention_snapshot(attributes.fetch(column), reverse_mappings)
+      end
+    end
+  end
+  private_class_method :reverse_embedded_references!
+
+  def self.reverse_intervention_snapshot(snapshot, reverse_mappings)
+    return snapshot if snapshot["retention"] == "expired"
+
+    snapshot.merge(
+      "assessment_id" => reverse_mappings.fetch("account_health_assessments").fetch(snapshot.fetch("assessment_id")),
+      "scorecard_version_id" => reverse_mappings.fetch("health_scorecard_versions")
+        .fetch(snapshot.fetch("scorecard_version_id")),
+      "signals" => snapshot.fetch("signals").map do |signal|
+        signal.merge(
+          "id" => reverse_mappings.fetch("account_health_signals").fetch(signal.fetch("id")),
+          "source_locator" => reverse_evidence_locator(signal.fetch("source_locator"), reverse_mappings),
+          "evidence_refs" => signal.fetch("evidence_refs").map do |reference|
+            target_table = HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
+            reference.merge("id" => reverse_mappings.fetch(target_table).fetch(reference.fetch("id")))
+          end
+        )
+      end
+    )
+  end
+  private_class_method :reverse_intervention_snapshot
+
+  def self.reverse_evidence_locator(locator, reverse_mappings)
+    case locator
+    when %r{\Ahealth://assessments/(\d+)(/signals/.+)\z}
+      "health://assessments/#{reverse_mappings.fetch('account_health_assessments').fetch($1.to_i)}#{$2}"
+    when %r{\Aconversation://(\d+)/messages/(\d+)\z}
+      "conversation://#{reverse_mappings.fetch('conversations').fetch($1.to_i)}/messages/" \
+        "#{reverse_mappings.fetch('conversation_messages').fetch($2.to_i)}"
+    when %r{\Acase://(\d+)\z}
+      "case://#{reverse_mappings.fetch('support_cases').fetch($1.to_i)}"
+    when %r{\Aaccount://(\d+)(.*)\z}
+      "account://#{reverse_mappings.fetch('accounts').fetch($1.to_i)}#{$2}"
+    when %r{\Aretention-expired://customer-success-interventions/(\d+)/evidence/(\d+)\z}
+      intervention_id = reverse_mappings.fetch("customer_success_interventions").fetch($1.to_i)
+      "retention-expired://customer-success-interventions/#{intervention_id}/evidence/#{$2}"
+    else
+      locator
+    end
+  end
+  private_class_method :reverse_evidence_locator
+
+  def self.reverse_archive_keys!(attributes, table, model, reverse_keys)
+    attributes.transform_values!.with_index do |value, index|
+      column = attributes.keys.fetch(index)
+      column_type = model.columns_hash.fetch(column).type
+      if GLOBAL_KEY_COLUMNS[table] == column || REFERENCE_COLUMNS.include?(column) ||
+          column_type.in?(%i[json jsonb])
+        replace_key_references(value, reverse_keys)
+      else
+        value
+      end
+    end
+  end
+  private_class_method :reverse_archive_keys!
+
+  def self.verify_tenant_links!(target, tables, foreign_keys)
+    connection = ActiveRecord::Base.connection
+    foreign_keys.each do |source_table, columns|
+      columns.each do |column, key|
+        target_table = key.fetch(:table)
+        next unless target_table.in?(tables)
+
+        source = connection.quote_table_name(source_table)
+        referenced = connection.quote_table_name(target_table)
+        foreign_column = connection.quote_column_name(column)
+        invalid = connection.select_value(<<~SQL.squish).to_i
+          SELECT COUNT(*)
+          FROM #{source} source_rows
+          LEFT JOIN #{referenced} target_rows ON target_rows.id = source_rows.#{foreign_column}
+          WHERE source_rows.workspace_id = #{connection.quote(target.id)}
+            AND source_rows.#{foreign_column} IS NOT NULL
+            AND (target_rows.id IS NULL OR target_rows.workspace_id <> #{connection.quote(target.id)})
+        SQL
+        raise VerificationFailed, "tenant_isolation_failed" if invalid.positive?
+      end
+    end
+  end
+  private_class_method :verify_tenant_links!
+
+  def self.verify_imported_attachments!(target, tables, mappings)
+    source_rows = tables.fetch("stored_attachments").index_by { |row| row.fetch("id") }
+    mappings.fetch("stored_attachments").sort.map do |source_id, target_id|
+      source = source_rows.fetch(source_id)
+      attachment = target.stored_attachments.find(target_id)
+      digest = Digest::SHA256.hexdigest(attachment.download_verified!)
+      raise VerificationFailed, "attachment_mismatch" unless
+        attachment.byte_size == source.fetch("byte_size") &&
+          ActiveSupport::SecurityUtils.secure_compare(digest, source.fetch("content_sha256"))
+
+      [ source_id, digest ]
+    end
+  rescue ActiveStorage::IntegrityError, ActiveStorage::FileNotFoundError
+    raise VerificationFailed, "attachment_mismatch"
+  end
+  private_class_method :verify_imported_attachments!
+
+  def self.archive_counts(archive)
+    tables = archive.fetch("tables")
+    {
+      table: tables.size,
+      record: tables.sum { |_table, rows| rows.size },
+      attachment: tables.fetch("stored_attachments").size,
+      memory: tables.fetch("memory_records").size
+    }
+  end
+  private_class_method :archive_counts
+
+  def self.digest_rows(rows)
+    Digest::SHA256.hexdigest(JSON.generate(canonical_value(rows)))
+  end
+  private_class_method :digest_rows
+
+  def self.canonical_value(value)
+    case value
+    when Hash then value.keys.sort.to_h { |key| [ key, canonical_value(value.fetch(key)) ] }
+    when Array then value.map { |item| canonical_value(item) }
+    when Time, ActiveSupport::TimeWithZone then value.iso8601(6)
+    when Date, DateTime then value.iso8601
+    when BigDecimal then value.to_s("F")
+    else value
+    end
+  end
+  private_class_method :canonical_value
+
+  def self.verification_evidence_digest(report:, source_commit:, checked_at:, result_code:)
+    Digest::SHA256.hexdigest(JSON.generate(canonical_value(
+      report.merge(source_commit:, checked_at: checked_at.iso8601(6), result_code:)
+    )))
+  end
+  private_class_method :verification_evidence_digest
+
+  def self.verification_failure_code(error)
+    return "attachment_mismatch" if error.is_a?(ActiveStorage::IntegrityError) ||
+      error.is_a?(ActiveStorage::FileNotFoundError)
+    return "partial_import" if error.is_a?(ActiveRecord::StatementInvalid)
+
+    message = error.message
+    return "cross_organization_archive" if message.include?("another organization")
+    return "missing_user" if message.include?("Create and verify local users")
+    return "unsupported_schema" if message.match?(/format is not supported|tables do not match this release/)
+    return "attachment_mismatch" if message.match?(/attachment.*(?:digest|size|object)/i)
+
+    "archive_round_trip_failed"
+  end
+  private_class_method :verification_failure_code
 
   def self.workspace_tables
     connection = ActiveRecord::Base.connection
@@ -567,13 +960,21 @@ class WorkspacePortability
   private_class_method :replace_key_references
 
   def self.attach_objects!(target, objects, attachment_mapping)
+    blobs = []
     objects.each do |row, file|
       attachment = target.stored_attachments.find(attachment_mapping.fetch(row.fetch("id")))
       file.rewind
-      attachment.file.attach(
-        io: file, filename: row.fetch("filename"), content_type: row.fetch("detected_content_type")
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: file, filename: row.fetch("filename"), content_type: row.fetch("detected_content_type"),
+        identify: false
       )
+      blobs << blob
+      attachment.file.attach(blob)
     end
+    blobs
+  rescue StandardError
+    blobs.each { |blob| blob.service.delete(blob.key) }
+    raise
   end
   private_class_method :attach_objects!
 
