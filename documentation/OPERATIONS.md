@@ -39,6 +39,16 @@ NavishAI never guesses an ambiguous identity. Choose one candidate in the existi
 
 The complete state shows discovered, imported, matched, skipped, ambiguous, unsupported, failed, and pending counts plus the full report digest. Do not call the run complete while any count remains failed or pending. The backfill has no remote-write recovery command. Use normal Intercom reconciliation for later source changes.
 
+## Governed policy change
+
+An Owner or Admin opens **Policies** and proposes one immutable resolution contract and crew-profile policy version. Choose only named current cases, named Accounts, or the one bounded crew profile. NavishAI has no percentage rollout or implicit broad scope. Managers, Members, and Viewers cannot propose, preview, publish, or roll back policy.
+
+Preview reads retained Workspace facts, artifacts, evidence, runtime capability and approval state, and usage. It does not run a model, call the runner, search the public web, write to an integration, or send or schedule a customer message. It shows the current and proposed grounding, quality-review, routing, fallback, and budget decisions with the exact typed facts and stable SHA-256 digests. It cannot predict response quality, customer behavior, resolution rate, or a causal outcome.
+
+Publish only the preview shown for that exact proposal and scope. Publication fails if the preview is missing, expired, changed, stale against current policy, role, runtime, scope, or retained records, or no longer meets the human-authority security check. Work outside the named Workspace scope keeps the current published contract and profile. Affected new tasks, handoffs, runs, artifacts, and reviews show and retain the exact canary or rollback selection.
+
+Rollback requires a bounded reason and the exact current publication. It selects the proposal's prior versions for future work in the same named scope. It never changes completed tasks, task events, runs, artifacts, reviews, decisions, actors, digests, or outcomes. Retention may redact policy reasons and preview payloads while keeping immutable IDs, actors, version links, audit history, and original digests. Workspace archives remap governed links and recompute imported preview digests; protected Workspace deletion removes governed rows with the rest of that Workspace.
+
 ## Compose backup
 
 Run from the checked-out release root:
