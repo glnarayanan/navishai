@@ -66,7 +66,7 @@ class MemoryPortability
     raise InvalidArchive, "memory archive is invalid: #{error.message}"
   end
 
-  def self.reconstruct_index!(workspace:, membership:)
+  def self.reconstruct_index!(workspace:, membership:, include_pending: false)
     actor = manager!(workspace, membership)
     count = 0
     requested_at = Time.current
@@ -76,7 +76,7 @@ class MemoryPortability
         missing_entry = entry.new_record?
         entry.save! if missing_entry
         stale_claim = entry.indexing? && entry.last_attempted_at && entry.last_attempted_at < requested_at - 5.minutes
-        next unless missing_entry || entry.failed? || entry.unknown? || stale_claim
+        next unless missing_entry || (include_pending && entry.pending?) || entry.failed? || entry.unknown? || stale_claim
 
         entry.update!(
           status: :indexing, attempt_count: entry.attempt_count + 1,

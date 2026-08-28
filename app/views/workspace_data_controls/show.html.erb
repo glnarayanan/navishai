@@ -26,6 +26,33 @@
       class: "button button-secondary" %>
   </section>
 
+  <section class="section-block data-policy-form-section" aria-labelledby="archive-verification-title">
+    <div>
+      <h2 id="archive-verification-title">Archive round-trip check</h2>
+      <p>Export this Workspace, import it into a new empty Workspace in this Organization, and prove its records, links, attachments, and Memory reconstruction. A passing check keeps the new target Workspace for Owner review.</p>
+    </div>
+    <div class="data-policy-form">
+      <% if @archive_verification %>
+        <dl class="reliability-proof">
+          <div><dt>Latest result</dt><dd><%= @archive_verification.result.humanize %>: <%= @archive_verification.result_code.humanize %></dd></div>
+          <div><dt>Checked</dt><dd><%= @archive_verification.checked_at.to_fs(:long) %></dd></div>
+          <div><dt>Records</dt><dd><%= number_with_delimiter(@archive_verification.record_count) %></dd></div>
+          <div><dt>Evidence</dt><dd><code><%= @archive_verification.evidence_digest.first(12) %></code></dd></div>
+        </dl>
+      <% else %>
+        <p class="empty-state">No archive round-trip check has run yet.</p>
+      <% end %>
+      <% if @archive_verification_ready %>
+        <%= button_to "Run archive round-trip check", verify_archive_workspace_data_controls_path(Current.workspace),
+          class: "button button-secondary",
+          data: { turbo_confirm: "Export this Workspace and keep a new verification target only if every check passes?" } %>
+      <% else %>
+        <p class="inline-error" role="alert">Set a valid NAVISHAI_SOURCE_COMMIT before running this check.</p>
+        <button class="button button-secondary" type="button" disabled>Run archive round-trip check</button>
+      <% end %>
+    </div>
+  </section>
+
   <details class="data-task" <%= "open" if @import_error.present? %>>
     <summary>Workspace import</summary>
     <div>

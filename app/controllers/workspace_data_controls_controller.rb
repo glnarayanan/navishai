@@ -74,6 +74,24 @@ class WorkspaceDataControlsController < ApplicationController
     render :show, status: :unprocessable_content
   end
 
+  def verify_archive
+    source_commit = ENV["NAVISHAI_SOURCE_COMMIT"].to_s
+    raise WorkspacePortability::VerificationFailed, "source_commit_unavailable" unless
+      source_commit.match?(OperationalCheck::COMMIT_FORMAT)
+
+    checked_at = Time.current
+    target_name, target_slug = verification_target_identity(checked_at)
+    result = WorkspacePortability.verify_round_trip(
+      workspace: Current.workspace, membership: Current.require_membership!,
+      name: target_name, slug: target_slug, source_commit:, checked_at:
+    )
+    redirect_to workspace_data_controls_path(Current.workspace),
+      notice: "Archive round trip passed. NavishAI retained #{result.workspace.name} as the new verification target Workspace."
+  rescue WorkspacePortability::VerificationFailed => error
+    redirect_to workspace_data_controls_path(Current.workspace),
+      alert: "Archive round trip failed: #{error.result_code.humanize}. No target Workspace was kept."
+  end
+
   private
     def policy_params
       params.require(:workspace_data_policy).permit(:content_retention_days, :audit_retention_days)
@@ -82,5 +100,15 @@ class WorkspaceDataControlsController < ApplicationController
 
     def load_expiry_runs
       @expiry_runs = Current.workspace.workspace_content_expiry_runs.order(created_at: :desc).limit(10)
+      @archive_verification = Current.workspace.operational_checks.where(check_kind: "archive_verification")
+        .latest_first.first
+      @archive_verification_ready = ENV["NAVISHAI_SOURCE_COMMIT"].to_s.match?(OperationalCheck::COMMIT_FORMAT)
+    end
+
+    def verification_target_identity(checked_at)
+      suffix = "archive-check-#{checked_at.utc.strftime('%Y%m%d%H%M%S')}-#{SecureRandom.hex(3)}"
+      slug_prefix = Current.workspace.slug.first(62 - suffix.length).delete_suffix("-")
+      [ "#{Current.workspace.name} archive check #{checked_at.utc.strftime('%Y-%m-%d %H:%M UTC')}".first(100),
+        "#{slug_prefix}-#{suffix}" ]
     end
 end

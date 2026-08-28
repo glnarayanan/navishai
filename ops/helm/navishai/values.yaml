@@ -8,6 +8,7 @@ image:
     tag: local
     pullPolicy: IfNotPresent
 appHost: navishai.example.com
+sourceCommit: ""
 database:
   host: postgresql.example.internal
   port: 5432

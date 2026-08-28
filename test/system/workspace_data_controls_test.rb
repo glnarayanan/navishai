@@ -26,6 +26,8 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     assert_operator find_button("Run audit expiry now").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_link("Download workspace export").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_button("Import as new Workspace").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+    assert_operator find_button("Run archive round-trip check", disabled: true)
+      .evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find_button("Delete Workspace").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     open_workspace_nav
     assert_operator find_link("Data").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
@@ -38,6 +40,29 @@ class WorkspaceDataControlsTest < ApplicationSystemTestCase
     accept_confirm { click_button "Run audit expiry now" }
     assert_text "Audit expiry queued."
     assert_selector "h2", text: "Audit expiry"
+  end
+
+  test "owner confirms a verified round trip and sees the retained target" do
+    original = ENV["NAVISHAI_SOURCE_COMMIT"]
+    ENV["NAVISHAI_SOURCE_COMMIT"] = "d" * 40
+    workspaces(:acme_support).create_workspace_data_policy!
+    sign_in
+    click_link "Acme Support"
+    click_link "Data"
+
+    button = find_button("Run archive round-trip check")
+    accept_confirm { button.send_keys(:enter) }
+
+    assert_text "Archive round trip passed."
+    assert_text "new verification target Workspace"
+    assert_text "Passed: Round trip verified"
+    assert_no_text "engine-private"
+
+    page.current_window.resize_to(320, 844)
+    assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
+    assert_operator find_button("Run archive round-trip check").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
+  ensure
+    original ? ENV["NAVISHAI_SOURCE_COMMIT"] = original : ENV.delete("NAVISHAI_SOURCE_COMMIT")
   end
 
   private
