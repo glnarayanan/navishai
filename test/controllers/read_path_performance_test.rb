@@ -66,6 +66,62 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_operator table_query_count(queries, "conversations"), :<=, 1
   end
 
+  test "crew administration preloads published resolution contracts" do
+    CrewConfiguration.install_defaults!(workspace: @workspace)
+    ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
+
+    queries = capture_sql { get workspace_crew_templates_path(@workspace) }
+
+    assert_response :success
+    assert_operator table_query_count(queries, "resolution_contract_families"), :<=, 1
+    assert_operator table_query_count(queries, "resolution_contract_versions"), :<=, 1
+  end
+
+  test "crew task proof preloads one contract version for all material claims" do
+    approve_scripted_runtime(workspace: @workspace, membership: @membership)
+    CrewConfiguration.install_defaults!(workspace: @workspace)
+    contract = ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
+      .find_by!(family_key: "support_resolution").current_version
+    support_case = create_support_case(subject: "Grounding query guard")
+    profile = @workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    task = CrewWork.create!(
+      workspace: @workspace, membership: @membership, scope: support_case, profile:,
+      title: "Inspect proof", input_context: "Use current evidence.", expected_output: "Return grounded claims."
+    )
+    CrewWork.apply!(
+      workspace: @workspace, membership: @membership, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number
+    )
+    run = ExecutionLedger.new(workspace: @workspace).prepare!(task:, request_key: "read-path:grounding")
+    claims = 20.times.map do |index|
+      {
+        "key" => "claim_#{index}", "category" => "customer_account_fact", "text" => "Claim #{index}",
+        "state" => "supported", "evidence" => [ {
+          "kind" => "case", "locator" => "case://#{support_case.id}", "status" => "available",
+          "observed_at" => support_case.status_changed_at.iso8601(6), "valid_until" => nil,
+          "fresh_until" => 30.days.from_now.iso8601(6)
+        } ]
+      }
+    end
+    @workspace.crew_artifacts.create!(
+      crew_task: task, execution_run: run, artifact_kind: "investigation", schema_version: 2,
+      version_number: 1, body: "Grounded proof", uncertainty: "No uncertainty identified.",
+      citations: [], conflicts: [], change_requests: [], payload_digest: Digest::SHA256.hexdigest("read-path-proof"),
+      resolution_contract_version: contract, required_facts: claims.map { |claim| claim.fetch("key") },
+      material_claims: claims, proposed_actions: [], policy_checks: [], contract_result_state: "complete",
+      contract_blockers: [], contract_evaluated_at: Time.current
+    )
+
+    queries = capture_sql do
+      get workspace_support_case_crew_task_path(@workspace, support_case, task)
+    end
+
+    assert_response :success
+    assert_select ".run-artifact-facts li", count: 20
+    assert_operator table_query_count(queries, "crew_artifacts"), :<=, 1
+    assert_operator table_query_count(queries, "resolution_contract_versions"), :<=, 1
+  end
+
   private
     def capture_sql
       queries = []

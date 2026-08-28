@@ -2,9 +2,12 @@ class CrewArtifactPublisher
   class InvalidOutput < StandardError; end
   class Conflict < InvalidOutput; end
 
-  SCHEMA_KEYS = %w[
+  SCHEMA_V1_KEYS = %w[
     schema_version kind body uncertainty citations conflicts change_requests review_outcome memory_proposals
   ].sort.freeze
+  SCHEMA_V2_KEYS = (SCHEMA_V1_KEYS + %w[
+    required_facts material_claims proposed_actions policy_checks
+  ]).sort.freeze
   ROLE_KINDS = {
     "support_investigator" => "investigation",
     "resolution_drafter" => "draft",
@@ -39,47 +42,70 @@ class CrewArtifactPublisher
 
     digest = Digest::SHA256.hexdigest(run.output.to_s)
     payload = parse(run.output)
+    unless payload.fetch("schema_version") == 2
+      raise InvalidOutput, "New crew output must use artifact schema v2."
+    end
     kind = ROLE_KINDS.fetch(run.agent_profile.role_key) do
       raise InvalidOutput, "This specialist cannot publish a crew artifact."
     end
     raise InvalidOutput, "Output kind does not match the specialist role." unless payload.fetch("kind") == kind
 
     CrewArtifact.transaction do
+      CrewScopeLock.acquire!(workspace: @workspace, scope: task)
       task.lock!
       run.lock!
       if (existing = @workspace.crew_artifacts.find_by(execution_run: run))
         return existing if existing.payload_digest == digest
         raise Conflict, "This run already published different output."
       end
-      latest = task.artifacts.where(artifact_kind: kind).order(version_number: :desc).first
+      latest = task.artifacts.unscope(:order).where(artifact_kind: kind).order(version_number: :desc).first
       if latest && latest.execution_run.attempt_number >= run.attempt_number
         raise Conflict, "A newer output version already exists."
       end
 
       target = review_target!(task, run, kind, target_artifact)
+      schema_version = payload.fetch("schema_version")
+      citations = citations!(payload.fetch("citations"))
+      conflicts = conflicts!(payload.fetch("conflicts"))
+      evaluation = resolution_evaluation(task, run, payload, citations, conflicts)
+      review_outcome = review_outcome!(kind, payload, target:, evaluation:)
+      resolution_attributes = evaluation ? evaluation.attributes : {}
       artifact = @workspace.crew_artifacts.create!(
         crew_task: task, execution_run: run, artifact_kind: kind,
+        schema_version:,
         version_number: latest&.version_number.to_i + 1,
         supersedes_artifact: latest,
         target_artifact: target,
         body: bounded_text(payload.fetch("body"), 50.kilobytes, "Body"),
         uncertainty: bounded_text(payload.fetch("uncertainty"), 4_000, "Uncertainty"),
-        review_outcome: review_outcome!(kind, payload),
-        citations: citations!(task, run, payload.fetch("citations")),
-        conflicts: conflicts!(payload.fetch("conflicts")),
+        review_outcome:,
+        citations:,
+        conflicts:,
         change_requests: change_requests!(kind, payload),
-        payload_digest: digest
+        payload_digest: digest,
+        **resolution_attributes
       )
+      audit_metadata = {
+        "artifact_kind" => kind,
+        "version" => artifact.version_number,
+        "schema_version" => artifact.schema_version
+      }
+      if evaluation
+        audit_metadata["contract_version"] = evaluation.resolution_contract_version.version_number
+        audit_metadata["contract_result"] = evaluation.contract_result_state
+      end
       AuditEvent.record!(
         action: "crew.artifact_published", source: :runner, workspace: @workspace,
         actor_kind: :system, subject: artifact,
-        metadata: { "artifact_kind" => kind, "version" => artifact.version_number }
+        metadata: audit_metadata
       )
       publish_memory_proposals!(task, artifact, payload.fetch("memory_proposals"))
       artifact
     end
   rescue JSON::ParserError, TypeError, KeyError
     raise InvalidOutput, "Run output does not match artifact schema."
+  rescue ResolutionContractEvaluator::InvalidPayload => error
+    raise InvalidOutput, error.message
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidOutput, error.record.errors.full_messages.to_sentence
   rescue ActiveRecord::RecordNotUnique
@@ -91,7 +117,9 @@ class CrewArtifactPublisher
       raise InvalidOutput, "Run output is missing." if raw.blank? || raw.bytesize > 100.kilobytes
 
       payload = JSON.parse(raw)
-      unless payload.is_a?(Hash) && payload.keys.sort == SCHEMA_KEYS && payload.fetch("schema_version") == 1
+      schema_version = payload.is_a?(Hash) && payload["schema_version"]
+      expected_keys = { 1 => SCHEMA_V1_KEYS, 2 => SCHEMA_V2_KEYS }[schema_version]
+      unless expected_keys && payload.keys.sort == expected_keys
         raise InvalidOutput, "Run output does not match artifact schema."
       end
       unless %w[citations conflicts change_requests].all? { |key| payload[key].is_a?(Array) && payload[key].size <= 20 } &&
@@ -122,7 +150,7 @@ class CrewArtifactPublisher
       target
     end
 
-    def citations!(task, run, values)
+    def citations!(values)
       unless values.is_a?(Array) && values.size.in?(1..20)
         raise InvalidOutput, "Citations must contain between 1 and 20 entries."
       end
@@ -133,52 +161,7 @@ class CrewArtifactPublisher
         kind = value.fetch("kind").to_s
         locator = bounded_text(value.fetch("locator"), 2_000, "Citation locator")
         label = bounded_text(value.fetch("label"), 200, "Citation label")
-        validate_locator!(task, run, kind, locator)
         { "kind" => kind, "locator" => locator, "label" => label }
-      end
-    end
-
-    def validate_locator!(task, run, kind, locator)
-      case kind
-      when "knowledge"
-        match = locator.match(%r{\Aknowledge://sources/([0-9a-f-]{36})/versions/(\d+)\z})
-        source = match && @workspace.knowledge_sources.find_by(source_key: match[1])
-        version = source && source.versions.find_by(version_number: match[2].to_i)
-        raise InvalidOutput, "Knowledge citation is unavailable." unless version&.citation_uri == locator
-      when "conversation"
-        match = locator.match(%r{\Aconversation://(\d+)/messages/(\d+)\z})
-        conversation = if task.support_case
-          task.support_case.conversation
-        elsif match
-          @workspace.conversations.where(contact_id: task.account.contacts.select(:id)).find_by(id: match[1])
-        end
-        message = match && conversation&.conversation_messages&.find_by(id: match[2])
-        unless conversation && conversation.id == match[1].to_i && message
-          raise InvalidOutput, "Conversation citation is unavailable."
-        end
-      when "case"
-        raise InvalidOutput, "Case citation is unavailable." unless task.support_case && locator == "case://#{task.support_case_id}"
-      when "account"
-        account_id = task.account_id || task.support_case&.conversation&.contact&.account_id
-        raise InvalidOutput, "Account citation is unavailable." unless account_id && locator == "account://#{account_id}"
-      when "health_signal"
-        match = locator.match(%r{\Ahealth://assessments/(\d+)/signals/([a-z0-9_]+)\z})
-        signal = match && @workspace.account_health_signals.joins(:account_health_assessment)
-          .find_by(account_health_assessment_id: match[1], signal_key: match[2],
-            account_health_assessments: { account_id: task.account_id })
-        raise InvalidOutput, "Health-signal citation is unavailable." unless signal&.citation_uri == locator
-      when "public_web"
-        match = locator.match(%r{\Apublic-web://([0-9a-f-]{36})\z})
-        result = match && @workspace.public_web_search_results.joins(:public_web_search)
-          .find_by(citation_key: match[1], public_web_searches: { crew_task_id: task.id, status: "completed" })
-        raise InvalidOutput, "Public-web citation is unavailable." unless result
-      when "memory"
-        match = locator.match(%r{\Amemory://([0-9a-f-]{36})\z})
-        selection = match && run.execution_memory_selections.joins(:memory_record)
-          .find_by(memory_records: { memory_key: match[1] })
-        raise InvalidOutput, "Memory citation is unavailable." unless selection
-      else
-        raise InvalidOutput, "Citation type is not supported."
       end
     end
 
@@ -199,16 +182,38 @@ class CrewArtifactPublisher
       end
     end
 
-    def review_outcome!(kind, payload)
+    def review_outcome!(kind, payload, target:, evaluation:)
       outcome = payload.fetch("review_outcome")
       if REVIEW_TARGET_KINDS.key?(kind)
         raise InvalidOutput, "Review outcome is invalid." unless CrewArtifact::REVIEW_OUTCOMES.include?(outcome)
         has_blocker = payload.fetch("conflicts").any? { |conflict| conflict.is_a?(Hash) && conflict["severity"] == "blocking" }
         raise InvalidOutput, "A review with blocking conflicts cannot be approved." if outcome == "approved" && has_blocker
+        if outcome == "approved" && target.contract_blocking?
+          raise InvalidOutput, "A blocking artifact cannot receive an approved review."
+        end
+        if outcome == "approved" && evaluation&.contract_result_state == "blocked"
+          raise InvalidOutput, "A blocking review cannot be approved."
+        end
       elsif outcome.present?
         raise InvalidOutput, "Only a review can record an outcome."
       end
       outcome
+    end
+
+    def resolution_evaluation(task, run, payload, citations, conflicts)
+      return unless payload.fetch("schema_version") == 2
+
+      family_key = task.crew_template.support? ? "support_resolution" : "customer_success_intervention"
+      family = @workspace.resolution_contract_families.find_by(family_key:)
+      raise InvalidOutput, "Resolution contract is unavailable for this task." unless family
+
+      family.lock!
+      contract = family.current_version
+      raise InvalidOutput, "Resolution contract is unavailable for this task." unless contract
+
+      ResolutionContractEvaluator.new(
+        workspace: @workspace, task:, run:, contract_version: contract
+      ).evaluate!(payload:, citations:, conflicts:)
     end
 
     def change_requests!(kind, payload)

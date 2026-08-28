@@ -262,22 +262,97 @@ BEGIN
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE execution_runs
-  SET input_context = '[Expired by retention policy]', output = CASE WHEN output IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
-      last_admission_error = NULL, runtime_selection_detail = NULL, memory_context_detail = NULL, updated_at = CURRENT_TIMESTAMP
+  SET input_context = '[Expired by retention policy]',
+      output = CASE WHEN output IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      last_admission_error = NULL,
+      runtime_selection_detail = '[Expired by retention policy]',
+      memory_context_detail = CASE
+        WHEN memory_context_status = 'degraded' THEN '[Expired by retention policy]'
+        ELSE NULL
+      END,
+      updated_at = CURRENT_TIMESTAMP
   WHERE workspace_id = target_workspace_id AND created_at < cutoff AND
     (input_context IS DISTINCT FROM '[Expired by retention policy]' OR
      (output IS NOT NULL AND output <> '[Expired by retention policy]') OR
-     last_admission_error IS NOT NULL OR runtime_selection_detail IS NOT NULL OR memory_context_detail IS NOT NULL);
+     last_admission_error IS NOT NULL OR
+     runtime_selection_detail IS DISTINCT FROM '[Expired by retention policy]' OR
+     memory_context_detail IS DISTINCT FROM CASE
+       WHEN memory_context_status = 'degraded' THEN '[Expired by retention policy]'
+       ELSE NULL
+     END);
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE execution_events SET data = '{}'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
   WHERE workspace_id = target_workspace_id AND occurred_at < cutoff AND data <> '{}'::jsonb;
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
-  UPDATE crew_artifacts
-  SET body = '[Expired by retention policy]', uncertainty = '[Expired by retention policy]', citations = '[]'::jsonb,
-      conflicts = '[]'::jsonb, change_requests = '[]'::jsonb, payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
-  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND body <> '[Expired by retention policy]';
+  UPDATE crew_artifacts AS artifacts
+  SET body = '[Expired by retention policy]', uncertainty = '[Expired by retention policy]',
+      citations = '[]'::jsonb, conflicts = '[]'::jsonb, change_requests = '[]'::jsonb,
+      required_facts = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(to_jsonb('expired_claim_' || claim_position) ORDER BY claim_position)
+        FROM jsonb_array_elements(artifacts.material_claims) WITH ORDINALITY AS claims(claim, claim_position)
+        WHERE artifacts.required_facts ? (claim->>'key')
+      ), '[]'::jsonb) ELSE required_facts END,
+      material_claims = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'key', 'expired_claim_' || claim_position,
+          'category', claim->>'category',
+          'text', '[Expired by retention policy]',
+          'state', CASE
+            WHEN jsonb_array_length(claim->'evidence') = 0 THEN 'refused'
+            WHEN claim->>'state' = 'supported' THEN 'uncertain'
+            ELSE claim->>'state'
+          END,
+          'evidence', COALESCE((
+            SELECT jsonb_agg(jsonb_build_object(
+              'kind', evidence->>'kind',
+              'locator', format(
+                'retention-expired://crew-artifacts/%s/claims/%s/evidence/%s',
+                artifacts.id, claim_position, evidence_position
+              ),
+              'status', 'expired',
+              'observed_at', NULL,
+              'valid_until', NULL,
+              'fresh_until', NULL
+            ) ORDER BY evidence_position)
+            FROM jsonb_array_elements(claim->'evidence') WITH ORDINALITY AS evidence_items(evidence, evidence_position)
+          ), '[]'::jsonb)
+        ) ORDER BY claim_position)
+        FROM jsonb_array_elements(artifacts.material_claims) WITH ORDINALITY AS claims(claim, claim_position)
+      ), '[]'::jsonb) ELSE material_claims END,
+      proposed_actions = CASE WHEN schema_version = 2 THEN '[]'::jsonb ELSE proposed_actions END,
+      contract_blockers = CASE WHEN schema_version = 2 THEN COALESCE((
+        SELECT jsonb_agg(blocker || jsonb_build_object(
+          'claim_key', NULL,
+          'message', '[Expired by retention policy]',
+          'remediation', '[Expired by retention policy]'
+        ) ORDER BY blocker_position)
+        FROM jsonb_array_elements(artifacts.contract_blockers) WITH ORDINALITY AS blockers(blocker, blocker_position)
+      ), '[]'::jsonb) ELSE contract_blockers END,
+      payload_digest = repeat('0', 64), updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND created_at < cutoff AND (
+    body <> '[Expired by retention policy]' OR uncertainty <> '[Expired by retention policy]' OR
+    citations <> '[]'::jsonb OR conflicts <> '[]'::jsonb OR change_requests <> '[]'::jsonb OR
+    (schema_version = 2 AND (
+      proposed_actions <> '[]'::jsonb OR
+      EXISTS (
+        SELECT 1 FROM jsonb_array_elements(material_claims) AS claims(claim)
+        WHERE claim->>'text' <> '[Expired by retention policy]' OR
+          claim->>'key' NOT LIKE 'expired_claim_%' OR
+          EXISTS (
+            SELECT 1 FROM jsonb_array_elements(claim->'evidence') AS evidence_items(evidence)
+            WHERE evidence->>'locator' NOT LIKE 'retention-expired://crew-artifacts/%'
+          )
+      ) OR
+      EXISTS (
+        SELECT 1 FROM jsonb_array_elements(contract_blockers) AS blockers(blocker)
+        WHERE blocker->>'message' <> '[Expired by retention policy]' OR
+          blocker->>'remediation' <> '[Expired by retention policy]' OR
+          blocker->'claim_key' <> 'null'::jsonb
+      )
+    ))
+  );
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
   UPDATE public_web_searches SET query = '[Expired by retention policy]', updated_at = CURRENT_TIMESTAMP
@@ -1413,6 +1488,44 @@ $$;
 
 
 --
+-- Name: protect_resolution_contract_family(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_resolution_contract_family() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  IF TG_OP = 'UPDATE' AND
+     ROW(OLD.id, OLD.workspace_id, OLD.family_key, OLD.created_at)
+       IS NOT DISTINCT FROM ROW(NEW.id, NEW.workspace_id, NEW.family_key, NEW.created_at) AND
+     OLD.current_version_id IS DISTINCT FROM NEW.current_version_id THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'resolution contract families are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_resolution_contract_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_resolution_contract_version() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'resolution contract versions are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_stored_attachment(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1614,6 +1727,100 @@ $$;
 
 
 --
+-- Name: resolution_grounding_valid(jsonb, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resolution_grounding_valid(required_facts jsonb, material_claims jsonb) RETURNS boolean
+    LANGUAGE plpgsql IMMUTABLE STRICT
+    AS $_$
+DECLARE
+  claim jsonb;
+  evidence jsonb;
+  claim_key text;
+  claim_keys text[] := ARRAY[]::text[];
+  evidence_keys text[];
+  required_fact jsonb;
+BEGIN
+  IF jsonb_typeof(required_facts) <> 'array' OR jsonb_typeof(material_claims) <> 'array' THEN
+    RETURN FALSE;
+  END IF;
+  FOR claim IN SELECT value FROM jsonb_array_elements(material_claims)
+  LOOP
+    IF jsonb_typeof(claim) <> 'object' OR
+       NOT claim ?& ARRAY['category','evidence','key','state','text'] OR
+       claim - ARRAY['category','evidence','key','state','text'] <> '{}'::jsonb OR
+       jsonb_typeof(claim->'key') <> 'string' OR
+       jsonb_typeof(claim->'category') <> 'string' OR
+       jsonb_typeof(claim->'state') <> 'string' OR
+       jsonb_typeof(claim->'text') <> 'string' OR
+       jsonb_typeof(claim->'evidence') <> 'array' OR
+       jsonb_array_length(claim->'evidence') > 20 OR
+       claim->>'key' !~ '^[a-z][a-z0-9_]{0,63}$' OR
+       octet_length(btrim(claim->>'text')) NOT BETWEEN 1 AND 4000 OR
+       claim->>'category' NOT IN ('customer_account_fact','product_technical_fact','policy_entitlement','promised_action_date') OR
+       claim->>'state' NOT IN ('supported','uncertain','conflicted','refused') THEN
+      RETURN FALSE;
+    END IF;
+    claim_key := claim->>'key';
+    IF claim_key = ANY(claim_keys) THEN
+      RETURN FALSE;
+    END IF;
+    claim_keys := array_append(claim_keys, claim_key);
+    evidence_keys := ARRAY[]::text[];
+    FOR evidence IN SELECT value FROM jsonb_array_elements(claim->'evidence')
+    LOOP
+      IF jsonb_typeof(evidence) <> 'object' OR
+         NOT evidence ?& ARRAY['kind','locator','status','observed_at','valid_until','fresh_until'] OR
+         evidence - ARRAY['kind','locator','status','observed_at','valid_until','fresh_until'] <> '{}'::jsonb OR
+         jsonb_typeof(evidence->'kind') <> 'string' OR
+         jsonb_typeof(evidence->'locator') <> 'string' OR
+         jsonb_typeof(evidence->'status') <> 'string' OR
+         octet_length(btrim(evidence->>'locator')) NOT BETWEEN 1 AND 2000 OR
+         evidence->>'kind' NOT IN ('knowledge','conversation','case','account','health_signal','public_web','memory') OR
+         evidence->>'status' NOT IN ('available','stale','expired','deleted','unavailable','conflicted','not_yet_valid','superseded') OR
+         jsonb_typeof(evidence->'observed_at') NOT IN ('string','null') OR
+         jsonb_typeof(evidence->'valid_until') NOT IN ('string','null') OR
+         jsonb_typeof(evidence->'fresh_until') NOT IN ('string','null') THEN
+        RETURN FALSE;
+      END IF;
+      IF ((evidence->>'kind') || ':' || (evidence->>'locator')) = ANY(evidence_keys) THEN
+        RETURN FALSE;
+      END IF;
+      evidence_keys := array_append(evidence_keys, (evidence->>'kind') || ':' || (evidence->>'locator'));
+    END LOOP;
+    IF claim->>'state' <> 'refused' AND jsonb_array_length(claim->'evidence') = 0 THEN
+      RETURN FALSE;
+    END IF;
+    IF claim->>'state' = 'supported' AND (
+         jsonb_array_length(claim->'evidence') = 0 OR
+         EXISTS (
+           SELECT 1 FROM jsonb_array_elements(claim->'evidence') item
+           WHERE item->>'status' <> 'available' OR
+                 jsonb_typeof(item->'observed_at') <> 'string' OR
+                 jsonb_typeof(item->'fresh_until') <> 'string'
+         )
+       ) THEN
+      RETURN FALSE;
+    END IF;
+  END LOOP;
+  FOR required_fact IN SELECT value FROM jsonb_array_elements(required_facts)
+  LOOP
+    IF jsonb_typeof(required_fact) <> 'string' OR
+       (required_fact #>> '{}') !~ '^[a-z][a-z0-9_]{0,63}$' OR
+       NOT ((required_fact #>> '{}') = ANY(claim_keys)) THEN
+      RETURN FALSE;
+    END IF;
+  END LOOP;
+  RETURN jsonb_array_length(required_facts) = cardinality(
+    ARRAY(SELECT DISTINCT value #>> '{}' FROM jsonb_array_elements(required_facts))
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN FALSE;
+END;
+$_$;
+
+
+--
 -- Name: validate_agent_profile_identity(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1705,6 +1912,25 @@ BEGIN
     RAISE EXCEPTION 'crew task dependency must share scope and cannot form a cycle';
   END IF;
   RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_resolution_contract_family_published(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_resolution_contract_family_published() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM resolution_contract_families
+    WHERE id = NEW.id AND current_version_id IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'resolution contract family must have one published version';
+  END IF;
+  RETURN NULL;
 END;
 $$;
 
@@ -2554,12 +2780,26 @@ CREATE TABLE public.crew_artifacts (
     payload_digest character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    schema_version integer DEFAULT 1 NOT NULL,
+    resolution_contract_version_id bigint,
+    required_facts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    material_claims jsonb DEFAULT '[]'::jsonb NOT NULL,
+    proposed_actions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    policy_checks jsonb DEFAULT '[]'::jsonb NOT NULL,
+    contract_result_state character varying,
+    contract_blockers jsonb DEFAULT '[]'::jsonb NOT NULL,
+    contract_evaluated_at timestamp(6) without time zone,
     CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
     CONSTRAINT crew_artifacts_content CHECK ((((octet_length(body) >= 1) AND (octet_length(body) <= 51200)) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
+    CONSTRAINT crew_artifacts_contract_result CHECK (((contract_result_state IS NULL) OR ((contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
     CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY ((ARRAY['investigation'::character varying, 'draft'::character varying, 'quality_review'::character varying, 'account_analysis'::character varying, 'risk_investigation'::character varying, 'intervention_plan'::character varying, 'success_review'::character varying])::text[]))),
+    CONSTRAINT crew_artifacts_resolution_collections CHECK (((jsonb_typeof(required_facts) = 'array'::text) AND (jsonb_array_length(required_facts) <= 20) AND (jsonb_typeof(material_claims) = 'array'::text) AND (jsonb_array_length(material_claims) <= 20) AND (jsonb_typeof(proposed_actions) = 'array'::text) AND (jsonb_array_length(proposed_actions) <= 20) AND (jsonb_typeof(policy_checks) = 'array'::text) AND (jsonb_array_length(policy_checks) <= 4) AND (jsonb_typeof(contract_blockers) = 'array'::text) AND (jsonb_array_length(contract_blockers) <= 100))),
+    CONSTRAINT crew_artifacts_resolution_grounding CHECK (public.resolution_grounding_valid(required_facts, material_claims)),
+    CONSTRAINT crew_artifacts_resolution_shape CHECK ((((schema_version = 1) AND (resolution_contract_version_id IS NULL) AND (contract_result_state IS NULL) AND (contract_evaluated_at IS NULL) AND (jsonb_array_length(required_facts) = 0) AND (jsonb_array_length(material_claims) = 0) AND (jsonb_array_length(proposed_actions) = 0) AND (jsonb_array_length(policy_checks) = 0) AND (jsonb_array_length(contract_blockers) = 0)) OR ((schema_version = 2) AND (resolution_contract_version_id IS NOT NULL) AND (contract_result_state IS NOT NULL) AND (contract_evaluated_at IS NOT NULL) AND ((jsonb_array_length(required_facts) >= 1) AND (jsonb_array_length(required_facts) <= 20)) AND ((jsonb_array_length(material_claims) >= 1) AND (jsonb_array_length(material_claims) <= 20))))),
     CONSTRAINT crew_artifacts_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY ((ARRAY['approved'::character varying, 'changes_requested'::character varying])::text[])))),
     CONSTRAINT crew_artifacts_review_shape CHECK (((((artifact_kind)::text = ANY ((ARRAY['quality_review'::character varying, 'success_review'::character varying])::text[])) AND (target_artifact_id IS NOT NULL) AND (review_outcome IS NOT NULL)) OR (((artifact_kind)::text <> ALL ((ARRAY['quality_review'::character varying, 'success_review'::character varying])::text[])) AND (target_artifact_id IS NULL) AND (review_outcome IS NULL)))),
+    CONSTRAINT crew_artifacts_schema_version CHECK ((schema_version = ANY (ARRAY[1, 2]))),
     CONSTRAINT crew_artifacts_version CHECK ((version_number > 0))
 );
 
@@ -4474,6 +4714,84 @@ ALTER SEQUENCE public.public_web_searches_id_seq OWNED BY public.public_web_sear
 
 
 --
+-- Name: resolution_contract_families; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.resolution_contract_families (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    family_key character varying NOT NULL,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT resolution_contract_families_key CHECK (((family_key)::text = ANY (ARRAY[('support_resolution'::character varying)::text, ('customer_success_intervention'::character varying)::text])))
+);
+
+
+--
+-- Name: resolution_contract_families_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.resolution_contract_families_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: resolution_contract_families_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.resolution_contract_families_id_seq OWNED BY public.resolution_contract_families.id;
+
+
+--
+-- Name: resolution_contract_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.resolution_contract_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    resolution_contract_family_id bigint NOT NULL,
+    version_number integer NOT NULL,
+    required_claim_categories jsonb DEFAULT '[]'::jsonb NOT NULL,
+    evidence_freshness_days jsonb DEFAULT '{}'::jsonb NOT NULL,
+    mandatory_review_checks jsonb DEFAULT '[]'::jsonb NOT NULL,
+    execution_budget_units integer NOT NULL,
+    missing_items_block boolean DEFAULT true NOT NULL,
+    created_by_membership_id bigint,
+    created_by_user_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT resolution_contract_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
+    CONSTRAINT resolution_contract_versions_budget CHECK (((execution_budget_units >= 1) AND (execution_budget_units <= 20000000))),
+    CONSTRAINT resolution_contract_versions_collections CHECK (((jsonb_typeof(required_claim_categories) = 'array'::text) AND ((jsonb_array_length(required_claim_categories) >= 1) AND (jsonb_array_length(required_claim_categories) <= 4)) AND (required_claim_categories <@ '["customer_account_fact", "product_technical_fact", "policy_entitlement", "promised_action_date"]'::jsonb) AND (jsonb_typeof(evidence_freshness_days) = 'object'::text) AND (evidence_freshness_days ?& ARRAY['knowledge'::text, 'conversation'::text, 'case'::text, 'account'::text, 'health_signal'::text, 'public_web'::text, 'memory'::text]) AND ((evidence_freshness_days - ARRAY['knowledge'::text, 'conversation'::text, 'case'::text, 'account'::text, 'health_signal'::text, 'public_web'::text, 'memory'::text]) = '{}'::jsonb) AND (jsonb_typeof((evidence_freshness_days -> 'knowledge'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'knowledge'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'knowledge'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'conversation'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'conversation'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'conversation'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'case'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'case'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'case'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'account'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'account'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'account'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'health_signal'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'health_signal'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'health_signal'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'public_web'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'public_web'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'public_web'::text))::integer <= 3650)) AND (jsonb_typeof((evidence_freshness_days -> 'memory'::text)) = 'number'::text) AND ((((evidence_freshness_days ->> 'memory'::text))::integer >= 1) AND (((evidence_freshness_days ->> 'memory'::text))::integer <= 3650)) AND (jsonb_typeof(mandatory_review_checks) = 'array'::text) AND ((jsonb_array_length(mandatory_review_checks) >= 1) AND (jsonb_array_length(mandatory_review_checks) <= 4)) AND (mandatory_review_checks <@ '["claims_grounded", "conflicts_resolved", "uncertainty_stated", "human_authority_preserved"]'::jsonb))),
+    CONSTRAINT resolution_contract_versions_number CHECK ((version_number > 0))
+);
+
+
+--
+-- Name: resolution_contract_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.resolution_contract_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: resolution_contract_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.resolution_contract_versions_id_seq OWNED BY public.resolution_contract_versions.id;
+
+
+--
 -- Name: runtime_installations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5771,6 +6089,20 @@ ALTER TABLE ONLY public.public_web_searches ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: resolution_contract_families id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_families ALTER COLUMN id SET DEFAULT nextval('public.resolution_contract_families_id_seq'::regclass);
+
+
+--
+-- Name: resolution_contract_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions ALTER COLUMN id SET DEFAULT nextval('public.resolution_contract_versions_id_seq'::regclass);
+
+
+--
 -- Name: runtime_installations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6435,6 +6767,22 @@ ALTER TABLE ONLY public.public_web_search_results
 
 ALTER TABLE ONLY public.public_web_searches
     ADD CONSTRAINT public_web_searches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: resolution_contract_families resolution_contract_families_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_families
+    ADD CONSTRAINT resolution_contract_families_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: resolution_contract_versions resolution_contract_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions
+    ADD CONSTRAINT resolution_contract_versions_pkey PRIMARY KEY (id);
 
 
 --
@@ -7213,6 +7561,13 @@ CREATE UNIQUE INDEX index_crew_artifacts_on_artifact_key ON public.crew_artifact
 --
 
 CREATE UNIQUE INDEX index_crew_artifacts_on_execution_run_id ON public.crew_artifacts USING btree (execution_run_id);
+
+
+--
+-- Name: index_crew_artifacts_on_resolution_contract_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_artifacts_on_resolution_contract_version_id ON public.crew_artifacts USING btree (resolution_contract_version_id);
 
 
 --
@@ -8511,6 +8866,41 @@ CREATE UNIQUE INDEX index_public_web_searches_on_workspace_id_and_request_key ON
 
 
 --
+-- Name: index_resolution_contract_families_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_resolution_contract_families_on_workspace_id_and_id ON public.resolution_contract_families USING btree (workspace_id, id);
+
+
+--
+-- Name: index_resolution_contract_families_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_resolution_contract_families_unique ON public.resolution_contract_families USING btree (workspace_id, family_key);
+
+
+--
+-- Name: index_resolution_contract_versions_on_family_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_resolution_contract_versions_on_family_version ON public.resolution_contract_versions USING btree (resolution_contract_family_id, version_number);
+
+
+--
+-- Name: index_resolution_contract_versions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_resolution_contract_versions_on_workspace_id_and_id ON public.resolution_contract_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_resolution_contract_versions_tenant_chain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_resolution_contract_versions_tenant_chain ON public.resolution_contract_versions USING btree (workspace_id, resolution_contract_family_id, id);
+
+
+--
 -- Name: index_runtime_installations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9596,6 +9986,41 @@ CREATE TRIGGER public_web_searches_protect BEFORE DELETE OR UPDATE ON public.pub
 
 
 --
+-- Name: resolution_contract_families resolution_contract_families_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER resolution_contract_families_no_truncate BEFORE TRUNCATE ON public.resolution_contract_families FOR EACH STATEMENT EXECUTE FUNCTION public.protect_resolution_contract_family();
+
+
+--
+-- Name: resolution_contract_families resolution_contract_families_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER resolution_contract_families_protect BEFORE DELETE OR UPDATE ON public.resolution_contract_families FOR EACH ROW EXECUTE FUNCTION public.protect_resolution_contract_family();
+
+
+--
+-- Name: resolution_contract_families resolution_contract_families_require_published; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER resolution_contract_families_require_published AFTER INSERT OR UPDATE ON public.resolution_contract_families DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.validate_resolution_contract_family_published();
+
+
+--
+-- Name: resolution_contract_versions resolution_contract_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER resolution_contract_versions_append_only BEFORE DELETE OR UPDATE ON public.resolution_contract_versions FOR EACH ROW EXECUTE FUNCTION public.protect_resolution_contract_version();
+
+
+--
+-- Name: resolution_contract_versions resolution_contract_versions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER resolution_contract_versions_no_truncate BEFORE TRUNCATE ON public.resolution_contract_versions FOR EACH STATEMENT EXECUTE FUNCTION public.protect_resolution_contract_version();
+
+
+--
 -- Name: runtime_installations runtime_installations_validate_policy; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9757,6 +10182,14 @@ ALTER TABLE ONLY public.contact_merges
 
 ALTER TABLE ONLY public.conversation_messages
     ADD CONSTRAINT fk_conversation_messages_reply FOREIGN KEY (workspace_id, conversation_id, in_reply_to_id) REFERENCES public.conversation_messages(workspace_id, conversation_id, id);
+
+
+--
+-- Name: crew_artifacts fk_crew_artifacts_resolution_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_resolution_contract FOREIGN KEY (workspace_id, resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
 
 
 --
@@ -11304,6 +11737,14 @@ ALTER TABLE ONLY public.case_notes
 
 
 --
+-- Name: resolution_contract_versions fk_rails_b32fecdc41; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions
+    ADD CONSTRAINT fk_rails_b32fecdc41 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: identity_match_candidates fk_rails_b43f253bd6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11760,6 +12201,14 @@ ALTER TABLE ONLY public.outbound_email_delivery_attachments
 
 
 --
+-- Name: resolution_contract_families fk_rails_f24e481302; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_families
+    ADD CONSTRAINT fk_rails_f24e481302 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: conversation_message_attachments fk_rails_f28ac313d8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11832,6 +12281,14 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: resolution_contract_versions fk_rails_fcad053a4a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions
+    ADD CONSTRAINT fk_rails_fcad053a4a FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: contact_merges fk_rails_fd7d089b62; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11864,12 +12321,41 @@ ALTER TABLE ONLY public.account_health_assessments
 
 
 --
+-- Name: resolution_contract_families fk_resolution_contract_families_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_families
+    ADD CONSTRAINT fk_resolution_contract_families_current_version FOREIGN KEY (workspace_id, id, current_version_id) REFERENCES public.resolution_contract_versions(workspace_id, resolution_contract_family_id, id);
+
+
+--
+-- Name: resolution_contract_versions fk_resolution_contract_versions_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions
+    ADD CONSTRAINT fk_resolution_contract_versions_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: resolution_contract_versions fk_resolution_contract_versions_family; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resolution_contract_versions
+    ADD CONSTRAINT fk_resolution_contract_versions_family FOREIGN KEY (workspace_id, resolution_contract_family_id) REFERENCES public.resolution_contract_families(workspace_id, id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260827202000'),
+('20260827201000'),
+('20260827200000'),
+('20260827193000'),
+('20260827190000'),
 ('20260826140000'),
 ('20260826123000'),
 ('20260826120000'),

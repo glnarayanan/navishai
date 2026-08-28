@@ -19,9 +19,20 @@ class AuditEvent < ApplicationRecord
     "account.risk_started" => {},
     "account.unmerged" => {},
     "agent.profile_updated" => {},
-    "crew.artifact_published" => { "artifact_kind" => CrewArtifact::KINDS, "version" => Integer },
+    "crew.artifact_published" => {
+      "artifact_kind" => CrewArtifact::KINDS,
+      "version" => Integer,
+      "schema_version" => Integer,
+      "contract_version" => Integer,
+      "contract_result" => CrewArtifact::CONTRACT_RESULTS
+    },
     "crew.task_created" => {},
     "crew.task_event_recorded" => { "event_kind" => CrewTaskEvent::KINDS },
+    "resolution_contract.published" => {
+      "family" => ResolutionContractFamily::FAMILIES.keys,
+      "from_version" => Integer,
+      "to_version" => Integer
+    },
     "execution.run_reconciled" => {},
     "execution.run_requested" => {},
     "attachment.downloaded" => {},

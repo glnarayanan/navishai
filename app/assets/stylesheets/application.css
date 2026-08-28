@@ -1149,6 +1149,151 @@ details,
   padding-top: 1.5rem;
 }
 
+.resolution-contract-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+}
+
+.artifact-proof {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.artifact-proof-blocked {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.artifact-proof p,
+.artifact-proof ul {
+  margin: 0;
+}
+
+.artifact-proof ul {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.artifact-proof li span {
+  display: block;
+  color: var(--muted);
+}
+
+.resolution-contract-list {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.resolution-contract {
+  border-bottom: 1px solid var(--line);
+}
+
+.resolution-contract > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.5rem;
+  padding: 0.75rem 0.25rem;
+  cursor: pointer;
+}
+
+.resolution-contract > summary::marker,
+.contract-freshness-summary > summary::marker {
+  color: var(--accent);
+}
+
+.resolution-contract[open] > summary {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.resolution-contract-body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 2rem;
+  padding: 0.5rem 0.25rem 1.5rem;
+}
+
+.resolution-contract-overview,
+.resolution-contract-form,
+.resolution-contract-overview > div,
+.contract-freshness-summary {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.resolution-contract-overview h3,
+.resolution-contract-editor h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.resolution-contract-overview dl,
+.contract-freshness-summary dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.resolution-contract-overview dt,
+.contract-freshness-summary dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+}
+
+.resolution-contract-overview dd,
+.contract-freshness-summary dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+.contract-freshness-summary {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.contract-freshness-summary > summary {
+  min-height: 3rem;
+  cursor: pointer;
+  font-weight: var(--weight-semibold);
+}
+
+.contract-freshness-summary dl,
+.contract-freshness-grid,
+.contract-publish-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.contract-freshness-fieldset,
+.resolution-contract-form > .agent-tool-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.contract-freshness-fieldset legend,
+.resolution-contract-form > .agent-tool-fieldset legend {
+  margin-bottom: 0.75rem;
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.contract-option-grid,
+.contract-freshness-grid,
+.contract-publish-grid {
+  display: grid;
+  gap: 0.75rem 1rem;
+}
+
 .agent-profile-list {
   margin-top: 1.25rem;
   border-top: 1px solid var(--line);
@@ -1467,6 +1612,28 @@ details,
   width: 1.125rem;
   height: 1.125rem;
   accent-color: var(--accent);
+}
+
+.checkbox-field {
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 1.25rem;
+  min-height: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.checkbox-field label {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  cursor: pointer;
 }
 
 .agent-policy-form > .button {
@@ -3142,6 +3309,7 @@ td {
 
   .crew-heading,
   .agent-profile-body,
+  .resolution-contract-body,
   .runtime-heading,
   .runtime-installation-heading {
     display: grid;
@@ -3157,6 +3325,9 @@ td {
 
   .agent-policy-grid,
   .agent-tool-options,
+  .contract-freshness-summary dl,
+  .contract-freshness-grid,
+  .contract-publish-grid,
   .runtime-facts,
   .runtime-metadata,
   .runtime-policy-groups,
@@ -4654,4 +4825,3 @@ td {
     transform: none;
   }
 }
-

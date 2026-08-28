@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "kind": "investigation",
+  "body": "The customer used an expired reset link, and reset links expire after one use.",
+  "uncertainty": "The sources do not show when the link was first opened.",
+  "citations": [
+    {"kind": "conversation", "locator": "{{conversation_locator}}", "label": "Customer report"},
+    {"kind": "knowledge", "locator": "{{knowledge_locator}}", "label": "Reset link policy"}
+  ],
+  "conflicts": [],
+  "change_requests": [],
+  "review_outcome": null,
+  "memory_proposals": [],
+  "required_facts": ["customer_report", "reset_policy"],
+  "material_claims": [
+    {
+      "key": "customer_report",
+      "category": "customer_account_fact",
+      "text": "The customer reports that the reset link expired.",
+      "state": "supported",
+      "evidence": [{"kind": "conversation", "locator": "{{conversation_locator}}"}]
+    },
+    {
+      "key": "reset_policy",
+      "category": "product_technical_fact",
+      "text": "Reset links expire after one use.",
+      "state": "supported",
+      "evidence": [{"kind": "knowledge", "locator": "{{knowledge_locator}}"}]
+    }
+  ],
+  "proposed_actions": ["A human can ask the customer to request a new reset link."],
+  "policy_checks": [
+    {"check": "claims_grounded", "status": "passed"},
+    {"check": "conflicts_resolved", "status": "passed"},
+    {"check": "human_authority_preserved", "status": "passed"},
+    {"check": "uncertainty_stated", "status": "passed"}
+  ]
+}

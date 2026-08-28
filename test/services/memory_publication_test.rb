@@ -6,6 +6,7 @@ class MemoryPublicationTest < ActiveSupport::TestCase
     @owner = memberships(:owner_support)
     approve_scripted_runtime(workspace: @workspace, membership: @owner)
     CrewConfiguration.install_defaults!(workspace: @workspace)
+    ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
     @support_case = create_support_case
     @message = add_inbound_message(@support_case)
     @artifact = published_artifact
@@ -107,15 +108,33 @@ class MemoryPublicationTest < ActiveSupport::TestCase
         workspace: @workspace, membership: @owner, task: task, command: :start,
         expected_sequence: task.current_event.sequence_number, attributes: {}
       )
+      locator = "conversation://#{@support_case.conversation_id}/messages/#{@message.id}"
       output = JSON.generate(
-        "schema_version" => 1, "kind" => "investigation", "body" => "Customer stated a contact preference.",
+        "schema_version" => 2, "kind" => "investigation", "body" => "Customer stated a contact preference.",
         "uncertainty" => "The preference has not been confirmed by a human.",
         "citations" => [ {
           "kind" => "conversation",
-          "locator" => "conversation://#{@support_case.conversation_id}/messages/#{@message.id}",
+          "locator" => locator,
           "label" => "Customer message"
         } ],
-        "conflicts" => [], "change_requests" => [], "review_outcome" => nil, "memory_proposals" => []
+        "conflicts" => [], "change_requests" => [], "review_outcome" => nil, "memory_proposals" => [],
+        "required_facts" => %w[customer_preference confirmation_status],
+        "material_claims" => [
+          {
+            "key" => "customer_preference", "category" => "customer_account_fact",
+            "text" => "The customer stated a contact preference.", "state" => "supported",
+            "evidence" => [ { "kind" => "conversation", "locator" => locator } ]
+          },
+          {
+            "key" => "confirmation_status", "category" => "product_technical_fact",
+            "text" => "The preference has not been confirmed.", "state" => "supported",
+            "evidence" => [ { "kind" => "conversation", "locator" => locator } ]
+          }
+        ],
+        "proposed_actions" => [],
+        "policy_checks" => ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+          { "check" => check, "status" => "passed" }
+        end
       )
       ledger = ExecutionLedger.new(workspace: @workspace)
       run = ledger.prepare!(task: task, request_key: "memory-proposal-run")

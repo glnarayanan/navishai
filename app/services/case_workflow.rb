@@ -17,6 +17,7 @@ class CaseWorkflow
   def self.transition!(workspace:, support_case:, membership:, to:, reason:, occurred_at: Time.current)
     SupportCase.transaction do
       actor = authorized_membership!(workspace, membership)
+      CrewScopeLock.acquire!(workspace:, scope: support_case)
       current_case = workspace.support_cases.lock.find(support_case.id)
       change_status!(current_case, to.to_s, reason:, occurred_at:, source: :web, actor: actor.user)
     end
@@ -137,6 +138,14 @@ class CaseWorkflow
     allowed = inbound ? target == "investigating" && INBOUND_RESUMABLE.include?(from) : TRANSITIONS.fetch(from).include?(target)
     raise InvalidTransition, "cannot transition from #{from} to #{target}" unless allowed
     raise ArgumentError, "reason is required" if reason.to_s.strip.empty?
+    if from == "investigating" && target == "draft_ready"
+      latest_draft = support_case.workspace.crew_artifacts.joins(:crew_task)
+        .where(artifact_kind: "draft", crew_tasks: { support_case_id: support_case.id })
+        .order(created_at: :desc, id: :desc).first
+      if latest_draft&.contract_blocking?
+        raise InvalidTransition, "The latest AI draft is blocked by its resolution contract."
+      end
+    end
 
     resolved_at = target == "resolved" ? occurred_at : nil
     closed_at = target == "closed" ? occurred_at : nil

@@ -6,6 +6,7 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     @owner = memberships(:owner_support)
     approve_scripted_runtime(workspace: @workspace, membership: @owner)
     CrewConfiguration.install_defaults!(workspace: @workspace)
+    ResolutionContractConfiguration.install_defaults!(workspace: @workspace)
     @support_case = create_support_case
     @message = add_inbound_message(@support_case)
     profile = @workspace.agent_profiles.find_by!(role_key: "support_investigator")
@@ -219,14 +220,30 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
 
   private
     def artifact_output
+      locator = "conversation://#{@support_case.conversation_id}/messages/#{@message.id}"
       JSON.generate(
-        schema_version: 1, kind: "investigation", body: "The reset link expired.",
+        schema_version: 2, kind: "investigation", body: "The reset link expired.",
         uncertainty: "The opening time is unknown.", conflicts: [], change_requests: [], review_outcome: nil,
         memory_proposals: [],
         citations: [ {
-          kind: "conversation", locator: "conversation://#{@support_case.conversation_id}/messages/#{@message.id}",
+          kind: "conversation", locator:,
           label: "Customer report"
-        } ]
+        } ],
+        required_facts: %w[customer_report reset_policy],
+        material_claims: [
+          {
+            key: "customer_report", category: "customer_account_fact", text: "The customer reports an expired link.",
+            state: "supported", evidence: [ { kind: "conversation", locator: } ]
+          },
+          {
+            key: "reset_policy", category: "product_technical_fact", text: "The reset link expired.",
+            state: "supported", evidence: [ { kind: "conversation", locator: } ]
+          }
+        ],
+        proposed_actions: [],
+        policy_checks: ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+          { check:, status: "passed" }
+        end
       )
     end
 

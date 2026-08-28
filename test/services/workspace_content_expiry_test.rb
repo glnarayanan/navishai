@@ -106,7 +106,105 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     assert_equal marker, entry.updated_at
   end
 
+  test "expiry redacts schema v2 claims actions and blockers while preserving contract and audit lineage" do
+    workspace = workspaces(:acme_support)
+    artifact = create_v2_artifact(workspace)
+    audit = AuditEvent.record!(
+      action: "crew.artifact_published", source: :runner, workspace:, actor_kind: :system, subject: artifact,
+      metadata: {
+        "artifact_kind" => artifact.artifact_kind, "version" => artifact.version_number,
+        "schema_version" => artifact.schema_version,
+        "contract_version" => artifact.resolution_contract_version.version_number,
+        "contract_result" => artifact.contract_result_state
+      }
+    )
+    original_text = [
+      "Typed customer fact", "Typed technical fact", "Send a private follow-up",
+      "Unresolved private blocker", "Ask for the private record"
+    ]
+
+    expire_workspace_content(workspace, 1.day.from_now)
+    artifact.reload
+
+    assert_equal 2, artifact.schema_version
+    assert_equal "blocked", artifact.contract_result_state
+    assert artifact.resolution_contract_version
+    assert artifact.contract_evaluated_at
+    assert_equal [ "expired_claim_1", "expired_claim_2" ], artifact.material_claims.map { |claim| claim.fetch("key") }
+    assert_equal %w[uncertain uncertain], artifact.material_claims.map { |claim| claim.fetch("state") }
+    assert artifact.material_claims.all? { |claim| claim.fetch("text") == "[Expired by retention policy]" }
+    assert artifact.material_claims.flat_map { |claim| claim.fetch("evidence") }.all? do |evidence|
+      evidence.fetch("status") == "expired" && evidence.fetch("locator").start_with?("retention-expired://crew-artifacts/")
+    end
+    assert_empty artifact.proposed_actions
+    assert artifact.contract_blockers.all? do |blocker|
+      blocker.fetch("claim_key").nil? && blocker.fetch("message") == "[Expired by retention policy]" &&
+        blocker.fetch("remediation") == "[Expired by retention policy]"
+    end
+    assert artifact.valid?
+    assert AuditEvent.exists?(audit.id)
+    retained = artifact.attributes.slice(
+      "body", "uncertainty", "citations", "conflicts", "change_requests", "required_facts",
+      "material_claims", "proposed_actions", "contract_blockers"
+    ).to_json
+    original_text.each { |text| refute_includes retained, text }
+  end
+
   private
+    def create_v2_artifact(workspace)
+      owner = memberships(:owner_support)
+      approve_scripted_runtime(workspace:, membership: owner)
+      CrewConfiguration.install_defaults!(workspace:)
+      family = ResolutionContractConfiguration.install_defaults!(workspace:)
+        .find_by!(family_key: "support_resolution")
+      support_case = create_support_case
+      message = add_inbound_message(support_case, body: "Private source evidence")
+      profile = workspace.agent_profiles.find_by!(role_key: "support_investigator")
+      task = CrewWork.create!(
+        workspace:, membership: owner, scope: support_case, profile:, title: "Private task",
+        input_context: "Use private evidence.", expected_output: "Return typed private claims."
+      )
+      run = ExecutionLedger.new(workspace:).prepare!(task:, request_key: "expiry:v2:#{task.id}")
+      locator = "conversation://#{support_case.conversation_id}/messages/#{message.id}"
+      observed_at = message.occurred_at.iso8601(6)
+      fresh_until = (message.occurred_at + 365.days).iso8601(6)
+      evidence = ->(kind) {
+        [ {
+          "kind" => kind, "locator" => locator, "status" => "available", "observed_at" => observed_at,
+          "valid_until" => nil, "fresh_until" => fresh_until
+        } ]
+      }
+      workspace.crew_artifacts.create!(
+        crew_task: task, execution_run: run, version_number: 1, schema_version: 2,
+        artifact_kind: "investigation", body: "Private artifact body", uncertainty: "Private uncertainty",
+        citations: [ { "kind" => "conversation", "locator" => locator, "label" => "Private citation" } ],
+        conflicts: [ { "summary" => "Private conflict", "details" => "Private conflict detail", "severity" => "warning" } ],
+        change_requests: [ "Private change request" ], payload_digest: Digest::SHA256.hexdigest("private-v2"),
+        resolution_contract_version: family.current_version,
+        required_facts: %w[customer_fact technical_fact],
+        material_claims: [
+          {
+            "key" => "customer_fact", "category" => "customer_account_fact", "text" => "Typed customer fact",
+            "state" => "supported", "evidence" => evidence.call("conversation")
+          },
+          {
+            "key" => "technical_fact", "category" => "product_technical_fact", "text" => "Typed technical fact",
+            "state" => "uncertain", "evidence" => evidence.call("conversation")
+          }
+        ],
+        proposed_actions: [ "Send a private follow-up" ],
+        policy_checks: ResolutionContractVersion::REVIEW_CHECKS.keys.sort.map do |check|
+          { "check" => check, "status" => check == "claims_grounded" ? "failed" : "passed" }
+        end,
+        contract_result_state: "blocked",
+        contract_blockers: [ {
+          "code" => "claim_uncertain", "claim_key" => "technical_fact", "message" => "Unresolved private blocker",
+          "remediation" => "Ask for the private record", "severity" => "blocking"
+        } ],
+        contract_evaluated_at: Time.current
+      )
+    end
+
     def create_old_memory(workspace, key)
       workspace.memory_records.create!(
         memory_type: :episodic, scope_kind: :workspace, topic: "old-memory", content: "Private old memory",
@@ -117,9 +215,17 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     end
 
     def expire_workspace_content(workspace, cutoff)
-      ActiveRecord::Base.connection.select_value(
-        "SELECT expire_workspace_content(#{workspace.id}, #{ActiveRecord::Base.connection.quote(cutoff)})"
+      connection = ActiveRecord::Base.connection
+      connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
+      connection.select_value(
+        "SELECT expire_workspace_content(#{workspace.id}, #{connection.quote(cutoff)})"
       ).to_i
+    ensure
+      begin
+        connection&.execute("SET CONSTRAINTS ALL DEFERRED")
+      rescue ActiveRecord::StatementInvalid
+        nil
+      end
     end
 
     def set_index_entry_updated_at(entry, timestamp)

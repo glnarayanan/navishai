@@ -65,7 +65,9 @@ class CrewTasksController < ApplicationController
         .includes(:current_version).order(:id)
       @events = @task&.events&.includes(:actor_user, :from_agent_profile, :to_agent_profile)&.order(sequence_number: :desc)
       if @task
-        @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
+        @runs = @task.execution_runs
+          .includes(:current_event, crew_artifact: :resolution_contract_version)
+          .order(attempt_number: :desc).to_a
         @active_run = @runs.find(&:active?)
         @public_web_searches = @task.public_web_searches
           .includes(:requested_by_user, results: :extractions).order(created_at: :desc, id: :desc)

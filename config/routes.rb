@@ -38,6 +38,7 @@ Rails.application.routes.draw do
     resources :crew_templates, path: "crews", only: :index do
       resources :agent_profiles, only: :update
     end
+    resources :resolution_contracts, path: "resolution-contracts", only: :update
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
     end
