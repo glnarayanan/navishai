@@ -37,6 +37,9 @@
       <div class="sidebar-group">
         <p class="sidebar-group-label">Agent operations</p>
         <%= nav_link "Crews", workspace_crew_templates_path(Current.workspace), "crew_templates", "agent_profiles", "crew_tasks" %>
+        <% if membership.can_configure_agents? %>
+          <%= nav_link "Policies", workspace_governed_policy_path(Current.workspace), "governed_policies" %>
+        <% end %>
         <%= nav_link "Runtimes", workspace_runtime_installations_path(Current.workspace), "runtime_installations" %>
         <%= nav_link "Usage", workspace_usage_rates_path(Current.workspace), "usage_rates", "outcome_explanations" %>
         <% if membership.can_manage_work? %>

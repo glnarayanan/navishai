@@ -42,13 +42,17 @@ class CrewWork
     end
 
     CrewTask.transaction do
+      GovernedPolicyResolver.lock_workspace!(@workspace)
       lock_scope!(scope)
+      policy = GovernedPolicyResolver.resolve(workspace: @workspace, scope:, profile:)
       status = dependencies.all?(&:completed?) ? "ready" : "pending"
       task = @workspace.crew_tasks.create!(
         scope_kind: scope_kind(scope), scope_association(scope) => scope,
         crew_template: profile.crew_template,
         assigned_agent_profile: profile,
-        assigned_agent_profile_version: profile.current_version,
+        assigned_agent_profile_version: policy.agent_profile_version,
+        governed_policy_publication: policy.publication,
+        resolution_contract_version: policy.resolution_contract_version,
         owner_membership: @membership, owner_user: @membership.user,
         title: title.to_s.strip, input_context: input_context.to_s.strip,
         expected_output: expected_output.to_s.strip, status:
@@ -164,7 +168,15 @@ class CrewWork
       if old_event && task.status != to_status && TRANSITIONS.fetch(task.status).exclude?(to_status)
         raise InvalidCommand, "That command is not available while the task is #{task.status.humanize.downcase}."
       end
-      to_version = to_profile == task.assigned_agent_profile ? task.assigned_agent_profile_version : to_profile.current_version
+      policy = if to_profile == task.assigned_agent_profile
+        nil
+      else
+        GovernedPolicyResolver.lock_workspace!(@workspace)
+        GovernedPolicyResolver.resolve(workspace: @workspace, scope: task.scope_record, profile: to_profile)
+      end
+      to_version = policy&.agent_profile_version || task.assigned_agent_profile_version
+      to_publication = policy ? policy.publication : task.governed_policy_publication
+      to_contract = policy ? policy.resolution_contract_version : task.resolution_contract_version
       event = task.events.create!(
         workspace: @workspace, sequence_number: old_event&.sequence_number.to_i + 1,
         event_kind: kind, source: "web",
@@ -174,12 +186,18 @@ class CrewWork
         to_agent_profile: to_profile,
         from_agent_profile_version: old_event ? task.assigned_agent_profile_version : nil,
         to_agent_profile_version: to_version,
+        from_governed_policy_publication: old_event ? task.governed_policy_publication : nil,
+        to_governed_policy_publication: to_publication,
+        from_resolution_contract_version: old_event ? task.resolution_contract_version : nil,
+        to_resolution_contract_version: to_contract,
         body:, **attributes
       )
       task.update!(
         status: to_status,
         assigned_agent_profile: to_profile,
         assigned_agent_profile_version: to_version,
+        governed_policy_publication: to_publication,
+        resolution_contract_version: to_contract,
         current_event: event
       )
       event

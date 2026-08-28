@@ -27,10 +27,6 @@
     <div class="resolution-contract-list">
       <% @resolution_contracts.each do |family| %>
         <% version = family.current_version %>
-        <% submitted = @editing_contract_id == family.id ? @submitted_contract_attributes : nil %>
-        <% categories = submitted ? Array(submitted["required_claim_categories"]) : version.required_claim_categories %>
-        <% checks = submitted ? Array(submitted["mandatory_review_checks"]) : version.mandatory_review_checks %>
-        <% freshness = submitted&.fetch("evidence_freshness_days", nil) || version.evidence_freshness_days %>
         <details class="resolution-contract" id="contract-<%= family.id %>" <%= "open" if @editing_contract_id == family.id %>>
           <summary>
             <span class="agent-profile-title">
@@ -68,72 +64,10 @@
             <% if @can_configure %>
               <div class="agent-policy-editor resolution-contract-editor">
                 <h3>Publish a bounded contract version</h3>
-                <p>New results use the next version. Published results never change.</p>
+                <p>Resolution changes require a retained-fact preview and named canary.</p>
+                <%= link_to "Open Governed policy", workspace_governed_policy_path(Current.workspace), class: "button button-secondary" %>
                 <% if @editing_contract_id == family.id && @contract_error %>
                   <p class="inline-error" role="alert"><%= @contract_error %></p>
-                <% end %>
-                <%= form_with url: workspace_resolution_contract_path(Current.workspace, family),
-                  method: :patch, scope: :resolution_contract, class: "resolution-contract-form" do |form| %>
-                  <%= form.hidden_field :expected_current_version_id, value: version.id %>
-
-                  <fieldset class="agent-tool-fieldset">
-                    <legend>Required material claim categories</legend>
-                    <div class="agent-tool-options contract-option-grid">
-                      <%= hidden_field_tag "resolution_contract[required_claim_categories][]", "", id: nil %>
-                      <% ResolutionContractVersion::CLAIM_CATEGORIES.each do |category, label| %>
-                        <label>
-                          <%= check_box_tag "resolution_contract[required_claim_categories][]", category,
-                            categories.include?(category), id: "contract_#{family.id}_category_#{category}" %>
-                          <span><%= label %></span>
-                        </label>
-                      <% end %>
-                    </div>
-                  </fieldset>
-
-                  <fieldset class="agent-tool-fieldset">
-                    <legend>Mandatory review checks</legend>
-                    <div class="agent-tool-options contract-option-grid">
-                      <%= hidden_field_tag "resolution_contract[mandatory_review_checks][]", "", id: nil %>
-                      <% ResolutionContractVersion::REVIEW_CHECKS.each do |check, label| %>
-                        <label>
-                          <%= check_box_tag "resolution_contract[mandatory_review_checks][]", check,
-                            checks.include?(check), id: "contract_#{family.id}_check_#{check}" %>
-                          <span><%= label %></span>
-                        </label>
-                      <% end %>
-                    </div>
-                  </fieldset>
-
-                  <fieldset class="contract-freshness-fieldset">
-                    <legend>Source freshness in days</legend>
-                    <div class="contract-freshness-grid">
-                      <% ResolutionContractVersion::SOURCE_KINDS.each do |kind, label| %>
-                        <div class="field">
-                          <%= label_tag "contract_#{family.id}_freshness_#{kind}", label %>
-                          <%= number_field_tag "resolution_contract[evidence_freshness_days][#{kind}]", freshness.fetch(kind),
-                            id: "contract_#{family.id}_freshness_#{kind}",
-                            min: ResolutionContractVersion::FRESHNESS_DAYS_RANGE.begin,
-                            max: ResolutionContractVersion::FRESHNESS_DAYS_RANGE.end, required: true %>
-                        </div>
-                      <% end %>
-                    </div>
-                  </fieldset>
-
-                  <div class="contract-publish-grid">
-                    <div class="field">
-                      <%= form.label :execution_budget_units, "Execution budget threshold" %>
-                      <%= form.number_field :execution_budget_units,
-                        value: submitted&.fetch("execution_budget_units", nil) || version.execution_budget_units,
-                        min: ResolutionContractVersion::EXECUTION_BUDGET_RANGE.begin,
-                        max: ResolutionContractVersion::EXECUTION_BUDGET_RANGE.end, required: true %>
-                    </div>
-                    <div class="field checkbox-field">
-                      <%= form.check_box :missing_items_block,
-                        checked: ActiveModel::Type::Boolean.new.cast(submitted&.fetch("missing_items_block", version.missing_items_block?)) %>
-                      <%= form.label :missing_items_block, "Block readiness when required items are missing" %>
-                    </div>
-                  </div>
-                  <%= form.submit "Publish new contract version", class: "button button-primary" %>
                 <% end %>
               </div>
             <% end %>

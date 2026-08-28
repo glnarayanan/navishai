@@ -29,16 +29,14 @@ class CrewConfigurationControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
   end
 
-  test "an Owner appends a policy version through the bounded form" do
+  test "an Owner can append non-policy fields but valid bounded changes require governed preview" do
     sign_in_as users(:owner)
 
     assert_difference [ "AgentProfileVersion.count", "AuditEvent.count" ], 1 do
       patch workspace_crew_template_agent_profile_path(@workspace, @crew, @profile), params: {
         agent_profile: attributes_for(@profile.current_version).merge(
           instructions: "Investigate against current, cited evidence and state uncertainty.",
-          allowed_tools: %w[case_read conversation_read knowledge_search],
-          runtime_profile_key: "thorough", fallback_profile_keys: [ "fast", "" ],
-          timeout_seconds: "360", max_steps: "12", max_tool_calls: "18"
+          allowed_tools: %w[case_read conversation_read knowledge_search]
         )
       }
     end
@@ -46,9 +44,17 @@ class CrewConfigurationControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to workspace_crew_templates_path(@workspace, anchor: "profile-#{@profile.id}")
     version = @profile.reload.current_version
     assert_equal 2, version.version_number
-    assert_equal "thorough", version.runtime_profile_key
-    assert_equal [ "fast" ], version.fallback_profile_keys
+    assert_equal @profile.current_version.runtime_profile_key, version.runtime_profile_key
     assert_equal users(:owner), version.created_by_user
+
+    assert_no_difference [ "AgentProfileVersion.count", "AuditEvent.count" ] do
+      patch workspace_crew_template_agent_profile_path(@workspace, @crew, @profile), params: {
+        agent_profile: attributes_for(version).merge(review_policy: "on_policy_flag")
+      }
+    end
+    assert_response :unprocessable_content
+    assert_select ".inline-error", text: /Governed policy preview and an explicit canary/
+    assert_equal version, @profile.reload.current_version
   end
 
   test "invalid policy rerenders the open editor without losing entered values" do
@@ -57,16 +63,14 @@ class CrewConfigurationControllerTest < ActionDispatch::IntegrationTest
     assert_no_difference [ "AgentProfileVersion.count", "AuditEvent.count" ] do
       patch workspace_crew_template_agent_profile_path(@workspace, @crew, @profile), params: {
         agent_profile: attributes_for(@profile.current_version).merge(
-          instructions: "Keep this entered text",
-          fallback_profile_keys: %w[fast fast]
+          instructions: ""
         )
       }
     end
 
     assert_response :unprocessable_content
     assert_select "#profile-#{@profile.id}[open]"
-    assert_select ".inline-error", text: /distinct approved profiles/
-    assert_select "#profile-#{@profile.id} textarea", text: "Keep this entered text"
+    assert_select ".inline-error", text: /Instructions/
   end
 
   test "foreign crew and profile paths fail closed" do

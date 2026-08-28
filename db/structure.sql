@@ -24,6 +24,34 @@ COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access met
 
 
 --
+-- Name: check_governed_policy_proposal_subject_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_governed_policy_proposal_subject_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM validate_governed_policy_subject_count(NEW.id);
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: check_governed_policy_subject_count(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_governed_policy_subject_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  PERFORM validate_governed_policy_subject_count(COALESCE(NEW.governed_policy_proposal_id, OLD.governed_policy_proposal_id));
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+
+--
 -- Name: enforce_active_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -124,6 +152,58 @@ $$;
 --
 
 CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE affected integer; total integer;
+BEGIN
+  total := expire_workspace_content_before_governed_policy(target_workspace_id, cutoff);
+  LOCK TABLE governed_policy_proposals, governed_policy_previews, governed_policy_publications
+    IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE governed_policy_proposals DISABLE TRIGGER USER;
+  ALTER TABLE governed_policy_previews DISABLE TRIGGER USER;
+  ALTER TABLE governed_policy_publications DISABLE TRIGGER USER;
+
+  UPDATE governed_policy_proposals
+    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE governed_policy_previews
+    SET source_snapshot = '{"retention":"expired"}'::jsonb,
+        results = COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'subject_kind', item->>'subject_kind', 'subject_id', item->'subject_id',
+            'old_decision', '{"retention":"expired"}'::jsonb,
+            'proposed_decision', '{"retention":"expired"}'::jsonb,
+            'changes', '[]'::jsonb, 'facts', '[]'::jsonb, 'result', 'expired'
+          ) ORDER BY ordinal)
+          FROM jsonb_array_elements(results) WITH ORDINALITY AS values(item, ordinal)
+        ), '[]'::jsonb),
+        expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND previewed_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE governed_policy_publications
+    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND published_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  ALTER TABLE governed_policy_publications ENABLE TRIGGER USER;
+  ALTER TABLE governed_policy_previews ENABLE TRIGGER USER;
+  ALTER TABLE governed_policy_proposals ENABLE TRIGGER USER;
+  RETURN total;
+END;
+$$;
+
+
+--
+-- Name: expire_workspace_content_before_governed_policy(bigint, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_workspace_content_before_governed_policy(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
@@ -1311,6 +1391,70 @@ $$;
 
 
 --
+-- Name: protect_governed_policy_preview(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_governed_policy_preview() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'governed policy previews are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_governed_policy_proposal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_governed_policy_proposal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'governed policy proposals are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_governed_policy_publication(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_governed_policy_publication() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'governed policy publications are append only';
+END;
+$$;
+
+
+--
+-- Name: protect_governed_policy_subject(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_governed_policy_subject() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'governed policy subjects are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_health_scorecard_record(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2222,6 +2366,111 @@ $$;
 
 
 --
+-- Name: validate_governed_crew_task_projection(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_governed_crew_task_projection() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE event_row crew_task_events%ROWTYPE;
+BEGIN
+  IF TG_OP <> 'UPDATE' OR NEW.current_event_id IS NOT DISTINCT FROM OLD.current_event_id THEN
+    RETURN NEW;
+  END IF;
+  SELECT * INTO event_row FROM crew_task_events WHERE id = NEW.current_event_id;
+  IF event_row.from_governed_policy_publication_id IS DISTINCT FROM
+       (CASE WHEN OLD.current_event_id IS NULL THEN NULL ELSE OLD.governed_policy_publication_id END) OR
+     event_row.to_governed_policy_publication_id IS DISTINCT FROM NEW.governed_policy_publication_id OR
+     event_row.from_resolution_contract_version_id IS DISTINCT FROM
+       (CASE WHEN OLD.current_event_id IS NULL THEN NULL ELSE OLD.resolution_contract_version_id END) OR
+     event_row.to_resolution_contract_version_id IS DISTINCT FROM NEW.resolution_contract_version_id THEN
+    RAISE EXCEPTION 'crew task governed policy projection must match its event';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_governed_policy_publication(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_governed_policy_publication() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE policy governed_policy_proposals%ROWTYPE; prior governed_policy_publications%ROWTYPE;
+BEGIN
+  SELECT * INTO policy FROM governed_policy_proposals
+    WHERE id = NEW.governed_policy_proposal_id AND workspace_id = NEW.workspace_id;
+  IF NEW.supersedes_publication_id IS NOT NULL THEN
+    SELECT * INTO prior FROM governed_policy_publications
+      WHERE id = NEW.supersedes_publication_id AND workspace_id = NEW.workspace_id;
+    IF prior.id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM governed_policy_proposals predecessor
+        WHERE predecessor.id = prior.governed_policy_proposal_id
+          AND predecessor.workspace_id = NEW.workspace_id
+          AND predecessor.scope_kind = policy.scope_kind
+          AND predecessor.resolution_contract_family_id = policy.resolution_contract_family_id
+          AND predecessor.agent_profile_id = policy.agent_profile_id
+      ) OR EXISTS (
+        (SELECT subject_kind, support_case_id, account_id, agent_profile_id
+          FROM governed_policy_subjects WHERE governed_policy_proposal_id = policy.id
+         EXCEPT
+         SELECT subject_kind, support_case_id, account_id, agent_profile_id
+          FROM governed_policy_subjects WHERE governed_policy_proposal_id = prior.governed_policy_proposal_id)
+        UNION ALL
+        (SELECT subject_kind, support_case_id, account_id, agent_profile_id
+          FROM governed_policy_subjects WHERE governed_policy_proposal_id = prior.governed_policy_proposal_id
+         EXCEPT
+         SELECT subject_kind, support_case_id, account_id, agent_profile_id
+          FROM governed_policy_subjects WHERE governed_policy_proposal_id = policy.id)
+      ) THEN
+      RAISE EXCEPTION 'superseded publication does not match exact canary scope';
+    END IF;
+  END IF;
+  IF NEW.action = 'canary' THEN
+    IF NEW.resolution_contract_version_id <> policy.resolution_contract_version_id OR
+        NEW.agent_profile_version_id <> policy.agent_profile_version_id OR
+        NOT EXISTS (SELECT 1 FROM governed_policy_previews WHERE id = NEW.governed_policy_preview_id
+          AND governed_policy_proposal_id = policy.id AND workspace_id = NEW.workspace_id) THEN
+      RAISE EXCEPTION 'canary publication does not match proposal evidence';
+    END IF;
+  ELSE
+    IF NEW.resolution_contract_version_id <> policy.prior_resolution_contract_version_id OR
+        NEW.agent_profile_version_id <> policy.prior_agent_profile_version_id OR
+        prior.governed_policy_proposal_id <> policy.id THEN
+      RAISE EXCEPTION 'rollback publication does not match proposal history';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_governed_policy_subject_count(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_governed_policy_subject_count(target_proposal_id bigint) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE proposal_kind text; subject_total integer;
+BEGIN
+  SELECT scope_kind INTO proposal_kind FROM governed_policy_proposals WHERE id = target_proposal_id;
+  IF proposal_kind IS NULL THEN RETURN; END IF;
+  SELECT count(*) INTO subject_total FROM governed_policy_subjects
+    WHERE governed_policy_proposal_id = target_proposal_id AND subject_kind = proposal_kind;
+  IF subject_total NOT BETWEEN 1 AND 50 OR
+      (proposal_kind = 'agent_profile' AND subject_total <> 1) OR
+      EXISTS (SELECT 1 FROM governed_policy_subjects
+        WHERE governed_policy_proposal_id = target_proposal_id AND subject_kind <> proposal_kind) THEN
+    RAISE EXCEPTION 'governed policy subject scope must contain 1..50 matching records and one profile';
+  END IF;
+END;
+$$;
+
+
+--
 -- Name: validate_resolution_contract_family_published(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2424,7 +2673,7 @@ CREATE TABLE public.account_health_signals (
     evidence_omitted_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT account_health_signals_evidence CHECK (((jsonb_typeof(evidence_refs) = 'array'::text) AND (jsonb_array_length(evidence_refs) <= 100) AND (evidence_omitted_count >= 0))),
     CONSTRAINT account_health_signals_source CHECK (((octet_length((source_locator)::text) >= 1) AND (octet_length((source_locator)::text) <= 1000))),
-    CONSTRAINT account_health_signals_source_kind CHECK (((source_kind)::text = ANY ((ARRAY['account_input'::character varying, 'support_cases'::character varying, 'sla'::character varying, 'conversation'::character varying, 'case_notes'::character varying, 'case_tags'::character varying, 'case_status'::character varying, 'resolution_contract'::character varying])::text[]))),
+    CONSTRAINT account_health_signals_source_kind CHECK (((source_kind)::text = ANY (ARRAY[('account_input'::character varying)::text, ('support_cases'::character varying)::text, ('sla'::character varying)::text, ('conversation'::character varying)::text, ('case_notes'::character varying)::text, ('case_tags'::character varying)::text, ('case_status'::character varying)::text, ('resolution_contract'::character varying)::text]))),
     CONSTRAINT account_health_signals_typed_value CHECK ((((value_kind)::text = ANY (ARRAY[('date'::character varying)::text, ('number'::character varying)::text])) AND ((((value_kind)::text = 'date'::text) AND (date_value IS NOT NULL) AND (numeric_value IS NULL)) OR (((value_kind)::text = 'number'::text) AND (numeric_value IS NOT NULL) AND (date_value IS NULL))))),
     CONSTRAINT account_health_signals_weight CHECK (((weight >= 0) AND (weight <= 100) AND ((risk_points >= 0) AND (risk_points <= weight))))
 );
@@ -3104,10 +3353,12 @@ CREATE TABLE public.crew_artifacts (
     contract_result_state character varying,
     contract_blockers jsonb DEFAULT '[]'::jsonb NOT NULL,
     contract_evaluated_at timestamp(6) without time zone,
+    governed_policy_publication_id bigint,
     CONSTRAINT crew_artifacts_collections CHECK (((jsonb_typeof(citations) = 'array'::text) AND (jsonb_array_length(citations) <= 20) AND (jsonb_typeof(conflicts) = 'array'::text) AND (jsonb_array_length(conflicts) <= 20) AND (jsonb_typeof(change_requests) = 'array'::text) AND (jsonb_array_length(change_requests) <= 20))),
     CONSTRAINT crew_artifacts_content CHECK (((octet_length(body) >= 1) AND (octet_length(body) <= 51200) AND ((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 4000)))),
-    CONSTRAINT crew_artifacts_contract_result CHECK (((contract_result_state IS NULL) OR ((contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
+    CONSTRAINT crew_artifacts_contract_result CHECK (((contract_result_state IS NULL) OR ((contract_result_state)::text = ANY (ARRAY[('complete'::character varying)::text, ('blocked'::character varying)::text, ('needs_human'::character varying)::text])))),
     CONSTRAINT crew_artifacts_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT crew_artifacts_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
     CONSTRAINT crew_artifacts_kind CHECK (((artifact_kind)::text = ANY (ARRAY[('investigation'::character varying)::text, ('draft'::character varying)::text, ('quality_review'::character varying)::text, ('account_analysis'::character varying)::text, ('risk_investigation'::character varying)::text, ('intervention_plan'::character varying)::text, ('success_review'::character varying)::text]))),
     CONSTRAINT crew_artifacts_resolution_collections CHECK (((jsonb_typeof(required_facts) = 'array'::text) AND (jsonb_array_length(required_facts) <= 20) AND (jsonb_typeof(material_claims) = 'array'::text) AND (jsonb_array_length(material_claims) <= 20) AND (jsonb_typeof(proposed_actions) = 'array'::text) AND (jsonb_array_length(proposed_actions) <= 20) AND (jsonb_typeof(policy_checks) = 'array'::text) AND (jsonb_array_length(policy_checks) <= 4) AND (jsonb_typeof(contract_blockers) = 'array'::text) AND (jsonb_array_length(contract_blockers) <= 100))),
     CONSTRAINT crew_artifacts_resolution_grounding CHECK (public.resolution_grounding_valid(required_facts, material_claims)),
@@ -3198,15 +3449,21 @@ CREATE TABLE public.crew_task_events (
     outcome_kind character varying,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    from_governed_policy_publication_id bigint,
+    to_governed_policy_publication_id bigint,
+    from_resolution_contract_version_id bigint,
+    to_resolution_contract_version_id bigint,
     CONSTRAINT crew_task_events_actor CHECK ((((actor_membership_id IS NULL) AND (actor_user_id IS NULL)) OR ((actor_membership_id IS NOT NULL) AND (actor_user_id IS NOT NULL)))),
     CONSTRAINT crew_task_events_body CHECK (((body IS NULL) OR ((octet_length(body) >= 1) AND (octet_length(body) <= 20000)))),
     CONSTRAINT crew_task_events_evidence_kind CHECK (((evidence_kind IS NULL) OR ((evidence_kind)::text = ANY (ARRAY[('conversation'::character varying)::text, ('case'::character varying)::text, ('account'::character varying)::text, ('knowledge'::character varying)::text, ('public_web'::character varying)::text, ('other'::character varying)::text])))),
     CONSTRAINT crew_task_events_evidence_locator CHECK (((evidence_locator IS NULL) OR ((octet_length((evidence_locator)::text) >= 1) AND (octet_length((evidence_locator)::text) <= 2000)))),
+    CONSTRAINT crew_task_events_from_governed_policy_shape CHECK (((from_governed_policy_publication_id IS NULL) OR ((from_resolution_contract_version_id IS NOT NULL) AND (from_agent_profile_version_id IS NOT NULL)))),
     CONSTRAINT crew_task_events_kind CHECK (((event_kind)::text = ANY (ARRAY[('created'::character varying)::text, ('status_changed'::character varying)::text, ('handoff'::character varying)::text, ('comment'::character varying)::text, ('evidence_added'::character varying)::text, ('review_requested'::character varying)::text, ('review_resolved'::character varying)::text, ('outcome_recorded'::character varying)::text]))),
     CONSTRAINT crew_task_events_outcome_kind CHECK (((outcome_kind IS NULL) OR ((outcome_kind)::text = ANY (ARRAY[('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))),
     CONSTRAINT crew_task_events_review_outcome CHECK (((review_outcome IS NULL) OR ((review_outcome)::text = ANY (ARRAY[('approved'::character varying)::text, ('changes_requested'::character varying)::text])))),
     CONSTRAINT crew_task_events_sequence CHECK ((sequence_number > 0)),
-    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('system'::character varying)::text])))
+    CONSTRAINT crew_task_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('task'::character varying)::text, ('runner'::character varying)::text, ('system'::character varying)::text]))),
+    CONSTRAINT crew_task_events_to_governed_policy_shape CHECK (((to_governed_policy_publication_id IS NULL) OR ((to_resolution_contract_version_id IS NOT NULL) AND (to_agent_profile_version_id IS NOT NULL))))
 );
 
 
@@ -3252,7 +3509,10 @@ CREATE TABLE public.crew_tasks (
     current_event_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    governed_policy_publication_id bigint,
+    resolution_contract_version_id bigint,
     CONSTRAINT crew_tasks_content CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
+    CONSTRAINT crew_tasks_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
     CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
     CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('in_progress'::character varying)::text, ('blocked'::character varying)::text, ('review_requested'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))
 );
@@ -3333,7 +3593,7 @@ CREATE TABLE public.customer_success_intervention_outcome_reviews (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT customer_success_outcome_reviews_assessments CHECK ((before_account_health_assessment_id <> after_account_health_assessment_id)),
-    CONSTRAINT customer_success_outcome_reviews_content CHECK ((((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 2000)) AND ((octet_length(observed_association) >= 1) AND (octet_length(observed_association) <= 2000)))),
+    CONSTRAINT customer_success_outcome_reviews_content CHECK (((octet_length(uncertainty) >= 1) AND (octet_length(uncertainty) <= 2000) AND ((octet_length(observed_association) >= 1) AND (octet_length(observed_association) <= 2000)))),
     CONSTRAINT customer_success_outcome_reviews_snapshots CHECK (((jsonb_typeof(before_snapshot) = 'object'::text) AND (jsonb_typeof(after_snapshot) = 'object'::text) AND (octet_length((before_snapshot)::text) <= 131072) AND (octet_length((after_snapshot)::text) <= 131072) AND (jsonb_typeof(changed_facts) = 'array'::text) AND (jsonb_array_length(changed_facts) <= 50) AND (jsonb_typeof(unchanged_facts) = 'array'::text) AND (jsonb_array_length(unchanged_facts) <= 50)))
 );
 
@@ -3385,10 +3645,10 @@ CREATE TABLE public.customer_success_interventions (
     abandonment_reason text,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT customer_success_interventions_content CHECK ((((octet_length(expected_observable_change) >= 1) AND (octet_length(expected_observable_change) <= 2000)) AND ((octet_length(reason) >= 1) AND (octet_length(reason) <= 1000)) AND ((abandonment_reason IS NULL) OR ((octet_length(abandonment_reason) >= 1) AND (octet_length(abandonment_reason) <= 1000))))),
+    CONSTRAINT customer_success_interventions_content CHECK (((octet_length(expected_observable_change) >= 1) AND (octet_length(expected_observable_change) <= 2000) AND ((octet_length(reason) >= 1) AND (octet_length(reason) <= 1000)) AND ((abandonment_reason IS NULL) OR ((octet_length(abandonment_reason) >= 1) AND (octet_length(abandonment_reason) <= 1000))))),
     CONSTRAINT customer_success_interventions_evidence CHECK (((jsonb_typeof(supporting_evidence) = 'array'::text) AND ((jsonb_array_length(supporting_evidence) >= 1) AND (jsonb_array_length(supporting_evidence) <= 20)))),
-    CONSTRAINT customer_success_interventions_state CHECK (((((status)::text = 'proposed'::text) AND (approved_by_membership_id IS NULL) AND (approved_at IS NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'approved'::text) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = ANY ((ARRAY['completed'::character varying, 'reviewed'::character varying])::text[])) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NOT NULL) AND (completed_at IS NOT NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'abandoned'::text) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NOT NULL) AND (abandoned_at IS NOT NULL) AND (abandonment_reason IS NOT NULL)))),
-    CONSTRAINT customer_success_interventions_status CHECK (((status)::text = ANY ((ARRAY['proposed'::character varying, 'approved'::character varying, 'completed'::character varying, 'abandoned'::character varying, 'reviewed'::character varying])::text[])))
+    CONSTRAINT customer_success_interventions_state CHECK (((((status)::text = 'proposed'::text) AND (approved_by_membership_id IS NULL) AND (approved_at IS NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'approved'::text) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = ANY (ARRAY[('completed'::character varying)::text, ('reviewed'::character varying)::text])) AND (approved_by_membership_id IS NOT NULL) AND (approved_at IS NOT NULL) AND (completed_by_membership_id IS NOT NULL) AND (completed_at IS NOT NULL) AND (abandoned_by_membership_id IS NULL) AND (abandoned_at IS NULL) AND (abandonment_reason IS NULL)) OR (((status)::text = 'abandoned'::text) AND (completed_by_membership_id IS NULL) AND (completed_at IS NULL) AND (abandoned_by_membership_id IS NOT NULL) AND (abandoned_at IS NOT NULL) AND (abandonment_reason IS NOT NULL)))),
+    CONSTRAINT customer_success_interventions_status CHECK (((status)::text = ANY (ARRAY[('proposed'::character varying)::text, ('approved'::character varying)::text, ('completed'::character varying)::text, ('abandoned'::character varying)::text, ('reviewed'::character varying)::text])))
 );
 
 
@@ -3467,7 +3727,7 @@ CREATE TABLE public.email_drafts (
     human_edited_by_user_id bigint,
     human_edited_at timestamp(6) without time zone,
     CONSTRAINT email_drafts_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT email_drafts_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
+    CONSTRAINT email_drafts_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY (ARRAY[('complete'::character varying)::text, ('blocked'::character varying)::text, ('needs_human'::character varying)::text])))),
     CONSTRAINT email_drafts_generated_digest CHECK (((generated_body_digest IS NULL) OR ((generated_body_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT email_drafts_provenance_shape CHECK ((((source_crew_artifact_id IS NULL) AND (generated_body_digest IS NULL) AND (generated_contract_result_state IS NULL) AND (human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((source_crew_artifact_id IS NOT NULL) AND (generated_body_digest IS NOT NULL) AND (((human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((human_edited_by_membership_id IS NOT NULL) AND (human_edited_by_user_id IS NOT NULL) AND (human_edited_at IS NOT NULL)))))),
     CONSTRAINT email_drafts_status CHECK (((status)::text = ANY (ARRAY[('ready'::character varying)::text, ('sending'::character varying)::text, ('sent'::character varying)::text])))
@@ -3686,10 +3946,13 @@ CREATE TABLE public.execution_runs (
     memory_context_status character varying DEFAULT 'not_applicable'::character varying NOT NULL,
     memory_context_detail character varying,
     usage_rate_version_id bigint,
+    governed_policy_publication_id bigint,
+    resolution_contract_version_id bigint,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
+    CONSTRAINT execution_runs_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
     CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
@@ -3717,6 +3980,172 @@ CREATE SEQUENCE public.execution_runs_id_seq
 --
 
 ALTER SEQUENCE public.execution_runs_id_seq OWNED BY public.execution_runs.id;
+
+
+--
+-- Name: governed_policy_previews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.governed_policy_previews (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    governed_policy_proposal_id bigint NOT NULL,
+    evidence_digest character varying NOT NULL,
+    results_digest character varying NOT NULL,
+    source_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    results jsonb DEFAULT '[]'::jsonb NOT NULL,
+    subject_count integer NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    previewed_at timestamp(6) without time zone NOT NULL,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT policy_previews_bounded CHECK ((((evidence_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((results_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (jsonb_typeof(source_snapshot) = 'object'::text) AND (jsonb_typeof(results) = 'array'::text) AND ((subject_count >= 1) AND (subject_count <= 50)) AND (jsonb_array_length(results) = subject_count) AND (octet_length((source_snapshot)::text) <= 524288) AND (octet_length((results)::text) <= 524288)))
+);
+
+
+--
+-- Name: governed_policy_previews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.governed_policy_previews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: governed_policy_previews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.governed_policy_previews_id_seq OWNED BY public.governed_policy_previews.id;
+
+
+--
+-- Name: governed_policy_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.governed_policy_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    resolution_contract_family_id bigint NOT NULL,
+    agent_profile_id bigint NOT NULL,
+    prior_resolution_contract_version_id bigint NOT NULL,
+    resolution_contract_version_id bigint NOT NULL,
+    prior_agent_profile_version_id bigint NOT NULL,
+    agent_profile_version_id bigint NOT NULL,
+    scope_kind character varying NOT NULL,
+    reason character varying NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT policy_proposals_reason CHECK (((octet_length(btrim((reason)::text)) >= 1) AND (octet_length(btrim((reason)::text)) <= 500))),
+    CONSTRAINT policy_proposals_scope CHECK (((scope_kind)::text = ANY ((ARRAY['support_case'::character varying, 'account'::character varying, 'agent_profile'::character varying])::text[])))
+);
+
+
+--
+-- Name: governed_policy_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.governed_policy_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: governed_policy_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.governed_policy_proposals_id_seq OWNED BY public.governed_policy_proposals.id;
+
+
+--
+-- Name: governed_policy_publications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.governed_policy_publications (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    governed_policy_proposal_id bigint NOT NULL,
+    governed_policy_preview_id bigint,
+    supersedes_publication_id bigint,
+    action character varying NOT NULL,
+    resolution_contract_version_id bigint NOT NULL,
+    agent_profile_version_id bigint NOT NULL,
+    reason character varying NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    published_at timestamp(6) without time zone NOT NULL,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT policy_publications_shape CHECK ((((action)::text = ANY ((ARRAY['canary'::character varying, 'rollback'::character varying])::text[])) AND ((octet_length(btrim((reason)::text)) >= 1) AND (octet_length(btrim((reason)::text)) <= 500)) AND ((((action)::text = 'canary'::text) AND (governed_policy_preview_id IS NOT NULL)) OR (((action)::text = 'rollback'::text) AND (governed_policy_preview_id IS NULL) AND (supersedes_publication_id IS NOT NULL)))))
+);
+
+
+--
+-- Name: governed_policy_publications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.governed_policy_publications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: governed_policy_publications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.governed_policy_publications_id_seq OWNED BY public.governed_policy_publications.id;
+
+
+--
+-- Name: governed_policy_subjects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.governed_policy_subjects (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    governed_policy_proposal_id bigint NOT NULL,
+    subject_kind character varying NOT NULL,
+    support_case_id bigint,
+    account_id bigint,
+    agent_profile_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT policy_subjects_shape CHECK (((((subject_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL) AND (agent_profile_id IS NULL)) OR (((subject_kind)::text = 'account'::text) AND (support_case_id IS NULL) AND (account_id IS NOT NULL) AND (agent_profile_id IS NULL)) OR (((subject_kind)::text = 'agent_profile'::text) AND (support_case_id IS NULL) AND (account_id IS NULL) AND (agent_profile_id IS NOT NULL))))
+);
+
+
+--
+-- Name: governed_policy_subjects_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.governed_policy_subjects_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: governed_policy_subjects_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.governed_policy_subjects_id_seq OWNED BY public.governed_policy_subjects.id;
 
 
 --
@@ -4010,7 +4439,7 @@ CREATE TABLE public.intercom_backfill_batches (
     expired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT intercom_backfill_batches_state CHECK ((((status)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying, 'blocked'::character varying, 'failed'::character varying])::text[])) AND (start_position >= 0) AND (end_position >= start_position) AND (attempt_number > 0) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
+    CONSTRAINT intercom_backfill_batches_state CHECK ((((status)::text = ANY (ARRAY[('running'::character varying)::text, ('completed'::character varying)::text, ('blocked'::character varying)::text, ('failed'::character varying)::text])) AND (start_position >= 0) AND (end_position >= start_position) AND (attempt_number > 0) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
 );
 
 
@@ -4055,7 +4484,7 @@ CREATE TABLE public.intercom_backfill_exceptions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT intercom_backfill_exceptions_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((octet_length((remote_record_id)::text) >= 1) AND (octet_length((remote_record_id)::text) <= 255)) AND ((octet_length(detail) >= 1) AND (octet_length(detail) <= 500)))),
-    CONSTRAINT intercom_backfill_exceptions_kind CHECK ((((remote_record_type)::text = ANY ((ARRAY['conversation'::character varying, 'identity'::character varying, 'attachment'::character varying, 'field'::character varying])::text[])) AND ((exception_kind)::text = ANY ((ARRAY['ambiguous_identity'::character varying, 'source_changed'::character varying, 'unsupported_field'::character varying, 'attachment_rejected'::character varying, 'attachment_unavailable'::character varying, 'persistence_failed'::character varying])::text[])) AND ((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying])::text[])) AND ((recovery_action)::text = ANY ((ARRAY['review_identity'::character varying, 'restart_preview'::character varying, 'inspect_source'::character varying, 'inspect_attachment'::character varying, 'resume'::character varying])::text[]))))
+    CONSTRAINT intercom_backfill_exceptions_kind CHECK ((((remote_record_type)::text = ANY (ARRAY[('conversation'::character varying)::text, ('identity'::character varying)::text, ('attachment'::character varying)::text, ('field'::character varying)::text])) AND ((exception_kind)::text = ANY (ARRAY[('ambiguous_identity'::character varying)::text, ('source_changed'::character varying)::text, ('unsupported_field'::character varying)::text, ('attachment_rejected'::character varying)::text, ('attachment_unavailable'::character varying)::text, ('persistence_failed'::character varying)::text])) AND ((status)::text = ANY (ARRAY[('open'::character varying)::text, ('resolved'::character varying)::text])) AND ((recovery_action)::text = ANY (ARRAY[('review_identity'::character varying)::text, ('restart_preview'::character varying)::text, ('inspect_source'::character varying)::text, ('inspect_attachment'::character varying)::text, ('resume'::character varying)::text]))))
 );
 
 
@@ -4101,7 +4530,7 @@ CREATE TABLE public.intercom_backfill_manifests (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT intercom_backfill_manifests_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((discovery_records)::text) <= 262144) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(discovery_records) = 'array'::text) AND (jsonb_typeof(counts) = 'object'::text))),
-    CONSTRAINT intercom_backfill_manifests_status CHECK (((status)::text = ANY ((ARRAY['current'::character varying, 'consumed'::character varying, 'stale'::character varying])::text[])))
+    CONSTRAINT intercom_backfill_manifests_status CHECK (((status)::text = ANY (ARRAY[('current'::character varying)::text, ('consumed'::character varying)::text, ('stale'::character varying)::text])))
 );
 
 
@@ -4138,7 +4567,7 @@ CREATE TABLE public.intercom_backfill_reports (
     generated_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT intercom_backfill_reports_bounds CHECK ((((status)::text = ANY ((ARRAY['partial'::character varying, 'complete'::character varying])::text[])) AND ((report_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
+    CONSTRAINT intercom_backfill_reports_bounds CHECK ((((status)::text = ANY (ARRAY[('partial'::character varying)::text, ('complete'::character varying)::text])) AND ((report_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
 );
 
 
@@ -4186,7 +4615,7 @@ CREATE TABLE public.intercom_backfill_runs (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT intercom_backfill_runs_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((last_definite_source_digest IS NULL) OR ((last_definite_source_digest)::text ~ '^[0-9a-f]{64}$'::text)) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)))),
-    CONSTRAINT intercom_backfill_runs_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'blocked'::character varying, 'failed'::character varying, 'completed'::character varying])::text[])) AND (cursor_position >= 0)))
+    CONSTRAINT intercom_backfill_runs_state CHECK ((((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('running'::character varying)::text, ('blocked'::character varying)::text, ('failed'::character varying)::text, ('completed'::character varying)::text])) AND (cursor_position >= 0)))
 );
 
 
@@ -4313,7 +4742,7 @@ CREATE TABLE public.intercom_drafts (
     human_edited_by_user_id bigint,
     human_edited_at timestamp(6) without time zone,
     CONSTRAINT intercom_drafts_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT intercom_drafts_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
+    CONSTRAINT intercom_drafts_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY (ARRAY[('complete'::character varying)::text, ('blocked'::character varying)::text, ('needs_human'::character varying)::text])))),
     CONSTRAINT intercom_drafts_generated_digest CHECK (((generated_body_digest IS NULL) OR ((generated_body_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT intercom_drafts_provenance_shape CHECK ((((source_crew_artifact_id IS NULL) AND (generated_body_digest IS NULL) AND (generated_contract_result_state IS NULL) AND (human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((source_crew_artifact_id IS NOT NULL) AND (generated_body_digest IS NOT NULL) AND (((human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((human_edited_by_membership_id IS NOT NULL) AND (human_edited_by_user_id IS NOT NULL) AND (human_edited_at IS NOT NULL)))))),
     CONSTRAINT intercom_drafts_status CHECK (((status)::text = ANY (ARRAY[('ready'::character varying)::text, ('sending'::character varying)::text, ('sent'::character varying)::text])))
@@ -4372,7 +4801,7 @@ CREATE TABLE public.intercom_outbound_deliveries (
     human_edited_by_user_id bigint,
     human_edited_at timestamp(6) without time zone,
     CONSTRAINT intercom_outbound_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT intercom_outbound_deliveries_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
+    CONSTRAINT intercom_outbound_deliveries_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY (ARRAY[('complete'::character varying)::text, ('blocked'::character varying)::text, ('needs_human'::character varying)::text])))),
     CONSTRAINT intercom_outbound_deliveries_failure CHECK (((failure_code IS NULL) OR ((failure_code)::text = ANY (ARRAY[('configuration_error'::character varying)::text, ('remote_rejected'::character varying)::text, ('authorization_changed'::character varying)::text, ('unknown_outcome'::character varying)::text, ('confirmed_not_sent'::character varying)::text])))),
     CONSTRAINT intercom_outbound_deliveries_generated_digest CHECK (((generated_body_digest IS NULL) OR ((generated_body_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT intercom_outbound_deliveries_provenance_shape CHECK ((((source_crew_artifact_id IS NULL) AND (generated_body_digest IS NULL) AND (generated_contract_result_state IS NULL) AND (human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((source_crew_artifact_id IS NOT NULL) AND (generated_body_digest IS NOT NULL) AND (((human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((human_edited_by_membership_id IS NOT NULL) AND (human_edited_by_user_id IS NOT NULL) AND (human_edited_at IS NOT NULL)))))),
@@ -5103,8 +5532,8 @@ CREATE TABLE public.operational_checks (
     CONSTRAINT operational_checks_archive_format CHECK (((archive_format IS NULL) OR ((octet_length((archive_format)::text) >= 1) AND (octet_length((archive_format)::text) <= 100)))),
     CONSTRAINT operational_checks_counts CHECK ((((table_count IS NULL) OR (table_count >= 0)) AND ((record_count IS NULL) OR (record_count >= 0)) AND ((attachment_count IS NULL) OR (attachment_count >= 0)) AND ((memory_count IS NULL) OR (memory_count >= 0)))),
     CONSTRAINT operational_checks_digests CHECK ((((evidence_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_commit)::text ~ '^[0-9a-f]{40}$'::text))),
-    CONSTRAINT operational_checks_kind CHECK (((check_kind)::text = ANY ((ARRAY['archive_verification'::character varying, 'backup_verification'::character varying, 'restore_rehearsal'::character varying, 'upgrade_preflight'::character varying])::text[]))),
-    CONSTRAINT operational_checks_result CHECK (((result)::text = ANY ((ARRAY['passed'::character varying, 'failed'::character varying, 'unavailable'::character varying])::text[]))),
+    CONSTRAINT operational_checks_kind CHECK (((check_kind)::text = ANY (ARRAY[('archive_verification'::character varying)::text, ('backup_verification'::character varying)::text, ('restore_rehearsal'::character varying)::text, ('upgrade_preflight'::character varying)::text]))),
+    CONSTRAINT operational_checks_result CHECK (((result)::text = ANY (ARRAY[('passed'::character varying)::text, ('failed'::character varying)::text, ('unavailable'::character varying)::text]))),
     CONSTRAINT operational_checks_result_code CHECK (((result_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))
 );
 
@@ -5194,7 +5623,7 @@ CREATE TABLE public.outbound_email_deliveries (
     human_edited_by_user_id bigint,
     human_edited_at timestamp(6) without time zone,
     CONSTRAINT outbound_email_deliveries_body_size CHECK ((octet_length(body) <= 1048576)),
-    CONSTRAINT outbound_email_deliveries_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY ((ARRAY['complete'::character varying, 'blocked'::character varying, 'needs_human'::character varying])::text[])))),
+    CONSTRAINT outbound_email_deliveries_contract_result CHECK (((generated_contract_result_state IS NULL) OR ((generated_contract_result_state)::text = ANY (ARRAY[('complete'::character varying)::text, ('blocked'::character varying)::text, ('needs_human'::character varying)::text])))),
     CONSTRAINT outbound_email_deliveries_generated_digest CHECK (((generated_body_digest IS NULL) OR ((generated_body_digest)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT outbound_email_deliveries_provenance_shape CHECK ((((source_crew_artifact_id IS NULL) AND (generated_body_digest IS NULL) AND (generated_contract_result_state IS NULL) AND (human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((source_crew_artifact_id IS NOT NULL) AND (generated_body_digest IS NOT NULL) AND (((human_edited_by_membership_id IS NULL) AND (human_edited_by_user_id IS NULL) AND (human_edited_at IS NULL)) OR ((human_edited_by_membership_id IS NOT NULL) AND (human_edited_by_user_id IS NOT NULL) AND (human_edited_at IS NOT NULL)))))),
     CONSTRAINT outbound_email_deliveries_state CHECK (((((status)::text = 'sent'::text) AND (conversation_message_id IS NOT NULL) AND (sent_at IS NOT NULL) AND (failure_code IS NULL)) OR (((status)::text = ANY (ARRAY[('sending'::character varying)::text, ('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (conversation_message_id IS NULL) AND (sent_at IS NULL) AND ((((status)::text = 'sending'::text) AND (failure_code IS NULL)) OR (((status)::text = ANY (ARRAY[('failed'::character varying)::text, ('unknown'::character varying)::text])) AND (failure_code IS NOT NULL)))))),
@@ -5481,7 +5910,7 @@ CREATE TABLE public.resolution_contract_families (
     current_version_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT resolution_contract_families_key CHECK (((family_key)::text = ANY ((ARRAY['support_resolution'::character varying, 'customer_success_intervention'::character varying])::text[])))
+    CONSTRAINT resolution_contract_families_key CHECK (((family_key)::text = ANY (ARRAY[('support_resolution'::character varying)::text, ('customer_success_intervention'::character varying)::text])))
 );
 
 
@@ -5945,12 +6374,12 @@ CREATE TABLE public.stored_attachments (
     scanned_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT stored_attachments_actor CHECK (((((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'intercom_import'::character varying])::text[])) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
+    CONSTRAINT stored_attachments_actor CHECK (((((source)::text = ANY (ARRAY[('inbound_email'::character varying)::text, ('intercom_import'::character varying)::text])) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
     CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY (ARRAY[('available'::character varying)::text, ('rejected'::character varying)::text])) AND (scanned_at IS NOT NULL))))),
     CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY (ARRAY[('quarantined'::character varying)::text, ('available'::character varying)::text, ('rejected'::character varying)::text]))),
     CONSTRAINT stored_attachments_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT stored_attachments_size CHECK (((byte_size >= 1) AND (byte_size <= 5242880))),
-    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'user_upload'::character varying, 'intercom_import'::character varying])::text[])))
+    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY (ARRAY[('inbound_email'::character varying)::text, ('user_upload'::character varying)::text, ('intercom_import'::character varying)::text])))
 );
 
 
@@ -6143,10 +6572,10 @@ CREATE TABLE public.usage_cost_snapshots (
     captured_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT usage_cost_snapshots_money_shape CHECK (((((status)::text = ANY ((ARRAY['complete'::character varying, 'partial'::character varying])::text[])) AND (source IS NOT NULL) AND (currency IS NOT NULL) AND (amount_micros IS NOT NULL)) OR (((status)::text = ANY ((ARRAY['unavailable'::character varying, 'not_reported'::character varying])::text[])) AND (source IS NULL) AND (currency IS NULL) AND (amount_micros IS NULL)))),
+    CONSTRAINT usage_cost_snapshots_money_shape CHECK (((((status)::text = ANY (ARRAY[('complete'::character varying)::text, ('partial'::character varying)::text])) AND (source IS NOT NULL) AND (currency IS NOT NULL) AND (amount_micros IS NOT NULL)) OR (((status)::text = ANY (ARRAY[('unavailable'::character varying)::text, ('not_reported'::character varying)::text])) AND (source IS NULL) AND (currency IS NULL) AND (amount_micros IS NULL)))),
     CONSTRAINT usage_cost_snapshots_rate_source CHECK ((((source)::text <> 'configured_rate'::text) OR (applied_usage_rate_version_id IS NOT NULL))),
     CONSTRAINT usage_cost_snapshots_subject CHECK (((((execution_run_id IS NOT NULL))::integer + ((public_web_search_id IS NOT NULL))::integer) = 1)),
-    CONSTRAINT usage_cost_snapshots_values CHECK ((((status)::text = ANY ((ARRAY['complete'::character varying, 'partial'::character varying, 'unavailable'::character varying, 'not_reported'::character varying])::text[])) AND ((source IS NULL) OR ((source)::text = ANY ((ARRAY['configured_rate'::character varying, 'adapter_reported'::character varying])::text[]))) AND ((currency IS NULL) OR ((currency)::text ~ '^[A-Z]{3}$'::text)) AND ((amount_micros IS NULL) OR (amount_micros >= 0)) AND ((observed_input_units IS NULL) OR (observed_input_units >= 0)) AND ((observed_output_units IS NULL) OR (observed_output_units >= 0)) AND ((observed_search_units IS NULL) OR (observed_search_units >= 0)) AND (jsonb_typeof(calculation_provenance) = 'object'::text) AND (octet_length((calculation_provenance)::text) <= 8192)))
+    CONSTRAINT usage_cost_snapshots_values CHECK ((((status)::text = ANY (ARRAY[('complete'::character varying)::text, ('partial'::character varying)::text, ('unavailable'::character varying)::text, ('not_reported'::character varying)::text])) AND ((source IS NULL) OR ((source)::text = ANY (ARRAY[('configured_rate'::character varying)::text, ('adapter_reported'::character varying)::text]))) AND ((currency IS NULL) OR ((currency)::text ~ '^[A-Z]{3}$'::text)) AND ((amount_micros IS NULL) OR (amount_micros >= 0)) AND ((observed_input_units IS NULL) OR (observed_input_units >= 0)) AND ((observed_output_units IS NULL) OR (observed_output_units >= 0)) AND ((observed_search_units IS NULL) OR (observed_search_units >= 0)) AND (jsonb_typeof(calculation_provenance) = 'object'::text) AND (octet_length((calculation_provenance)::text) <= 8192)))
 );
 
 
@@ -6749,6 +7178,34 @@ ALTER TABLE ONLY public.execution_memory_selections ALTER COLUMN id SET DEFAULT 
 --
 
 ALTER TABLE ONLY public.execution_runs ALTER COLUMN id SET DEFAULT nextval('public.execution_runs_id_seq'::regclass);
+
+
+--
+-- Name: governed_policy_previews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews ALTER COLUMN id SET DEFAULT nextval('public.governed_policy_previews_id_seq'::regclass);
+
+
+--
+-- Name: governed_policy_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals ALTER COLUMN id SET DEFAULT nextval('public.governed_policy_proposals_id_seq'::regclass);
+
+
+--
+-- Name: governed_policy_publications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications ALTER COLUMN id SET DEFAULT nextval('public.governed_policy_publications_id_seq'::regclass);
+
+
+--
+-- Name: governed_policy_subjects id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects ALTER COLUMN id SET DEFAULT nextval('public.governed_policy_subjects_id_seq'::regclass);
 
 
 --
@@ -7483,6 +7940,38 @@ ALTER TABLE ONLY public.execution_memory_selections
 
 ALTER TABLE ONLY public.execution_runs
     ADD CONSTRAINT execution_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: governed_policy_previews governed_policy_previews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews
+    ADD CONSTRAINT governed_policy_previews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: governed_policy_proposals governed_policy_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT governed_policy_proposals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: governed_policy_publications governed_policy_publications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT governed_policy_publications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: governed_policy_subjects governed_policy_subjects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT governed_policy_subjects_pkey PRIMARY KEY (id);
 
 
 --
@@ -8638,6 +9127,13 @@ CREATE UNIQUE INDEX index_crew_artifacts_on_execution_run_id ON public.crew_arti
 
 
 --
+-- Name: index_crew_artifacts_on_governed_policy_publication_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_artifacts_on_governed_policy_publication_id ON public.crew_artifacts USING btree (governed_policy_publication_id);
+
+
+--
 -- Name: index_crew_artifacts_on_resolution_contract_version_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8701,6 +9197,13 @@ CREATE UNIQUE INDEX index_crew_task_events_on_workspace_task_id ON public.crew_t
 
 
 --
+-- Name: index_crew_tasks_frozen_policy_tuple; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_crew_tasks_frozen_policy_tuple ON public.crew_tasks USING btree (workspace_id, id, governed_policy_publication_id, resolution_contract_version_id, assigned_agent_profile_version_id);
+
+
+--
 -- Name: index_crew_tasks_on_account_and_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8712,6 +9215,20 @@ CREATE INDEX index_crew_tasks_on_account_and_status ON public.crew_tasks USING b
 --
 
 CREATE INDEX index_crew_tasks_on_case_and_status ON public.crew_tasks USING btree (workspace_id, support_case_id, status);
+
+
+--
+-- Name: index_crew_tasks_on_governed_policy_publication_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_governed_policy_publication_id ON public.crew_tasks USING btree (governed_policy_publication_id);
+
+
+--
+-- Name: index_crew_tasks_on_resolution_contract_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_resolution_contract_version_id ON public.crew_tasks USING btree (resolution_contract_version_id);
 
 
 --
@@ -8988,6 +9505,13 @@ CREATE UNIQUE INDEX index_execution_memory_selections_on_workspace_id_and_id ON 
 
 
 --
+-- Name: index_execution_runs_frozen_policy_tuple; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_execution_runs_frozen_policy_tuple ON public.execution_runs USING btree (workspace_id, id, crew_task_id, governed_policy_publication_id, resolution_contract_version_id);
+
+
+--
 -- Name: index_execution_runs_on_crew_task_id_and_attempt_number; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8995,10 +9519,24 @@ CREATE UNIQUE INDEX index_execution_runs_on_crew_task_id_and_attempt_number ON p
 
 
 --
+-- Name: index_execution_runs_on_governed_policy_publication_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_governed_policy_publication_id ON public.execution_runs USING btree (governed_policy_publication_id);
+
+
+--
 -- Name: index_execution_runs_on_input_artifact_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX index_execution_runs_on_input_artifact_id ON public.execution_runs USING btree (input_artifact_id);
+
+
+--
+-- Name: index_execution_runs_on_resolution_contract_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_execution_runs_on_resolution_contract_version_id ON public.execution_runs USING btree (resolution_contract_version_id);
 
 
 --
@@ -9048,6 +9586,41 @@ CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_and_request_key ON publ
 --
 
 CREATE UNIQUE INDEX index_execution_runs_on_workspace_id_task ON public.execution_runs USING btree (workspace_id, id, crew_task_id);
+
+
+--
+-- Name: index_governed_policy_previews_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_governed_policy_previews_on_workspace_id_and_id ON public.governed_policy_previews USING btree (workspace_id, id);
+
+
+--
+-- Name: index_governed_policy_previews_stable; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_governed_policy_previews_stable ON public.governed_policy_previews USING btree (governed_policy_proposal_id, evidence_digest, results_digest);
+
+
+--
+-- Name: index_governed_policy_proposals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_governed_policy_proposals_on_workspace_id_and_id ON public.governed_policy_proposals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_governed_policy_publications_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_governed_policy_publications_on_workspace_id_and_id ON public.governed_policy_publications USING btree (workspace_id, id);
+
+
+--
+-- Name: index_governed_policy_subjects_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_governed_policy_subjects_on_workspace_id_and_id ON public.governed_policy_subjects USING btree (workspace_id, id);
 
 
 --
@@ -10087,6 +10660,76 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_policy_previews_proposal_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_previews_proposal_identity ON public.governed_policy_previews USING btree (workspace_id, governed_policy_proposal_id, id);
+
+
+--
+-- Name: index_policy_proposals_candidate_contract; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_proposals_candidate_contract ON public.governed_policy_proposals USING btree (resolution_contract_version_id);
+
+
+--
+-- Name: index_policy_proposals_candidate_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_proposals_candidate_profile ON public.governed_policy_proposals USING btree (agent_profile_version_id);
+
+
+--
+-- Name: index_policy_publications_contract_tuple; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_publications_contract_tuple ON public.governed_policy_publications USING btree (workspace_id, id, resolution_contract_version_id);
+
+
+--
+-- Name: index_policy_publications_frozen_tuple; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_publications_frozen_tuple ON public.governed_policy_publications USING btree (workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
+
+
+--
+-- Name: index_policy_publications_one_canary_per_preview; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_publications_one_canary_per_preview ON public.governed_policy_publications USING btree (governed_policy_preview_id) WHERE ((action)::text = 'canary'::text);
+
+
+--
+-- Name: index_policy_publications_one_successor; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_publications_one_successor ON public.governed_policy_publications USING btree (supersedes_publication_id) WHERE (supersedes_publication_id IS NOT NULL);
+
+
+--
+-- Name: index_policy_subjects_unique_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_subjects_unique_account ON public.governed_policy_subjects USING btree (governed_policy_proposal_id, account_id) WHERE ((subject_kind)::text = 'account'::text);
+
+
+--
+-- Name: index_policy_subjects_unique_case; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_subjects_unique_case ON public.governed_policy_subjects USING btree (governed_policy_proposal_id, support_case_id) WHERE ((subject_kind)::text = 'support_case'::text);
+
+
+--
+-- Name: index_policy_subjects_unique_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_policy_subjects_unique_profile ON public.governed_policy_subjects USING btree (governed_policy_proposal_id, agent_profile_id) WHERE ((subject_kind)::text = 'agent_profile'::text);
+
+
+--
 -- Name: index_public_web_extractions_on_public_web_search_result_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10899,6 +11542,13 @@ CREATE CONSTRAINT TRIGGER crew_task_events_require_link AFTER INSERT ON public.c
 
 
 --
+-- Name: crew_tasks crew_tasks_governed_policy_projection; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER crew_tasks_governed_policy_projection BEFORE UPDATE ON public.crew_tasks FOR EACH ROW EXECUTE FUNCTION public.validate_governed_crew_task_projection();
+
+
+--
 -- Name: crew_tasks crew_tasks_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11064,6 +11714,83 @@ CREATE TRIGGER execution_runs_protect_routing BEFORE UPDATE ON public.execution_
 --
 
 CREATE TRIGGER execution_runs_usage_rate_immutable BEFORE UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_usage_rate();
+
+
+--
+-- Name: governed_policy_previews governed_policy_previews_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_previews_append_only BEFORE DELETE OR UPDATE ON public.governed_policy_previews FOR EACH ROW EXECUTE FUNCTION public.protect_governed_policy_preview();
+
+
+--
+-- Name: governed_policy_previews governed_policy_previews_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_previews_no_truncate BEFORE TRUNCATE ON public.governed_policy_previews FOR EACH STATEMENT EXECUTE FUNCTION public.protect_governed_policy_preview();
+
+
+--
+-- Name: governed_policy_proposals governed_policy_proposals_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_proposals_append_only BEFORE DELETE OR UPDATE ON public.governed_policy_proposals FOR EACH ROW EXECUTE FUNCTION public.protect_governed_policy_proposal();
+
+
+--
+-- Name: governed_policy_proposals governed_policy_proposals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_proposals_no_truncate BEFORE TRUNCATE ON public.governed_policy_proposals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_governed_policy_proposal();
+
+
+--
+-- Name: governed_policy_proposals governed_policy_proposals_subject_count; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER governed_policy_proposals_subject_count AFTER INSERT ON public.governed_policy_proposals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_governed_policy_proposal_subject_count();
+
+
+--
+-- Name: governed_policy_publications governed_policy_publications_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_publications_append_only BEFORE DELETE OR UPDATE ON public.governed_policy_publications FOR EACH ROW EXECUTE FUNCTION public.protect_governed_policy_publication();
+
+
+--
+-- Name: governed_policy_publications governed_policy_publications_integrity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_publications_integrity BEFORE INSERT ON public.governed_policy_publications FOR EACH ROW EXECUTE FUNCTION public.validate_governed_policy_publication();
+
+
+--
+-- Name: governed_policy_publications governed_policy_publications_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_publications_no_truncate BEFORE TRUNCATE ON public.governed_policy_publications FOR EACH STATEMENT EXECUTE FUNCTION public.protect_governed_policy_publication();
+
+
+--
+-- Name: governed_policy_subjects governed_policy_subjects_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_subjects_append_only BEFORE DELETE OR UPDATE ON public.governed_policy_subjects FOR EACH ROW EXECUTE FUNCTION public.protect_governed_policy_subject();
+
+
+--
+-- Name: governed_policy_subjects governed_policy_subjects_count; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER governed_policy_subjects_count AFTER INSERT OR DELETE OR UPDATE ON public.governed_policy_subjects DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_governed_policy_subject_count();
+
+
+--
+-- Name: governed_policy_subjects governed_policy_subjects_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER governed_policy_subjects_no_truncate BEFORE TRUNCATE ON public.governed_policy_subjects FOR EACH STATEMENT EXECUTE FUNCTION public.protect_governed_policy_subject();
 
 
 --
@@ -11659,6 +12386,30 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: crew_artifacts fk_crew_artifacts_exact_governed_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_exact_governed_policy FOREIGN KEY (workspace_id, governed_policy_publication_id, resolution_contract_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id);
+
+
+--
+-- Name: crew_artifacts fk_crew_artifacts_exact_run_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_exact_run_policy FOREIGN KEY (workspace_id, execution_run_id, crew_task_id, governed_policy_publication_id, resolution_contract_version_id) REFERENCES public.execution_runs(workspace_id, id, crew_task_id, governed_policy_publication_id, resolution_contract_version_id);
+
+
+--
+-- Name: crew_artifacts fk_crew_artifacts_policy_publication; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_artifacts
+    ADD CONSTRAINT fk_crew_artifacts_policy_publication FOREIGN KEY (workspace_id, governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
+
+
+--
 -- Name: crew_artifacts fk_crew_artifacts_resolution_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11731,11 +12482,35 @@ ALTER TABLE ONLY public.crew_tasks
 
 
 --
+-- Name: crew_tasks fk_crew_tasks_exact_governed_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_exact_governed_policy FOREIGN KEY (workspace_id, governed_policy_publication_id, resolution_contract_version_id, assigned_agent_profile_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
+
+
+--
 -- Name: crew_tasks fk_crew_tasks_owner; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.crew_tasks
     ADD CONSTRAINT fk_crew_tasks_owner FOREIGN KEY (workspace_id, owner_membership_id, owner_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_policy_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_policy_contract FOREIGN KEY (workspace_id, resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: crew_tasks fk_crew_tasks_policy_publication; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_policy_publication FOREIGN KEY (workspace_id, governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
 
 
 --
@@ -11875,11 +12650,43 @@ ALTER TABLE ONLY public.execution_runs
 
 
 --
+-- Name: execution_runs fk_execution_runs_exact_governed_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_exact_governed_policy FOREIGN KEY (workspace_id, governed_policy_publication_id, resolution_contract_version_id, agent_profile_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
+
+
+--
+-- Name: execution_runs fk_execution_runs_exact_task_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_exact_task_policy FOREIGN KEY (workspace_id, crew_task_id, governed_policy_publication_id, resolution_contract_version_id, agent_profile_version_id) REFERENCES public.crew_tasks(workspace_id, id, governed_policy_publication_id, resolution_contract_version_id, assigned_agent_profile_version_id);
+
+
+--
 -- Name: execution_runs fk_execution_runs_input_artifact; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.execution_runs
     ADD CONSTRAINT fk_execution_runs_input_artifact FOREIGN KEY (workspace_id, input_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: execution_runs fk_execution_runs_policy_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_policy_contract FOREIGN KEY (workspace_id, resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: execution_runs fk_execution_runs_policy_publication; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_execution_runs_policy_publication FOREIGN KEY (workspace_id, governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
 
 
 --
@@ -12203,6 +13010,158 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries
 
 
 --
+-- Name: governed_policy_previews fk_policy_previews_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews
+    ADD CONSTRAINT fk_policy_previews_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: governed_policy_previews fk_policy_previews_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews
+    ADD CONSTRAINT fk_policy_previews_proposal FOREIGN KEY (workspace_id, governed_policy_proposal_id) REFERENCES public.governed_policy_proposals(workspace_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_candidate_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_candidate_contract FOREIGN KEY (workspace_id, resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_candidate_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_candidate_profile FOREIGN KEY (workspace_id, agent_profile_id, agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_family; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_family FOREIGN KEY (workspace_id, resolution_contract_family_id) REFERENCES public.resolution_contract_families(workspace_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_prior_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_prior_contract FOREIGN KEY (workspace_id, prior_resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_prior_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_prior_profile FOREIGN KEY (workspace_id, agent_profile_id, prior_agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, agent_profile_id, id);
+
+
+--
+-- Name: governed_policy_proposals fk_policy_proposals_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_policy_proposals_profile FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_contract FOREIGN KEY (workspace_id, resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_preview; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_preview FOREIGN KEY (workspace_id, governed_policy_proposal_id, governed_policy_preview_id) REFERENCES public.governed_policy_previews(workspace_id, governed_policy_proposal_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_profile FOREIGN KEY (workspace_id, agent_profile_version_id) REFERENCES public.agent_profile_versions(workspace_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_proposal FOREIGN KEY (workspace_id, governed_policy_proposal_id) REFERENCES public.governed_policy_proposals(workspace_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_policy_publications_supersedes; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_policy_publications_supersedes FOREIGN KEY (workspace_id, supersedes_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
+
+
+--
+-- Name: governed_policy_subjects fk_policy_subjects_account; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT fk_policy_subjects_account FOREIGN KEY (workspace_id, account_id) REFERENCES public.accounts(workspace_id, id);
+
+
+--
+-- Name: governed_policy_subjects fk_policy_subjects_case; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT fk_policy_subjects_case FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: governed_policy_subjects fk_policy_subjects_profile; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT fk_policy_subjects_profile FOREIGN KEY (workspace_id, agent_profile_id) REFERENCES public.agent_profiles(workspace_id, id);
+
+
+--
+-- Name: governed_policy_subjects fk_policy_subjects_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT fk_policy_subjects_proposal FOREIGN KEY (workspace_id, governed_policy_proposal_id) REFERENCES public.governed_policy_proposals(workspace_id, id);
+
+
+--
 -- Name: public_web_searches fk_public_web_searches_usage_rate; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12387,6 +13346,14 @@ ALTER TABLE ONLY public.health_scorecard_versions
 
 
 --
+-- Name: governed_policy_proposals fk_rails_1f0cc57d5e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_rails_1f0cc57d5e FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: intercom_part_links fk_rails_1f0e1f209b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12400,6 +13367,14 @@ ALTER TABLE ONLY public.intercom_part_links
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries
     ADD CONSTRAINT fk_rails_21357be27b FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
+-- Name: governed_policy_publications fk_rails_2301af5828; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_rails_2301af5828 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -12915,6 +13890,14 @@ ALTER TABLE ONLY public.source_identities
 
 
 --
+-- Name: governed_policy_publications fk_rails_60eeb27fea; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_publications
+    ADD CONSTRAINT fk_rails_60eeb27fea FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: email_drafts fk_rails_6106ba6ad3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13019,6 +14002,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: governed_policy_previews fk_rails_69fc9ef6d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews
+    ADD CONSTRAINT fk_rails_69fc9ef6d5 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: agent_profile_versions fk_rails_6acb52efde; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13059,6 +14050,14 @@ ALTER TABLE ONLY public.public_web_extractions
 
 
 --
+-- Name: governed_policy_proposals fk_rails_7166a75e9d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_proposals
+    ADD CONSTRAINT fk_rails_7166a75e9d FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: memory_proposals fk_rails_71ef40da68; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13096,6 +14095,14 @@ ALTER TABLE ONLY public.account_merges
 
 ALTER TABLE ONLY public.outbound_webhook_deliveries
     ADD CONSTRAINT fk_rails_73f17d8db3 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: governed_policy_subjects fk_rails_746c054b19; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_subjects
+    ADD CONSTRAINT fk_rails_746c054b19 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -13568,6 +14575,14 @@ ALTER TABLE ONLY public.source_identities
 
 ALTER TABLE ONLY public.case_notes
     ADD CONSTRAINT fk_rails_b1575b0540 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: governed_policy_previews fk_rails_b27dc165eb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.governed_policy_previews
+    ADD CONSTRAINT fk_rails_b27dc165eb FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -14243,6 +15258,54 @@ ALTER TABLE ONLY public.resolution_contract_versions
 
 
 --
+-- Name: crew_task_events fk_task_events_from_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_from_contract FOREIGN KEY (workspace_id, from_resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: crew_task_events fk_task_events_from_exact_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_from_exact_policy FOREIGN KEY (workspace_id, from_governed_policy_publication_id, from_resolution_contract_version_id, from_agent_profile_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
+
+
+--
+-- Name: crew_task_events fk_task_events_from_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_from_policy FOREIGN KEY (workspace_id, from_governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
+
+
+--
+-- Name: crew_task_events fk_task_events_to_contract; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_to_contract FOREIGN KEY (workspace_id, to_resolution_contract_version_id) REFERENCES public.resolution_contract_versions(workspace_id, id);
+
+
+--
+-- Name: crew_task_events fk_task_events_to_exact_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_to_exact_policy FOREIGN KEY (workspace_id, to_governed_policy_publication_id, to_resolution_contract_version_id, to_agent_profile_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
+
+
+--
+-- Name: crew_task_events fk_task_events_to_policy; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_task_events
+    ADD CONSTRAINT fk_task_events_to_policy FOREIGN KEY (workspace_id, to_governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
+
+
+--
 -- Name: usage_cost_snapshots fk_usage_cost_snapshots_rate; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14297,6 +15360,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260829000000'),
 ('20260828233000'),
 ('20260828230000'),
 ('20260828220000'),

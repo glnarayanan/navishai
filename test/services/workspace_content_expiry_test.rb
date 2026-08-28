@@ -49,6 +49,38 @@ class WorkspaceContentExpiryTest < ActiveSupport::TestCase
     assert_match(/expired-/, workspace.source_identity_keys.first.reload.normalized_value)
   end
 
+  test "expiry redacts governed preview content while preserving immutable lineage and audit" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    proposal, preview, publication = create_governed_policy_canary(workspace:, membership: owner)
+    subject_ids = proposal.subject_ids
+    audit_ids = workspace.audit_events.where(action: %w[
+      governed_policy.proposed governed_policy.canary_published
+    ]).ids
+    evidence_digest = preview.evidence_digest
+    results_digest = preview.results_digest
+
+    expire_workspace_content(workspace, 1.day.from_now)
+
+    assert_equal "[Expired by retention policy]", proposal.reload.reason
+    assert_equal "[Expired by retention policy]", publication.reload.reason
+    assert_equal({ "retention" => "expired" }, preview.reload.source_snapshot)
+    assert preview.results.all? { |result| result.fetch("result") == "expired" }
+    assert_equal evidence_digest, preview.evidence_digest
+    assert_equal results_digest, preview.results_digest
+    assert_equal subject_ids, proposal.subject_ids
+    assert_equal audit_ids.sort, workspace.audit_events.where(id: audit_ids).ids.sort
+    assert_raises(GovernedPolicyChange::UnavailableSource) do
+      GovernedPolicyChange.publish!(workspace:, membership: owner, proposal:, preview:)
+    end
+    assert_raises(GovernedPolicyChange::UnavailableSource) do
+      GovernedPolicyChange.rollback!(
+        workspace:, membership: owner, publication:, expected_publication_id: publication.id,
+        reason: "Expired evidence cannot authorize rollback"
+      )
+    end
+  end
+
   test "external cleanup failure leaves database content and records a visible failure" do
     workspace = workspaces(:acme_support)
     message = ConversationThread.start_inbound!(

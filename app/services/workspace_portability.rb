@@ -420,6 +420,14 @@ class WorkspacePortability
       %w[before_snapshot after_snapshot].each do |column|
         attributes[column] = reverse_intervention_snapshot(attributes.fetch(column), reverse_mappings)
       end
+    when "governed_policy_previews"
+      source, results = remap_governed_preview(
+        attributes.fetch("source_snapshot"), attributes.fetch("results"), reverse_mappings
+      )
+      attributes["source_snapshot"] = source
+      attributes["results"] = results
+      attributes["evidence_digest"] = GovernedPolicyChange.digest(source)
+      attributes["results_digest"] = GovernedPolicyChange.digest(results)
     end
   end
   private_class_method :reverse_embedded_references!
@@ -788,6 +796,7 @@ class WorkspacePortability
         .update_all(evidence_refs: remapped_references)
     end
     remap_intervention_records!(tables, mappings, models)
+    remap_governed_policy_previews!(tables, mappings, models)
     connection.execute("SET CONSTRAINTS ALL IMMEDIATE")
     tables.keys.each { |table| connection.execute("ALTER TABLE #{connection.quote_table_name(table)} ENABLE TRIGGER USER") }
     mappings
@@ -818,6 +827,135 @@ class WorkspacePortability
     end
   end
   private_class_method :remap_intervention_records!
+
+  def self.remap_governed_policy_previews!(tables, mappings, models)
+    tables.fetch("governed_policy_previews").each do |row|
+      source = row.fetch("source_snapshot")
+      source = JSON.parse(source) if source.is_a?(String)
+      results = row.fetch("results")
+      results = JSON.parse(results) if results.is_a?(String)
+      source, results = remap_governed_preview(source, results, mappings)
+      models.fetch("governed_policy_previews")
+        .where(id: mappings.fetch("governed_policy_previews").fetch(row.fetch("id")))
+        .update_all(
+          source_snapshot: source, results:,
+          evidence_digest: GovernedPolicyChange.digest(source),
+          results_digest: GovernedPolicyChange.digest(results)
+        )
+    end
+  end
+  private_class_method :remap_governed_policy_previews!
+
+  def self.remap_governed_preview(source, results, mappings)
+    return [ source, results ] if source["retention"] == "expired"
+
+    remapped_source = source.deep_dup
+    proposal = remapped_source.fetch("proposal")
+    proposal["id"] = mapped_id(mappings, "governed_policy_proposals", proposal.fetch("id"))
+    proposal["family_current_version_id"] = mapped_id(
+      mappings, "resolution_contract_versions", proposal.fetch("family_current_version_id")
+    )
+    proposal["profile_current_version_id"] = mapped_id(
+      mappings, "agent_profile_versions", proposal.fetch("profile_current_version_id")
+    )
+    %w[prior_contract candidate_contract].each do |key|
+      proposal.fetch(key)["id"] = mapped_id(
+        mappings, "resolution_contract_versions", proposal.fetch(key).fetch("id")
+      )
+    end
+    %w[prior_profile candidate_profile].each do |key|
+      proposal.fetch(key)["id"] = mapped_id(
+        mappings, "agent_profile_versions", proposal.fetch(key).fetch("id")
+      )
+    end
+    remapped_source.fetch("subjects").each do |subject|
+      subject["id"] = mapped_subject_id(mappings, subject.fetch("kind"), subject.fetch("id"))
+    end
+    remapped_source.fetch("memberships").each do |membership|
+      membership["id"] = mapped_id(mappings, "memberships", membership.fetch("id"))
+    end
+    remapped_source.fetch("runtime_installations").each do |runtime|
+      runtime["id"] = mapped_id(mappings, "runtime_installations", runtime.fetch("id"))
+    end
+    retained = remapped_source.fetch("retained_records")
+    retained.fetch("tasks").each do |task|
+      task["id"] = mapped_id(mappings, "crew_tasks", task.fetch("id"))
+      task["support_case_id"] = mapped_id(mappings, "support_cases", task["support_case_id"])
+      task["account_id"] = mapped_id(mappings, "accounts", task["account_id"])
+      task["resolved_account_id"] = mapped_id(mappings, "accounts", task["resolved_account_id"])
+      task["agent_profile_id"] = mapped_id(mappings, "agent_profiles", task["agent_profile_id"])
+    end
+    retained.fetch("artifacts").each do |artifact|
+      artifact["id"] = mapped_id(mappings, "crew_artifacts", artifact.fetch("id"))
+      artifact["crew_task_id"] = mapped_id(mappings, "crew_tasks", artifact.fetch("crew_task_id"))
+      artifact["resolution_contract_version_id"] = mapped_id(
+        mappings, "resolution_contract_versions", artifact["resolution_contract_version_id"]
+      )
+      remap_material_claim_locators!(artifact.fetch("material_claims"), mappings)
+    end
+    retained.fetch("runs").each do |run|
+      run["id"] = mapped_id(mappings, "execution_runs", run.fetch("id"))
+      run["crew_task_id"] = mapped_id(mappings, "crew_tasks", run.fetch("crew_task_id"))
+      run["agent_profile_version_id"] = mapped_id(
+        mappings, "agent_profile_versions", run.fetch("agent_profile_version_id")
+      )
+      run["runtime_installation_id"] = mapped_id(
+        mappings, "runtime_installations", run.fetch("runtime_installation_id")
+      )
+    end
+    remapped_source.fetch("scope_publications").each do |publication|
+      publication[0] = mapped_id(mappings, "governed_policy_publications", publication.fetch(0))
+      publication[2] = mapped_id(mappings, "resolution_contract_versions", publication.fetch(2))
+      publication[3] = mapped_id(mappings, "agent_profile_versions", publication.fetch(3))
+    end
+
+    remapped_results = results.deep_dup
+    remapped_results.each do |result|
+      result["subject_id"] = mapped_subject_id(
+        mappings, result.fetch("subject_kind"), result.fetch("subject_id")
+      )
+      result.fetch("facts").each do |fact|
+        case fact.fetch("key")
+        when "subject.id"
+          fact["value"] = mapped_subject_id(mappings, result.fetch("subject_kind"), fact.fetch("value"))
+        when "runtime.installations"
+          fact.fetch("value").each do |runtime|
+            runtime["id"] = mapped_id(mappings, "runtime_installations", runtime.fetch("id"))
+          end
+        when "evidence.records"
+          fact.fetch("value").each do |evidence|
+            evidence["locator"] = remap_evidence_locator(evidence.fetch("locator"), mappings)
+          end
+        end
+      end
+    end
+    [ remapped_source, remapped_results ]
+  end
+  private_class_method :remap_governed_preview
+
+  def self.remap_material_claim_locators!(claims, mappings)
+    claims.each do |claim|
+      claim.fetch("evidence").each do |evidence|
+        evidence["locator"] = remap_evidence_locator(evidence.fetch("locator"), mappings)
+      end
+    end
+  end
+  private_class_method :remap_material_claim_locators!
+
+  def self.mapped_subject_id(mappings, kind, id)
+    table = {
+      "support_case" => "support_cases", "account" => "accounts", "agent_profile" => "agent_profiles"
+    }.fetch(kind)
+    mapped_id(mappings, table, id)
+  end
+  private_class_method :mapped_subject_id
+
+  def self.mapped_id(mappings, table, id)
+    return if id.nil?
+
+    mappings.fetch(table).fetch(id)
+  end
+  private_class_method :mapped_id
 
   def self.remap_intervention_snapshot(snapshot, mappings)
     return snapshot if snapshot["retention"] == "expired"

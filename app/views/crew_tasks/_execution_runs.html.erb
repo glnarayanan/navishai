@@ -43,6 +43,13 @@
           workspace_outcome_explanation_path(Current.workspace, subject_type: "run", subject_id: latest_run.id),
           class: "button button-quiet run-explanation-link", data: { turbo_frame: "_top" } %>
 
+        <% if latest_run.governed_policy_publication %>
+          <% publication = latest_run.governed_policy_publication %>
+          <%= render "shared/notice", kind: publication.canary_action? ? "warning" : "info",
+            title: publication.canary_action? ? "Explicit policy canary active" : "Policy rollback applied",
+            body: "This attempt froze contract v#{latest_run.resolution_contract_version.version_number} and profile v#{latest_run.agent_profile_version.version_number} from the named #{publication.scope_kind.humanize.downcase} selection. Completed work will not change." %>
+        <% end %>
+
         <% if latest_run.admitting? && latest_run.last_admission_error.present? %>
           <%= render "shared/notice", kind: "degraded", title: "Runner connection degraded",
             body: "The request is durable, but the runner did not confirm it. Retrying uses the same key and cannot create a second attempt." %>
@@ -152,6 +159,7 @@
             <div><dt>Run ID</dt><dd><code><%= latest_run.run_key %></code></dd></div>
             <div><dt>Status</dt><dd><%= latest_run.status.humanize %></dd></div>
             <div><dt>Runtime</dt><dd><%= latest_run.selected_adapter_key.humanize %> · <%= AgentPolicy::RUNTIME_PROFILES.fetch(latest_run.selected_runtime_profile_key) %></dd></div>
+            <div><dt>Resolution policy</dt><dd>Contract v<%= latest_run.resolution_contract_version&.version_number || "legacy" %> · profile v<%= latest_run.agent_profile_version.version_number %></dd></div>
             <div><dt>Selection</dt><dd><%= latest_run.runtime_selection_detail %></dd></div>
             <div><dt>Data disclosed</dt><dd><%= latest_run.disclosed_data_classes.map { |key| RuntimeInstallation::DATA_CLASSES.fetch(key) }.to_sentence %></dd></div>
             <div><dt>Memory context</dt><dd><%= latest_run.memory_context_status.humanize %><%= " · #{latest_run.memory_context_detail.humanize}" if latest_run.memory_context_detail %></dd></div>

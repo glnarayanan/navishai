@@ -8,6 +8,7 @@ class AgentProfileVersion < ApplicationRecord
   belongs_to :agent_profile
   belongs_to :created_by_membership, class_name: "Membership", optional: true
   belongs_to :created_by_user, class_name: "User", optional: true
+  has_many :governed_policy_proposals, dependent: :restrict_with_exception
 
   validates :version_number, numericality: { only_integer: true, greater_than: 0 }
   validates :instructions, presence: true

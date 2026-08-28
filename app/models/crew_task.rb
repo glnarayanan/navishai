@@ -9,6 +9,8 @@ class CrewTask < ApplicationRecord
   belongs_to :crew_template
   belongs_to :assigned_agent_profile, class_name: "AgentProfile"
   belongs_to :assigned_agent_profile_version, class_name: "AgentProfileVersion"
+  belongs_to :governed_policy_publication, optional: true
+  belongs_to :resolution_contract_version, optional: true
   belongs_to :owner_membership, class_name: "Membership"
   belongs_to :owner_user, class_name: "User"
   belongs_to :current_event, class_name: "CrewTaskEvent", optional: true
@@ -50,6 +52,17 @@ class CrewTask < ApplicationRecord
           assigned_agent_profile.crew_template_id == crew_template_id &&
           assigned_agent_profile_version.agent_profile_id == assigned_agent_profile_id
         errors.add(:assigned_agent_profile, "does not belong to this crew and version")
+      end
+      if governed_policy_publication && governed_policy_publication.workspace_id != workspace_id
+        errors.add(:governed_policy_publication, "belongs to another Workspace")
+      end
+      if governed_policy_publication &&
+          (governed_policy_publication.resolution_contract_version_id != resolution_contract_version_id ||
+          governed_policy_publication.agent_profile_version_id != assigned_agent_profile_version_id)
+        errors.add(:governed_policy_publication, "does not match the frozen contract and profile")
+      end
+      if resolution_contract_version && resolution_contract_version.workspace_id != workspace_id
+        errors.add(:resolution_contract_version, "belongs to another Workspace")
       end
     end
 

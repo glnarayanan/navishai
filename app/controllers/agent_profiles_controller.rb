@@ -8,6 +8,7 @@ class AgentProfilesController < ApplicationController
     workspace = Current.require_workspace!
     crew = workspace.crew_templates.find(params[:crew_template_id])
     profile = crew.agent_profiles.find(params[:id])
+    reject_direct_policy_change!(profile.current_version, profile_params)
     CrewConfiguration.update_profile!(
       workspace:, membership: Current.require_membership!, agent_profile: profile,
       attributes: profile_params.to_h.symbolize_keys
@@ -33,6 +34,22 @@ class AgentProfilesController < ApplicationController
         :max_tool_calls, :review_policy, :memory_required,
         { allowed_tools: [], fallback_profile_keys: [] }
       ])
+    end
+
+    def reject_direct_policy_change!(current, submitted)
+      values = submitted.to_h
+      changed = {
+        "runtime_profile_key" => values["runtime_profile_key"],
+        "fallback_profile_keys" => Array(values["fallback_profile_keys"]).compact_blank,
+        "timeout_seconds" => values["timeout_seconds"].to_i,
+        "max_steps" => values["max_steps"].to_i,
+        "max_tool_calls" => values["max_tool_calls"].to_i,
+        "review_policy" => values["review_policy"]
+      }.any? { |name, value| current.public_send(name) != value }
+      return unless changed
+
+      raise CrewConfiguration::InvalidConfiguration,
+        "Routing, fallback, review, and execution budgets require Governed policy preview and an explicit canary."
     end
 
     def load_crews

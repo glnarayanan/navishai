@@ -83,6 +83,7 @@ class CrewArtifactPublisher
         conflicts:,
         change_requests: change_requests!(kind, payload),
         payload_digest: digest,
+        governed_policy_publication: run.governed_policy_publication,
         **resolution_attributes
       )
       audit_metadata = {
@@ -203,12 +204,13 @@ class CrewArtifactPublisher
     def resolution_evaluation(task, run, payload, citations, conflicts)
       return unless payload.fetch("schema_version") == 2
 
-      family_key = task.crew_template.support? ? "support_resolution" : "customer_success_intervention"
-      family = @workspace.resolution_contract_families.find_by(family_key:)
-      raise InvalidOutput, "Resolution contract is unavailable for this task." unless family
-
-      family.lock!
-      contract = family.current_version
+      contract = run.resolution_contract_version || task.resolution_contract_version
+      unless contract
+        family_key = task.crew_template.support? ? "support_resolution" : "customer_success_intervention"
+        family = @workspace.resolution_contract_families.find_by(family_key:)
+        family&.lock!
+        contract = family&.current_version
+      end
       raise InvalidOutput, "Resolution contract is unavailable for this task." unless contract
 
       ResolutionContractEvaluator.new(

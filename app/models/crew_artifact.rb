@@ -15,6 +15,7 @@ class CrewArtifact < ApplicationRecord
   belongs_to :supersedes_artifact, class_name: "CrewArtifact", optional: true
   belongs_to :target_artifact, class_name: "CrewArtifact", optional: true
   belongs_to :resolution_contract_version, optional: true
+  belongs_to :governed_policy_publication, optional: true
   has_many :revisions, class_name: "CrewArtifact", foreign_key: :supersedes_artifact_id,
     dependent: :restrict_with_exception, inverse_of: :supersedes_artifact
   has_many :reviews, class_name: "CrewArtifact", foreign_key: :target_artifact_id,
@@ -71,7 +72,19 @@ class CrewArtifact < ApplicationRecord
       if resolution_contract_version && resolution_contract_version.workspace_id != workspace_id
         errors.add(:resolution_contract_version, "belongs to another Workspace")
       end
+      if governed_policy_publication && governed_policy_publication.workspace_id != workspace_id
+        errors.add(:governed_policy_publication, "belongs to another Workspace")
+      end
+      if governed_policy_publication &&
+          governed_policy_publication.resolution_contract_version_id != resolution_contract_version_id
+        errors.add(:governed_policy_publication, "does not match the frozen contract")
+      end
       errors.add(:execution_run, "does not belong to task") if execution_run && crew_task && execution_run.crew_task_id != crew_task_id
+      if schema_version == 2 && execution_run &&
+          (execution_run.resolution_contract_version_id != resolution_contract_version_id ||
+          execution_run.governed_policy_publication_id != governed_policy_publication_id)
+        errors.add(:execution_run, "does not match the frozen policy")
+      end
       if supersedes_artifact &&
           (supersedes_artifact.crew_task_id != crew_task_id || supersedes_artifact.artifact_kind != artifact_kind ||
           supersedes_artifact.version_number != version_number - 1)

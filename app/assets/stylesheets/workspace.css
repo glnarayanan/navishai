@@ -560,6 +560,270 @@
   }
 }
 
+/* Governed policy keeps dense evidence readable without turning policy into a dashboard. */
+.policy-page {
+  width: min(100% - 2rem, 74rem);
+  padding-block: 2rem 4rem;
+}
+
+.policy-heading,
+.policy-record > header,
+.policy-publication,
+.policy-profile > summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.policy-heading > div:first-child {
+  max-width: 46rem;
+}
+
+.policy-guardrail {
+  max-width: 25rem;
+  padding-block: 0.85rem;
+  border-block: 1px solid var(--warning);
+}
+
+.policy-guardrail p,
+.policy-record p,
+.policy-publication p,
+.policy-profile small {
+  margin: 0.25rem 0 0;
+  color: var(--muted-foreground);
+}
+
+.policy-compose,
+.policy-history,
+.policy-active {
+  margin-top: 2.5rem;
+}
+
+.policy-profile-list,
+.policy-history,
+.policy-active {
+  display: grid;
+  gap: 1rem;
+}
+
+.policy-profile,
+.policy-record,
+.policy-publication {
+  border-block: 1px solid var(--border);
+}
+
+.policy-profile > summary,
+.policy-record,
+.policy-publication {
+  padding: 1.1rem 0;
+}
+
+.policy-profile > summary span:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.policy-proposal-form,
+.policy-preview {
+  display: grid;
+  gap: 1.5rem;
+  padding: 1.25rem 0 1.5rem;
+}
+
+.policy-proposal-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.policy-proposal-form legend {
+  padding-inline: 0.4rem;
+  font-weight: 700;
+}
+
+.policy-scope-choice,
+.policy-subject-columns,
+.policy-field-grid,
+.policy-number-grid,
+.policy-decision-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.policy-scope-choice {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 1rem;
+}
+
+.policy-subject-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.policy-field-grid,
+.policy-decision-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.policy-number-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.policy-scope-choice label,
+.policy-subject-columns label,
+.policy-field-grid fieldset > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-height: 2.25rem;
+  padding-block: 0.35rem;
+}
+
+.policy-subject-columns h3,
+.policy-decision-grid h4 {
+  margin: 0 0 0.5rem;
+}
+
+.policy-freshness > summary,
+.policy-facts > summary {
+  width: fit-content;
+  font-weight: 650;
+}
+
+.policy-freshness[open] > summary,
+.policy-facts[open] > summary {
+  margin-bottom: 1rem;
+}
+
+.policy-digests {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.8rem 0;
+  border-block: 1px solid var(--border);
+}
+
+.policy-digests code,
+.policy-facts code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.policy-diff {
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.policy-diff > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.policy-diff > summary span:first-child {
+  display: grid;
+}
+
+.policy-decision-grid {
+  margin-top: 1rem;
+}
+
+.policy-decision-grid > div + div {
+  border-left: 1px solid var(--border);
+  padding-left: 1rem;
+}
+
+.policy-decision-grid dl,
+.policy-facts dl {
+  margin: 0;
+}
+
+.policy-decision-grid dl > div,
+.policy-facts dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.45fr) minmax(0, 1fr);
+  gap: 1rem;
+  padding-block: 0.45rem;
+  border-top: 1px solid var(--border);
+}
+
+.policy-decision-grid dd,
+.policy-facts dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.policy-facts {
+  margin-top: 1rem;
+}
+
+.policy-publication {
+  align-items: center;
+}
+
+.policy-rollback {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.policy-rollback label {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 48rem) {
+  .policy-page {
+    width: min(100% - 1rem, 74rem);
+    padding-top: 1rem;
+  }
+
+  .policy-heading,
+  .policy-record > header,
+  .policy-publication,
+  .policy-profile > summary {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .policy-guardrail {
+    max-width: none;
+  }
+
+  .policy-scope-choice,
+  .policy-subject-columns,
+  .policy-field-grid,
+  .policy-number-grid,
+  .policy-decision-grid,
+  .policy-rollback {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-decision-grid > div + div {
+    padding-top: 1rem;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .policy-facts dl > div {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .policy-diff > summary {
+    flex-direction: column;
+  }
+
+  .policy-publication,
+  .policy-rollback,
+  .policy-rollback .button {
+    width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .is-app .button,
   .is-app .nav-item,

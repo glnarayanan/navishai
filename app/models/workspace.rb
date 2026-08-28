@@ -52,6 +52,10 @@ class Workspace < ApplicationRecord
   has_many :crew_artifacts, dependent: :restrict_with_exception
   has_many :resolution_contract_families, dependent: :restrict_with_exception
   has_many :resolution_contract_versions, dependent: :restrict_with_exception
+  has_many :governed_policy_proposals, dependent: :restrict_with_exception
+  has_many :governed_policy_subjects, dependent: :restrict_with_exception
+  has_many :governed_policy_previews, dependent: :restrict_with_exception
+  has_many :governed_policy_publications, dependent: :restrict_with_exception
   has_many :runtime_installations, dependent: :restrict_with_exception
   has_many :public_web_searches, dependent: :restrict_with_exception
   has_many :public_web_search_results, dependent: :restrict_with_exception
