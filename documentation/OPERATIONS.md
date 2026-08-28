@@ -39,6 +39,8 @@ NavishAI never guesses an ambiguous identity. Choose one candidate in the existi
 
 The complete state shows discovered, imported, matched, skipped, ambiguous, unsupported, failed, and pending counts plus the full report digest. Do not call the run complete while any count remains failed or pending. The backfill has no remote-write recovery command. Use normal Intercom reconciliation for later source changes.
 
+The M6 deterministic proof links one GET-only imported conversation to its exact discovered, imported, matched, pending, failed, and unsupported counts and report digest. A verified Workspace archive round trip retains that row and report, then rebuilds its available Memory record from PostgreSQL without an engine-private document ID. This source proof does not replace a deployment-owned backup, restore rehearsal, credential smoke test, or external Intercom check.
+
 ## Governed policy change
 
 An Owner or Admin opens **Policies** and proposes one immutable resolution contract and crew-profile policy version. Choose only named current cases, named Accounts, or the one bounded crew profile. NavishAI has no percentage rollout or implicit broad scope. Managers, Members, and Viewers cannot propose, preview, publish, or roll back policy.

@@ -10,6 +10,13 @@ module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers
     parallelize(workers: :number_of_processors)
+    parallelize_setup do |worker|
+      ActiveStorage::Blob.service.root = Rails.root.join("tmp/storage/#{worker}")
+      FileUtils.rm_rf(ActiveStorage::Blob.service.root)
+    end
+    parallelize_teardown do
+      FileUtils.rm_rf(ActiveStorage::Blob.service.root)
+    end
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all

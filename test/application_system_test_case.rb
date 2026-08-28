@@ -1,4 +1,6 @@
 require "test_helper"
+require "base64"
+require "fileutils"
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   Capybara.default_max_wait_time = 5
@@ -51,5 +53,61 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     violations = page.evaluate_script("window.__navishaiCspViolations || []")
     assert_empty inline_styles, inline_styles.join("\n")
     assert_empty violations, violations.join("\n")
+  end
+
+  def capture_region(path, from:, through:)
+    FileUtils.mkdir_p(File.dirname(path))
+    width = page.evaluate_script("window.innerWidth")
+    height = page.evaluate_script("document.documentElement.scrollHeight")
+    browser_frame = page.evaluate_script("window.outerHeight - window.innerHeight")
+    page.current_window.resize_to(width, height + browser_frame)
+    page.execute_script(<<~JAVASCRIPT)
+      document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important');
+    JAVASCRIPT
+    page.evaluate_script("getComputedStyle(document.documentElement).scrollBehavior")
+    page.execute_script("window.scrollTo(0, 0)")
+    page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0];
+      requestAnimationFrame(() => requestAnimationFrame(done));
+    JAVASCRIPT
+    scroll_y = page.evaluate_script("window.scrollY")
+    raise "capture page did not reach the document top: #{scroll_y}" unless scroll_y.abs < 1
+
+    first = find(from)
+    last = find(through)
+    clip = page.evaluate_script(<<~JAVASCRIPT, first, last)
+      ({
+        x: 0,
+        y: arguments[0].getBoundingClientRect().top,
+        width: window.innerWidth,
+        height: arguments[1].getBoundingClientRect().bottom - arguments[0].getBoundingClientRect().top,
+        scale: 1
+      })
+    JAVASCRIPT
+    raise "capture region has invalid bounds: #{clip.inspect}" unless clip.fetch("y") >= 0 && clip.fetch("height").positive?
+
+    screenshot = page.driver.browser.execute_cdp(
+      "Page.captureScreenshot", format: "png", captureBeyondViewport: true, clip:
+    )
+    File.binwrite(path, Base64.strict_decode64(screenshot.fetch("data")))
+  ensure
+    page.execute_script("document.documentElement.style.removeProperty('scroll-behavior')")
+  end
+
+  def capture_viewport(path, element, height:)
+    FileUtils.mkdir_p(File.dirname(path))
+    width = page.evaluate_script("window.innerWidth")
+    browser_frame = page.evaluate_script("window.outerHeight - window.innerHeight")
+    page.current_window.resize_to(width, height + browser_frame)
+    page.execute_script("document.documentElement.style.setProperty('scroll-behavior', 'auto', 'important')")
+    page.evaluate_script("getComputedStyle(document.documentElement).scrollBehavior")
+    page.execute_script("arguments[0].scrollIntoView({ block: 'start' })", element)
+    page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0];
+      requestAnimationFrame(() => requestAnimationFrame(done));
+    JAVASCRIPT
+    save_screenshot(path)
+  ensure
+    page.execute_script("document.documentElement.style.removeProperty('scroll-behavior')")
   end
 end
