@@ -32,6 +32,7 @@ class ReliabilityCockpitSystemTest < ApplicationSystemTestCase
     assert_selector ".reliability-item.status-blocked", text: "Memory index"
     assert_selector ".reliability-item.status-unknown", text: "Do not resend"
     assert_selector ".reliability-item.status-not-configured", text: "Restore rehearsal"
+    assert_selector "#queue.status-not-configured", text: "Workspace-specific queue evidence is unavailable because the queue is shared."
     assert_selector "#email-send-#{unknown_delivery.id} a", text: "Investigate exact send"
     assert_no_selector "#email-send-#{unknown_delivery.id} form"
     if ENV["CAPTURE_RELIABILITY_COCKPIT"]

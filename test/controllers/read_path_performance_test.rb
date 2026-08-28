@@ -230,6 +230,14 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
         source_locator: "api://accounts/acme/active-users/#{index}", observed_at: index.seconds.ago
       )
     end
+    baseline = create_health_input(
+      account:, input_key: "renewal_on", date_value: Date.new(2026, 10, 1),
+      source_key: "performance-renewal-baseline", observed_at: 2.days.ago
+    )
+    correction = create_health_input(
+      account:, input_key: "renewal_on", date_value: Date.new(2026, 11, 1),
+      source_key: "performance-renewal-correction", observed_at: 1.day.ago, corrects_input: baseline
+    )
     support_case = create_support_case(subject: "Dossier query guard")
 
     account_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -240,7 +248,8 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_select ".dossier-memory-group", count: AccountDossier::LIMITS.fetch(:memories)
     assert_select ".dossier-identity .dossier-record", count: AccountDossier::LIMITS.fetch(:identities)
     assert_select ".dossier-source-line", count: AccountDossier::LIMITS.fetch(:facts)
-    assert_select ".dossier-limit", text: /newest 60/
+    assert_select ".dossier-source-line", text: /#{Regexp.escape(correction.source_locator)}/
+    assert_select ".dossier-limit", text: /up to 60/
     assert_select ".dossier-limit", text: /newest 40/
     assert_operator account_queries.size, :<=, 70
     assert_operator account_elapsed, :<, 5.seconds
@@ -353,6 +362,18 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
 
     def table_query_count(queries, table)
       queries.count { |sql| sql.match?(/\bFROM "#{Regexp.escape(table)}"\b/) }
+    end
+
+    def create_health_input(account:, input_key:, source_key:, observed_at:, date_value: nil, numeric_value: nil,
+      corrects_input: nil)
+      value_kind = date_value ? "date" : "number"
+      value = date_value || numeric_value
+      @workspace.account_health_inputs.create!(
+        workspace: @workspace, account:, input_key:, value_kind:, date_value:, numeric_value:,
+        source_kind: :api, source_namespace: "performance", source_key:,
+        source_digest: Digest::SHA256.hexdigest([ input_key, value.to_s, source_key ].join("\n")),
+        source_locator: "performance://#{source_key}", observed_at:, corrects_input:
+      )
     end
 
     def ingest_performance_event(run, sequence, event_type, **data)

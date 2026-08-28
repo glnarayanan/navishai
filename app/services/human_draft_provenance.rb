@@ -1,5 +1,6 @@
 class HumanDraftProvenance
   MAX_RECORD_ID = 9_223_372_036_854_775_807
+  SEND_REVIEW_MESSAGE = "Change and save this AI draft before sending.".freeze
   ATTRIBUTES = %i[
     source_crew_artifact generated_body_digest generated_contract_result_state
     human_edited_by_membership human_edited_by_user human_edited_at
@@ -15,6 +16,20 @@ class HumanDraftProvenance
 
   def self.delivery_attributes(draft)
     ATTRIBUTES.to_h { |name| [ name, draft.public_send(name) ] }
+  end
+
+  def self.ready_for_send?(draft)
+    return true unless draft.source_crew_artifact_id.present?
+    return true if draft.generated_contract_result_state == "complete"
+
+    draft.human_edited_at.present? &&
+      Digest::SHA256.hexdigest(draft.body.to_s) != draft.generated_body_digest
+  end
+
+  def self.require_sendable!(draft)
+    return draft if ready_for_send?(draft)
+
+    raise ArgumentError, SEND_REVIEW_MESSAGE
   end
 
   def initialize(draft:, workspace:, support_case:, membership:, body:, source_crew_artifact_id:,
