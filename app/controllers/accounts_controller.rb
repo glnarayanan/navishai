@@ -89,8 +89,47 @@ class AccountsController < ApplicationController
       @investigations = @account.risk_investigations
         .includes(:account_health_assessment, crew_task: [ :assigned_agent_profile, :artifacts ])
         .order(opened_at: :desc, id: :desc)
+      intervention_scope = @account.customer_success_interventions
+      @intervention_count, @intervention_proposed_count, @intervention_overdue_count = intervention_scope.pick(
+        Arel.sql("COUNT(*)"),
+        Arel.sql("COUNT(*) FILTER (WHERE status = 'proposed')"),
+        Arel.sql("COUNT(*) FILTER (WHERE status IN ('proposed', 'approved') AND target_on < CURRENT_DATE)")
+      )
+      @interventions = intervention_scope.includes(
+        :account_health_assessment, :account_risk_investigation,
+        { proposing_crew_artifact: :reviews },
+        { accountable_membership: :user }, { proposed_by_membership: :user },
+        { approved_by_membership: :user }, { completed_by_membership: :user },
+        { abandoned_by_membership: :user },
+        outcome_review: [ { reviewed_by_membership: :user }, :before_account_health_assessment,
+          :after_account_health_assessment ]
+      ).order(proposed_at: :desc, id: :desc).limit(50).to_a
+      @intervention_review_assessments = @account.health_assessments.limit(50).to_a
+      load_intervention_proposals
       @tasks = @account.crew_tasks.includes(:assigned_agent_profile, :current_event).order(created_at: :desc).limit(8)
       @dossier = AccountDossier.new(workspace: @workspace, account: @account, membership: @membership)
+    end
+
+    def load_intervention_proposals
+      return @proposable_intervention_plans = [] unless @assessment && @membership.can_write?
+
+      @intervention_origin_assessment = @assessment
+      @intervention_origin_investigation = @investigations.find do |investigation|
+        investigation.account_health_assessment_id == @intervention_origin_assessment.id
+      end
+      @proposable_intervention_plans = @workspace.crew_artifacts
+        .includes(:reviews, :revisions, crew_task: :account)
+        .joins(:crew_task)
+        .where(artifact_kind: "intervention_plan", contract_result_state: "complete",
+          crew_tasks: { account_id: @account.id })
+        .where.missing(:customer_success_intervention)
+        .order(created_at: :desc, id: :desc).limit(20).to_a
+        .select do |artifact|
+          CustomerSuccessInterventionWorkflow.proposal_ready?(
+            account: @account, assessment: @intervention_origin_assessment,
+            investigation: @intervention_origin_investigation, artifact:
+          )
+        end
     end
 
     def require_writer

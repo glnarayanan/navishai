@@ -1,0 +1,173 @@
+<section class="intervention-workspace" id="customer-success-interventions" aria-labelledby="interventions-title">
+  <header class="intervention-heading">
+    <div>
+      <h2 id="interventions-title">Interventions and observed outcomes</h2>
+      <p>Reviewed proposals can suggest work. A human owns each decision, completion, and review. Nothing here sends or schedules customer communication.</p>
+    </div>
+    <dl class="intervention-summary">
+      <div><dt>Recorded</dt><dd class="intervention-recorded-count"><%= intervention_count %></dd></div>
+      <div><dt>Awaiting decision</dt><dd class="intervention-proposed-count"><%= intervention_proposed_count %></dd></div>
+      <div><dt>Overdue</dt><dd class="intervention-overdue-count"><%= intervention_overdue_count %></dd></div>
+    </dl>
+  </header>
+
+  <% if plans.any? %>
+    <div class="intervention-proposals" aria-labelledby="intervention-proposals-title">
+      <h3 id="intervention-proposals-title">Reviewed AI proposals</h3>
+      <% plans.each do |plan| %>
+        <details class="intervention-proposal">
+          <summary>
+            <span><strong>AI proposal</strong><small>Complete contract · approved success review</small></span>
+            <span>Record human ownership</span>
+          </summary>
+          <div class="intervention-proposal-body">
+            <p><%= plan.body %></p>
+            <p><strong>AI uncertainty:</strong> <%= plan.uncertainty %></p>
+            <%= form_with url: workspace_account_interventions_path(@workspace, @account), class: "intervention-form" do |form| %>
+              <%= hidden_field_tag :proposing_crew_artifact_id, plan.id %>
+              <%= hidden_field_tag :account_health_assessment_id, origin_assessment.id %>
+              <%= hidden_field_tag :account_risk_investigation_id, origin_investigation&.id %>
+              <p class="form-hint">You will be the accountable human for completion.</p>
+              <div class="field">
+                <%= form.label :expected_observable_change, "Expected observable change" %>
+                <%= form.text_area :expected_observable_change, required: true, maxlength: 2_000,
+                  placeholder: "State a result that a later deterministic assessment can observe." %>
+              </div>
+              <div class="field">
+                <%= form.label :target_on, "Follow-up date" %>
+                <%= form.date_field :target_on, required: true, min: Date.current.iso8601 %>
+              </div>
+              <div class="field">
+                <%= form.label :reason, "Why record this intervention?" %>
+                <%= form.text_area :reason, required: true, maxlength: 1_000 %>
+              </div>
+              <%= form.submit "Record proposed intervention", class: "button button-primary" %>
+            <% end %>
+          </div>
+        </details>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if interventions.any? %>
+    <ol class="intervention-list">
+      <% interventions.each do |intervention| %>
+        <li>
+          <article class="intervention-card <%= "intervention-overdue" if intervention.overdue? %>">
+            <header>
+              <div>
+                <span class="intervention-state"><%= intervention.status.humanize %></span>
+                <% if intervention.overdue? %><span class="status-badge status-warning">Overdue</span><% end %>
+                <h3><%= intervention.expected_observable_change %></h3>
+              </div>
+              <time datetime="<%= intervention.target_on.iso8601 %>">Follow up <%= intervention.target_on.to_fs(:long) %></time>
+            </header>
+
+            <div class="intervention-layers">
+              <section aria-labelledby="intervention-ai-<%= intervention.id %>">
+                <span>AI analysis</span>
+                <h4 id="intervention-ai-<%= intervention.id %>">Reviewed proposal</h4>
+                <p><%= intervention.proposing_crew_artifact.body %></p>
+                <details class="record-disclosure">
+                  <summary><%= pluralize(intervention.supporting_evidence.size, "frozen citation") %></summary>
+                  <ul>
+                    <% intervention.supporting_evidence.each do |evidence| %>
+                      <li><strong><%= evidence.fetch("label") %></strong><code><%= evidence.fetch("locator") %></code></li>
+                    <% end %>
+                  </ul>
+                </details>
+              </section>
+              <section aria-labelledby="intervention-facts-<%= intervention.id %>">
+                <span>Deterministic facts</span>
+                <h4 id="intervention-facts-<%= intervention.id %>">Origin snapshot</h4>
+                <p><strong><%= intervention.account_health_assessment.score %>/100</strong> · <%= intervention.account_health_assessment.risk_level.humanize %></p>
+                <small>Assessment <%= intervention.account_health_assessment_id %> · <%= intervention.account_health_assessment.calculated_at.to_fs(:short) %></small>
+              </section>
+              <section aria-labelledby="intervention-human-<%= intervention.id %>">
+                <span>Human decision</span>
+                <h4 id="intervention-human-<%= intervention.id %>"><%= intervention.status.humanize %></h4>
+                <p>Accountable to <strong><%= intervention.accountable_membership.user.email_address %></strong></p>
+                <small>Proposed by <%= intervention.proposed_by_membership.user.email_address %> · <%= intervention.reason %></small>
+                <% if intervention.approved_by_membership %><small>Approved by <%= intervention.approved_by_membership.user.email_address %> at <%= intervention.approved_at.to_fs(:short) %></small><% end %>
+                <% if intervention.completed_by_membership %><small>Completed by <%= intervention.completed_by_membership.user.email_address %> at <%= intervention.completed_at.to_fs(:short) %></small><% end %>
+                <% if intervention.abandoned_by_membership %><small>Abandoned by <%= intervention.abandoned_by_membership.user.email_address %>: <%= intervention.abandonment_reason %></small><% end %>
+              </section>
+            </div>
+
+            <div class="intervention-actions">
+              <% if intervention.proposed? && @membership.can_manage_work? %>
+                <%= button_to "Approve intervention", approve_workspace_account_intervention_path(@workspace, @account, intervention), class: "button button-primary" %>
+              <% end %>
+              <% if (intervention.proposed? || intervention.approved?) && @membership.can_manage_work? %>
+                <details class="intervention-abandon">
+                  <summary class="button button-quiet">Abandon</summary>
+                  <%= form_with url: abandon_workspace_account_intervention_path(@workspace, @account, intervention), class: "intervention-form" do |form| %>
+                    <%= form.label :reason, "Bounded reason" %>
+                    <%= form.text_area :reason, required: true, maxlength: 1_000 %>
+                    <%= form.submit "Record abandonment", class: "button button-secondary" %>
+                  <% end %>
+                </details>
+              <% end %>
+              <% if intervention.approved? && intervention.accountable_membership_id == @membership.id %>
+                <%= button_to "Record human completion", complete_workspace_account_intervention_path(@workspace, @account, intervention), class: "button button-primary" %>
+              <% end %>
+            </div>
+
+            <% if intervention.completed? && @membership.can_manage_work? %>
+              <% eligible = review_assessments.select { |assessment| assessment.calculated_at > intervention.account_health_assessment.calculated_at && assessment.calculated_at >= intervention.completed_at } %>
+              <% if eligible.any? %>
+                <details class="intervention-review-form">
+                  <summary>Freeze an observed outcome review</summary>
+                  <%= form_with url: review_workspace_account_intervention_path(@workspace, @account, intervention), class: "intervention-form" do |form| %>
+                    <div class="field">
+                      <%= form.label :after_account_health_assessment_id, "After assessment" %>
+                      <%= form.select :after_account_health_assessment_id,
+                        eligible.map { |assessment| [ "#{assessment.calculated_at.to_fs(:short)} · #{assessment.score}/100 · #{assessment.risk_level.humanize}", assessment.id ] },
+                        {}, required: true %>
+                    </div>
+                    <div class="field">
+                      <%= form.label :uncertainty, "What remains uncertain?" %>
+                      <%= form.text_area :uncertainty, required: true, maxlength: 2_000 %>
+                    </div>
+                    <%= form.submit "Freeze observed review", class: "button button-primary" %>
+                  <% end %>
+                </details>
+              <% else %>
+                <p class="intervention-next-step">Recalculate health after completion before reviewing the observed outcome.</p>
+              <% end %>
+            <% end %>
+
+            <% if (review = intervention.outcome_review) %>
+              <section class="intervention-outcome" aria-labelledby="intervention-outcome-<%= intervention.id %>">
+                <span>Observed outcome</span>
+                <h4 id="intervention-outcome-<%= intervention.id %>">Frozen before-and-after review</h4>
+                <% if review.retention_expired? %>
+                  <p>[Expired by retention policy]</p>
+                <% else %>
+                  <div class="intervention-score-change">
+                    <span>Before <strong><%= review.before_snapshot.fetch("score") %>/100</strong></span>
+                    <span aria-hidden="true">→</span>
+                    <span>After <strong><%= review.after_snapshot.fetch("score") %>/100</strong></span>
+                  </div>
+                  <p><%= review.observed_association %></p>
+                  <dl>
+                    <div><dt>Changed facts</dt><dd><%= review.changed_facts.map { |fact| fact.fetch("signal_key").humanize }.to_sentence.presence || "None" %></dd></div>
+                    <div><dt>Unchanged facts</dt><dd><%= review.unchanged_facts.map(&:humanize).to_sentence.presence || "None" %></dd></div>
+                    <div><dt>Uncertainty</dt><dd><%= review.uncertainty %></dd></div>
+                    <div><dt>Reviewer</dt><dd><%= review.reviewed_by_membership.user.email_address %> · <%= review.reviewed_at.to_fs(:short) %></dd></div>
+                  </dl>
+                <% end %>
+              </section>
+            <% end %>
+          </article>
+        </li>
+      <% end %>
+    </ol>
+    <% if intervention_count > interventions.size %>
+      <p class="dossier-limit"><%= number_with_delimiter(intervention_count - interventions.size) %> older intervention records are retained outside this bounded view.</p>
+    <% end %>
+  <% else %>
+    <%= render "shared/empty_state", title: "No human-owned intervention is recorded",
+      description: "A complete cited plan needs an approved success review before a human can adopt it." %>
+  <% end %>
+</section>

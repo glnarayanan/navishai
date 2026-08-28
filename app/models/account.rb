@@ -7,6 +7,7 @@ class Account < ApplicationRecord
   has_many :health_assessments, -> { order(calculated_at: :desc, id: :desc) },
     class_name: "AccountHealthAssessment", dependent: :restrict_with_exception
   has_many :risk_investigations, class_name: "AccountRiskInvestigation", dependent: :restrict_with_exception
+  has_many :customer_success_interventions, dependent: :restrict_with_exception
   has_many :source_identities, dependent: :restrict_with_exception
   has_many :source_merges, class_name: "AccountMerge", foreign_key: :source_id, dependent: :restrict_with_exception
   has_many :target_merges, class_name: "AccountMerge", foreign_key: :target_id, dependent: :restrict_with_exception

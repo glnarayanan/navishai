@@ -188,7 +188,19 @@
     </section>
 
     <section class="dossier-panel" aria-labelledby="dossier-work-title">
-      <header><h3 id="dossier-work-title">Commitments, decisions, and work</h3><span><%= pluralize(dossier.tasks.size, "task") %></span></header>
+      <header><h3 id="dossier-work-title">Commitments, decisions, and work</h3><span><%= pluralize(dossier.interventions.size, "intervention") %> · <%= pluralize(dossier.tasks.size, "task") %></span></header>
+      <% if dossier.interventions.any? %>
+        <ol class="dossier-record-list">
+          <% dossier.interventions.each do |intervention| %>
+            <li class="dossier-record">
+              <div class="dossier-record-heading"><%= link_to intervention.expected_observable_change, dossier_record_path(dossier, intervention) %><span><%= intervention.status.humanize %></span></div>
+              <small>Human-owned · accountable to <%= intervention.accountable_membership.user.email_address %> · follow up <%= intervention.target_on.to_fs(:long) %></small>
+              <% if intervention.outcome_review %><p><%= intervention.outcome_review.observed_association %></p><% end %>
+            </li>
+          <% end %>
+        </ol>
+        <% if dossier.truncated?(:interventions) %><p class="dossier-limit">More intervention records are retained in the Account outcome loop.</p><% end %>
+      <% end %>
       <% if dossier.tasks.any? %>
         <ol class="dossier-record-list">
           <% dossier.tasks.each do |task| %>

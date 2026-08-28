@@ -255,6 +255,52 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
     assert_operator case_elapsed, :<, 5.seconds
   end
 
+  test "Account intervention outcome loop bounds retained records and related reads" do
+    account = accounts(:acme)
+    now = Time.current.change(usec: 0)
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account:, trigger_kind: "human_request", membership: @membership, at: now
+    )
+    first, = create_reviewed_intervention_plan(
+      workspace: @workspace, account:, membership: @membership, assessment:
+    )
+    artifacts = [ first ]
+    50.times do
+      artifacts << create_intervention_artifact(
+        workspace: @workspace, account:, membership: @membership, assessment:,
+        kind: "intervention_plan", supersedes: artifacts.last
+      )
+    end
+    CustomerSuccessIntervention.insert_all!(artifacts.each_with_index.map do |artifact, index|
+      proposed_at = now - index.minutes
+      {
+        workspace_id: @workspace.id, account_id: account.id,
+        account_health_assessment_id: assessment.id,
+        proposing_crew_artifact_id: artifact.id,
+        accountable_membership_id: @membership.id, proposed_by_membership_id: @membership.id,
+        status: "proposed", supporting_evidence: artifact.citations,
+        expected_observable_change: "Bounded observable change #{index}",
+        target_on: proposed_at.to_date + 30.days, reason: "Performance fixture #{index}",
+        proposed_at:, created_at: proposed_at, updated_at: proposed_at
+      }
+    end)
+
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    queries = capture_sql { get workspace_account_path(@workspace, account) }
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+    assert_response :success
+    assert_select ".intervention-card", count: 50
+    assert_select ".intervention-recorded-count", text: "51"
+    assert_select ".intervention-proposed-count", text: "51"
+    assert_select ".intervention-workspace .dossier-limit", text: /1 older intervention record/
+    assert_select ".dossier-panel", text: /20 interventions/
+    assert_operator table_query_count(queries, "customer_success_interventions"), :<=, 3
+    assert_operator table_query_count(queries, "customer_success_intervention_outcome_reviews"), :<=, 2
+    assert_operator queries.size, :<=, 85
+    assert_operator elapsed, :<, 5.seconds
+  end
+
   test "health evidence freezes exact totals and bounds drill-down detail" do
     account = @workspace.accounts.create!(name: "Bounded health evidence")
     contact = @workspace.contacts.create!(account:, name: "Evidence contact")

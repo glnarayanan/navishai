@@ -139,6 +139,16 @@
     <% end %>
   </section>
 
+  <%= render "interventions",
+    interventions: @interventions,
+    intervention_count: @intervention_count,
+    intervention_proposed_count: @intervention_proposed_count,
+    intervention_overdue_count: @intervention_overdue_count,
+    plans: @proposable_intervention_plans,
+    origin_assessment: @intervention_origin_assessment,
+    origin_investigation: @intervention_origin_investigation,
+    review_assessments: @intervention_review_assessments %>
+
   <div class="account-supporting-grid">
     <section><h2>Contacts</h2><ul><% @contacts.each do |contact| %><li><strong><%= contact.name.presence || "Unnamed contact" %></strong></li><% end %></ul></section>
     <section><h2>Score history</h2><ol><% @history.each do |assessment| %><li><time><%= assessment.calculated_at.to_fs(:short) %></time><strong><%= assessment.score %></strong><span><%= assessment.risk_level.humanize %></span></li><% end %></ol></section>

@@ -11,6 +11,8 @@ module AccountDossiersHelper
       end
     when AccountRiskInvestigation
       workspace_account_path(dossier.workspace, dossier.account, anchor: "risk-reviews")
+    when CustomerSuccessIntervention
+      workspace_account_path(dossier.workspace, dossier.account, anchor: "customer-success-interventions")
     when MemoryRecord
       workspace_memory_record_path(dossier.workspace, record)
     end

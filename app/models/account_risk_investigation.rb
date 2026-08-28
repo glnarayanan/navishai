@@ -6,6 +6,7 @@ class AccountRiskInvestigation < ApplicationRecord
   belongs_to :account
   belongs_to :account_health_assessment
   belongs_to :crew_task, optional: true
+  has_many :customer_success_interventions, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true
   validates :trigger_kind, inclusion: { in: TRIGGER_KINDS }

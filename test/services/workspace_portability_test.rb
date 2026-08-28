@@ -424,6 +424,91 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     duplicate&.close!
   end
 
+  test "round trips intervention decisions and remaps frozen outcome evidence" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    account = accounts(:acme)
+    at = Time.current.change(usec: 0)
+    before_assessment = AccountHealth.recalculate!(
+      workspace: source, account:, trigger_kind: "human_request", membership: owner, at:
+    )
+    plan, = create_reviewed_intervention_plan(
+      workspace: source, account:, membership: owner, assessment: before_assessment
+    )
+    intervention = propose_test_intervention(
+      workspace: source, account:, membership: owner, assessment: before_assessment,
+      artifact: plan, at: at + 1.minute
+    )
+    CustomerSuccessInterventionWorkflow.approve!(
+      workspace: source, membership: owner, intervention:, at: at + 2.minutes
+    )
+    CustomerSuccessInterventionWorkflow.complete!(
+      workspace: source, membership: owner, intervention:, at: at + 3.minutes
+    )
+    after_assessment = AccountHealth.recalculate!(
+      workspace: source, account:, trigger_kind: "human_request", membership: owner,
+      at: at + 4.minutes
+    )
+    source_review = CustomerSuccessInterventionWorkflow.review!(
+      workspace: source, membership: owner, intervention:, after_assessment:,
+      uncertainty: "The observed change may have other causes.", at: at + 5.minutes
+    )
+    settle_deferred_constraints
+    archive = WorkspacePortability.export(workspace: source, membership: owner)
+
+    imported = WorkspacePortability.import(
+      workspace: source, membership: owner, archive_io: archive,
+      name: "Intervention Restore", slug: "intervention-restore"
+    )
+
+    restored_plan = imported.crew_artifacts.find_by!(payload_digest: plan.payload_digest)
+    restored = restored_plan.customer_success_intervention
+    restored_review = restored.outcome_review
+    assert restored.reviewed?
+    assert_not_equal intervention.id, restored.id
+    assert_equal intervention.expected_observable_change, restored.expected_observable_change
+    assert_equal owner.user.email_address, restored.accountable_membership.user.email_address
+    assert_equal owner.user.email_address, restored_review.reviewed_by_membership.user.email_address
+    assert_not_equal before_assessment.id, restored_review.before_account_health_assessment_id
+    assert_not_equal after_assessment.id, restored_review.after_account_health_assessment_id
+    assert_equal restored_review.before_account_health_assessment_id,
+      restored_review.before_snapshot.fetch("assessment_id")
+    assert_equal restored_review.after_account_health_assessment_id,
+      restored_review.after_snapshot.fetch("assessment_id")
+    assert_equal restored_review.before_snapshot.fetch("signals").map { |signal| signal.fetch("id") }.sort,
+      restored_review.before_account_health_assessment.signals.pluck(:id).sort
+    assert_equal restored_review.after_snapshot.fetch("signals").map { |signal| signal.fetch("id") }.sort,
+      restored_review.after_account_health_assessment.signals.pluck(:id).sort
+    assert_equal source_review.observed_association, restored_review.observed_association
+    evidence_locator = restored.supporting_evidence.sole.fetch("locator")
+    assert_match(
+      %r{\Ahealth://assessments/#{restored_review.before_account_health_assessment_id}/signals/},
+      evidence_locator
+    )
+    refute_equal intervention.supporting_evidence.sole.fetch("locator"), evidence_locator
+
+    settle_deferred_constraints
+    connection = ActiveRecord::Base.connection
+    connection.select_value(
+      "SELECT expire_workspace_content(#{connection.quote(source.id)}, #{connection.quote(at + 1.day)})"
+    )
+    retained_archive = WorkspacePortability.export(workspace: source, membership: owner)
+    retained_import = WorkspacePortability.import(
+      workspace: source, membership: owner, archive_io: retained_archive,
+      name: "Retained Intervention Restore", slug: "retained-intervention-restore"
+    )
+    retained_intervention = retained_import.customer_success_interventions.sole
+    assert retained_intervention.outcome_review.retention_expired?
+    assert_equal "[Expired by retention policy]", retained_intervention.expected_observable_change
+    assert_equal(
+      "retention-expired://customer-success-interventions/#{retained_intervention.id}/evidence/1",
+      retained_intervention.supporting_evidence.sole.fetch("locator")
+    )
+  ensure
+    archive&.close!
+    retained_archive&.close!
+  end
+
   private
     def create_historical_v1(workspace)
       owner = memberships(:owner_support)

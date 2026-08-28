@@ -6,6 +6,7 @@ class AccountDossier
     cases: 12,
     memories: 60,
     tasks: 20,
+    interventions: 20,
     decisions: 20,
     issues: 8
   }.freeze
@@ -140,6 +141,18 @@ class AccountDossier
     )
   end
 
+  def interventions
+    @interventions ||= bounded(
+      workspace.customer_success_interventions
+        .where(account_id: account_ids)
+        .includes(:outcome_review, accountable_membership: :user)
+        .order(proposed_at: :desc, id: :desc)
+        .limit(LIMITS.fetch(:interventions) + 1)
+        .to_a,
+      :interventions
+    )
+  end
+
   def decisions
     @decisions ||= begin
       records = workspace.crew_artifacts
@@ -167,11 +180,23 @@ class AccountDossier
 
   def next_action
     @next_action ||= begin
-      investigation = workspace.account_risk_investigations
+      intervention = interventions.find { |candidate| candidate.proposed? || candidate.approved? || candidate.completed? }
+      if intervention
+        label = if intervention.proposed?
+          "Approve or abandon the proposed intervention"
+        elsif intervention.approved?
+          "Complete the approved intervention"
+        else
+          "Review the observed outcome"
+        end
+        NextAction.new(
+          label:, detail: "#{intervention.status.humanize} · accountable to #{intervention.accountable_membership.user.email_address}",
+          record: intervention
+        )
+      elsif (investigation = workspace.account_risk_investigations
         .where(account_id: account_ids, status: %w[detected investigating])
         .order(opened_at: :desc, id: :desc)
-        .first
-      if investigation
+        .first)
         NextAction.new(
           label: investigation.detected? ? "Start the risk review" : "Complete the risk review",
           detail: "#{investigation.trigger_kind.humanize} · human-owned Customer Success work",
