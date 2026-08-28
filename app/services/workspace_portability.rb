@@ -787,6 +787,8 @@ class WorkspacePortability
     tables.fetch("account_health_signals").each do |row|
       references = row.fetch("evidence_refs")
       references = JSON.parse(references) if references.is_a?(String)
+      next if references.empty?
+
       remapped_references = references.map do |reference|
         target_table = HEALTH_EVIDENCE_TABLES.fetch(reference.fetch("kind"))
         reference.merge("id" => mappings.fetch(target_table).fetch(reference.fetch("id")))
