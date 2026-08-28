@@ -59,6 +59,21 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     [ case_publication, account_publication, profile_publication ].each do |publication|
       assert_selector "#publication-#{publication.id}"
     end
+    if ENV["CAPTURE_M6_VISUAL_PROOF"]
+      visit workspace_governed_policy_path(@workspace)
+      page.current_window.resize_to(1440, 1000)
+      capture_region(
+        Rails.root.join(".amp/in/artifacts/governed-policy-canary-scope-desktop.png"),
+        from: ".policy-active .section-heading-row", through: "#publication-#{case_publication.id}"
+      )
+      page.current_window.resize_to(320, 844)
+      assert_no_horizontal_overflow
+      capture_region(
+        Rails.root.join(".amp/in/artifacts/governed-policy-canary-scope-mobile.png"),
+        from: ".policy-active .section-heading-row", through: "#publication-#{case_publication.id}"
+      )
+      page.current_window.resize_to(1440, 1000)
+    end
 
     task = CrewWork.create!(
       workspace: @workspace, membership: @owner, scope: @support_case, profile: @profile,

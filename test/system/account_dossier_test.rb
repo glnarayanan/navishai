@@ -17,8 +17,13 @@ class AccountDossierTest < ApplicationSystemTestCase
     AccountHealth.recalculate!(
       workspace: @workspace, account: @account, trigger_kind: "human_request", membership: @owner
     )
-    create_memory("support-window", "Support ends at 18:00 UTC.")
+    original = create_memory("support-window", "Support ends at 18:00 UTC.")
     create_memory("support-window", "Support ends at 19:00 UTC.")
+    correction = MemoryGovernance.propose_correction!(
+      workspace: @workspace, membership: @owner, memory_record: original,
+      content: "Support ends at 18:30 UTC.", confidence: 1,
+      retention_policy: :indefinite, proposed_at: Time.current
+    ).published_memory_record
     create_memory("long-context", "long-source-value-" * 300)
     stale = create_memory("legacy-plan", "Legacy plan was active.", valid_until: 1.hour.ago)
     deleted = create_memory("deleted-note", "Removed customer note.")
@@ -37,6 +42,9 @@ class AccountDossierTest < ApplicationSystemTestCase
     assert_text "Stale"
     assert_text "Deleted"
     assert_text "Recurring access"
+    assert_text correction.content
+    assert_text "Corrects"
+    assert_text "Current health facts"
     assert_link "Inspect record and correction history"
     assert_button "Use this match", count: 2
     assert_equal 0, horizontal_overflow
@@ -47,6 +55,31 @@ class AccountDossierTest < ApplicationSystemTestCase
     assert_text "Source identity resolved."
     assert identity.reload.matched?
     save_screenshot Rails.root.join(".amp/in/artifacts/account-dossier-desktop.png") if ENV["CAPTURE_ACCOUNT_DOSSIER"]
+    if ENV["CAPTURE_M6_VISUAL_PROOF"]
+      visit workspace_account_path(@workspace, @account)
+      page.current_window.resize_to(1440, 1000)
+      assert_dossier_visual_evidence(correction)
+      capture_viewport(
+        Rails.root.join(".amp/in/artifacts/account-dossier-correction-desktop.png"),
+        find(".dossier-memory-group", text: "support-window"), height: 1_000
+      )
+      capture_viewport(
+        Rails.root.join(".amp/in/artifacts/account-dossier-current-state-desktop.png"),
+        find("[aria-labelledby='dossier-health-title']").ancestor(".dossier-grid"), height: 1_000
+      )
+      page.current_window.resize_to(320, 844)
+      visit workspace_account_path(@workspace, @account)
+      assert_no_horizontal_overflow
+      assert_dossier_visual_evidence(correction)
+      capture_viewport(
+        Rails.root.join(".amp/in/artifacts/account-dossier-correction-mobile.png"),
+        find(".dossier-memory-group", text: "support-window"), height: 1_600
+      )
+      capture_viewport(
+        Rails.root.join(".amp/in/artifacts/account-dossier-current-state-mobile.png"),
+        find("[aria-labelledby='dossier-health-title']").ancestor(".dossier-grid"), height: 1_800
+      )
+    end
   end
 
   test "mobile case context leads to the full dossier without overflow" do
@@ -90,6 +123,20 @@ class AccountDossierTest < ApplicationSystemTestCase
   end
 
   private
+    def assert_dossier_visual_evidence(correction)
+      assert_selector "#dossier-memory-title", text: "Governed context"
+      within find(".dossier-memory-group", text: "support-window") do
+        assert_text "Conflict retained"
+        assert_text "Effective value"
+        assert_text correction.content
+        assert_text "Human correction"
+        assert_text "Corrects"
+      end
+      assert_selector "#dossier-health-title", text: "Current health facts"
+      assert_selector "#dossier-work-title", text: "Commitments, decisions, and work"
+      assert_text "No Account or case work is recorded."
+    end
+
     def create_memory(topic, content, valid_until: nil)
       @workspace.memory_records.create!(
         memory_type: :profile, scope_kind: :account, account: @account, topic:, content:,
