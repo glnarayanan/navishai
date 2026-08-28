@@ -4,6 +4,14 @@ PostgreSQL is authoritative for tenant, business, audit, policy, memory, and exe
 
 Do not copy a live local file or Supermemory store. Stop every writer before taking those archives. Keep backup encryption, access control, expiry, and off-site copies in the operator's backup system. NavishAI archives contain customer content even when the files have opaque names.
 
+## Reliability cockpit
+
+Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Solid Queue, runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. This view aids diagnosis; it does not replace host alerts or an external monitor.
+
+The cockpit can reconcile one saved runner admission, start an idempotent retry after a definite retryable run failure, and rebuild missing, failed, unknown, or stale Memory index work from PostgreSQL. Each action rechecks the signed-in role and asks for confirmation. An unknown customer send offers only a link to the exact Case. Check the external channel before any new human send; never retry from the cockpit.
+
+Host checks for archive verification, backup verification, restore rehearsal, and upgrade preflight may record only a result, bounded result code, SHA-256 evidence digest, source commit, check time, optional archive format and counts, and an exact human actor when one exists. These rows are append-only. Do not put logs, archive content, paths, credentials, or secret values in them. A passing check becomes `attention` after 30 days; a missing check remains `not configured`.
+
 ## Compose backup
 
 Run from the checked-out release root:
