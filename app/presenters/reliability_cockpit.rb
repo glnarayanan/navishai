@@ -1,7 +1,5 @@
 class ReliabilityCockpit
   CONNECTOR_FRESH_FOR = 24.hours
-  QUEUE_LAG_LIMIT = 1.minute
-  QUEUE_HEARTBEAT_LIMIT = 1.minute
   INDEX_BACKLOG_LIMIT = 5.minutes
   OPERATIONAL_CHECK_FRESH_FOR = 30.days
   DETAIL_LIMIT = 20
@@ -18,17 +16,16 @@ class ReliabilityCockpit
 
   attr_reader :groups, :overall_status
 
-  def self.build(workspace:, membership:, now: Time.current, queue_snapshot: nil)
-    new(workspace:, membership:, now:, queue_snapshot:).tap(&:build)
+  def self.build(workspace:, membership:, now: Time.current)
+    new(workspace:, membership:, now:).tap(&:build)
   end
 
-  def initialize(workspace:, membership:, now:, queue_snapshot:)
+  def initialize(workspace:, membership:, now:)
     @workspace = workspace
     @membership = workspace.memberships.find(membership.id)
     raise Current::RoleAccessDenied unless @membership.can_manage_work?
 
     @now = now
-    @queue_snapshot = queue_snapshot
   end
 
   def build
@@ -158,54 +155,14 @@ class ReliabilityCockpit
     end
 
     def queue_group
-      snapshot = @queue_snapshot || solid_queue_snapshot
-      status = snapshot.fetch(:status)
-      summary = case status
-      when "not_configured" then "Solid Queue is not active in this process."
-      when "unknown" then "Queue state could not be read from its authoritative database."
-      else
-        "#{counted(snapshot.fetch(:ready_count), 'ready job')}, " \
-          "#{counted(snapshot.fetch(:overdue_count), 'overdue job')}, and " \
-          "#{counted(snapshot.fetch(:failed_count), 'failed job')}."
-      end
+      status = "not_configured"
+      summary = "Workspace-specific queue evidence is unavailable because the queue is shared."
       item = Item.new(
         key: "solid-queue", title: "Solid Queue", status:, summary:,
-        detail: queue_detail(snapshot), occurred_at: snapshot[:oldest_ready_at], record: nil, action: nil
+        detail: "Shared queue state is intentionally excluded from Workspace health.",
+        occurred_at: nil, record: nil, action: nil
       )
       Group.new(key: "queue", title: "Job queue", status:, summary:, items: [ item ])
-    end
-
-    def solid_queue_snapshot
-      return { status: "not_configured" } unless
-        ActiveJob::Base.queue_adapter.class.name == "ActiveJob::QueueAdapters::SolidQueueAdapter"
-
-      ready_count = SolidQueue::ReadyExecution.count
-      oldest_ready_at = SolidQueue::ReadyExecution.minimum(:created_at)
-      overdue_count = SolidQueue::ScheduledExecution.where("scheduled_at < ?", @now - QUEUE_LAG_LIMIT).count
-      failed_count = SolidQueue::FailedExecution.count
-      last_heartbeat_at = SolidQueue::Process.maximum(:last_heartbeat_at)
-      pending = ready_count.positive? || overdue_count.positive?
-      status = if failed_count.positive? || (pending && (!last_heartbeat_at || last_heartbeat_at < @now - QUEUE_HEARTBEAT_LIMIT))
-        "blocked"
-      elsif last_heartbeat_at.nil?
-        "unknown"
-      elsif overdue_count.positive? || (oldest_ready_at && oldest_ready_at < @now - QUEUE_LAG_LIMIT) ||
-          last_heartbeat_at < @now - QUEUE_HEARTBEAT_LIMIT
-        "attention"
-      else
-        "healthy"
-      end
-      { status:, ready_count:, overdue_count:, failed_count:, oldest_ready_at:, last_heartbeat_at: }
-    rescue ActiveRecord::ActiveRecordError
-      { status: "unknown" }
-    end
-
-    def queue_detail(snapshot)
-      return "The cockpit does not infer a healthy queue without Solid Queue evidence." if snapshot[:status] == "not_configured"
-      return "Check the queue database connection and worker process." if snapshot[:status] == "unknown"
-      return "No worker heartbeat is recorded." unless snapshot[:last_heartbeat_at]
-
-      "Worker heartbeat is recorded; the lag threshold is one minute."
     end
 
     def execution_group

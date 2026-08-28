@@ -6,7 +6,7 @@ Do not copy a live local file or Supermemory store. Stop every writer before tak
 
 ## Reliability cockpit
 
-Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Solid Queue, runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. This view aids diagnosis; it does not replace host alerts or an external monitor.
+Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Workspace-scoped runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. Shared Solid Queue rows and process heartbeats are not Workspace evidence and are excluded from this view. This view aids diagnosis; it does not replace host alerts or an external monitor.
 
 The cockpit can reconcile one saved runner admission, start an idempotent retry after a definite retryable run failure, and rebuild missing, failed, unknown, or stale Memory index work from PostgreSQL. Each action rechecks the signed-in role and asks for confirmation. An unknown customer send offers only a link to the exact Case. Check the external channel before any new human send; never retry from the cockpit.
 
