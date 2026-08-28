@@ -12,6 +12,23 @@ The cockpit can reconcile one saved runner admission, start an idempotent retry 
 
 Host checks for archive verification, backup verification, restore rehearsal, and upgrade preflight may record only a result, bounded result code, SHA-256 evidence digest, source commit, check time, optional archive format and counts, and an exact human actor when one exists. These rows are append-only. Do not put logs, archive content, paths, credentials, or secret values in them. A passing check becomes `attention` after 30 days; a missing check remains `not configured`.
 
+## Verified Workspace archive round trip
+
+Set `NAVISHAI_SOURCE_COMMIT` to the exact 40-character Git commit deployed with Rails. Compose, the native systemd environment, and the Helm chart pass this value to the application. The check stays disabled when the value is missing or invalid.
+
+An Owner selects **Data**, reviews **Archive round-trip check**, and confirms **Run archive round-trip check**. The check uses the current Workspace archive format. It exports the selected Workspace and imports it into a new empty Workspace in the same Organisation. Manual export and import remain separate actions with the same archive contract.
+
+Before it passes, the check proves:
+
+- the count and normalized SHA-256 digest of every authoritative Workspace table;
+- fresh global keys, exact critical ID remaps, audit actor attribution, and target-only tenant links;
+- attachment count, total bytes, and each object's SHA-256 digest;
+- one durable indexing claim and job for every current available Memory record rebuilt from PostgreSQL, with no engine-private document ID, status, or indexed time.
+
+A pass retains the target Workspace so the Owner can inspect it. The success notice names that target. Delete it through the normal protected Workspace deletion flow only after review. Target creation and the passing operational record commit together. A partial import, table count or digest drift, attachment mismatch, unsupported schema, missing verified user, cross-Organisation archive, tenant-link failure, uncertain Memory reconstruction, or success-ledger failure rolls back the target and removes newly uploaded target objects. Source objects remain unchanged.
+
+The source Workspace receives one append-only `archive_verification` operational check. It contains only the source commit, current archive format, checked time, counts, passed or failed result, bounded result code, and one SHA-256 evidence digest. It keeps no archive content, object path, log, engine ID, credential, or secret. The **Reliability** cockpit shows the latest result.
+
 ## Compose backup
 
 Run from the checked-out release root:
