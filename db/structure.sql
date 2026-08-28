@@ -1542,6 +1542,25 @@ $$;
 
 
 --
+-- Name: protect_operational_check(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_operational_check() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'operational checks cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'operational checks are append only';
+END;
+$$;
+
+
+--
 -- Name: protect_outbound_email_delivery(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4764,6 +4783,57 @@ ALTER SEQUENCE public.oidc_identities_id_seq OWNED BY public.oidc_identities.id;
 
 
 --
+-- Name: operational_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operational_checks (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    check_kind character varying NOT NULL,
+    result character varying NOT NULL,
+    result_code character varying NOT NULL,
+    evidence_digest character varying NOT NULL,
+    source_commit character varying NOT NULL,
+    archive_format character varying,
+    table_count bigint,
+    record_count bigint,
+    attachment_count bigint,
+    memory_count bigint,
+    recorded_by_membership_id bigint,
+    recorded_by_user_id bigint,
+    checked_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT operational_checks_actor CHECK (((recorded_by_membership_id IS NULL) = (recorded_by_user_id IS NULL))),
+    CONSTRAINT operational_checks_archive_format CHECK (((archive_format IS NULL) OR ((octet_length((archive_format)::text) >= 1) AND (octet_length((archive_format)::text) <= 100)))),
+    CONSTRAINT operational_checks_counts CHECK ((((table_count IS NULL) OR (table_count >= 0)) AND ((record_count IS NULL) OR (record_count >= 0)) AND ((attachment_count IS NULL) OR (attachment_count >= 0)) AND ((memory_count IS NULL) OR (memory_count >= 0)))),
+    CONSTRAINT operational_checks_digests CHECK ((((evidence_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_commit)::text ~ '^[0-9a-f]{40}$'::text))),
+    CONSTRAINT operational_checks_kind CHECK (((check_kind)::text = ANY ((ARRAY['archive_verification'::character varying, 'backup_verification'::character varying, 'restore_rehearsal'::character varying, 'upgrade_preflight'::character varying])::text[]))),
+    CONSTRAINT operational_checks_result CHECK (((result)::text = ANY ((ARRAY['passed'::character varying, 'failed'::character varying, 'unavailable'::character varying])::text[]))),
+    CONSTRAINT operational_checks_result_code CHECK (((result_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))
+);
+
+
+--
+-- Name: operational_checks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.operational_checks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: operational_checks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.operational_checks_id_seq OWNED BY public.operational_checks.id;
+
+
+--
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6562,6 +6632,13 @@ ALTER TABLE ONLY public.oidc_identities ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: operational_checks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operational_checks ALTER COLUMN id SET DEFAULT nextval('public.operational_checks_id_seq'::regclass);
+
+
+--
 -- Name: organizations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -7269,6 +7346,14 @@ ALTER TABLE ONLY public.notifications
 
 ALTER TABLE ONLY public.oidc_identities
     ADD CONSTRAINT oidc_identities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operational_checks operational_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operational_checks
+    ADD CONSTRAINT operational_checks_pkey PRIMARY KEY (id);
 
 
 --
@@ -9365,6 +9450,27 @@ CREATE INDEX index_oidc_identities_on_user_id ON public.oidc_identities USING bt
 
 
 --
+-- Name: index_operational_checks_for_cockpit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_operational_checks_for_cockpit ON public.operational_checks USING btree (workspace_id, check_kind, checked_at, id);
+
+
+--
+-- Name: index_operational_checks_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_operational_checks_on_workspace_id ON public.operational_checks USING btree (workspace_id);
+
+
+--
+-- Name: index_operational_checks_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_operational_checks_on_workspace_id_and_id ON public.operational_checks USING btree (workspace_id, id);
+
+
+--
 -- Name: index_organizations_on_slug; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10674,6 +10780,20 @@ CREATE TRIGGER notifications_require_workspace_event BEFORE INSERT OR UPDATE ON 
 
 
 --
+-- Name: operational_checks operational_checks_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER operational_checks_append_only BEFORE DELETE OR UPDATE ON public.operational_checks FOR EACH ROW EXECUTE FUNCTION public.protect_operational_check();
+
+
+--
+-- Name: operational_checks operational_checks_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER operational_checks_no_truncate BEFORE TRUNCATE ON public.operational_checks FOR EACH STATEMENT EXECUTE FUNCTION public.protect_operational_check();
+
+
+--
 -- Name: outbound_email_deliveries outbound_email_deliveries_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -11421,6 +11541,14 @@ ALTER TABLE ONLY public.notifications
 
 
 --
+-- Name: operational_checks fk_operational_checks_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operational_checks
+    ADD CONSTRAINT fk_operational_checks_actor FOREIGN KEY (workspace_id, recorded_by_membership_id, recorded_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
 -- Name: outbound_email_deliveries fk_outbound_email_deliveries_human_editor; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11810,6 +11938,14 @@ ALTER TABLE ONLY public.intercom_connections
 
 ALTER TABLE ONLY public.health_scorecard_design_turns
     ADD CONSTRAINT fk_rails_3a805638f3 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operational_checks fk_rails_3aa5b562c6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operational_checks
+    ADD CONSTRAINT fk_rails_3aa5b562c6 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -13499,6 +13635,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260828230000'),
 ('20260828220000'),
 ('20260828210000'),
 ('20260827220000'),

@@ -76,6 +76,7 @@ class Workspace < ApplicationRecord
   has_many :account_risk_investigations, dependent: :restrict_with_exception
   has_many :customer_success_interventions, dependent: :restrict_with_exception
   has_many :customer_success_intervention_outcome_reviews, dependent: :restrict_with_exception
+  has_many :operational_checks, dependent: :restrict_with_exception
   has_one :health_scorecard, dependent: :restrict_with_exception
   has_many :health_scorecard_versions, dependent: :restrict_with_exception
   has_many :health_scorecard_design_turns, dependent: :restrict_with_exception

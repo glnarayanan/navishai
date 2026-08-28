@@ -1,0 +1,120 @@
+<!--
+THESIS: One ordered incident sheet puts unsafe and uncertain work before routine health; it refuses the equal-card metric dashboard.
+OWN-WORLD: NavishAI's restrained neutral surfaces, ruled rows, exact state color, compact sans type, and familiar controls.
+STORY: A Manager scans evidence, opens the affected system, and invokes only the safe action that owns that state.
+FIRST VIEWPORT: Overall state and the five-state contract lead; a ruled section index points straight to blocked and unknown work.
+FORM: Operator incident sheet, chosen directly for this bounded extension of the existing product world.
+-->
+<% content_for :title, "Reliability · #{@workspace.name} — NavishAI" %>
+
+<main class="reliability-page">
+  <header class="reliability-heading">
+    <div>
+      <h1>Reliability</h1>
+      <p>Read current operating evidence and use only the recovery path that preserves a definite, audited result.</p>
+    </div>
+    <span class="reliability-overall status-<%= @cockpit.overall_status.dasherize %>">
+      <span>Workspace state</span>
+      <strong><%= reliability_status_label(@cockpit.overall_status) %></strong>
+    </span>
+  </header>
+
+  <section class="reliability-brief" aria-labelledby="reliability-brief-title">
+    <div class="reliability-verdict">
+      <h2 id="reliability-brief-title"><%= reliability_overall_copy(@cockpit.overall_status) %></h2>
+      <p>Unknown means stop and investigate. Not configured means NavishAI has no evidence; neither state counts as healthy.</p>
+    </div>
+    <dl class="reliability-key" aria-label="Status meanings">
+      <div class="status-healthy"><dt>Healthy</dt><dd>Fresh, definite evidence</dd></div>
+      <div class="status-attention"><dt>Attention</dt><dd>Bounded work can proceed</dd></div>
+      <div class="status-blocked"><dt>Blocked</dt><dd>Cannot continue safely</dd></div>
+      <div class="status-unknown"><dt>Unknown</dt><dd>External result is uncertain</dd></div>
+      <div class="status-not-configured"><dt>Not configured</dt><dd>No evidence recorded</dd></div>
+    </dl>
+  </section>
+
+  <nav class="reliability-index" aria-label="Reliability sections">
+    <% @cockpit.groups.each do |group| %>
+      <a href="#<%= group.key %>" class="status-<%= group.status.dasherize %>">
+        <span><%= group.title %></span>
+        <strong><%= reliability_status_label(group.status) %></strong>
+      </a>
+    <% end %>
+  </nav>
+
+  <div class="reliability-groups">
+    <% @cockpit.groups.each do |group| %>
+      <details class="reliability-group status-<%= group.status.dasherize %>" id="<%= group.key %>"
+        <%= "open" if group.status.in?(%w[blocked unknown attention]) %>>
+        <summary>
+          <span class="reliability-group-state" aria-hidden="true"></span>
+          <span class="reliability-group-copy">
+            <strong><%= group.title %></strong>
+            <small><%= group.summary %></small>
+          </span>
+          <span class="status-badge status-<%= group.status.dasherize %>"><%= reliability_status_label(group.status) %></span>
+        </summary>
+
+        <div class="reliability-items">
+          <% group.items.each do |item| %>
+            <article class="reliability-item status-<%= item.status.dasherize %>" id="<%= item.key %>">
+              <div class="reliability-item-main">
+                <div class="reliability-item-title">
+                  <span class="reliability-state-dot" aria-hidden="true"></span>
+                  <h3><%= item.title %></h3>
+                </div>
+                <p><%= item.summary %></p>
+                <p class="reliability-detail"><%= item.detail %></p>
+                <% if item.occurred_at %>
+                  <p class="reliability-time">
+                    Evidence <%= time_tag item.occurred_at, "#{time_ago_in_words(item.occurred_at)} ago" %>
+                  </p>
+                <% end %>
+                <% if item.record.is_a?(OperationalCheck) %>
+                  <dl class="reliability-proof">
+                    <div><dt>Result code</dt><dd><%= item.record.result_code.humanize %></dd></div>
+                    <div><dt>Source commit</dt><dd><code><%= item.record.source_commit.first(12) %></code></dd></div>
+                    <div><dt>Evidence</dt><dd><code><%= item.record.evidence_digest.first(12) %></code></dd></div>
+                    <% if item.record.archive_format %><div><dt>Format</dt><dd><%= item.record.archive_format %></dd></div><% end %>
+                  </dl>
+                <% end %>
+              </div>
+
+              <% if item.action %>
+                <div class="reliability-action">
+                  <% case item.action %>
+                  <% when "manage_email" %>
+                    <%= link_to "Inspect email", workspace_shared_email_inboxes_path(@workspace), class: "button button-secondary" %>
+                  <% when "manage_intercom" %>
+                    <%= link_to "Inspect Intercom", workspace_intercom_connections_path(@workspace), class: "button button-secondary" %>
+                  <% when "manage_runtime" %>
+                    <%= link_to "Inspect runtime", workspace_runtime_installations_path(@workspace, anchor: "runtime-#{item.record.id}"), class: "button button-secondary" %>
+                  <% when "reconcile_run" %>
+                    <%= button_to "Reconcile admission", reconcile_run_workspace_reliability_cockpit_path(@workspace, run_id: item.record.id),
+                      class: "button button-secondary",
+                      data: { turbo_confirm: "Ask the runner for the saved run's existing admission result? This does not create another run." } %>
+                  <% when "retry_run" %>
+                    <%= button_to "Retry definite failure", retry_run_workspace_reliability_cockpit_path(@workspace, run_id: item.record.id),
+                      class: "button button-secondary",
+                      data: { turbo_confirm: "Start one idempotent retry for this definite failure?" } %>
+                  <% when "review_email_send", "review_intercom_send" %>
+                    <% support_case = item.record.conversation.support_case %>
+                    <%= link_to "Investigate exact send", workspace_support_case_path(@workspace, support_case, anchor: item.action == "review_email_send" ? "email-reply" : "intercom-reply"),
+                      class: "button button-secondary" %>
+                    <span>Never retry from this cockpit.</span>
+                  <% when "reconstruct_memory" %>
+                    <%= button_to "Rebuild failed index work", reconstruct_memory_workspace_reliability_cockpit_path(@workspace),
+                      class: "button button-secondary",
+                      data: { turbo_confirm: "Queue only missing, failed, or unknown Memory index work from authoritative PostgreSQL records?" } %>
+                  <% when "manage_data" %>
+                    <%= link_to "Open data controls", workspace_data_controls_path(@workspace), class: "button button-secondary" %>
+                  <% end %>
+                </div>
+              <% end %>
+            </article>
+          <% end %>
+        </div>
+      </details>
+    <% end %>
+  </div>
+</main>

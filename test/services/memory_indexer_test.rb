@@ -47,6 +47,21 @@ class MemoryIndexerTest < ActiveSupport::TestCase
     assert_equal 2, @entry.attempt_count
   end
 
+  test "uses an existing reconstruction claim as the current attempt" do
+    claimed_at = 1.minute.ago
+    @entry.update!(status: :indexing, attempt_count: 1, last_attempted_at: claimed_at)
+    engine = Object.new
+    engine.define_singleton_method(:index) do |document:|
+      MemoryEngine::IndexReceipt.new(document_id: document.memory_key, status: "done")
+    end
+
+    MemoryIndexer.perform!(entry: @entry, engine:, attempted_at: Time.current)
+
+    assert @entry.reload.indexed?
+    assert_equal 1, @entry.attempt_count
+    assert_in_delta claimed_at, @entry.last_attempted_at, 0.001
+  end
+
   test "holds the workspace expiry lock through the external index call" do
     expiry_lock_available = nil
     workspace_id = @workspace.id

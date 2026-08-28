@@ -117,6 +117,10 @@ class AuditEvent < ApplicationRecord
     "memory.exported" => { "record_count" => Integer },
     "memory.imported" => { "record_count" => Integer },
     "memory.index_reconstructed" => { "queued_count" => Integer },
+    "operations.check_recorded" => {
+      "check_kind" => OperationalCheck::CHECK_KINDS,
+      "result" => OperationalCheck::RESULTS
+    },
     "runtime.installation_approved" => {},
     "runtime.installation_revoked" => {},
     "runtime.installations_checked" => { "detected_count" => Integer },

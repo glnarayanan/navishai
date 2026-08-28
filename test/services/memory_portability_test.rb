@@ -71,6 +71,20 @@ class MemoryPortabilityTest < ActiveSupport::TestCase
     end
   end
 
+  test "claims missing index entries once before enqueuing reconstruction" do
+    memory = create_memory(@workspace, "Missing index entry")
+    assert_nil memory.memory_index_entry
+
+    assert_equal 1, MemoryPortability.reconstruct_index!(workspace: @workspace, membership: @owner)
+    entry = memory.reload.memory_index_entry
+    assert entry.indexing?
+    assert_equal 1, entry.attempt_count
+    assert entry.last_attempted_at
+
+    assert_equal 0, MemoryPortability.reconstruct_index!(workspace: @workspace, membership: @owner)
+    assert_equal 1, entry.reload.attempt_count
+  end
+
   test "import serializes concurrent workspace writes before checking for existing memory" do
     archive = {
       format: MemoryPortability::FORMAT, workspace_key: @workspace.runner_key,
