@@ -360,6 +360,120 @@
   background: var(--card);
 }
 
+.intercom-backfill-panel > .muted-copy {
+  max-width: 68ch;
+  margin-top: 0.5rem;
+}
+
+.backfill-list {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.backfill-card {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.backfill-heading,
+.backfill-exceptions li {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.backfill-heading h3,
+.backfill-heading p,
+.backfill-report h4,
+.backfill-exceptions h4,
+.backfill-exceptions p {
+  margin: 0;
+}
+
+.backfill-heading p,
+.backfill-report > p,
+.backfill-state {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.backfill-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-block: 1px solid var(--line);
+}
+
+.backfill-counts > div {
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.backfill-counts dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.backfill-counts dd {
+  margin: 0.2rem 0 0;
+  color: var(--ink);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+}
+
+.backfill-report,
+.backfill-exceptions {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.backfill-report code,
+.backfill-card code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.backfill-digest {
+  display: block;
+  margin-top: 0.25rem;
+  word-break: break-all;
+}
+
+.backfill-exceptions ul {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.backfill-exceptions li + li {
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.backfill-candidates {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.backfill-card > form {
+  justify-self: start;
+  margin: 0;
+}
+
 .section-block {
   padding: 1.25rem;
   margin-top: 1.25rem;
@@ -402,6 +516,36 @@
   .scorecard-decision article + article {
     border-left: 0;
     border-top: 1px solid var(--border);
+  }
+
+  .backfill-heading,
+  .backfill-exceptions li {
+    display: grid;
+  }
+
+  .backfill-heading .status-badge {
+    justify-self: start;
+  }
+
+  .backfill-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .backfill-candidates,
+  .backfill-card > form,
+  .backfill-card > form .button,
+  .backfill-candidates form,
+  .backfill-candidates .button {
+    width: 100%;
+  }
+
+  .backfill-candidates {
+    justify-content: stretch;
+  }
+
+  .backfill-card .button {
+    min-height: 3rem;
+    white-space: normal;
   }
 
   .memory-detail-grid,

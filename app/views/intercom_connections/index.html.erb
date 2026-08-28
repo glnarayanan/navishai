@@ -72,6 +72,23 @@
       <% end %>
     </section>
 
+    <section class="config-panel intercom-backfill-panel" aria-labelledby="historical-backfill-title">
+      <h2 id="historical-backfill-title">Historical backfill</h2>
+      <p class="muted-copy">Preview a bounded read-only history first. NavishAI writes customer records only after an Owner or Admin confirms the unchanged manifest.</p>
+      <% if @connections.active.any? %>
+        <div class="backfill-list">
+          <% @connections.active.each do |connection| %>
+            <%= render "backfill", connection:,
+              manifest: @backfill_manifests.fetch(connection.id, []).first,
+              run: @backfill_runs.fetch(connection.id, []).first %>
+          <% end %>
+        </div>
+      <% else %>
+        <%= render "shared/empty_state", title: "No active connection",
+          description: "Activate one Intercom connection before starting a dry run." %>
+      <% end %>
+    </section>
+
     <details class="setup-disclosure" <%= "open" if @connection.errors.any? %>>
       <summary>Add a connection</summary>
       <%= render "shared/form_errors", record: @connection %>

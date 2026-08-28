@@ -11,9 +11,10 @@ class IntercomClient
   class Unavailable < Error; end
   class Rejected < Error; end
 
-  def initialize(connection:, transport: Net::HTTP)
+  def initialize(connection:, transport: Net::HTTP, attachment_fetcher: IntercomAttachmentFetcher.new)
     @connection = connection
     @transport = transport
+    @attachment_fetcher = attachment_fetcher
   end
 
   def conversation(id)
@@ -32,6 +33,12 @@ class IntercomClient
 
   def teams
     request(:get, "/teams")
+  end
+
+  def attachment(url)
+    @attachment_fetcher.fetch(url)
+  rescue IntercomAttachmentFetcher::Error => error
+    raise Unavailable, error.message
   end
 
   def add_note(conversation_id:, admin_id:, body:)

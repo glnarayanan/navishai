@@ -1,5 +1,5 @@
 class StoredAttachment < ApplicationRecord
-  SOURCES = %w[inbound_email user_upload].freeze
+  SOURCES = %w[inbound_email user_upload intercom_import].freeze
   SCAN_STATUSES = %w[quarantined available rejected].freeze
   MAX_BYTES = 5.megabytes
 
@@ -14,6 +14,8 @@ class StoredAttachment < ApplicationRecord
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
   has_many :outbound_email_deliveries, through: :outbound_email_delivery_attachments
   has_many :knowledge_source_versions, dependent: :restrict_with_exception
+  has_many :intercom_part_attachments, dependent: :restrict_with_exception
+  has_many :intercom_part_links, through: :intercom_part_attachments
 
   enum :source, SOURCES.index_by(&:itself), validate: true
   enum :scan_status, SCAN_STATUSES.index_by(&:itself), validate: true

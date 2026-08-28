@@ -29,6 +29,16 @@ A pass retains the target Workspace so the Owner can inspect it. The success not
 
 The source Workspace receives one append-only `archive_verification` operational check. It contains only the source commit, current archive format, checked time, counts, passed or failed result, bounded result code, and one SHA-256 evidence digest. It keeps no archive content, object path, log, engine ID, credential, or secret. The **Reliability** cockpit shows the latest result.
 
+## Intercom historical backfill
+
+An Owner or Admin opens **Intercom** and starts a dry run for one active connection. The dry run uses only Intercom GET requests. It writes no customer record, tag, assignment, note, or reply. NavishAI retains a bounded manifest with the exact discovery digest, date range, counts, identity results, and expected exceptions for 30 minutes.
+
+Review the manifest, then confirm that exact digest. Confirmation repeats discovery and rejects an expired, changed, used, missing, or cross-Workspace manifest before customer writes. The job imports at most 25 conversations per batch. Each conversation, part, attachment link, and cursor update commits as one local outcome. An interrupted record rolls back and stops at the prior definite cursor. An enqueue failure leaves the run failed with `enqueue_error`; choose **Resume from definite record** after queue service returns.
+
+NavishAI never guesses an ambiguous identity. Choose one candidate in the existing identity review, then resume from the same record. Inspect unsupported fields and rejected or quarantined attachments through their listed recovery action. Attachment downloads enforce public HTTPS, DNS and redirect checks, a 5 MiB file limit, type and SHA-256 checks, malware scan state, and the normal download authorisation. A failed local transaction deletes its newly uploaded object before retry.
+
+The complete state shows discovered, imported, matched, skipped, ambiguous, unsupported, failed, and pending counts plus the full report digest. Do not call the run complete while any count remains failed or pending. The backfill has no remote-write recovery command. Use normal Intercom reconciliation for later source changes.
+
 ## Compose backup
 
 Run from the checked-out release root:

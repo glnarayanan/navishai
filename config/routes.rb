@@ -24,6 +24,11 @@ Rails.application.routes.draw do
     end
     resources :intercom_connections, path: "intercom", only: %i[ index create update ] do
       post :reconcile, on: :member
+      post :backfill_preview, on: :member
+      post "backfill/:manifest_id/confirm", action: :backfill_confirm, on: :member, as: :backfill_confirm
+      post "backfill-runs/:run_id/resume", action: :backfill_resume, on: :member, as: :backfill_resume
+      post "backfill-exceptions/:exception_id/resolve-identity", action: :backfill_resolve_identity,
+        on: :member, as: :backfill_resolve_identity
     end
     resources :attachments, only: :show, controller: "attachment_downloads"
     resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ]

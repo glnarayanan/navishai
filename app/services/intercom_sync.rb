@@ -90,6 +90,23 @@ class IntercomSync
     end
   end
 
+  def sync_historical_conversation!(remote)
+    existing = @connection.intercom_conversation_links.find_by(remote_conversation_id: remote.fetch("id").to_s)
+    prior_digest = existing&.source_digest
+    stale = existing && remote_time(remote["updated_at"] || remote["created_at"]) < existing.remote_updated_at
+    link = sync_conversation!(remote)
+    outcome = if existing.nil?
+      :imported
+    elsif stale
+      :skipped
+    elsif link.source_digest == prior_digest
+      :matched
+    else
+      :imported
+    end
+    [ link, outcome ]
+  end
+
   private
     def parse_payload(raw_payload)
       JSON.parse(raw_payload)
@@ -303,7 +320,8 @@ class IntercomSync
         conversation_message: message, remote_part_id: part.fetch("id").to_s,
         part_type: normalize_part_type(part), author_name: part.dig("author", "name"), body: body.presence || "No content",
         source_digest: Digest::SHA256.hexdigest(JSON.generate(part)),
-        remote_created_at: remote_time(part["created_at"])
+        remote_created_at: remote_time(part["created_at"]),
+        redacted_at: (remote_time(part["updated_at"] || part["created_at"]) if part["redacted"] == true)
       )
     end
 

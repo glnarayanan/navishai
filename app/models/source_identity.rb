@@ -11,6 +11,7 @@ class SourceIdentity < ApplicationRecord
 
   has_many :source_identity_keys, dependent: :restrict_with_exception
   has_many :identity_match_candidates, dependent: :restrict_with_exception
+  has_many :intercom_backfill_exceptions, dependent: :restrict_with_exception
 
   enum :entity_kind, ENTITY_KINDS.index_by(&:itself), validate: true
   enum :status, STATUSES.index_by(&:itself), validate: true
