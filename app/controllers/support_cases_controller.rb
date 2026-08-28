@@ -45,6 +45,7 @@ class SupportCasesController < ApplicationController
         .limit(8)
       contact = @support_case.conversation.contact.canonical
       account = contact.account&.canonical
+      @account_dossier = AccountDossier.new(workspace: @workspace, account:, membership: @membership) if account
       @contact_emails = identity_values(contact, :email)
       @account_domains = account ? identity_values(account, :domain) : []
       @email_thread = @workspace.email_threads.includes(:shared_email_inbox).find_by(conversation_id: @support_case.conversation_id)

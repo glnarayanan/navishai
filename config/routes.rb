@@ -60,6 +60,8 @@ Rails.application.routes.draw do
         as: :start_risk_review
       post "risk-reviews/:investigation_id/resolve", action: :resolve_risk_review, on: :member,
         as: :resolve_risk_review
+      post "identity-reviews/:source_identity_id", action: :resolve_identity, on: :member,
+        as: :resolve_identity
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member
         resources :public_web_searches, path: "public-web-searches", only: :create

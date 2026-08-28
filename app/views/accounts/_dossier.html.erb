@@ -1,0 +1,213 @@
+<section class="account-dossier" id="account-dossier" aria-labelledby="account-dossier-title">
+  <header class="dossier-heading">
+    <div>
+      <span class="eyebrow">Source-backed relationship record</span>
+      <h2 id="account-dossier-title">Account dossier</h2>
+      <p>Current facts lead. Conflicts, corrections, stale sources, and deleted content stay visible in context.</p>
+    </div>
+    <dl class="dossier-summary">
+      <div><dt>Contacts</dt><dd><%= dossier.contacts.size %></dd></div>
+      <div><dt>Recorded conflicts</dt><dd><%= dossier.conflict_count %></dd></div>
+      <div><dt>Open work</dt><dd><%= dossier.tasks.count { |task| !task.completed? && !task.canceled? } %></dd></div>
+    </dl>
+  </header>
+
+  <article class="dossier-next-action" aria-labelledby="dossier-next-action-title">
+    <span>Next human-owned action</span>
+    <h3 id="dossier-next-action-title"><%= dossier.next_action.label %></h3>
+    <p><%= dossier.next_action.detail %></p>
+    <% if dossier.next_action.record %>
+      <%= link_to "Open source record", dossier_record_path(dossier, dossier.next_action.record), class: "button button-secondary" %>
+    <% end %>
+  </article>
+
+  <div class="dossier-grid">
+    <section class="dossier-panel dossier-identity" aria-labelledby="dossier-identity-title">
+      <header><h3 id="dossier-identity-title">Identity and relationship</h3><span><%= pluralize(dossier.identities.size, "source") %></span></header>
+      <dl class="dossier-primary-facts">
+        <div><dt>Account</dt><dd><%= dossier.account.name %></dd></div>
+        <div><dt>Contacts</dt><dd><%= dossier.contacts.map { |contact| contact.name.presence || "Unnamed contact" }.to_sentence.presence || "None linked" %></dd></div>
+      </dl>
+      <% if dossier.identities.any? %>
+        <ol class="dossier-record-list">
+          <% dossier.identities.each do |identity| %>
+            <li class="dossier-record <%= "dossier-record-conflict" if identity.ambiguous? %>">
+              <div class="dossier-record-heading">
+                <strong><%= identity.source_namespace %> · <%= identity.source_record_type.humanize %></strong>
+                <% identity_state = identity.retired_at? ? "retired" : identity.status %>
+                <span class="status-badge status-<%= identity_state.dasherize %>"><%= identity_state.humanize %></span>
+              </div>
+              <code><%= identity.source_record_id %></code>
+              <% if identity.source_identity_keys.any? %>
+                <p><%= identity.source_identity_keys.map { |key| "#{key.kind}: #{key.normalized_value}#{" (retired)" if key.retired_at?}" }.to_sentence %></p>
+              <% end %>
+              <small>
+                <% if identity.matched? %>
+                  <%= identity.resolution_method.humanize %> · resolved <%= identity.resolved_at.to_fs(:short) %>
+                <% else %>
+                  Unresolved source · observed <%= identity.created_at.to_fs(:short) %>
+                <% end %>
+              </small>
+              <% if identity.ambiguous? %>
+                <p class="dossier-warning">Competing identity matches are retained. A Manager must choose a recorded candidate.</p>
+                <ul class="dossier-candidates">
+                  <% identity.identity_match_candidates.each do |candidate| %>
+                    <% target = candidate.record.canonical %>
+                    <li>
+                      <span><%= target.name.presence || "Unnamed contact" %> · <%= candidate.key_kind %></span>
+                      <% if dossier.membership.can_manage_work? %>
+                        <%= button_to "Use this match",
+                          resolve_identity_workspace_account_path(dossier.workspace, dossier.account, source_identity_id: identity.id),
+                          params: { target_id: target.id }, class: "button button-quiet" %>
+                      <% end %>
+                    </li>
+                  <% end %>
+                </ul>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+        <% if dossier.truncated?(:identities) %><p class="dossier-limit">More source identities are retained. This view shows the newest <%= AccountDossier::LIMITS.fetch(:identities) %>.</p><% end %>
+      <% else %>
+        <p class="muted-copy">No external source identity is linked yet.</p>
+      <% end %>
+    </section>
+
+    <section class="dossier-panel" aria-labelledby="dossier-facts-title">
+      <header><h3 id="dossier-facts-title">Verified relationship facts</h3><span><%= pluralize(dossier.fact_groups.size, "field") %></span></header>
+      <% if dossier.fact_groups.any? %>
+        <ol class="dossier-record-list">
+          <% dossier.fact_groups.each do |group| %>
+            <li class="dossier-record <%= "dossier-record-conflict" if group.conflicted %>">
+              <div class="dossier-record-heading"><strong><%= group.label %></strong><span><%= group.conflicted ? "Conflicting history" : "Current" %></span></div>
+              <% group.items.each do |input| %>
+                <div class="dossier-source-line">
+                  <b><%= dossier_input_value(input) %></b>
+                  <span><%= input == group.effective ? "Effective source value" : "Retained prior value" %></span>
+                  <code><%= input.source_locator %></code>
+                  <small><%= input.source_kind.upcase %> · observed <%= input.observed_at.to_fs(:short) %> · source-record authority</small>
+                </div>
+              <% end %>
+            </li>
+          <% end %>
+        </ol>
+        <% if dossier.truncated?(:facts) %><p class="dossier-limit">More source observations are retained. This view shows the newest <%= AccountDossier::LIMITS.fetch(:facts) %>.</p><% end %>
+      <% else %>
+        <p class="muted-copy">No imported relationship facts are recorded.</p>
+      <% end %>
+    </section>
+  </div>
+
+  <section class="dossier-panel dossier-memory" aria-labelledby="dossier-memory-title">
+    <header><div><h3 id="dossier-memory-title">Governed context</h3><p>Human corrections outrank source records, which outrank inference. Competing current values remain side by side.</p></div></header>
+    <% if !dossier.memory_visible? %>
+      <p class="muted-copy">Your current role cannot inspect governed memory.</p>
+    <% elsif dossier.memory_groups.any? %>
+      <div class="dossier-memory-grid">
+        <% dossier.memory_groups.each do |group| %>
+          <article class="dossier-memory-group <%= "dossier-record-conflict" if group.conflicted %>">
+            <header><h4><%= group.label %></h4><span><%= group.conflicted ? "Conflict retained" : "#{group.items.size} record#{"s" if group.items.many?}" %></span></header>
+            <% group.items.each do |item| %>
+              <% memory = item.record %>
+              <div class="dossier-memory-item">
+                <div class="dossier-record-heading">
+                  <strong><%= item.effective ? "Effective value" : item.state.humanize %></strong>
+                  <span><%= memory.authority.humanize %> · <%= number_to_percentage(memory.confidence * 100, precision: 0) %></span>
+                </div>
+                <p><%= memory.content %></p>
+                <dl>
+                  <div><dt>Source</dt><dd><code><%= memory.source_reference %></code></dd></div>
+                  <div><dt>Observed</dt><dd><%= memory.observed_at.to_fs(:short) %></dd></div>
+                  <div><dt>Valid</dt><dd><%= memory.valid_from.to_fs(:short) %> – <%= memory.valid_until&.to_fs(:short) || "open" %></dd></div>
+                  <div><dt>Retention</dt><dd><%= dossier_memory_retention(memory) %></dd></div>
+                  <% if memory.supersedes_memory_record %><div><dt>Corrects</dt><dd><code>memory://<%= memory.supersedes_memory_record.memory_key %></code></dd></div><% end %>
+                  <% if item.replaced_by %><div><dt>Superseded by</dt><dd><code>memory://<%= item.replaced_by.memory_key %></code></dd></div><% end %>
+                </dl>
+                <%= link_to "Inspect record and correction history", dossier_record_path(dossier, memory) %>
+              </div>
+            <% end %>
+          </article>
+        <% end %>
+      </div>
+      <% if dossier.truncated?(:memories) %><p class="dossier-limit">More governed records are retained. Open the memory library for the full history.</p><% end %>
+    <% else %>
+      <p class="muted-copy">No governed context is available for this Account, its contacts, or its cases.</p>
+    <% end %>
+  </section>
+
+  <div class="dossier-grid">
+    <section class="dossier-panel" aria-labelledby="dossier-conversations-title">
+      <header><h3 id="dossier-conversations-title">Recent conversations and cases</h3><span><%= pluralize(dossier.recent_cases.size, "case") %></span></header>
+      <% if dossier.recent_cases.any? %>
+        <ol class="dossier-record-list">
+          <% dossier.recent_cases.each do |support_case| %>
+            <li class="dossier-record">
+              <div class="dossier-record-heading"><%= link_to support_case.conversation.subject.presence || "Untitled conversation", dossier_record_path(dossier, support_case) %><span><%= support_case.status.humanize %></span></div>
+              <p><%= support_case.conversation.contact.name.presence || "Unnamed contact" %> · <%= support_case.priority %> priority</p>
+              <small>Started <%= support_case.conversation.started_at.to_fs(:short) %> · last activity <%= (support_case.conversation.last_message_at || support_case.conversation.started_at).to_fs(:short) %></small>
+            </li>
+          <% end %>
+        </ol>
+        <% if dossier.truncated?(:cases) %><p class="dossier-limit">More cases are retained. This view shows the newest <%= AccountDossier::LIMITS.fetch(:cases) %>.</p><% end %>
+      <% else %>
+        <p class="muted-copy">No retained customer conversation is linked.</p>
+      <% end %>
+    </section>
+
+    <section class="dossier-panel" aria-labelledby="dossier-issues-title">
+      <header><h3 id="dossier-issues-title">Recurring issues</h3><span>Human-applied case tags</span></header>
+      <% if dossier.recurring_issues.any? %>
+        <ul class="dossier-issue-list">
+          <% dossier.recurring_issues.each do |tag| %>
+            <li><strong><%= tag.name %></strong><span><%= pluralize(tag.dossier_case_count, "retained case") %></span></li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="muted-copy">No case tag repeats across retained cases.</p>
+      <% end %>
+    </section>
+  </div>
+
+  <div class="dossier-grid">
+    <section class="dossier-panel" aria-labelledby="dossier-health-title">
+      <header><h3 id="dossier-health-title">Current health facts</h3><span>Deterministic</span></header>
+      <% if dossier.assessment %>
+        <div class="dossier-health-summary"><strong><%= dossier.assessment.score %><small>/100</small></strong><span><%= dossier.assessment.risk_level.humanize %></span></div>
+        <ul class="dossier-issue-list">
+          <% dossier.assessment.signals.each do |signal| %>
+            <li><strong><%= signal.signal_key.humanize %></strong><span><%= signal.value %> · <code><%= signal.source_locator %></code><br><%= signal.range_starts_at&.to_fs(:short) || "All retained history" %> – <%= signal.range_ends_at.to_fs(:short) %></span></li>
+          <% end %>
+        </ul>
+        <%= link_to "Inspect the health record", workspace_account_path(dossier.workspace, dossier.account, anchor: "health-assessment") %>
+      <% else %>
+        <p class="muted-copy">No deterministic health snapshot exists.</p>
+      <% end %>
+    </section>
+
+    <section class="dossier-panel" aria-labelledby="dossier-work-title">
+      <header><h3 id="dossier-work-title">Commitments, decisions, and work</h3><span><%= pluralize(dossier.tasks.size, "task") %></span></header>
+      <% if dossier.tasks.any? %>
+        <ol class="dossier-record-list">
+          <% dossier.tasks.each do |task| %>
+            <li class="dossier-record">
+              <div class="dossier-record-heading"><%= link_to task.title, dossier_record_path(dossier, task) %><span><%= task.status.humanize %></span></div>
+              <small>Owned by <%= task.owner_user.email_address %> · <%= task.assigned_agent_profile.name %> · opened <%= task.created_at.to_fs(:short) %></small>
+            </li>
+          <% end %>
+        </ol>
+        <% if dossier.truncated?(:tasks) %><p class="dossier-limit">More work is retained. Open Crew work for the full ledger.</p><% end %>
+      <% else %>
+        <p class="muted-copy">No Account or case work is recorded.</p>
+      <% end %>
+      <% if dossier.decisions.any? %>
+        <details class="record-disclosure dossier-decisions">
+          <summary>Prior intervention and outcome records</summary>
+          <% dossier.decisions.each do |artifact| %>
+            <article><strong><%= artifact.artifact_kind.humanize %></strong><p><%= artifact.body %></p><small>AI analysis · <%= artifact.contract_result_state&.humanize || "Historical schema" %></small></article>
+          <% end %>
+        </details>
+        <% if dossier.truncated?(:decisions) %><p class="dossier-limit">More analysis records are retained in Crew work.</p><% end %>
+      <% end %>
+    </section>
+  </div>
+</section>

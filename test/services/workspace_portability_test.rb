@@ -171,6 +171,47 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "round trips governed memory without exporting engine-private index state" do
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    memory = source.memory_records.create!(
+      memory_type: :profile, scope_kind: :account, account: accounts(:acme), topic: "portable-dossier",
+      content: "Portable dossier context", authority: :source_record, origin_kind: :system,
+      source_reference: "test://portable-dossier", source_digest: Digest::SHA256.hexdigest("Portable dossier context"),
+      observed_at: 1.day.ago, valid_from: 1.day.ago, confidence: 1, retention_policy: :indefinite
+    )
+    entry = source.memory_index_entries.create!(memory_record: memory)
+    entry.update!(status: :indexing, attempt_count: 1, last_attempted_at: Time.current)
+    entry.update!(
+      status: :indexed, external_document_id: "engine-private-dossier-id",
+      external_status: "done", indexed_at: Time.current
+    )
+    archive = WorkspacePortability.export(workspace: source, membership: owner)
+    index_row = archive_manifest(archive).fetch("tables").fetch("memory_index_entries")
+      .find { |row| row.fetch("memory_record_id") == memory.id }
+
+    assert_equal "pending", index_row.fetch("status")
+    assert_equal 0, index_row.fetch("attempt_count")
+    assert_nil index_row.fetch("external_document_id")
+    assert_nil index_row.fetch("external_status")
+    assert_nil index_row.fetch("indexed_at")
+    archive.rewind
+
+    imported = WorkspacePortability.import(
+      workspace: source, membership: owner, archive_io: archive,
+      name: "Memory State Restore", slug: "memory-state-restore"
+    )
+    restored_memory = imported.memory_records.find_by!(topic: memory.topic)
+    restored_entry = restored_memory.memory_index_entry
+    assert restored_entry.pending?
+    assert_equal 0, restored_entry.attempt_count
+    assert_nil restored_entry.external_document_id
+    assert_nil restored_entry.external_status
+    assert_nil restored_entry.indexed_at
+  ensure
+    archive&.close!
+  end
+
   test "round trips configured usage estimates in final immutable shape" do
     source = workspaces(:acme_support)
     owner = memberships(:owner_support)

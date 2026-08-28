@@ -28,6 +28,8 @@
     <%= render "shared/notice", kind: "destructive", title: "Risk review not changed", body: @command_error %>
   <% end %>
 
+  <%= render "dossier", dossier: @dossier %>
+
   <% if @assessment %>
     <section class="health-overview" id="health-assessment" aria-labelledby="health-title">
       <div class="health-score-panel health-score-panel-<%= @assessment.risk_level.dasherize %>">
