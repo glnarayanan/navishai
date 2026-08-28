@@ -127,6 +127,47 @@ CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cuto
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
+DECLARE affected integer; total integer;
+BEGIN
+  total := expire_workspace_content_before_intercom_backfill(target_workspace_id, cutoff);
+  LOCK TABLE intercom_backfill_manifests, intercom_backfill_runs, intercom_backfill_batches,
+    intercom_backfill_exceptions, intercom_part_attachments IN ACCESS EXCLUSIVE MODE;
+  UPDATE intercom_backfill_manifests
+    SET discovery_records = '[]'::jsonb, source_digest = repeat('0', 64), expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND discovered_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  UPDATE intercom_backfill_runs
+    SET last_definite_remote_id = NULL, last_definite_source_digest = NULL, expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND confirmed_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  UPDATE intercom_backfill_batches
+    SET last_definite_remote_id = NULL, expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND started_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  UPDATE intercom_backfill_exceptions
+    SET remote_record_id = 'expired-' || id, source_digest = repeat('0', 64),
+        detail = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  UPDATE intercom_part_attachments links SET remote_attachment_id = 'expired-' || links.id,
+    updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff AND remote_attachment_id NOT LIKE 'expired-%';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  RETURN total;
+END;
+$$;
+
+
+--
+-- Name: expire_workspace_content_before_intercom_backfill(bigint, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_workspace_content_before_intercom_backfill(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
 DECLARE
   affected integer;
   total integer;
@@ -3950,6 +3991,225 @@ ALTER SEQUENCE public.installation_states_id_seq OWNED BY public.installation_st
 
 
 --
+-- Name: intercom_backfill_batches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_backfill_batches (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_backfill_run_id bigint NOT NULL,
+    start_position integer NOT NULL,
+    end_position integer NOT NULL,
+    attempt_number integer DEFAULT 1 NOT NULL,
+    status character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_definite_remote_id character varying,
+    started_at timestamp(6) without time zone NOT NULL,
+    completed_at timestamp(6) without time zone,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_backfill_batches_state CHECK ((((status)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying, 'blocked'::character varying, 'failed'::character varying])::text[])) AND (start_position >= 0) AND (end_position >= start_position) AND (attempt_number > 0) AND ((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
+);
+
+
+--
+-- Name: intercom_backfill_batches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_backfill_batches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_backfill_batches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_backfill_batches_id_seq OWNED BY public.intercom_backfill_batches.id;
+
+
+--
+-- Name: intercom_backfill_exceptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_backfill_exceptions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_backfill_manifest_id bigint NOT NULL,
+    intercom_backfill_run_id bigint,
+    source_identity_id bigint,
+    remote_record_type character varying NOT NULL,
+    remote_record_id character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    exception_kind character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    recovery_action character varying NOT NULL,
+    detail text NOT NULL,
+    resolved_at timestamp(6) without time zone,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_backfill_exceptions_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((octet_length((remote_record_id)::text) >= 1) AND (octet_length((remote_record_id)::text) <= 255)) AND ((octet_length(detail) >= 1) AND (octet_length(detail) <= 500)))),
+    CONSTRAINT intercom_backfill_exceptions_kind CHECK ((((remote_record_type)::text = ANY ((ARRAY['conversation'::character varying, 'identity'::character varying, 'attachment'::character varying, 'field'::character varying])::text[])) AND ((exception_kind)::text = ANY ((ARRAY['ambiguous_identity'::character varying, 'source_changed'::character varying, 'unsupported_field'::character varying, 'attachment_rejected'::character varying, 'attachment_unavailable'::character varying, 'persistence_failed'::character varying])::text[])) AND ((status)::text = ANY ((ARRAY['open'::character varying, 'resolved'::character varying])::text[])) AND ((recovery_action)::text = ANY ((ARRAY['review_identity'::character varying, 'restart_preview'::character varying, 'inspect_source'::character varying, 'inspect_attachment'::character varying, 'resume'::character varying])::text[]))))
+);
+
+
+--
+-- Name: intercom_backfill_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_backfill_exceptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_backfill_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_backfill_exceptions_id_seq OWNED BY public.intercom_backfill_exceptions.id;
+
+
+--
+-- Name: intercom_backfill_manifests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_backfill_manifests (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    status character varying DEFAULT 'current'::character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    discovery_records jsonb DEFAULT '[]'::jsonb NOT NULL,
+    counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    available_from timestamp(6) without time zone,
+    available_to timestamp(6) without time zone,
+    discovered_at timestamp(6) without time zone NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    consumed_at timestamp(6) without time zone,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_backfill_manifests_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((discovery_records)::text) <= 262144) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(discovery_records) = 'array'::text) AND (jsonb_typeof(counts) = 'object'::text))),
+    CONSTRAINT intercom_backfill_manifests_status CHECK (((status)::text = ANY ((ARRAY['current'::character varying, 'consumed'::character varying, 'stale'::character varying])::text[])))
+);
+
+
+--
+-- Name: intercom_backfill_manifests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_backfill_manifests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_backfill_manifests_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_backfill_manifests_id_seq OWNED BY public.intercom_backfill_manifests.id;
+
+
+--
+-- Name: intercom_backfill_reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_backfill_reports (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_backfill_run_id bigint NOT NULL,
+    status character varying NOT NULL,
+    counts jsonb NOT NULL,
+    report_digest character varying NOT NULL,
+    generated_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_backfill_reports_bounds CHECK ((((status)::text = ANY ((ARRAY['partial'::character varying, 'complete'::character varying])::text[])) AND ((report_digest)::text ~ '^[0-9a-f]{64}$'::text) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text)))
+);
+
+
+--
+-- Name: intercom_backfill_reports_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_backfill_reports_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_backfill_reports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_backfill_reports_id_seq OWNED BY public.intercom_backfill_reports.id;
+
+
+--
+-- Name: intercom_backfill_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_backfill_runs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    intercom_backfill_manifest_id bigint NOT NULL,
+    confirmed_by_membership_id bigint NOT NULL,
+    confirmed_by_user_id bigint NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    source_digest character varying NOT NULL,
+    cursor_position integer DEFAULT 0 NOT NULL,
+    counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    last_definite_remote_id character varying,
+    last_definite_source_digest character varying,
+    failure_code character varying,
+    confirmed_at timestamp(6) without time zone NOT NULL,
+    started_at timestamp(6) without time zone,
+    completed_at timestamp(6) without time zone,
+    expired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_backfill_runs_bounds CHECK ((((source_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((last_definite_source_digest IS NULL) OR ((last_definite_source_digest)::text ~ '^[0-9a-f]{64}$'::text)) AND (octet_length((counts)::text) <= 8192) AND (jsonb_typeof(counts) = 'object'::text) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)))),
+    CONSTRAINT intercom_backfill_runs_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying, 'blocked'::character varying, 'failed'::character varying, 'completed'::character varying])::text[])) AND (cursor_position >= 0)))
+);
+
+
+--
+-- Name: intercom_backfill_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_backfill_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_backfill_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_backfill_runs_id_seq OWNED BY public.intercom_backfill_runs.id;
+
+
+--
 -- Name: intercom_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4138,6 +4398,41 @@ CREATE SEQUENCE public.intercom_outbound_deliveries_id_seq
 --
 
 ALTER SEQUENCE public.intercom_outbound_deliveries_id_seq OWNED BY public.intercom_outbound_deliveries.id;
+
+
+--
+-- Name: intercom_part_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.intercom_part_attachments (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_part_link_id bigint NOT NULL,
+    stored_attachment_id bigint NOT NULL,
+    remote_attachment_id character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT intercom_part_attachments_remote_id CHECK (((octet_length((remote_attachment_id)::text) >= 1) AND (octet_length((remote_attachment_id)::text) <= 255)))
+);
+
+
+--
+-- Name: intercom_part_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.intercom_part_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: intercom_part_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.intercom_part_attachments_id_seq OWNED BY public.intercom_part_attachments.id;
 
 
 --
@@ -5650,12 +5945,12 @@ CREATE TABLE public.stored_attachments (
     scanned_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT stored_attachments_actor CHECK (((((source)::text = 'inbound_email'::text) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
+    CONSTRAINT stored_attachments_actor CHECK (((((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'intercom_import'::character varying])::text[])) AND (uploaded_by_membership_id IS NULL) AND (uploaded_by_user_id IS NULL)) OR (((source)::text = 'user_upload'::text) AND (uploaded_by_membership_id IS NOT NULL) AND (uploaded_by_user_id IS NOT NULL)))),
     CONSTRAINT stored_attachments_scan_state CHECK (((scan_result_code IS NOT NULL) AND ((scan_result_code)::text <> ''::text) AND ((((scan_status)::text = 'quarantined'::text) AND (scanned_at IS NULL)) OR (((scan_status)::text = ANY (ARRAY[('available'::character varying)::text, ('rejected'::character varying)::text])) AND (scanned_at IS NOT NULL))))),
     CONSTRAINT stored_attachments_scan_status CHECK (((scan_status)::text = ANY (ARRAY[('quarantined'::character varying)::text, ('available'::character varying)::text, ('rejected'::character varying)::text]))),
     CONSTRAINT stored_attachments_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT stored_attachments_size CHECK (((byte_size >= 1) AND (byte_size <= 5242880))),
-    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY (ARRAY[('inbound_email'::character varying)::text, ('user_upload'::character varying)::text])))
+    CONSTRAINT stored_attachments_source CHECK (((source)::text = ANY ((ARRAY['inbound_email'::character varying, 'user_upload'::character varying, 'intercom_import'::character varying])::text[])))
 );
 
 
@@ -6506,6 +6801,41 @@ ALTER TABLE ONLY public.installation_states ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: intercom_backfill_batches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_batches ALTER COLUMN id SET DEFAULT nextval('public.intercom_backfill_batches_id_seq'::regclass);
+
+
+--
+-- Name: intercom_backfill_exceptions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions ALTER COLUMN id SET DEFAULT nextval('public.intercom_backfill_exceptions_id_seq'::regclass);
+
+
+--
+-- Name: intercom_backfill_manifests id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_manifests ALTER COLUMN id SET DEFAULT nextval('public.intercom_backfill_manifests_id_seq'::regclass);
+
+
+--
+-- Name: intercom_backfill_reports id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_reports ALTER COLUMN id SET DEFAULT nextval('public.intercom_backfill_reports_id_seq'::regclass);
+
+
+--
+-- Name: intercom_backfill_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs ALTER COLUMN id SET DEFAULT nextval('public.intercom_backfill_runs_id_seq'::regclass);
+
+
+--
 -- Name: intercom_connections id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -6531,6 +6861,13 @@ ALTER TABLE ONLY public.intercom_drafts ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries ALTER COLUMN id SET DEFAULT nextval('public.intercom_outbound_deliveries_id_seq'::regclass);
+
+
+--
+-- Name: intercom_part_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_attachments ALTER COLUMN id SET DEFAULT nextval('public.intercom_part_attachments_id_seq'::regclass);
 
 
 --
@@ -7205,6 +7542,46 @@ ALTER TABLE ONLY public.installation_states
 
 
 --
+-- Name: intercom_backfill_batches intercom_backfill_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_batches
+    ADD CONSTRAINT intercom_backfill_batches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_backfill_exceptions intercom_backfill_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions
+    ADD CONSTRAINT intercom_backfill_exceptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_backfill_manifests intercom_backfill_manifests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_manifests
+    ADD CONSTRAINT intercom_backfill_manifests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_backfill_reports intercom_backfill_reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_reports
+    ADD CONSTRAINT intercom_backfill_reports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_backfill_runs intercom_backfill_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs
+    ADD CONSTRAINT intercom_backfill_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: intercom_connections intercom_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7234,6 +7611,14 @@ ALTER TABLE ONLY public.intercom_drafts
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries
     ADD CONSTRAINT intercom_outbound_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: intercom_part_attachments intercom_part_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_attachments
+    ADD CONSTRAINT intercom_part_attachments_pkey PRIMARY KEY (id);
 
 
 --
@@ -8785,6 +9170,118 @@ CREATE UNIQUE INDEX index_installation_states_on_singleton ON public.installatio
 
 
 --
+-- Name: index_intercom_backfill_batches_boundary; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_batches_boundary ON public.intercom_backfill_batches USING btree (intercom_backfill_run_id, start_position, attempt_number);
+
+
+--
+-- Name: index_intercom_backfill_batches_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_batches_on_workspace_id ON public.intercom_backfill_batches USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_backfill_batches_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_batches_on_workspace_id_and_id ON public.intercom_backfill_batches USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_backfill_exceptions_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_exceptions_identity ON public.intercom_backfill_exceptions USING btree (intercom_backfill_manifest_id, remote_record_type, remote_record_id, exception_kind);
+
+
+--
+-- Name: index_intercom_backfill_exceptions_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_exceptions_on_workspace_id ON public.intercom_backfill_exceptions USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_backfill_exceptions_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_exceptions_on_workspace_id_and_id ON public.intercom_backfill_exceptions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_backfill_manifests_for_connection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_manifests_for_connection ON public.intercom_backfill_manifests USING btree (intercom_connection_id, status, created_at);
+
+
+--
+-- Name: index_intercom_backfill_manifests_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_manifests_on_workspace_id ON public.intercom_backfill_manifests USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_backfill_manifests_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_manifests_on_workspace_id_and_id ON public.intercom_backfill_manifests USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_backfill_reports_on_intercom_backfill_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_reports_on_intercom_backfill_run_id ON public.intercom_backfill_reports USING btree (intercom_backfill_run_id);
+
+
+--
+-- Name: index_intercom_backfill_reports_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_reports_on_workspace_id ON public.intercom_backfill_reports USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_backfill_reports_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_reports_on_workspace_id_and_id ON public.intercom_backfill_reports USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_backfill_runs_for_connection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_runs_for_connection ON public.intercom_backfill_runs USING btree (intercom_connection_id, status, created_at);
+
+
+--
+-- Name: index_intercom_backfill_runs_on_intercom_backfill_manifest_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_runs_on_intercom_backfill_manifest_id ON public.intercom_backfill_runs USING btree (intercom_backfill_manifest_id);
+
+
+--
+-- Name: index_intercom_backfill_runs_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_backfill_runs_on_workspace_id ON public.intercom_backfill_runs USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_backfill_runs_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_backfill_runs_on_workspace_id_and_id ON public.intercom_backfill_runs USING btree (workspace_id, id);
+
+
+--
 -- Name: index_intercom_connections_on_webhook_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8922,6 +9419,27 @@ CREATE UNIQUE INDEX index_intercom_outbound_on_idempotency ON public.intercom_ou
 --
 
 CREATE UNIQUE INDEX index_intercom_outbound_on_remote_part ON public.intercom_outbound_deliveries USING btree (intercom_connection_id, remote_part_id) WHERE (remote_part_id IS NOT NULL);
+
+
+--
+-- Name: index_intercom_part_attachments_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_intercom_part_attachments_on_workspace_id ON public.intercom_part_attachments USING btree (workspace_id);
+
+
+--
+-- Name: index_intercom_part_attachments_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_part_attachments_on_workspace_id_and_id ON public.intercom_part_attachments USING btree (workspace_id, id);
+
+
+--
+-- Name: index_intercom_part_attachments_remote; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_intercom_part_attachments_remote ON public.intercom_part_attachments USING btree (intercom_part_link_id, remote_attachment_id);
 
 
 --
@@ -11397,6 +11915,86 @@ ALTER TABLE ONLY public.health_scorecards
 
 
 --
+-- Name: intercom_backfill_batches fk_intercom_backfill_batches_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_batches
+    ADD CONSTRAINT fk_intercom_backfill_batches_run FOREIGN KEY (workspace_id, intercom_backfill_run_id) REFERENCES public.intercom_backfill_runs(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_exceptions fk_intercom_backfill_exceptions_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions
+    ADD CONSTRAINT fk_intercom_backfill_exceptions_identity FOREIGN KEY (workspace_id, source_identity_id) REFERENCES public.source_identities(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_exceptions fk_intercom_backfill_exceptions_manifest; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions
+    ADD CONSTRAINT fk_intercom_backfill_exceptions_manifest FOREIGN KEY (workspace_id, intercom_backfill_manifest_id) REFERENCES public.intercom_backfill_manifests(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_exceptions fk_intercom_backfill_exceptions_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions
+    ADD CONSTRAINT fk_intercom_backfill_exceptions_run FOREIGN KEY (workspace_id, intercom_backfill_run_id) REFERENCES public.intercom_backfill_runs(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_manifests fk_intercom_backfill_manifests_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_manifests
+    ADD CONSTRAINT fk_intercom_backfill_manifests_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: intercom_backfill_manifests fk_intercom_backfill_manifests_connection; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_manifests
+    ADD CONSTRAINT fk_intercom_backfill_manifests_connection FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_reports fk_intercom_backfill_reports_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_reports
+    ADD CONSTRAINT fk_intercom_backfill_reports_run FOREIGN KEY (workspace_id, intercom_backfill_run_id) REFERENCES public.intercom_backfill_runs(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_runs fk_intercom_backfill_runs_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs
+    ADD CONSTRAINT fk_intercom_backfill_runs_actor FOREIGN KEY (workspace_id, confirmed_by_membership_id, confirmed_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: intercom_backfill_runs fk_intercom_backfill_runs_connection; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs
+    ADD CONSTRAINT fk_intercom_backfill_runs_connection FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
+-- Name: intercom_backfill_runs fk_intercom_backfill_runs_manifest; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs
+    ADD CONSTRAINT fk_intercom_backfill_runs_manifest FOREIGN KEY (workspace_id, intercom_backfill_manifest_id) REFERENCES public.intercom_backfill_manifests(workspace_id, id);
+
+
+--
 -- Name: intercom_drafts fk_intercom_drafts_human_editor; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11442,6 +12040,22 @@ ALTER TABLE ONLY public.intercom_outbound_deliveries
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries
     ADD CONSTRAINT fk_intercom_outbound_deliveries_source_artifact FOREIGN KEY (workspace_id, source_crew_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: intercom_part_attachments fk_intercom_part_attachments_attachment; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_attachments
+    ADD CONSTRAINT fk_intercom_part_attachments_attachment FOREIGN KEY (workspace_id, stored_attachment_id) REFERENCES public.stored_attachments(workspace_id, id);
+
+
+--
+-- Name: intercom_part_attachments fk_intercom_part_attachments_part; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_attachments
+    ADD CONSTRAINT fk_intercom_part_attachments_part FOREIGN KEY (workspace_id, intercom_part_link_id) REFERENCES public.intercom_part_links(workspace_id, id);
 
 
 --
@@ -12197,6 +12811,14 @@ ALTER TABLE ONLY public.conversation_message_attachments
 
 
 --
+-- Name: intercom_backfill_manifests fk_rails_5525b9fd33; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_manifests
+    ADD CONSTRAINT fk_rails_5525b9fd33 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: memory_proposals fk_rails_56739cb9bd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12226,6 +12848,14 @@ ALTER TABLE ONLY public.intercom_sync_operations
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries
     ADD CONSTRAINT fk_rails_5b4607fe85 FOREIGN KEY (workspace_id, intercom_draft_id) REFERENCES public.intercom_drafts(workspace_id, id);
+
+
+--
+-- Name: intercom_part_attachments fk_rails_5c89cd5d50; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_part_attachments
+    ADD CONSTRAINT fk_rails_5c89cd5d50 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -12749,11 +13379,27 @@ ALTER TABLE ONLY public.active_storage_variant_records
 
 
 --
+-- Name: intercom_backfill_batches fk_rails_9a094a74b7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_batches
+    ADD CONSTRAINT fk_rails_9a094a74b7 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: intercom_drafts fk_rails_9b0efb02e5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.intercom_drafts
     ADD CONSTRAINT fk_rails_9b0efb02e5 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: intercom_backfill_reports fk_rails_9d9a7a4500; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_reports
+    ADD CONSTRAINT fk_rails_9d9a7a4500 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -12989,6 +13635,14 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: intercom_backfill_runs fk_rails_baab70cb97; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_runs
+    ADD CONSTRAINT fk_rails_baab70cb97 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: accounts fk_rails_bac5365c2c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13130,6 +13784,14 @@ ALTER TABLE ONLY public.account_health_assessments
 
 ALTER TABLE ONLY public.usage_rate_settings
     ADD CONSTRAINT fk_rails_c8855db661 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: intercom_backfill_exceptions fk_rails_c8d2251440; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.intercom_backfill_exceptions
+    ADD CONSTRAINT fk_rails_c8d2251440 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -13635,6 +14297,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260828233000'),
 ('20260828230000'),
 ('20260828220000'),
 ('20260828210000'),

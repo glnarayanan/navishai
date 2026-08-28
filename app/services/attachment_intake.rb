@@ -7,6 +7,7 @@ class AttachmentIntake
   Prepared = Data.define(:blob, :filename, :byte_size, :content_sha256, :content_type, :scan_status, :scan_result_code, :scanned_at) do
     def purge!
       blob.purge
+      blob.service.delete(blob.key)
     end
   end
 

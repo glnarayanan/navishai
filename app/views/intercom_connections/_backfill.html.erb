@@ -1,0 +1,119 @@
+<article class="backfill-card" id="historical-backfill-<%= connection.id %>">
+  <header class="backfill-heading">
+    <div><h3><%= connection.name %></h3><p><%= connection.remote_workspace_id %></p></div>
+    <% state = run&.status || (manifest&.fresh? ? "review" : (manifest&.current? ? "stale" : manifest&.status || "empty")) %>
+    <span class="status-badge status-<%= state.dasherize %>"><%= state.humanize %></span>
+  </header>
+
+  <% if run %>
+    <% counts = run.intercom_backfill_report&.counts || run.counts %>
+    <dl class="backfill-counts">
+      <div><dt>Progress</dt><dd><%= run.cursor_position %> / <%= counts.fetch("discovered", 0) %></dd></div>
+      <div><dt>Imported</dt><dd><%= counts.fetch("imported", 0) %></dd></div>
+      <div><dt>Matched</dt><dd><%= counts.fetch("matched", 0) %></dd></div>
+      <div><dt>Exceptions</dt><dd><%= run.intercom_backfill_exceptions.open.size %></dd></div>
+    </dl>
+    <% if run.pending? || run.running? %>
+      <p class="backfill-state" role="status">Bounded batches are in progress. Refresh this page for the latest definite record.</p>
+    <% elsif run.failed? %>
+      <div class="inline-error" role="alert">
+        <strong>Backfill stopped after a definite boundary.</strong>
+        <p><%= run.failure_code.humanize %>. Resume starts at record <%= run.cursor_position + 1 %>; completed records will not run again.</p>
+      </div>
+      <%= button_to "Resume from definite record",
+        backfill_resume_workspace_intercom_connection_path(Current.workspace, connection, run_id: run.id),
+        class: "button button-primary", data: { turbo_confirm: "Resume this read-only backfill from its last definite record?", turbo_submits_with: "Queuing…" } %>
+    <% elsif run.blocked? %>
+      <div class="inline-error" role="alert">
+        <strong>Review is required.</strong>
+        <% blocked_copy = if run.failure_code == IntercomHistoricalBackfill::KEYLESS_IDENTITY_FAILURE_CODE
+          "A source identity lacks a deterministic key. Correct the source and start a new dry run."
+        else
+          "NavishAI did not guess or skip the uncertain record."
+        end %>
+        <p><%= blocked_copy %></p>
+      </div>
+    <% elsif run.completed? && run.intercom_backfill_report %>
+      <div class="backfill-report" role="status">
+        <h4>Final preservation report</h4>
+        <dl class="backfill-counts">
+          <% %w[discovered imported matched skipped ambiguous unsupported failed pending].each do |key| %>
+            <div><dt><%= key.humanize %></dt><dd><%= counts.fetch(key) %></dd></div>
+          <% end %>
+        </dl>
+        <p>Report digest <code class="backfill-digest"><%= run.intercom_backfill_report.report_digest %></code></p>
+      </div>
+    <% end %>
+
+  <% elsif manifest %>
+    <% counts = manifest.counts %>
+    <dl class="backfill-counts">
+      <div><dt>Conversations</dt><dd><%= counts.fetch("conversations") %></dd></div>
+      <div><dt>Parts</dt><dd><%= counts.fetch("parts") %></dd></div>
+      <div><dt>Notes</dt><dd><%= counts.fetch("notes") %></dd></div>
+      <div><dt>Attachments</dt><dd><%= counts.fetch("attachments") %></dd></div>
+      <div><dt>Exact identity matches</dt><dd><%= counts.fetch("deterministic_matches") %></dd></div>
+      <div><dt>Ambiguous identities</dt><dd><%= counts.fetch("ambiguous") %></dd></div>
+      <div><dt>Unsupported fields</dt><dd><%= counts.fetch("unsupported_fields") %></dd></div>
+      <div><dt>Expected exceptions</dt><dd><%= counts.fetch("expected_exceptions") %></dd></div>
+    </dl>
+    <p class="muted-copy">
+      Range <%= manifest.available_from&.to_fs(:short) || "empty" %> – <%= manifest.available_to&.to_fs(:short) || "empty" %><br>
+      Frozen digest <code class="backfill-digest"><%= manifest.source_digest %></code>
+    </p>
+    <% if manifest.fresh? %>
+      <%= button_to "Confirm exact manifest",
+        backfill_confirm_workspace_intercom_connection_path(Current.workspace, connection, manifest_id: manifest.id),
+        params: { source_digest: manifest.source_digest }, class: "button button-primary",
+        data: { turbo_confirm: "Confirm this exact dry-run manifest? Local customer records will now be written in bounded batches. Intercom remains read-only.", turbo_submits_with: "Confirming…" } %>
+    <% else %>
+      <div class="inline-error" role="alert">This dry run is stale or already used. Start a new dry run.</div>
+    <% end %>
+  <% else %>
+    <p class="muted-copy">No dry run exists. Preview reads up to <%= IntercomHistoricalBackfill::MAX_RECORDS %> conversations and makes no customer-data changes.</p>
+  <% end %>
+
+  <% exceptions = if run
+    run.intercom_backfill_exceptions.open
+  elsif manifest
+    manifest.intercom_backfill_exceptions.open
+  else
+    []
+  end %>
+  <% if exceptions.any? %>
+    <div class="backfill-exceptions">
+      <h4><%= run ? "Recoverable exceptions" : "Expected exceptions" %></h4>
+      <ul>
+        <% exceptions.each do |exception| %>
+          <li>
+            <div>
+              <strong><%= exception.keyless_identity? ? "Expected identity exception" : exception.exception_kind.humanize %></strong>
+              <p><%= exception.detail %></p>
+            </div>
+            <% if exception.recovery_action == "review_identity" && exception.source_identity&.ambiguous? %>
+              <div class="backfill-candidates" aria-label="Identity candidates">
+                <% exception.source_identity.identity_match_candidates.each do |candidate| %>
+                  <% target = candidate.record.canonical %>
+                  <%= button_to "Use #{target.name.presence || 'this match'}",
+                    backfill_resolve_identity_workspace_intercom_connection_path(
+                      Current.workspace, connection, exception_id: exception.id
+                    ), params: { target_id: target.id }, class: "button button-secondary",
+                    data: { turbo_confirm: "Use this exact recorded identity match?", turbo_submits_with: "Saving…" } %>
+                <% end %>
+              </div>
+            <% elsif exception.recovery_action == "restart_preview" %>
+              <span class="muted-copy">Start a new dry run below.</span>
+            <% else %>
+              <span class="muted-copy"><%= exception.recovery_action.humanize %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% unless run&.pending? || run&.running? %>
+    <%= button_to "Start new dry run", backfill_preview_workspace_intercom_connection_path(Current.workspace, connection),
+      class: "button button-secondary", data: { turbo_confirm: "Run a GET-only Intercom history preview? No customer records will be written.", turbo_submits_with: "Reading Intercom…" } %>
+  <% end %>
+</article>

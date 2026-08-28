@@ -10,6 +10,8 @@ class IntercomConnection < ApplicationRecord
   has_many :intercom_webhook_deliveries, dependent: :restrict_with_exception
   has_many :intercom_sync_operations, dependent: :restrict_with_exception
   has_many :intercom_outbound_deliveries, dependent: :restrict_with_exception
+  has_many :intercom_backfill_manifests, dependent: :restrict_with_exception
+  has_many :intercom_backfill_runs, dependent: :restrict_with_exception
 
   has_secure_token :webhook_key
 
