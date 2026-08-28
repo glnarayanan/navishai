@@ -1,5 +1,6 @@
 require "test_helper"
 require "base64"
+require "fileutils"
 
 class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   Capybara.default_max_wait_time = 5
@@ -55,6 +56,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   end
 
   def capture_region(path, from:, through:)
+    FileUtils.mkdir_p(File.dirname(path))
     width = page.evaluate_script("window.innerWidth")
     height = page.evaluate_script("document.documentElement.scrollHeight")
     browser_frame = page.evaluate_script("window.outerHeight - window.innerHeight")
@@ -93,6 +95,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   end
 
   def capture_viewport(path, element, height:)
+    FileUtils.mkdir_p(File.dirname(path))
     width = page.evaluate_script("window.innerWidth")
     browser_frame = page.evaluate_script("window.outerHeight - window.innerHeight")
     page.current_window.resize_to(width, height + browser_frame)
