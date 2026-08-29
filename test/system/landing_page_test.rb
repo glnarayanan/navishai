@@ -24,7 +24,9 @@ class LandingPageTest < ApplicationSystemTestCase
     review_draft.click
     assert_selector ".feature-panel:not([hidden])", text: /Policy review/
 
-    find("summary", text: "Does this replace Intercom on day one?").click
+    intercom_faq = find("summary", text: "Does this replace Intercom on day one?")
+    page.scroll_to(intercom_faq, align: :center)
+    intercom_faq.click
     assert_text "Intercom remains authoritative"
 
     page.current_window.resize_to(390, 844)
@@ -46,12 +48,16 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_no_selector "#readiness [role='tablist']"
     assert_selector "#readiness [role='group'][aria-label='Product path'] button[aria-pressed='true']", text: "Support"
 
-    click_button "Customer Success"
+    customer_success = find("#readiness button[data-readiness-tab='success']")
+    page.scroll_to(customer_success, align: :center)
+    customer_success.click
     assert_selector "#readiness button[aria-pressed='true']", text: "Customer Success"
     assert_text "Deterministic account-health signals"
 
     assert_button "Pause slideshow"
-    click_button "Pause slideshow"
+    pause_slideshow = find("button.feature-pause", text: "Pause slideshow")
+    page.scroll_to(pause_slideshow, align: :center)
+    pause_slideshow.click
     assert_button "Play slideshow"
     assert_selector ".feature-pause[aria-pressed='true']"
 

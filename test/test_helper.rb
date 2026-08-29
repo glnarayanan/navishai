@@ -9,7 +9,8 @@ require_relative "test_helpers/intervention_test_helper"
 module ActiveSupport
   class TestCase
     # Run tests in parallel with specified workers
-    parallelize(workers: :number_of_processors)
+    available_workers = (Concurrent.available_processor_count || Concurrent.processor_count).floor
+    parallelize(workers: [ available_workers, 4 ].min)
     parallelize_setup do |worker|
       ActiveStorage::Blob.service.root = Rails.root.join("tmp/storage/#{worker}")
       FileUtils.rm_rf(ActiveStorage::Blob.service.root)

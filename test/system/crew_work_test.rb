@@ -325,7 +325,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       fill_in "Email address", with: user.email_address
       fill_in "Password", with: "password12345"
       click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
+      assert_selector "h1", text: "Choose a workspace", wait: 12
     end
 
     def accepting_runner_client

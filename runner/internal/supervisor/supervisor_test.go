@@ -282,10 +282,10 @@ func TestEgressProfileRejectsUnapprovedExecutableNamespaceAndEnvironment(t *test
 
 func testNamespaces(t *testing.T) (string, string) {
 	t.Helper()
-	pidPath := filepath.Join(t.TempDir(), "namespace.pid")
+	readyPath := filepath.Join(t.TempDir(), "namespace.ready")
 	command := exec.Command(
-		"unshare", "--user", "--net", "--map-user=1000", "--map-group=1000",
-		"sh", "-c", `echo $$ > "$1"; exec sleep 30`, "sh", pidPath,
+		"unshare", "--user", "--net",
+		"sh", "-c", `while [ ! -e "$1" ]; do sleep 0.01; done; exec sleep 30`, "sh", readyPath,
 	)
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
@@ -295,21 +295,37 @@ func testNamespaces(t *testing.T) (string, string) {
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		_ = command.Wait()
 	})
+	pid := strconv.Itoa(command.Process.Pid)
+	userNamespace := filepath.Join("/proc", pid, "ns/user")
+	networkNamespace := filepath.Join("/proc", pid, "ns/net")
+	currentUserNamespace, err := os.Readlink("/proc/self/ns/user")
+	if err != nil {
+		t.Fatal(err)
+	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		if pidBytes, err := os.ReadFile(pidPath); err == nil {
-			pid := strings.TrimSpace(string(pidBytes))
-			userNamespace := filepath.Join("/proc", pid, "ns/user")
-			networkNamespace := filepath.Join("/proc", pid, "ns/net")
-			if _, err := os.Stat(networkNamespace); err == nil {
-				return userNamespace, networkNamespace
-			}
+		childUserNamespace, readErr := os.Readlink(userNamespace)
+		if readErr == nil && childUserNamespace != currentUserNamespace {
+			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("namespace process did not start")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	for _, mapping := range []struct{ path, value string }{
+		{filepath.Join("/proc", pid, "setgroups"), "deny\n"},
+		{filepath.Join("/proc", pid, "uid_map"), fmt.Sprintf("1000 %d 1\n", os.Getuid())},
+		{filepath.Join("/proc", pid, "gid_map"), fmt.Sprintf("1000 %d 1\n", os.Getgid())},
+	} {
+		if err := os.WriteFile(mapping.path, []byte(mapping.value), 0o600); err != nil {
+			t.Fatalf("map test namespace: %v", err)
+		}
+	}
+	if err := os.WriteFile(readyPath, []byte("go\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return userNamespace, networkNamespace
 }
 
 func TestRunRejectsUnknownEgressProfile(t *testing.T) {

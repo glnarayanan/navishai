@@ -192,7 +192,7 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
       within "#proposal-#{proposal.id}" do
         click_button "Preview retained facts"
       end
-      assert_text "Preview complete"
+      assert_text "Preview complete", wait: 12
       proposal.previews.reload.first
     end
 

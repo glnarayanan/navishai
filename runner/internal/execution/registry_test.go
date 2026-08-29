@@ -57,12 +57,15 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 		t.Run(adapterKey, func(t *testing.T) {
 			workRoot := t.TempDir()
 			homeRoot := t.TempDir()
+			executableRoot := t.TempDir()
+			helperPath := testExecutable(t, executableRoot, "helper", "exit 0")
+			executablePath := testExecutable(t, executableRoot, "approved", "exit 1")
 			request := request
 			request.Routing.AdapterKey = adapterKey
-			request.Routing.DetectionKey = testDetectionKey(t, adapterKey, "/usr/bin/false")
+			request.Routing.DetectionKey = testDetectionKey(t, adapterKey, executablePath)
 			installation := runtimecatalog.Installation{
 				DetectionKey: request.Routing.DetectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
-				ExecutablePath: "/usr/bin/false", ExecutableVersion: "runtime 1.0.0",
+				ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
 				AccountMetadata: map[string]string{"authentication": "managed_on_runner"}, Capabilities: []string{"structured_output"},
 				MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 				HealthStatus: "available", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -81,8 +84,8 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 					MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
 				}},
 				Supervisor: SupervisorConfig{
-					HelperPath: "/usr/bin/true", AllowedExecutableRoots: []string{"/usr/bin"},
-					ApprovedExecutables: []string{"/usr/bin/false"}, AllowedWorkingRoots: []string{workRoot},
+					HelperPath: helperPath, AllowedExecutableRoots: []string{executableRoot},
+					ApprovedExecutables: []string{executablePath}, AllowedWorkingRoots: []string{workRoot},
 					AllowedHomeRoots: []string{homeRoot}, RuntimeReadRoots: []string{"/usr"},
 					Limits: SupervisorLimits{WallTimeSeconds: 1, CPUSeconds: 1, MemoryBytes: 32 * 1024 * 1024,
 						OpenFiles: 3, Processes: 1, OutputBytes: 1024},
@@ -105,6 +108,15 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testExecutable(t *testing.T, directory, name, command string) string {
+	t.Helper()
+	path := filepath.Join(directory, name)
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+command+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func testDetectionKey(t *testing.T, adapterKey, path string) string {
