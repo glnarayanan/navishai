@@ -5,16 +5,25 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :success
-    assert_select "h1", text: /Specialist AI crews/
-    assert_select "a", text: "Sign in"
-    assert_select "a", text: "See how it works"
+    assert_select "h1", text: /Resolve support cases with proof/
+    assert_select "a", text: "Sign in to your workspace"
+    assert_select "a", text: "See the support workflow"
     assert_select "body", text: /self-hosted/i
     assert_select "body", text: /does not claim SOC 2/
     assert_select "a", text: "First-time setup", count: 0
-    assert_select ".principle-stage[aria-hidden=true]"
-    assert_select ".principle-column", count: 3
-    assert_select ".principle-static"
-    assert_select ".principle-static[aria-hidden]", count: 0
+    assert_select ".proof-cell", count: 4
+    assert_select ".proof-more", text: /Conversations become linked cases/
+    assert_select "#how-it-works[data-controller='feature-cycle']"
+    assert_select "#features", text: /Support history becomes customer context/
+    assert_select "#features", text: /Know why an outcome happened/
+    assert_select "#features", text: /deterministic score|signal weights|tool calls|execution budget/i, count: 0
+    assert_select ".principles-section", count: 0
+    assert_select ".readiness-section", count: 0
+    assert_select "a[href='#hero']"
+    assert_select "a[href='#how-it-works']"
+    assert_select "a[href='#features']"
+    assert_select "a[href='#self-host']"
+    assert_select "a[href='#faq']"
   end
 
   test "authenticated people are sent to workspaces" do
