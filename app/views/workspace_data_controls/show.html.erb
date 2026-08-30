@@ -8,8 +8,8 @@
 
   <section class="data-policy-summary" aria-labelledby="retention-boundary-title">
     <div>
-      <h2 id="retention-boundary-title">Two retention boundaries</h2>
-      <p>Customer content includes conversations, source mail, attachments, knowledge, execution evidence, and Memory. Audit events hold action, actor, time, and safe metadata—not copied customer content.</p>
+      <h2 id="retention-boundary-title">Separate retention periods</h2>
+      <p>Customer content includes conversations, source mail, attachments, knowledge, run evidence, and memory. Audit history keeps the action, person, time, and safe metadata without copying customer content.</p>
     </div>
     <dl>
       <div><dt>Content</dt><dd><%= @policy.content_retention_days ? pluralize(@policy.content_retention_days, "day") : "No automatic expiry" %></dd></div>
@@ -20,7 +20,7 @@
   <section class="section-block data-policy-form-section" aria-labelledby="workspace-export-title">
     <div>
       <h2 id="workspace-export-title">Workspace export</h2>
-      <p>Download a compressed, workspace-scoped snapshot of PostgreSQL records and verified attachment bytes. The archive names referenced users by email but excludes passwords, sessions, and deployment secrets.</p>
+      <p>Download a compressed export containing this workspace’s records and attachments. Passwords, sessions, and deployment secrets are excluded.</p>
     </div>
     <%= link_to "Download workspace export", export_workspace_data_controls_path(Current.workspace),
       class: "button button-secondary" %>
@@ -28,8 +28,8 @@
 
   <section class="section-block data-policy-form-section" aria-labelledby="archive-verification-title">
     <div>
-      <h2 id="archive-verification-title">Archive round-trip check</h2>
-      <p>Export this Workspace, import it into a new empty Workspace in this Organization, and prove its records, links, attachments, and Memory reconstruction. A passing check keeps the new target Workspace for Owner review.</p>
+      <h2 id="archive-verification-title">Verify backup and restore</h2>
+      <p>Export this workspace, restore it into a new empty workspace, and verify its records, links, attachments, and memory index. A successful check keeps the restored workspace for Owner review.</p>
     </div>
     <div class="data-policy-form">
       <% if @archive_verification %>
@@ -37,53 +37,53 @@
           <div><dt>Latest result</dt><dd><%= @archive_verification.result.humanize %>: <%= @archive_verification.result_code.humanize %></dd></div>
           <div><dt>Checked</dt><dd><%= @archive_verification.checked_at.to_fs(:long) %></dd></div>
           <div><dt>Records</dt><dd><%= number_with_delimiter(@archive_verification.record_count) %></dd></div>
-          <div><dt>Evidence</dt><dd><code><%= @archive_verification.evidence_digest.first(12) %></code></dd></div>
+          <div><dt>Verification ID</dt><dd><code><%= @archive_verification.evidence_digest.first(12) %></code></dd></div>
         </dl>
       <% else %>
-        <p class="empty-state">No archive round-trip check has run yet.</p>
+        <p class="muted-copy data-empty-copy">No backup verification has run yet.</p>
       <% end %>
       <% if @archive_verification_ready %>
-        <%= button_to "Run archive round-trip check", verify_archive_workspace_data_controls_path(Current.workspace),
+        <%= button_to "Verify backup and restore", verify_archive_workspace_data_controls_path(Current.workspace),
           class: "button button-secondary",
-          data: { turbo_confirm: "Export this Workspace and keep a new verification target only if every check passes?" } %>
+          data: { turbo_confirm: "Create a restored test workspace and keep it only if every check passes?" } %>
       <% else %>
-        <p class="inline-error" role="alert">Set a valid NAVISHAI_SOURCE_COMMIT before running this check.</p>
-        <button class="button button-secondary" type="button" disabled>Run archive round-trip check</button>
+        <p class="inline-error" role="alert">Backup verification is unavailable until this deployment has a source version.</p>
+        <button class="button button-secondary" type="button" disabled>Verify backup and restore</button>
       <% end %>
     </div>
   </section>
 
   <details class="data-task" <%= "open" if @import_error.present? %>>
-    <summary>Workspace import</summary>
+    <summary>Import a workspace</summary>
     <div>
-      <h2 id="workspace-import-title">Workspace import</h2>
-      <p>Restore an export as a new Workspace in this Organization. Referenced users must already have verified local accounts. NavishAI gives the new Workspace fresh endpoint and ledger IDs and rebuilds its external Memory index.</p>
+      <h2 id="workspace-import-title">Import a workspace</h2>
+      <p>Restore an export as a new workspace in this organization. Referenced users must already have verified local accounts. NavishAI assigns new internal identifiers and rebuilds the memory index.</p>
     </div>
     <% if @import_error %><p class="inline-error" role="alert"><%= @import_error %></p><% end %>
     <%= form_with url: import_workspace_data_controls_path(Current.workspace), multipart: true, class: "data-policy-form" do |form| %>
       <div class="field">
-        <%= form.label :workspace_name, "New Workspace name" %>
+        <%= form.label :workspace_name, "New workspace name" %>
         <%= form.text_field :workspace_name, required: true, maxlength: 100, autocomplete: "off" %>
       </div>
       <div class="field">
-        <%= form.label :workspace_slug, "New Workspace slug" %>
+        <%= form.label :workspace_slug, "New workspace slug" %>
         <%= form.text_field :workspace_slug, required: true, maxlength: 63, pattern: "[a-z0-9]+(?:-[a-z0-9]+)*", autocomplete: "off" %>
         <span class="field-hint">Use lowercase letters, numbers, and single hyphens.</span>
       </div>
       <div class="field">
-        <%= form.label :workspace_archive, "Compressed Workspace archive" %>
+        <%= form.label :workspace_archive, "Compressed workspace export" %>
         <%= form.file_field :workspace_archive, required: true, accept: ".json.gz,application/gzip" %>
         <span class="field-hint">The compressed file limit is 8 MiB.</span>
       </div>
-      <%= form.submit "Import as new Workspace", class: "button button-secondary",
-        data: { turbo_confirm: "Import this archive as a new Workspace?" } %>
+      <%= form.submit "Import as new workspace", class: "button button-secondary",
+        data: { turbo_confirm: "Import this export as a new workspace?" } %>
     <% end %>
   </details>
 
   <section class="section-block data-policy-form-section" aria-labelledby="retention-policy-title">
     <div>
       <h2 id="retention-policy-title">Retention policy</h2>
-      <p>Saving records the boundary but does not delete data. Deletion runs only through the separate audited expiry operation.</p>
+      <p>Saving changes the retention period but does not delete data immediately. Deletion happens only when the separate expiry action runs.</p>
     </div>
 
     <%= render "shared/form_errors", record: @policy %>
@@ -112,14 +112,14 @@
   <section class="section-block data-policy-form-section" aria-labelledby="content-expiry-title">
     <div>
       <h2 id="content-expiry-title">Content expiry</h2>
-      <p>NavishAI runs expiry each day. It removes object bytes and external Memory entries before replacing content older than the current cutoff with retained tombstones. Security and approval audits stay unchanged.</p>
+      <p>NavishAI checks for expired content each day. It removes stored files and memory entries, then keeps only a minimal deletion record. Security and approval history stays unchanged.</p>
     </div>
     <% if @policy.content_retention_days %>
       <%= button_to "Run content expiry now", expire_workspace_data_controls_path(Current.workspace),
         class: "button button-secondary",
         form: { data: { turbo_confirm: "Expire all customer content older than #{@policy.content_retention_days} days? This cannot be undone." } } %>
     <% else %>
-      <p class="empty-state">Choose a customer content period before running expiry.</p>
+      <p class="muted-copy data-empty-copy">Choose a customer content period before running expiry.</p>
     <% end %>
 
     <% if @expiry_runs.any? %>
@@ -139,21 +139,21 @@
         </table>
       </div>
     <% else %>
-      <p class="empty-state">No content expiry runs yet.</p>
+      <p class="muted-copy data-empty-copy">No content expiry runs yet.</p>
     <% end %>
   </section>
 
   <section class="section-block data-policy-form-section" aria-labelledby="audit-expiry-title">
     <div>
       <h2 id="audit-expiry-title">Audit expiry</h2>
-      <p>Audit expiry removes actor, network, request, and metadata fields after the separate audit cutoff. The action, subject, trusted time, and an expiry mark remain as a tombstone so ledger links do not break.</p>
+      <p>Audit expiry removes person, network, request, and metadata details after the audit cutoff. A minimal record of the action, subject, time, and expiry remains.</p>
     </div>
     <% if @policy.audit_retention_days %>
       <%= button_to "Run audit expiry now", expire_audit_workspace_data_controls_path(Current.workspace),
         class: "button button-secondary",
         form: { data: { turbo_confirm: "Expire audit details older than #{@policy.audit_retention_days} days? This cannot be undone." } } %>
     <% else %>
-      <p class="empty-state">Choose an audit period before running expiry.</p>
+      <p class="muted-copy data-empty-copy">Choose an audit period before running expiry.</p>
     <% end %>
 
     <% if @policy.audit_expiry_status %>
@@ -163,22 +163,22 @@
         <div><dt>Events</dt><dd><%= @policy.audit_expiry_status == "completed" ? number_with_delimiter(@policy.audit_expired_event_count) : "—" %></dd></div>
       </dl>
     <% else %>
-      <p class="empty-state">No audit expiry runs yet.</p>
+      <p class="muted-copy data-empty-copy">No audit expiry runs yet.</p>
     <% end %>
   </section>
 
   <details class="data-task danger-zone">
-    <summary>Delete Workspace</summary>
+    <summary>Delete workspace</summary>
     <div>
-      <h2 id="workspace-deletion-title">Delete Workspace</h2>
-      <p>Deletion blocks access at once, removes attachment objects and external Memory entries, then erases this Workspace from PostgreSQL. A small immutable tombstone keeps the tenant, actor, time, and record counts. Export first. This cannot be undone.</p>
+      <h2 id="workspace-deletion-title">Delete workspace</h2>
+      <p>Deletion blocks access immediately, then removes stored files, memory entries, and workspace records. A minimal audit record keeps who deleted it, when, and the record counts. Export first. This cannot be undone.</p>
     </div>
     <%= form_with url: workspace_deletion_path(Current.workspace), class: "data-policy-form" do |form| %>
       <div class="field">
         <%= form.label :confirmation, "Type #{Current.workspace.slug} to confirm" %>
         <%= form.text_field :confirmation, required: true, autocomplete: "off" %>
       </div>
-      <%= form.submit "Delete Workspace", class: "button button-danger",
+      <%= form.submit "Delete workspace", class: "button button-danger",
         data: { turbo_confirm: "Delete #{Current.workspace.name}? Access will stop now and the data cannot be recovered." } %>
     <% end %>
   </details>

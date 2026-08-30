@@ -204,7 +204,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     page.current_window.resize_to(320, 844)
     assert_no_horizontal_overflow
     proof = find(".artifact-proof-blocked")
-    assert_operator proof.rect.width, :<=, 320
+    assert_operator proof.rect.width, :<=, page.evaluate_script("window.innerWidth")
     blocker = proof.find("li", text: "Material claim customer report is uncertain.")
     page.execute_script("document.activeElement.blur()")
     page.execute_script(

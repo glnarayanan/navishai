@@ -17,7 +17,7 @@ class GovernedPoliciesControllerTest < ActionDispatch::IntegrationTest
 
     get workspace_governed_policy_path(@workspace)
     assert_response :success
-    assert_select "h1", "Governed policy change"
+    assert_select "h1", "Review policy changes"
     assert_select "[role='note']", text: /cannot predict response quality, customer behavior, resolution rate, or any causal outcome/
     assert_select "#proposal-#{proposal.id}", text: /Needs preview/
 

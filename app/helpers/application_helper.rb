@@ -10,18 +10,18 @@ module ApplicationHelper
     "memory_records" => "Memory",
     "memory_corrections" => "Memory",
     "health_scorecards" => "Scorecard",
-    "crew_templates" => "Crews",
-    "agent_profiles" => "Crews",
-    "crew_tasks" => "Crews",
-    "governed_policies" => "Policies",
-    "runtime_installations" => "Runtimes",
-    "usage_rates" => "Usage",
-    "outcome_explanations" => "Explain",
-    "reliability_cockpits" => "Reliability",
+    "crew_templates" => "Crew setup",
+    "agent_profiles" => "Crew setup",
+    "crew_tasks" => "Crew setup",
+    "governed_policies" => "Policy changes",
+    "runtime_installations" => "AI providers",
+    "usage_rates" => "Usage & rates",
+    "outcome_explanations" => "Usage & rates",
+    "reliability_cockpits" => "System health",
     "shared_email_inboxes" => "Email",
     "intercom_connections" => "Intercom",
     "outbound_webhook_endpoints" => "Webhooks",
-    "workspace_data_controls" => "Data",
+    "workspace_data_controls" => "Data & retention",
     "notifications" => "Notifications",
     "workspaces" => "Workspaces",
     "workspace_invitations" => "Invitations"
@@ -33,17 +33,18 @@ module ApplicationHelper
     "Knowledge" => "M3 2.2h4.2c1.2 0 2.2.7 2.2 1.8v9.2c-.8-.6-1.6-.9-2.2-.9H3zm6.6 0H13v10.1h-3.2c-.6 0-1.4.3-2.2.9V4c0-1.1 1-1.8 2-1.8z",
     "Memory" => "M3.2 3.2h9.6v2.1H3.2zm0 3.7h9.6v2.1H3.2zm0 3.8h6.4V13H3.2z",
     "Scorecard" => "M8 1.6A6.4 6.4 0 1 1 1.6 8 6.4 6.4 0 0 1 8 1.6zm-.7 3.2h1.4v3.2l2.2 2.2-.9.9-2.7-2.7z",
-    "Crews" => "M8 1.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4zM3.2 4.2a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm9.6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zM8 7.6c2.3 0 4.4 1.2 4.4 3.2v1.6H3.6V10.8C3.6 8.8 5.7 7.6 8 7.6z",
-    "Policies" => "M8 1.6 13.3 3.8v4.1c0 3-2 5.2-5.3 6.2-3.3-1-5.3-3.2-5.3-6.2V3.8zm0 1.7L4.2 4.9v3c0 2.1 1.2 3.6 3.8 4.5 2.6-.9 3.8-2.4 3.8-4.5v-3zM7.2 5.5h1.6v3H11v1.4H7.2z",
-    "Runtimes" => "M6.2 1.8h3.6l.8 2.4H14v3.2h-2.1l-.8 2.4H4.9l-.8-2.4H2V4.2h3.4zm1 8.4h1.6V14H7.2z",
-    "Usage" => "M2.2 3h11.6v2H2.2zm0 4h7.2v2H2.2zm0 4h9.4v2H2.2z",
-    "Reliability" => "M8 1.7 13.8 4v4.2c0 3.2-2.1 5.4-5.8 6.1C4.3 13.6 2.2 11.4 2.2 8.2V4zm0 2L3.8 5.2v3c0 2.3 1.4 3.8 4.2 4.5 2.8-.7 4.2-2.2 4.2-4.5v-3zM7.3 5.5h1.4v3.2H7.3zm0 4.2h1.4v1.4H7.3z",
+    "Crew setup" => "M8 1.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4zM3.2 4.2a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm9.6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zM8 7.6c2.3 0 4.4 1.2 4.4 3.2v1.6H3.6V10.8C3.6 8.8 5.7 7.6 8 7.6z",
+    "Policy changes" => "M8 1.6 13.3 3.8v4.1c0 3-2 5.2-5.3 6.2-3.3-1-5.3-3.2-5.3-6.2V3.8zm0 1.7L4.2 4.9v3c0 2.1 1.2 3.6 3.8 4.5 2.6-.9 3.8-2.4 3.8-4.5v-3zM7.2 5.5h1.6v3H11v1.4H7.2z",
+    "AI providers" => "M6.2 1.8h3.6l.8 2.4H14v3.2h-2.1l-.8 2.4H4.9l-.8-2.4H2V4.2h3.4zm1 8.4h1.6V14H7.2z",
+    "Usage & rates" => "M2.2 3h11.6v2H2.2zm0 4h7.2v2H2.2zm0 4h9.4v2H2.2z",
+    "System health" => "M8 1.7 13.8 4v4.2c0 3.2-2.1 5.4-5.8 6.1C4.3 13.6 2.2 11.4 2.2 8.2V4zm0 2L3.8 5.2v3c0 2.3 1.4 3.8 4.2 4.5 2.8-.7 4.2-2.2 4.2-4.5v-3zM7.3 5.5h1.4v3.2H7.3zm0 4.2h1.4v1.4H7.3z",
     "Email" => "M2 3.4h12v9.2H2zm1.5 1.5 4.5 3.2 4.5-3.2V11H3.5z",
     "Intercom" => "M3 3.2h10v7.2H8.2L5.4 13v-2.6H3z",
     "Webhooks" => "M8 1.6a3.2 3.2 0 0 1 2.8 4.7l1.9 1.9-1.1 1.1-1.9-1.9A3.2 3.2 0 1 1 8 1.6zM4.4 8.4a3.2 3.2 0 1 1 .9 4.4l-1.9 1.9-1.1-1.1 1.9-1.9a3.2 3.2 0 0 1 .2-1.3z",
-    "Data" => "M8 1.6 13.6 4v3.1c0 3.4-2.3 5.8-5.6 6.7C4.7 12.9 2.4 10.5 2.4 7.1V4zm0 1.7L4 4.8v2.3c0 2.4 1.6 4.2 4 4.9 2.4-.7 4-2.5 4-4.9V4.8z",
+    "Data & retention" => "M8 1.6 13.6 4v3.1c0 3.4-2.3 5.8-5.6 6.7C4.7 12.9 2.4 10.5 2.4 7.1V4zm0 1.7L4 4.8v2.3c0 2.4 1.6 4.2 4 4.9 2.4-.7 4-2.5 4-4.9V4.8z",
     "Notifications" => "M8 1.8c1.8 0 3.3 1.4 3.3 3.2v2.3l1.4 1.8v.9H3.3v-.9l1.4-1.8V5c0-1.8 1.5-3.2 3.3-3.2zm-1.6 9.4h3.2A1.6 1.6 0 0 1 8 12.8a1.6 1.6 0 0 1-1.6-1.6z",
-    "Workspaces" => "M2.2 3.2h5.1v4.2H2.2zm6.5 0h5.1v4.2H8.7zM2.2 8.6h5.1v4.2H2.2zm6.5 0h5.1v4.2H8.7z"
+    "Workspaces" => "M2.2 3.2h5.1v4.2H2.2zm6.5 0h5.1v4.2H8.7zM2.2 8.6h5.1v4.2H2.2zm6.5 0h5.1v4.2H8.7z",
+    "Workspace settings" => "M8 2.1a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6zM3 8.1h10v1.5H3zm2.2 3h5.6v1.5H5.2z"
   }.freeze
 
   def color_theme_options
@@ -74,7 +75,7 @@ module ApplicationHelper
   end
 
   def nav_link(label, path, *controllers, **html)
-    current = nav_current?(*controllers)
+    current = html.key?(:current) ? html.delete(:current) : nav_current?(*controllers)
     css = [ "nav-item", html.delete(:class), ("is-current" if current) ].compact.join(" ")
     aria = { current: current ? "page" : nil }.merge(html.delete(:aria) || {})
     link_to path, **html, class: css, aria: aria do

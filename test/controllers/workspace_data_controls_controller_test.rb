@@ -14,7 +14,7 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Data controls"
     assert_select "select[name='workspace_data_policy[content_retention_days]']"
-    assert_select ".nav-label", text: "Data"
+    assert_select ".nav-label", text: "Data & retention"
 
     assert_difference "AuditEvent.count", 1 do
       patch workspace_data_controls_path(@workspace), params: {
@@ -63,7 +63,7 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
 
     get workspace_support_cases_path(@workspace)
-    assert_select ".nav-label", text: "Data", count: 0
+    assert_select ".nav-label", text: "Data & retention", count: 0
   end
 
   test "owner can queue an irreversible content expiry run" do
@@ -176,7 +176,7 @@ class WorkspaceDataControlsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     target = @workspace.organization.workspaces.where.not(id: @workspace.id).order(:id).last
     assert_select ".flash-notice", text: /retained #{Regexp.escape(target.name)}/
-    assert_select "h2", "Archive round-trip check"
+    assert_select "h2", "Verify backup and restore"
     assert_select "dt", "Latest result"
     assert_select "dd", /Passed: Round trip verified/
   end

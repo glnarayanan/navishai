@@ -45,14 +45,14 @@ class OutcomeExplanationsSystemTest < ApplicationSystemTestCase
     assert_text "Searches are task-scoped"
 
     open_workspace_nav
-    click_link "Usage", match: :first
-    assert_selector "h1", text: "Usage and cost rates"
+    click_link "Usage & rates", match: :first
+    assert_selector "h1", text: "Usage and rates"
     assert_text "unavailable rather than zero"
     fill_in "Currency", with: "USD"
     fill_in "Rate source", with: "Browser-tested public rate"
-    fill_in "Input rate per 1M units", with: "2"
-    fill_in "Output rate per 1M units", with: "4"
-    fill_in "Search rate per 1M units", with: "1"
+    fill_in "Input cost per 1M units", with: "2"
+    fill_in "Output cost per 1M units", with: "4"
+    fill_in "Search cost per 1M units", with: "1"
     click_button "Publish rate version"
     assert_text "Usage rate version published"
     assert_selector ".usage-rate-current", text: /v1/
@@ -72,7 +72,7 @@ class OutcomeExplanationsSystemTest < ApplicationSystemTestCase
     sign_in(member.user)
     page.current_window.resize_to(1440, 900)
     visit workspace_usage_rates_path(workspace)
-    assert_text "Usage and cost rates"
+    assert_text "Usage and rates"
     assert_no_button "Publish rate version"
     page.execute_script(<<~JAVASCRIPT)
       const form = document.createElement("form");

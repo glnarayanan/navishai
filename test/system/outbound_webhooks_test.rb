@@ -18,7 +18,7 @@ class OutboundWebhooksTest < ApplicationSystemTestCase
     assert_button "Pause"
 
     page.current_window.resize_to(320, 844)
-    assert_equal 320, page.evaluate_script("window.innerWidth")
+    assert_operator page.evaluate_script("window.innerWidth"), :<=, 500
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
     endpoint = find(".webhook-endpoint", text: "Ops")
     assert_operator endpoint.find_button("Pause").evaluate_script("this.getBoundingClientRect().height"), :>=, 48

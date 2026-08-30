@@ -1,16 +1,16 @@
-<% content_for :title, "Usage rates · #{@workspace.name} — NavishAI" %>
+<% content_for :title, "Usage and rates · #{@workspace.name} — NavishAI" %>
 <% form_values = @submitted_rates || {} %>
 
 <main class="page-shell usage-rates-page page-family-config">
   <header class="page-heading usage-rates-heading">
     <div>
-      <h1>Usage and cost rates</h1>
-      <p>Observed units come from immutable run and search ledgers. Money appears only when a frozen rate or adapter amount supports it.</p>
+      <h1>Usage and rates</h1>
+      <p>Track recorded model and search usage. Cost estimates appear only when a published rate or provider-reported amount is available.</p>
     </div>
   </header>
 
   <%= render "shared/notice", kind: "info", title: "Cost stays informational",
-    body: "Configured calculations are estimates. Publishing or rolling back a rate affects only new runs and searches; it cannot change a historical snapshot." %>
+    body: "Configured costs are estimates. Changing a rate affects only new activity; past estimates stay unchanged." %>
 
   <% if @rate_error %>
     <%= render "shared/notice", kind: "destructive", title: "Rates not changed", body: @rate_error %>
@@ -26,15 +26,15 @@
         <div><dt>Published</dt><dd><%= time_tag @current_version.published_at, @current_version.published_at.to_fs(:long) %></dd></div>
       </dl>
     <% else %>
-      <p>No rate is published. Usage stays visible, and money is shown as unavailable rather than zero.</p>
+      <p>No rate is published. Usage remains visible, and unknown costs appear as unavailable rather than zero.</p>
     <% end %>
   </section>
 
   <% if @can_configure %>
     <section class="usage-rate-editor" aria-labelledby="rate-editor-title">
       <header>
-        <h2 id="rate-editor-title">Publish a new version</h2>
-        <p>Enter currency units per one million observed units. Leave a rate blank when it is not known.</p>
+        <h2 id="rate-editor-title">Publish new rates</h2>
+        <p>Enter the amount charged per one million input, output, or search units. Leave unknown rates blank.</p>
       </header>
       <%= form_with url: workspace_usage_rates_path(@workspace), scope: :usage_rate, class: "usage-rate-form" do |form| %>
         <%= form.hidden_field :expected_current_version_id,
@@ -49,12 +49,12 @@
             <%= form.label :source_name, "Rate source" %>
             <%= form.text_field :source_name,
               value: form_values.fetch("source_name", @current_version&.source_name), required: true,
-              maxlength: 100, placeholder: "Admin-entered vendor rate card" %>
+              maxlength: 100, placeholder: "Provider pricing page, invoice, or contract" %>
           </div>
           <% %w[input output search].each do |kind| %>
             <% current_micros = @current_version&.public_send("#{kind}_rate_micros_per_million") %>
             <div class="field">
-              <%= form.label "#{kind}_rate", "#{kind.humanize} rate per 1M units" %>
+              <%= form.label "#{kind}_rate", "#{kind.humanize} cost per 1M units" %>
               <%= form.number_field "#{kind}_rate",
                 value: form_values.fetch("#{kind}_rate", UsageRateConfiguration.display_rate(current_micros)),
                 min: 0, max: UsageRateConfiguration::MAX_PRICE_PER_MILLION, step: "0.000001" %>
@@ -67,7 +67,7 @@
   <% end %>
 
   <section class="usage-rate-history" aria-labelledby="rate-history-title">
-    <header><h2 id="rate-history-title">Version history</h2><p>Applied versions remain immutable and keep historical estimates reproducible.</p></header>
+      <header><h2 id="rate-history-title">Rate history</h2><p>Previous rates remain available so past cost estimates do not change.</p></header>
     <% if @versions.any? %>
       <ol>
         <% @versions.each do |version| %>
@@ -84,7 +84,7 @@
             <% if version == @current_version %>
               <span class="status-badge status-success">Current</span>
             <% elsif @can_configure %>
-              <%= button_to "Use for new ledgers", rollback_workspace_usage_rates_path(@workspace),
+              <%= button_to "Use for new activity", rollback_workspace_usage_rates_path(@workspace),
                 params: { version_id: version.id, expected_current_version_id: @current_version.id },
                 class: "button button-secondary",
                 data: { turbo_confirm: "Use rate version #{version.version_number} for new runs and searches? Historical estimates will not change." } %>
