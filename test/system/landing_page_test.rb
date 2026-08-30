@@ -2,6 +2,10 @@ require "application_system_test_case"
 require "timeout"
 
 class LandingPageTest < ApplicationSystemTestCase
+  setup do
+    emulate_prefers_reduced_motion("no-preference")
+  end
+
   test "public landing explains the customer workflow without invented claims" do
     visit root_path
 
