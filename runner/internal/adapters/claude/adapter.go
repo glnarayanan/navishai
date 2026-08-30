@@ -58,8 +58,9 @@ func Definition() runtimecatalog.Definition {
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth", "status"},
 		AccountValidator: validSubscriptionStatus, AccountEnvironment: []string{"CLAUDE_CONFIG_DIR"},
 		AccountMetadata: map[string]string{"authentication": "claude_subscription"},
-		Capabilities:    []string{"structured_output", "tool_calling"},
-		MinimumVersion:  minVersion, MaximumVersion: maxVersion,
+		Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		EffectiveModel:  "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
+		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }
 

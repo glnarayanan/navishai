@@ -1,6 +1,9 @@
 class RuntimeInstallation < ApplicationRecord
   COMPATIBILITY_STATUSES = %w[compatible warning incompatible unknown].freeze
   HEALTH_STATUSES = %w[available unhealthy missing].freeze
+  RUNTIME_TEST_STATUSES = %w[untested passed failed].freeze
+  FINGERPRINT_FORMAT = /\A[0-9a-f]{64}\z/
+  FAILURE_CODE_FORMAT = /\A[a-z][a-z0-9_]{0,99}\z/
   DATA_CLASSES = {
     "case_content" => "Case content",
     "customer_identity" => "Customer identity",
@@ -25,6 +28,13 @@ class RuntimeInstallation < ApplicationRecord
   validates :compatibility_status, inclusion: { in: COMPATIBILITY_STATUSES }
   validates :health_status, inclusion: { in: HEALTH_STATUSES }
   validates :checked_at, presence: true
+  validates :effective_model, presence: true, length: { maximum: 200 }, format: { without: /[\r\n\x00]/ }
+  validates :configuration_fingerprint, format: { with: FINGERPRINT_FORMAT }
+  validates :runtime_test_status, inclusion: { in: RUNTIME_TEST_STATUSES }
+  validates :runtime_test_failure_code, format: { with: FAILURE_CODE_FORMAT }, allow_nil: true
+  validates :runtime_tested_configuration_fingerprint, format: { with: FINGERPRINT_FORMAT }, allow_nil: true
+  validates :runtime_test_input_units, :runtime_test_output_units,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :max_timeout_seconds, inclusion: { in: AgentProfileVersion::TIMEOUT_RANGE }
   validates :max_steps, inclusion: { in: AgentProfileVersion::STEP_RANGE }
   validates :max_tool_calls, inclusion: { in: AgentProfileVersion::TOOL_CALL_RANGE }
@@ -33,11 +43,13 @@ class RuntimeInstallation < ApplicationRecord
   validate :metadata_is_non_secret
   validate :policy_is_bounded
   validate :approval_is_complete
+  validate :runtime_test_evidence_is_complete
 
   scope :ordered, -> { order(:adapter_key, :id) }
 
   def runnable?
-    approved? && health_status == "available" && compatibility_status != "incompatible"
+    approved? && health_status == "available" && compatibility_status != "incompatible" &&
+      runtime_test_status == "passed" && runtime_tested_configuration_fingerprint == configuration_fingerprint
   end
 
   private
@@ -69,5 +81,20 @@ class RuntimeInstallation < ApplicationRecord
       actor_present = approved_by_membership_id.present? && approved_by_user_id.present? && approved_at.present?
       actor_absent = approved_by_membership_id.nil? && approved_by_user_id.nil? && approved_at.nil?
       errors.add(:approved, "must have one approving actor and time") unless approved? ? actor_present : actor_absent
+      if approved? && (runtime_test_status != "passed" || runtime_tested_configuration_fingerprint != configuration_fingerprint)
+        errors.add(:approved, "requires a passing test of the current configuration")
+      end
+    end
+
+    def runtime_test_evidence_is_complete
+      if runtime_test_status == "untested"
+        valid = runtime_test_failure_code.nil? && runtime_tested_at.nil? &&
+          runtime_tested_configuration_fingerprint.nil? && runtime_test_input_units.zero? &&
+          runtime_test_output_units.zero? && !runtime_test_usage_observed?
+      else
+        valid = runtime_tested_at.present? && runtime_tested_configuration_fingerprint == configuration_fingerprint
+        valid &&= runtime_test_status == "passed" ? runtime_test_failure_code.nil? : runtime_test_failure_code.present?
+      end
+      errors.add(:runtime_test_status, "does not match its evidence") unless valid
     end
 end

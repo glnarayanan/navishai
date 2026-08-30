@@ -14,6 +14,17 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
 
       reports
     end
+    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+      raise "wrong workspace" unless workspace_key == runner_key
+
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => "fixture-model", "status" => "passed", "failure_code" => nil,
+        "usage_observed" => true, "input_units" => 12, "output_units" => 3,
+        "tested_at" => "2026-08-31T12:00:00Z"
+      }
+    end
   end
 
   test "detects, approves, bounds, and revokes an installation with attribution" do
@@ -22,8 +33,12 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     end
     installation = @workspace.runtime_installations.sole
     assert_equal "/opt/navishai/fixture", installation.executable_path
+    assert_equal "fixture-model", installation.effective_model
+    assert_equal "c" * 64, installation.configuration_fingerprint
     assert_equal({ "authentication" => "managed_on_runner", "account_label" => "Fixture Team" }, installation.account_metadata)
     assert_not installation.runnable?
+
+    RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
 
     assert_difference "AuditEvent.count", 1 do
       RuntimeRegistry.update_approval!(
@@ -82,6 +97,139 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     assert_not installation.runnable?
   end
 
+  test "tests the current configuration and clears evidence when detection identity changes" do
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    installation = @workspace.runtime_installations.sole
+
+    assert_difference "AuditEvent.count", 1 do
+      RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
+    end
+    installation.reload
+    assert_equal "passed", installation.runtime_test_status
+    assert_equal "c" * 64, installation.runtime_tested_configuration_fingerprint
+    assert installation.runtime_test_usage_observed?
+    assert_equal 12, installation.runtime_test_input_units
+    assert_equal({ "status" => "passed" }, AuditEvent.order(:id).last.metadata)
+
+    RuntimeRegistry.update_approval!(
+      workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+    )
+    @reports[0] = runtime_report.merge(
+      "effective_model" => "fixture-model-next", "configuration_fingerprint" => "d" * 64
+    )
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+
+    installation.reload
+    assert_not installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_tested_at
+    assert_nil installation.runtime_tested_configuration_fingerprint
+  end
+
+  test "failed retest revokes an approved installation and records both audits" do
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    installation = @workspace.runtime_installations.sole
+    RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
+    RuntimeRegistry.update_approval!(
+      workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+    )
+
+    runner_key = @workspace.runner_key
+    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+      raise "wrong workspace" unless workspace_key == runner_key
+
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => "fixture-model", "status" => "failed",
+        "failure_code" => "unexpected_sentinel", "usage_observed" => true,
+        "input_units" => 13, "output_units" => 4, "tested_at" => "2026-08-31T12:01:00Z"
+      }
+    end
+    previous_audit_id = AuditEvent.maximum(:id) || 0
+
+    assert_difference "AuditEvent.count", 2 do
+      RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
+    end
+
+    installation.reload
+    assert_not installation.approved?
+    assert_nil installation.approved_by_membership
+    assert_nil installation.approved_by_user
+    assert_nil installation.approved_at
+    assert_equal "failed", installation.runtime_test_status
+    assert_equal "unexpected_sentinel", installation.runtime_test_failure_code
+    assert_equal 13, installation.runtime_test_input_units
+    assert_equal 4, installation.runtime_test_output_units
+    assert_not installation.runnable?
+    audits = AuditEvent.where("id > ?", previous_audit_id).order(:id)
+    assert_equal %w[runtime.installation_revoked runtime.installation_tested], audits.pluck(:action)
+    assert_equal({ "status" => "failed" }, audits.last.metadata)
+  end
+
+  test "missing detection clears test evidence before an identical rediscovery" do
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    installation = @workspace.runtime_installations.sole
+    RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
+    RuntimeRegistry.update_approval!(
+      workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+    )
+
+    @reports.clear
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+
+    installation.reload
+    assert_equal "missing", installation.health_status
+    assert_not installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_test_failure_code
+    assert_nil installation.runtime_tested_at
+    assert_nil installation.runtime_tested_configuration_fingerprint
+    assert_not installation.runtime_test_usage_observed?
+    assert_equal 0, installation.runtime_test_input_units
+    assert_equal 0, installation.runtime_test_output_units
+
+    @reports << runtime_report
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+
+    installation.reload
+    assert_equal "available", installation.health_status
+    assert_equal "untested", installation.runtime_test_status
+    error = assert_raises(RuntimeRegistry::InvalidPolicy) do
+      RuntimeRegistry.update_approval!(
+        workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+      )
+    end
+    assert_match(/Test the current provider configuration/, error.message)
+    assert_not installation.reload.approved?
+    assert_not installation.runnable?
+  end
+
+  test "approval requires a passing test of the current configuration" do
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    installation = @workspace.runtime_installations.sole
+
+    error = assert_raises(RuntimeRegistry::InvalidPolicy) do
+      RuntimeRegistry.update_approval!(
+        workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+      )
+    end
+    assert_match(/Test the current provider configuration/, error.message)
+
+    installation.update!(
+      runtime_test_status: "failed", runtime_test_failure_code: "unexpected_sentinel",
+      runtime_tested_at: Time.current,
+      runtime_tested_configuration_fingerprint: installation.configuration_fingerprint
+    )
+    assert_raises(RuntimeRegistry::InvalidPolicy) do
+      RuntimeRegistry.update_approval!(
+        workspace: @workspace, membership: @owner, installation:, attributes: approval_attributes
+      )
+    end
+    assert_not installation.reload.approved?
+    assert_not installation.runnable?
+  end
+
   test "model and database reject secret metadata and incomplete approval attribution" do
     installation = @workspace.runtime_installations.build(runtime_report.slice(
       "detection_key", "adapter_key", "protocol_version", "executable_path", "executable_version",
@@ -107,6 +255,7 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
         "executable_path" => "/opt/navishai/fixture", "executable_version" => "fixture 2.4.1",
         "account_metadata" => { "authentication" => "managed_on_runner", "account_label" => "Fixture Team" },
         "capabilities" => %w[structured_output tool_calling], "minimum_version" => "2.0.0",
+        "effective_model" => "fixture-model", "configuration_fingerprint" => "c" * 64,
         "maximum_version" => "2.x", "compatibility_status" => "compatible", "incompatibility_reason" => "",
         "health_status" => "available", "checked_at" => "2026-08-24T12:00:00Z"
       }

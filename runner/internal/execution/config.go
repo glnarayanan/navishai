@@ -2,15 +2,26 @@ package execution
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
+)
+
+const (
+	runtimeDefaultModel       = "runtime_default"
+	configurationIdentityV1   = "navishai-runtime-configuration-v1"
+	cursorSubscriptionAdapter = "cursor_acp_subscription"
 )
 
 type Config struct {
@@ -64,6 +75,80 @@ type SupervisorLimits struct {
 	Processes       uint64 `json:"processes"`
 	OutputBytes     int    `json:"output_bytes"`
 	KillGraceMillis int    `json:"kill_grace_millis"`
+}
+
+type adapterConfigurationIdentity struct {
+	Version           string                     `json:"version"`
+	AdapterKey        string                     `json:"adapter_key"`
+	Enabled           bool                       `json:"enabled"`
+	HomeDir           string                     `json:"home_dir"`
+	EffectiveModel    string                     `json:"effective_model"`
+	EgressProfileKey  string                     `json:"egress_profile_key"`
+	EgressExecutable  string                     `json:"egress_executable"`
+	UserNamespace     string                     `json:"user_namespace"`
+	NetworkNamespace  string                     `json:"network_namespace"`
+	EgressEnvironment []configurationEnvironment `json:"egress_environment"`
+	Profiles          []string                   `json:"profiles"`
+	Roles             []string                   `json:"roles"`
+	Tools             []string                   `json:"tools"`
+	DataClasses       []string                   `json:"data_classes"`
+	MaxTimeoutSeconds int                        `json:"max_timeout_seconds"`
+	MaxSteps          int                        `json:"max_steps"`
+	MaxToolCalls      int                        `json:"max_tool_calls"`
+	MaxInputUnits     int                        `json:"max_input_units"`
+	MaxOutputUnits    int                        `json:"max_output_units"`
+}
+
+type configurationEnvironment struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, key []byte) (string, string, error) {
+	if err := protocol.ValidateSecret(key); err != nil {
+		return "", "", err
+	}
+	model := adapter.Model
+	if model == "" {
+		model = runtimeDefaultModel
+	}
+	identity := adapterConfigurationIdentity{
+		Version: "v1", AdapterKey: adapterKey, Enabled: adapter.Enabled, HomeDir: adapter.HomeDir,
+		EffectiveModel: model, EgressProfileKey: adapter.EgressProfileKey,
+		Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles), Tools: sortedCopy(adapter.Tools),
+		DataClasses: sortedCopy(adapter.DataClasses), MaxTimeoutSeconds: adapter.MaxTimeoutSeconds,
+		MaxSteps: adapter.MaxSteps, MaxToolCalls: adapter.MaxToolCalls,
+		MaxInputUnits: adapter.MaxInputUnits, MaxOutputUnits: adapter.MaxOutputUnits,
+	}
+	for _, profile := range supervisor.EgressProfiles {
+		if profile.Key != adapter.EgressProfileKey {
+			continue
+		}
+		identity.EgressExecutable = profile.Executable
+		identity.UserNamespace = profile.UserNamespacePath
+		identity.NetworkNamespace = profile.NetworkNamespacePath
+		for key, value := range profile.Environment {
+			identity.EgressEnvironment = append(identity.EgressEnvironment, configurationEnvironment{Key: key, Value: value})
+		}
+		sort.Slice(identity.EgressEnvironment, func(left, right int) bool {
+			return identity.EgressEnvironment[left].Key < identity.EgressEnvironment[right].Key
+		})
+		break
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return "", "", err
+	}
+	digest := hmac.New(sha256.New, key)
+	_, _ = digest.Write([]byte(configurationIdentityV1 + "\x00"))
+	_, _ = digest.Write(encoded)
+	return model, hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func sortedCopy(values []string) []string {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	return result
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -122,6 +207,9 @@ func (config Config) validate() error {
 		egressKeys[profile.Key] = true
 	}
 	for key, adapter := range config.Adapters {
+		if key == cursorSubscriptionAdapter && adapter.Model != "" {
+			return errors.New("runner Cursor adapter does not support explicit model selection")
+		}
 		if !knownAdapters[key] || !distinctPolicyKeys(adapter.Profiles, knownProfiles) ||
 			!distinctPolicyKeys(adapter.Roles, knownRoles) || !distinctPolicyKeys(adapter.Tools, knownTools) ||
 			!distinctPolicyKeys(adapter.DataClasses, knownDataClasses) ||

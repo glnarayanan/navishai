@@ -226,6 +226,9 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
         executable_version: key, account_metadata: {}, capabilities: [],
         minimum_version: "1", maximum_version: "1", compatibility_status: "compatible",
         incompatibility_reason: "", health_status:, checked_at: @now,
+        runtime_test_status: approved ? "passed" : "untested",
+        runtime_tested_at: approved ? @now : nil,
+        runtime_tested_configuration_fingerprint: approved ? "0" * 64 : nil,
         approved:, approved_by_membership: approved ? @owner : nil,
         approved_by_user: approved ? @owner.user : nil, approved_at: approved ? @now : nil
       )

@@ -54,7 +54,8 @@ type Adapter struct{ now func() time.Time }
 func Definition() runtimecatalog.Definition {
 	return runtimecatalog.Definition{
 		AdapterKey: AdapterKey, ProtocolVersion: protocol.Version, ExecutableNames: []string{"cursor-agent", "agent"},
-		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", "structured_output", "tool_calling"},
+		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		EffectiveModel: "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
 		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }

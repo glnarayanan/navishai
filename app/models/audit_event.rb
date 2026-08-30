@@ -136,6 +136,7 @@ class AuditEvent < ApplicationRecord
     },
     "runtime.installation_approved" => {},
     "runtime.installation_revoked" => {},
+    "runtime.installation_tested" => { "status" => %w[passed failed] },
     "runtime.installations_checked" => { "detected_count" => Integer },
     "usage_rate.published" => { "from_version" => Integer, "to_version" => Integer },
     "usage_rate.rolled_back" => { "from_version" => Integer, "to_version" => Integer },
@@ -159,6 +160,13 @@ class AuditEvent < ApplicationRecord
     "sla.escalation_created" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
     "sla.escalation_reactivated" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
     "tag.created" => {},
+    "workspace.created" => { "organization_id" => Integer },
+    "workspace.updated" => {
+      "previous_name" => String,
+      "previous_slug" => String,
+      "name" => String,
+      "slug" => String
+    },
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },
     "workspace_invitation.revoked" => { "role" => Membership::ROLES },

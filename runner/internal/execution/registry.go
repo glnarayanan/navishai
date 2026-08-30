@@ -23,15 +23,19 @@ import (
 
 var ErrPolicyDenied = errors.New("runner execution policy denied the request")
 
+const runtimeTestSentinel = "NAVISHAI_RUNTIME_TEST_OK"
+
 type Registry struct {
-	config     Config
-	catalog    *runtimecatalog.Catalog
-	supervisor *supervisor.Supervisor
-	now        func() time.Time
+	config                   Config
+	catalog                  *runtimecatalog.Catalog
+	configurationIdentityKey []byte
+	supervisor               *supervisor.Supervisor
+	now                      func() time.Time
+	execute                  func(context.Context, protocol.AdmissionRequest, func(protocol.CanonicalEvent) error) error
 }
 
-func NewRegistry(config Config, catalog *runtimecatalog.Catalog, now func() time.Time) (*Registry, error) {
-	if config.WorkRoot == "" || catalog == nil {
+func NewRegistry(config Config, catalog *runtimecatalog.Catalog, configurationIdentityKey []byte, now func() time.Time) (*Registry, error) {
+	if config.WorkRoot == "" || catalog == nil || protocol.ValidateSecret(configurationIdentityKey) != nil {
 		return nil, ErrPolicyDenied
 	}
 	if now == nil {
@@ -55,7 +59,13 @@ func NewRegistry(config Config, catalog *runtimecatalog.Catalog, now func() time
 			return nil, fmt.Errorf("configure execution supervisor: %w", err)
 		}
 	}
-	return &Registry{config: config, catalog: catalog, supervisor: processSupervisor, now: now}, nil
+	registry := &Registry{
+		config: config, catalog: catalog,
+		configurationIdentityKey: append([]byte(nil), configurationIdentityKey...),
+		supervisor:               processSupervisor, now: now,
+	}
+	registry.execute = registry.Execute
+	return registry, nil
 }
 
 func (registry *Registry) Execute(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
@@ -93,7 +103,7 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 		_, err = codex.New(registry.now).Execute(runContext, codex.Invocation{
 			Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDir,
 			CodexHome: adapterConfig.HomeDir, Model: adapterConfig.Model, Prompt: prompt,
-			EgressProfileKey: adapterConfig.EgressProfileKey,
+			DisableTools: isRuntimeTestAdmission(request), EgressProfileKey: adapterConfig.EgressProfileKey,
 		}, registry.supervisor, emit)
 	case claude.AdapterKey:
 		_, err = claude.New(registry.now).Execute(runContext, claude.Invocation{
@@ -116,6 +126,129 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 		return ErrPolicyDenied
 	}
 	return err
+}
+
+func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalog.TestRequest) (runtimecatalog.TestResult, error) {
+	installation, ok := registry.catalog.ResolveApproved(ctx, request.DetectionKey, registry.config.Supervisor.ApprovedExecutables)
+	if !ok || !supportsRuntimeTest(installation) ||
+		installation.ConfigurationFingerprint != request.ConfigurationFingerprint {
+		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+	}
+	adapterConfig, ok := registry.config.Adapters[installation.AdapterKey]
+	if !ok || !adapterConfig.Enabled || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
+		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+	}
+	model, fingerprint, err := AdapterConfigurationIdentity(
+		installation.AdapterKey, adapterConfig, registry.config.Supervisor, registry.configurationIdentityKey,
+	)
+	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
+		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+	}
+	admission := runtimeTestAdmission(request, installation.AdapterKey, adapterConfig)
+	if admission.Validate() != nil {
+		return runtimecatalog.TestResult{}, ErrPolicyDenied
+	}
+	testWorkingDirectory := filepath.Join(registry.config.WorkRoot, admission.RunID)
+	if _, err := os.Lstat(testWorkingDirectory); !errors.Is(err, os.ErrNotExist) {
+		return runtimecatalog.TestResult{}, ErrPolicyDenied
+	}
+	defer os.RemoveAll(testWorkingDirectory)
+	events := []protocol.CanonicalEvent{}
+	executeErr := registry.execute(ctx, admission, func(event protocol.CanonicalEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
+}
+
+func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string, config AdapterConfig) protocol.AdmissionRequest {
+	timeout := min(config.MaxTimeoutSeconds, 30)
+	return protocol.AdmissionRequest{
+		ProtocolVersion: protocol.Version,
+		RunID:           request.RequestID,
+		IdempotencyKey:  "runtime-test-" + request.RequestID,
+		WorkspaceKey:    request.WorkspaceKey,
+		Task: protocol.Task{
+			TaskKey: request.RequestID, Attempt: 1, Title: "Verify configured subscription runtime",
+			InputContext:   "This fixed connectivity check contains no customer or workspace data.",
+			ExpectedOutput: runtimeTestSentinel,
+		},
+		Agent: protocol.AgentPolicy{
+			RoleKey: config.Roles[0], PolicyVersion: 1,
+			Instructions: "Return exactly the expected sentinel. Do not use tools, files, memory, web access, or other context.",
+			AllowedTools: []string{}, RuntimeProfileKey: config.Profiles[0], FallbackProfileKeys: []string{},
+			TimeoutSeconds: timeout, MaxSteps: 1, MaxToolCalls: 0, ReviewPolicy: "required",
+		},
+		Routing: protocol.RuntimeRouting{
+			DetectionKey: request.DetectionKey, AdapterKey: adapterKey, ProfileKey: config.Profiles[0],
+			SelectionReason: "primary", SelectionDetail: "Explicit owner or administrator runtime connectivity test.",
+			DataClasses: []string{}, MaxInputUnits: min(config.MaxInputUnits, 512), MaxOutputUnits: min(config.MaxOutputUnits, 32),
+		},
+	}
+}
+
+func isRuntimeTestAdmission(request protocol.AdmissionRequest) bool {
+	return request.Task.Title == "Verify configured subscription runtime" &&
+		request.Task.InputContext == "This fixed connectivity check contains no customer or workspace data." &&
+		request.Task.ExpectedOutput == runtimeTestSentinel &&
+		request.Agent.Instructions == "Return exactly the expected sentinel. Do not use tools, files, memory, web access, or other context." &&
+		len(request.Agent.AllowedTools) == 0 && len(request.Routing.DataClasses) == 0 &&
+		request.Agent.MaxSteps == 1 && request.Agent.MaxToolCalls == 0
+}
+
+func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, model, fingerprint string, testedAt time.Time) runtimecatalog.TestResult {
+	result := runtimecatalog.TestResult{
+		Status: "failed", FailureCode: "runtime_test_failed", EffectiveModel: model,
+		ConfigurationFingerprint: fingerprint, TestedAt: testedAt.UTC(),
+	}
+	output, completed, prohibitedTool := "", false, false
+	for _, event := range events {
+		switch event.EventType {
+		case "tool.completed":
+			prohibitedTool = true
+		case "output.produced":
+			value, _ := event.Data["text"].(string)
+			if output == "" {
+				output = value
+			} else {
+				output = "multiple_outputs"
+			}
+		case "usage.observed":
+			result.UsageObserved = true
+			result.InputUnits, _ = event.Data["input_units"].(int)
+			result.OutputUnits, _ = event.Data["output_units"].(int)
+		case "run.completed":
+			completed = true
+		case "run.timed_out":
+			result.FailureCode = "runtime_test_timed_out"
+		case "run.canceled":
+			result.FailureCode = "runtime_test_canceled"
+		case "run.failed":
+			if code, ok := event.Data["code"].(string); ok && len(code) <= 64 {
+				result.FailureCode = code
+			}
+		}
+	}
+	if prohibitedTool {
+		result.FailureCode = "prohibited_tool_use"
+		return result
+	}
+	if executeErr != nil {
+		return result
+	}
+	if !completed || output != runtimeTestSentinel {
+		result.FailureCode = "unexpected_sentinel"
+		return result
+	}
+	result.Status, result.FailureCode = "passed", ""
+	return result
+}
+
+func min(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func (registry *Registry) executeScripted(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
@@ -194,10 +327,14 @@ func ScriptedDetectionKey(path string) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-func ScriptedInstallations(config Config, checkedAt time.Time) []runtimecatalog.Installation {
+func ScriptedInstallations(config Config, configurationIdentityKey []byte, checkedAt time.Time) ([]runtimecatalog.Installation, error) {
 	adapter, ok := config.Adapters["scripted"]
 	if !ok || !adapter.Enabled {
-		return nil
+		return nil, nil
+	}
+	fingerprint, err := ScriptedConfigurationFingerprint(config, configurationIdentityKey)
+	if err != nil {
+		return nil, err
 	}
 	seen := map[string]bool{}
 	installations := []runtimecatalog.Installation{}
@@ -213,11 +350,19 @@ func ScriptedInstallations(config Config, checkedAt time.Time) []runtimecatalog.
 			ExecutablePath: resolved, ExecutableVersion: "scripted 1.0.0",
 			AccountMetadata: map[string]string{"authentication": "built_in"},
 			Capabilities:    []string{"structured_output", "tool_calling"},
-			MinimumVersion:  "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
+			EffectiveModel:  "deterministic_fixture", ConfigurationFingerprint: fingerprint,
+			MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 			HealthStatus: "available", CheckedAt: checkedAt.UTC().Format(time.RFC3339Nano),
 		})
 	}
-	return installations
+	return installations, nil
+}
+
+func ScriptedConfigurationFingerprint(config Config, configurationIdentityKey []byte) (string, error) {
+	_, fingerprint, err := AdapterConfigurationIdentity(
+		"scripted", config.Adapters["scripted"], config.Supervisor, configurationIdentityKey,
+	)
+	return fingerprint, err
 }
 
 func contains(values []string, wanted string) bool {
@@ -227,6 +372,10 @@ func contains(values []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func supportsRuntimeTest(installation runtimecatalog.Installation) bool {
+	return contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability)
 }
 
 func subset(values, allowed []string) bool {

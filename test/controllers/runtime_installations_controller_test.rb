@@ -13,7 +13,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     get workspace_runtime_installations_path(@workspace)
     assert_response :success
-    assert_select "h1", "Runtime approvals"
+    assert_select "h1", "AI providers"
     assert_select "code", "/opt/navishai/fixture"
     assert_select ".runtime-policy-form", count: 0
     assert_select "form[action='#{detect_workspace_runtime_installations_path(@workspace)}']", count: 0
@@ -23,6 +23,8 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     }
     assert_response :forbidden
     post detect_workspace_runtime_installations_path(@workspace)
+    assert_response :forbidden
+    post test_workspace_runtime_installation_path(@workspace, @installation)
     assert_response :forbidden
   end
 
@@ -42,6 +44,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "missing", @installation.reload.health_status
 
     @installation.update!(health_status: "available")
+    mark_test_passed!(@installation)
     patch workspace_runtime_installation_path(@workspace, @installation), params: {
       runtime_installation: approval_attributes
     }
@@ -59,6 +62,32 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :not_found
+  end
+
+  test "an Owner explicitly tests an installation and persists only safe evidence" do
+    sign_in_as users(:owner)
+    client = Object.new
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => "runtime_default", "status" => "passed", "failure_code" => nil,
+        "usage_observed" => true, "input_units" => 8, "output_units" => 2,
+        "tested_at" => "2026-08-31T12:00:00Z"
+      }
+    end
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+    begin
+      post test_workspace_runtime_installation_path(@workspace, @installation)
+    ensure
+      RunnerClient.define_singleton_method(:new, original)
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    assert_equal "Provider connection test passed.", flash[:notice]
+    assert_equal "passed", @installation.reload.runtime_test_status
+    assert_equal({ "status" => "passed" }, AuditEvent.order(:id).last.metadata)
   end
 
   private
@@ -80,5 +109,12 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
         max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20",
         max_input_units: "100000", max_output_units: "25000"
       }
+    end
+
+    def mark_test_passed!(installation)
+      installation.update!(
+        runtime_test_status: "passed", runtime_tested_at: Time.current,
+        runtime_tested_configuration_fingerprint: installation.configuration_fingerprint
+      )
     end
 end

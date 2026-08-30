@@ -4,7 +4,9 @@ require "uri"
 module RunnerProtocol
   VERSION = "v1"
   ADMISSION_PATH = "/v1/runs/admit"
-  RUNTIME_DETECTION_PATH = "/v1/runtimes/detect"
+  RUNTIME_DETECTION_VERSION = "v2"
+  RUNTIME_DETECTION_PATH = "/v2/runtimes/detect"
+  RUNTIME_TEST_PATH = "/v1/runtimes/test"
   WEB_SEARCH_PATH = "/v1/tools/web-search"
   MAX_BODY_BYTES = 256.kilobytes
   BIGINT_MAX = 9_223_372_036_854_775_807
@@ -302,7 +304,8 @@ module RunnerProtocol
     KEYS = %w[protocol_version installations].freeze
     INSTALLATION_KEYS = %w[
       detection_key adapter_key protocol_version executable_path executable_version account_metadata
-      capabilities minimum_version maximum_version compatibility_status incompatibility_reason health_status checked_at
+      capabilities effective_model configuration_fingerprint minimum_version maximum_version compatibility_status
+      incompatibility_reason health_status checked_at
     ].freeze
 
     attr_reader :installations
@@ -317,7 +320,7 @@ module RunnerProtocol
 
     def initialize(attributes)
       object!(attributes, KEYS, "response")
-      equal!(attributes["protocol_version"], VERSION, "protocol_version")
+      equal!(attributes["protocol_version"], RUNTIME_DETECTION_VERSION, "protocol_version")
       values = attributes["installations"]
       raise MalformedMessage, "installations is invalid" unless values.is_a?(Array) && values.size <= 32
 
@@ -343,6 +346,8 @@ module RunnerProtocol
           raise MalformedMessage, "#{name}.account_metadata is invalid"
         end
         values!(installation["capabilities"], 32, "#{name}.capabilities")
+        string!(installation["effective_model"], 200, "#{name}.effective_model", /\A[^\r\n\x00]+\z/)
+        string!(installation["configuration_fingerprint"], 64, "#{name}.configuration_fingerprint", /\A[0-9a-f]{64}\z/)
         string!(installation["minimum_version"], 100, "#{name}.minimum_version", nil, allow_empty: true)
         string!(installation["maximum_version"], 100, "#{name}.maximum_version", nil, allow_empty: true)
         unless RuntimeInstallation::COMPATIBILITY_STATUSES.include?(installation["compatibility_status"])
@@ -376,6 +381,55 @@ module RunnerProtocol
         valid = value.is_a?(Array) && value.size <= maximum && value == value.uniq.sort &&
           value.all? { |item| item.is_a?(String) && item.match?(POLICY_KEY_PATTERN) }
         raise MalformedMessage, "#{name} is invalid" unless valid
+      end
+  end
+
+  class RuntimeTestResponse
+    KEYS = %w[
+      protocol_version workspace_key request_id detection_key configuration_fingerprint effective_model
+      status failure_code usage_observed input_units output_units tested_at
+    ].freeze
+
+    attr_reader :attributes
+
+    def self.parse(body, workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+      raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body), workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+    rescue JSON::ParserError
+      raise MalformedMessage, "response body is not valid JSON"
+    end
+
+    def initialize(attributes, workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+      valid = attributes.is_a?(Hash) && attributes.keys.sort == KEYS.sort &&
+        attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
+        attributes["request_id"] == request_id && attributes["detection_key"] == detection_key &&
+        attributes["configuration_fingerprint"] == configuration_fingerprint &&
+        configuration_fingerprint.match?(/\A[0-9a-f]{64}\z/) &&
+        attributes["effective_model"].is_a?(String) && attributes["effective_model"].bytesize.between?(1, 200) &&
+        !attributes["effective_model"].match?(/[\r\n\x00]/) && %w[passed failed].include?(attributes["status"]) &&
+        [ true, false ].include?(attributes["usage_observed"]) && valid_units?(attributes["input_units"]) &&
+        valid_units?(attributes["output_units"]) && valid_time?(attributes["tested_at"])
+      valid &&= attributes["status"] == "passed" ? attributes["failure_code"].nil? : valid_failure_code?(attributes["failure_code"])
+      raise MalformedMessage, "runtime test response is invalid" unless valid
+
+      @attributes = attributes.deep_dup.freeze
+    end
+
+    private
+      def valid_units?(value)
+        value.is_a?(Integer) && value.between?(0, BIGINT_MAX)
+      end
+
+      def valid_time?(value)
+        Time.iso8601(value.to_s)
+        true
+      rescue ArgumentError
+        false
+      end
+
+      def valid_failure_code?(value)
+        value.is_a?(String) && value.match?(/\A[a-z][a-z0-9_]{0,63}\z/)
       end
   end
 

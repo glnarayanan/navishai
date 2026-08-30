@@ -77,7 +77,7 @@ class RunnerClient
   end
 
   def detect_runtimes!(workspace_key:)
-    body = JSON.generate(protocol_version: RunnerProtocol::VERSION, workspace_key: workspace_key)
+    body = JSON.generate(protocol_version: RunnerProtocol::RUNTIME_DETECTION_VERSION, workspace_key: workspace_key)
     timestamp = @clock.call.to_i.to_s
     request = Net::HTTP::Post.new(RunnerProtocol::RUNTIME_DETECTION_PATH)
     request["Content-Type"] = "application/json"
@@ -95,6 +95,33 @@ class RunnerClient
     raise MalformedResponse, error.message
   rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
     raise AmbiguousResult, "runner detection outcome is unknown: #{error.class}"
+  rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+    raise Unavailable, "runner is unavailable: #{error.class}"
+  end
+
+  def test_runtime!(workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+    body = JSON.generate(
+      protocol_version: RunnerProtocol::VERSION, workspace_key:, request_id:, detection_key:,
+      configuration_fingerprint:
+    )
+    timestamp = @clock.call.to_i.to_s
+    request = Net::HTTP::Post.new(RunnerProtocol::RUNTIME_TEST_PATH)
+    request["Content-Type"] = "application/json"
+    request["X-NavishAI-Timestamp"] = timestamp
+    request["X-NavishAI-Signature"] = RunnerProtocol.signature(
+      secret: @secret, timestamp:, method: "POST", path: RunnerProtocol::RUNTIME_TEST_PATH, body:
+    )
+    request.body = body
+    response = perform(request, read_timeout: 55)
+    raise_for_response(response) unless response.code == 200
+
+    RunnerProtocol::RuntimeTestResponse.parse(
+      response.body, workspace_key:, request_id:, detection_key:, configuration_fingerprint:
+    ).attributes
+  rescue RunnerProtocol::MalformedMessage => error
+    raise MalformedResponse, error.message
+  rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
+    raise AmbiguousResult, "runner test outcome is unknown: #{error.class}"
   rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
@@ -156,7 +183,7 @@ class RunnerClient
     raise ConfigurationError, "runner CA file could not be loaded: #{error.message}"
   end
 
-  def perform(request)
+  def perform(request, read_timeout: 10)
     http = Net::HTTP.new(@base_uri.host, @base_uri.port, nil)
     http.use_ssl = @base_uri.scheme == "https"
     if http.use_ssl?
@@ -164,7 +191,7 @@ class RunnerClient
       http.cert_store = @cert_store if @cert_store
     end
     http.open_timeout = 3
-    http.read_timeout = 10
+    http.read_timeout = read_timeout
     http.write_timeout = 10
 
     body = +"".b
@@ -204,7 +231,8 @@ class RunnerClient
 
   def error_message(body)
     payload = JSON.parse(body)
-    return "runner rejected the request" unless payload.is_a?(Hash) && payload.keys.sort == %w[error protocol_version] && payload["protocol_version"] == RunnerProtocol::VERSION
+    supported_versions = [ RunnerProtocol::VERSION, RunnerProtocol::RUNTIME_DETECTION_VERSION ]
+    return "runner rejected the request" unless payload.is_a?(Hash) && payload.keys.sort == %w[error protocol_version] && payload["protocol_version"].in?(supported_versions)
     return "runner rejected the request" unless payload["error"].is_a?(Hash) && payload["error"].keys.sort == %w[code message]
 
     payload["error"]["message"].to_s.first(500).presence || "runner rejected the request"

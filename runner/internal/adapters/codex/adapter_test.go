@@ -71,6 +71,24 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	}
 }
 
+func TestRuntimeTestInvocationDisablesShellImplementations(t *testing.T) {
+	invocation := testInvocation()
+	invocation.DisableTools = true
+	actual := arguments(invocation)
+	wanted := []string{"--disable", "shell_tool", "--disable", "unified_exec"}
+
+	found := false
+	for index := 0; index <= len(actual)-len(wanted); index++ {
+		if reflect.DeepEqual(actual[index:index+len(wanted)], wanted) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("runtime test did not disable shell tools: %#v", actual)
+	}
+}
+
 func TestExecuteFailsBeforeOutputWhenUsageExceedsBudget(t *testing.T) {
 	invocation := testInvocation()
 	invocation.Admission.Routing.MaxInputUnits = 119

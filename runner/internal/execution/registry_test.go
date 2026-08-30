@@ -1,19 +1,24 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 )
+
+var testConfigurationIdentityKey = []byte("runner-configuration-test-key-at-least-32-bytes")
 
 func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T) {
 	fixture := filepath.Join("..", "scripted", "testdata", "success.json")
@@ -28,7 +33,7 @@ func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T
 			MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
 		}},
 	}
-	registry, err := NewRegistry(config, runtimecatalog.Empty(), func() time.Time {
+	registry, err := NewRegistry(config, runtimecatalog.Empty(), testConfigurationIdentityKey, func() time.Time {
 		return time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	})
 	if err != nil {
@@ -67,6 +72,7 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 				DetectionKey: request.Routing.DetectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
 				ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
 				AccountMetadata: map[string]string{"authentication": "managed_on_runner"}, Capabilities: []string{"structured_output"},
+				EffectiveModel: "runtime_default", ConfigurationFingerprint: strings.Repeat("a", 64),
 				MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 				HealthStatus: "available", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
 			}
@@ -91,7 +97,7 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 						OpenFiles: 3, Processes: 1, OutputBytes: 1024},
 				},
 			}
-			registry, err := NewRegistry(config, catalog, time.Now)
+			registry, err := NewRegistry(config, catalog, testConfigurationIdentityKey, time.Now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -107,6 +113,146 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 				t.Fatalf("adapter branch emitted the wrong lifecycle: %#v", events)
 			}
 		})
+	}
+}
+
+func TestRuntimeTestEligibilityUsesOnlyTheDeclaredCapability(t *testing.T) {
+	declared := runtimecatalog.Installation{
+		AdapterKey: "scripted", Capabilities: []string{runtimecatalog.RuntimeTestCapability},
+	}
+	if !supportsRuntimeTest(declared) {
+		t.Fatal("declared runtime-test capability was ignored because of the adapter name")
+	}
+	undeclared := runtimecatalog.Installation{AdapterKey: "codex_subscription", Capabilities: []string{"structured_output"}}
+	if supportsRuntimeTest(undeclared) {
+		t.Fatal("adapter name enabled runtime testing without the declared capability")
+	}
+}
+
+func TestRuntimeTestOrchestratesSentinelAndFailsClosed(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	workRoot := t.TempDir()
+	executableRoot := t.TempDir()
+	executablePath := testExecutable(t, executableRoot, "test-runtime", "exit 0")
+	adapter := AdapterConfig{
+		Enabled: true, Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
+		MaxTimeoutSeconds: 60, MaxSteps: 1, MaxToolCalls: 0, MaxInputUnits: 1_000, MaxOutputUnits: 100,
+	}
+	config := Config{
+		WorkRoot: workRoot, Adapters: map[string]AdapterConfig{"scripted": adapter},
+		Supervisor: SupervisorConfig{ApprovedExecutables: []string{executablePath}},
+	}
+	model, fingerprint, err := AdapterConfigurationIdentity("scripted", adapter, config.Supervisor, testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detectionKey := testDetectionKey(t, "scripted", executablePath)
+	installation := runtimecatalog.Installation{
+		DetectionKey: detectionKey, AdapterKey: "scripted", ProtocolVersion: protocol.Version,
+		ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
+		AccountMetadata: map[string]string{"authentication": "built_in"},
+		Capabilities:    []string{runtimecatalog.RuntimeTestCapability}, EffectiveModel: model,
+		ConfigurationFingerprint: fingerprint, MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
+		CompatibilityStatus: "compatible", HealthStatus: "available", CheckedAt: now.Format(time.RFC3339Nano),
+	}
+	catalog, err := runtimecatalog.NewWithInstallations(nil, []runtimecatalog.Installation{installation}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewRegistry(config, catalog, testConfigurationIdentityKey, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	executions := 0
+	registry.execute = func(_ context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
+		executions++
+		if !isRuntimeTestAdmission(request) {
+			t.Fatal("runtime test did not use fixed admission")
+		}
+		for _, event := range []protocol.CanonicalEvent{
+			{EventType: "output.produced", Data: map[string]any{"text": runtimeTestSentinel}},
+			{EventType: "run.completed", Data: map[string]any{"outcome": "completed"}},
+		} {
+			if err := emit(event); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	request := runtimecatalog.TestRequest{
+		WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c", RequestID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
+		DetectionKey: detectionKey, ConfigurationFingerprint: fingerprint,
+	}
+	result, err := registry.TestRuntime(context.Background(), request)
+	if err != nil || result.Status != "passed" || executions != 1 {
+		t.Fatalf("runtime test failed: result=%#v err=%v executions=%d", result, err, executions)
+	}
+	if _, err := os.Stat(filepath.Join(workRoot, request.RequestID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("test workspace was not removed: %v", err)
+	}
+
+	stale := request
+	stale.ConfigurationFingerprint = strings.Repeat("f", 64)
+	if _, err := registry.TestRuntime(context.Background(), stale); !errors.Is(err, runtimecatalog.ErrTestConfigurationChanged) || executions != 1 {
+		t.Fatalf("stale fingerprint did not fail closed: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(workRoot, request.RequestID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.TestRuntime(context.Background(), request); !errors.Is(err, ErrPolicyDenied) || executions != 1 {
+		t.Fatalf("pre-existing work directory did not fail closed: %v", err)
+	}
+}
+
+func TestRuntimeTestAdmissionCarriesOnlyFixedSentinelContextAndZeroTools(t *testing.T) {
+	request := runtimecatalog.TestRequest{
+		WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+		RequestID:    "3d07f334-88ef-4fe4-a640-421e3ba79921",
+		DetectionKey: strings.Repeat("a", 64), ConfigurationFingerprint: strings.Repeat("b", 64),
+	}
+	config := AdapterConfig{
+		Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
+		MaxTimeoutSeconds: 900, MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
+	}
+
+	admission := runtimeTestAdmission(request, "codex_subscription", config)
+
+	if err := admission.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !isRuntimeTestAdmission(admission) {
+		t.Fatal("fixed admission was not recognized as a no-tools runtime test")
+	}
+	if len(admission.Agent.AllowedTools) != 0 || len(admission.Routing.DataClasses) != 0 ||
+		admission.Agent.MaxToolCalls != 0 || admission.Agent.MaxSteps != 1 || admission.Agent.TimeoutSeconds != 30 ||
+		admission.Routing.MaxInputUnits != 512 || admission.Routing.MaxOutputUnits != 32 ||
+		admission.Task.ExpectedOutput != runtimeTestSentinel {
+		t.Fatalf("runtime test admission was not tightly bounded: %#v", admission)
+	}
+	serialized, _ := json.Marshal(admission)
+	for _, forbidden := range []string{"customer_identity", "retrieved_memory", "public_web_search", "case_content"} {
+		if bytes.Contains(serialized, []byte(forbidden)) {
+			t.Fatalf("runtime test admission exposed %q", forbidden)
+		}
+	}
+}
+
+func TestEvaluateRuntimeTestRequiresExactSentinelAndRejectsToolUse(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	events := []protocol.CanonicalEvent{
+		{EventType: "output.produced", Data: map[string]any{"text": runtimeTestSentinel}},
+		{EventType: "usage.observed", Data: map[string]any{"input_units": 12, "output_units": 3}},
+		{EventType: "run.completed", Data: map[string]any{"outcome": "completed"}},
+	}
+	result := evaluateRuntimeTest(events, nil, "fixture-model", strings.Repeat("a", 64), now)
+	if result.Status != "passed" || !result.UsageObserved || result.InputUnits != 12 || result.OutputUnits != 3 {
+		t.Fatalf("exact sentinel did not pass: %#v", result)
+	}
+
+	events = append([]protocol.CanonicalEvent{{EventType: "tool.completed", Data: map[string]any{"tool": "shell", "result": "ok"}}}, events...)
+	result = evaluateRuntimeTest(events, nil, "fixture-model", strings.Repeat("a", 64), now)
+	if result.Status != "failed" || result.FailureCode != "prohibited_tool_use" {
+		t.Fatalf("tool use was not rejected: %#v", result)
 	}
 }
 

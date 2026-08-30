@@ -32,6 +32,7 @@ type Invocation struct {
 	CodexHome        string
 	Model            string
 	Prompt           string
+	DisableTools     bool
 	EgressProfileKey string
 }
 
@@ -55,8 +56,9 @@ func Definition() runtimecatalog.Definition {
 		AccountMarker:      "Logged in using ChatGPT",
 		AccountEnvironment: []string{"CODEX_HOME"},
 		AccountMetadata:    map[string]string{"authentication": "chatgpt_subscription"},
-		Capabilities:       []string{"structured_output", "tool_calling"},
-		MinimumVersion:     minVersion, MaximumVersion: maxVersion,
+		Capabilities:       []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		EffectiveModel:     "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
+		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }
 
@@ -139,8 +141,11 @@ func arguments(invocation Invocation) []string {
 		"exec", "--json", "--color", "never", "--sandbox", "read-only", "--ephemeral",
 		"--ignore-user-config", "--ignore-rules", "-c", `approval_policy="never"`,
 		"-c", `web_search="disabled"`,
-		"-C", invocation.WorkingDir,
 	}
+	if invocation.DisableTools {
+		values = append(values, "--disable", "shell_tool", "--disable", "unified_exec")
+	}
+	values = append(values, "-C", invocation.WorkingDir)
 	if invocation.Model != "" {
 		values = append(values, "-m", invocation.Model)
 	}

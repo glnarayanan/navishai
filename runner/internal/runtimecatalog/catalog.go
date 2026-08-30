@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	maxVersionBytes = 8 * 1024
-	probeTimeout    = 3 * time.Second
+	RuntimeTestCapability = "runtime_test"
+	maxVersionBytes       = 8 * 1024
+	probeTimeout          = 3 * time.Second
 )
 
 var ErrInvalidDefinition = errors.New("invalid runtime definition")
@@ -29,34 +30,38 @@ var policyKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 var lowerHexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Definition struct {
-	AdapterKey         string
-	ProtocolVersion    string
-	ExecutableNames    []string
-	VersionArguments   []string
-	AccountArguments   []string
-	AccountMarker      string
-	AccountValidator   func(string) bool
-	AccountEnvironment []string
-	AccountMetadata    map[string]string
-	Capabilities       []string
-	MinimumVersion     string
-	MaximumVersion     string
+	AdapterKey               string
+	ProtocolVersion          string
+	ExecutableNames          []string
+	VersionArguments         []string
+	AccountArguments         []string
+	AccountMarker            string
+	AccountValidator         func(string) bool
+	AccountEnvironment       []string
+	AccountMetadata          map[string]string
+	Capabilities             []string
+	EffectiveModel           string
+	ConfigurationFingerprint string
+	MinimumVersion           string
+	MaximumVersion           string
 }
 
 type Installation struct {
-	DetectionKey          string            `json:"detection_key"`
-	AdapterKey            string            `json:"adapter_key"`
-	ProtocolVersion       string            `json:"protocol_version"`
-	ExecutablePath        string            `json:"executable_path"`
-	ExecutableVersion     string            `json:"executable_version"`
-	AccountMetadata       map[string]string `json:"account_metadata"`
-	Capabilities          []string          `json:"capabilities"`
-	MinimumVersion        string            `json:"minimum_version"`
-	MaximumVersion        string            `json:"maximum_version"`
-	CompatibilityStatus   string            `json:"compatibility_status"`
-	IncompatibilityReason string            `json:"incompatibility_reason"`
-	HealthStatus          string            `json:"health_status"`
-	CheckedAt             string            `json:"checked_at"`
+	DetectionKey             string            `json:"detection_key"`
+	AdapterKey               string            `json:"adapter_key"`
+	ProtocolVersion          string            `json:"protocol_version"`
+	ExecutablePath           string            `json:"executable_path"`
+	ExecutableVersion        string            `json:"executable_version"`
+	AccountMetadata          map[string]string `json:"account_metadata"`
+	Capabilities             []string          `json:"capabilities"`
+	EffectiveModel           string            `json:"effective_model"`
+	ConfigurationFingerprint string            `json:"configuration_fingerprint"`
+	MinimumVersion           string            `json:"minimum_version"`
+	MaximumVersion           string            `json:"maximum_version"`
+	CompatibilityStatus      string            `json:"compatibility_status"`
+	IncompatibilityReason    string            `json:"incompatibility_reason"`
+	HealthStatus             string            `json:"health_status"`
+	CheckedAt                string            `json:"checked_at"`
 }
 
 type Catalog struct {
@@ -74,6 +79,7 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
 			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] ||
+			!validConfigurationIdentity(definition.EffectiveModel, definition.ConfigurationFingerprint) ||
 			(len(definition.AccountArguments) > 0 && ((definition.AccountMarker == "") == (definition.AccountValidator == nil) ||
 				len(definition.AccountMetadata) == 0)) ||
 			(len(definition.AccountEnvironment) > 0 && len(definition.AccountArguments) == 0) ||
@@ -103,6 +109,7 @@ func validInstallation(installation Installation) bool {
 		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || installation.ExecutableVersion == "" ||
 		installation.CompatibilityStatus != "compatible" || installation.IncompatibilityReason != "" ||
 		installation.HealthStatus != "available" || len(installation.Capabilities) == 0 ||
+		!validConfigurationIdentity(installation.EffectiveModel, installation.ConfigurationFingerprint) ||
 		installation.AccountMetadata == nil || len(installation.AccountMetadata) == 0 {
 		return false
 	}
@@ -123,6 +130,10 @@ func validInstallation(installation Installation) bool {
 		capabilities[capability] = true
 	}
 	return true
+}
+
+func validConfigurationIdentity(model, fingerprint string) bool {
+	return len(model) > 0 && len(model) <= 200 && !strings.ContainsAny(model, "\r\n\x00") && lowerHexPattern.MatchString(fingerprint)
 }
 
 func validEnvironmentNames(values []string) bool {
@@ -233,6 +244,7 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 		DetectionKey: detectionKey(definition.AdapterKey, resolved), AdapterKey: definition.AdapterKey,
 		ProtocolVersion: definition.ProtocolVersion, ExecutablePath: resolved, ExecutableVersion: version,
 		AccountMetadata: accountMetadata, Capabilities: capabilities,
+		EffectiveModel: definition.EffectiveModel, ConfigurationFingerprint: definition.ConfigurationFingerprint,
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,
 		CheckedAt: catalog.now().UTC().Format(time.RFC3339Nano),

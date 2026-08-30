@@ -6012,14 +6012,27 @@ CREATE TABLE public.runtime_installations (
     profile_keys jsonb DEFAULT '["workspace_default"]'::jsonb NOT NULL,
     max_input_units bigint DEFAULT 100000 NOT NULL,
     max_output_units bigint DEFAULT 25000 NOT NULL,
+    effective_model character varying DEFAULT 'runtime_default'::character varying NOT NULL,
+    configuration_fingerprint character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    runtime_test_status character varying DEFAULT 'untested'::character varying NOT NULL,
+    runtime_test_failure_code character varying,
+    runtime_tested_at timestamp(6) without time zone,
+    runtime_tested_configuration_fingerprint character varying,
+    runtime_test_input_units bigint DEFAULT 0 NOT NULL,
+    runtime_test_output_units bigint DEFAULT 0 NOT NULL,
+    runtime_test_usage_observed boolean DEFAULT false NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
+    CONSTRAINT runtime_installations_approval_requires_test CHECK (((approved = false) OR (((runtime_test_status)::text = 'passed'::text) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT runtime_installations_configuration_identity CHECK ((((octet_length((effective_model)::text) >= 1) AND (octet_length((effective_model)::text) <= 200)) AND ((effective_model)::text !~ '[\r\n]'::text) AND ((configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
     CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 9) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
     CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
     CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
+    CONSTRAINT runtime_installations_test_evidence CHECK ((((runtime_test_status)::text = ANY (ARRAY[('untested'::character varying)::text, ('passed'::character varying)::text, ('failed'::character varying)::text])) AND ((runtime_test_failure_code IS NULL) OR ((runtime_test_failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)) AND ((runtime_tested_configuration_fingerprint IS NULL) OR ((runtime_tested_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text)) AND (runtime_test_input_units >= 0) AND (runtime_test_output_units >= 0))),
+    CONSTRAINT runtime_installations_test_state CHECK (((((runtime_test_status)::text = 'untested'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NULL) AND (runtime_tested_configuration_fingerprint IS NULL) AND (runtime_test_input_units = 0) AND (runtime_test_output_units = 0) AND (runtime_test_usage_observed = false)) OR (((runtime_test_status)::text = 'passed'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)) OR (((runtime_test_status)::text = 'failed'::text) AND (runtime_test_failure_code IS NOT NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
@@ -15360,6 +15373,8 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260831121000'),
+('20260831120000'),
 ('20260829000000'),
 ('20260828233000'),
 ('20260828230000'),

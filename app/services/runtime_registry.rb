@@ -9,6 +9,10 @@ class RuntimeRegistry
     new(workspace:, membership:).update_approval!(installation:, attributes:)
   end
 
+  def self.test!(workspace:, membership:, installation:, client: RunnerClient.new)
+    new(workspace:, membership:).test!(installation:, client:)
+  end
+
   def initialize(workspace:, membership:)
     @workspace = workspace
     @membership = workspace.memberships.find(membership.id)
@@ -23,6 +27,7 @@ class RuntimeRegistry
       reports.each { |report| persist_report!(report) }
       @workspace.runtime_installations.where.not(detection_key: seen).find_each do |installation|
         audit_revoke!(installation) if installation.approved?
+        reset_runtime_test!(installation)
         installation.update!(health_status: "missing", checked_at: Time.current)
       end
       AuditEvent.record!(
@@ -41,7 +46,11 @@ class RuntimeRegistry
     RuntimeInstallation.transaction do
       record.lock!
       if approve
-        raise InvalidPolicy, "Only an available, compatible installation can run." unless record.health_status == "available" && record.compatibility_status != "incompatible"
+        raise InvalidPolicy, "Only an available, compatible provider can run." unless record.health_status == "available" && record.compatibility_status != "incompatible"
+        unless record.runtime_test_status == "passed" &&
+            record.runtime_tested_configuration_fingerprint == record.configuration_fingerprint
+          raise InvalidPolicy, "Test the current provider configuration successfully before allowing access."
+        end
         record.update!(
           approved: true, approved_by_membership: @membership, approved_by_user: @membership.user,
           approved_at: Time.current,
@@ -68,6 +77,43 @@ class RuntimeRegistry
     raise InvalidPolicy, error.record.errors.full_messages.to_sentence
   end
 
+  def test!(installation:, client:)
+    record = @workspace.runtime_installations.find(installation.id)
+    unless record.health_status == "available" && record.compatibility_status != "incompatible"
+      raise InvalidPolicy, "Only an available, compatible provider can be tested."
+    end
+    request_id = SecureRandom.uuid
+    response = client.test_runtime!(
+      workspace_key: @workspace.runner_key, request_id:, detection_key: record.detection_key,
+      configuration_fingerprint: record.configuration_fingerprint
+    )
+    RuntimeInstallation.transaction do
+      record.lock!
+      unless record.health_status == "available" && record.compatibility_status != "incompatible" &&
+          response.fetch("configuration_fingerprint") == record.configuration_fingerprint &&
+          response.fetch("effective_model") == record.effective_model
+        raise InvalidPolicy, "Provider configuration changed. Find providers again before testing."
+      end
+      audit_revoke!(record) if response.fetch("status") == "failed" && record.approved?
+      record.update!(
+        runtime_test_status: response.fetch("status"),
+        runtime_test_failure_code: response.fetch("failure_code"),
+        runtime_tested_at: Time.iso8601(response.fetch("tested_at")),
+        runtime_tested_configuration_fingerprint: response.fetch("configuration_fingerprint"),
+        runtime_test_usage_observed: response.fetch("usage_observed"),
+        runtime_test_input_units: response.fetch("input_units"),
+        runtime_test_output_units: response.fetch("output_units")
+      )
+      AuditEvent.record!(
+        action: "runtime.installation_tested", source: :web, workspace: @workspace,
+        actor: @membership.user, subject: record, metadata: { "status" => record.runtime_test_status }
+      )
+    end
+    record
+  rescue ActiveRecord::RecordInvalid, KeyError, ArgumentError => error
+    raise InvalidPolicy, error.message
+  end
+
   private
     def persist_report!(report)
       installation = @workspace.runtime_installations.find_or_initialize_by(detection_key: report.fetch("detection_key"))
@@ -75,6 +121,8 @@ class RuntimeRegistry
         adapter_key: report.fetch("adapter_key"), protocol_version: report.fetch("protocol_version"),
         executable_path: report.fetch("executable_path"), executable_version: report.fetch("executable_version"),
         account_metadata: report.fetch("account_metadata"), capabilities: report.fetch("capabilities").sort,
+        effective_model: report.fetch("effective_model"),
+        configuration_fingerprint: report.fetch("configuration_fingerprint"),
         minimum_version: report.fetch("minimum_version"), maximum_version: report.fetch("maximum_version"),
         compatibility_status: report.fetch("compatibility_status"),
         incompatibility_reason: report.fetch("incompatibility_reason"), health_status: report.fetch("health_status"),
@@ -84,6 +132,7 @@ class RuntimeRegistry
         installation.public_send(attribute) != value
       end
       audit_revoke!(installation) if material_changed && installation.approved?
+      reset_runtime_test!(installation) if material_changed
       installation.assign_attributes(detected)
       installation.allowed_role_keys = [] unless installation.persisted?
       installation.allowed_tools = [] unless installation.persisted?
@@ -95,6 +144,14 @@ class RuntimeRegistry
     def revoke!(installation)
       installation.assign_attributes(
         approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil
+      )
+    end
+
+    def reset_runtime_test!(installation)
+      installation.assign_attributes(
+        runtime_test_status: "untested", runtime_test_failure_code: nil, runtime_tested_at: nil,
+        runtime_tested_configuration_fingerprint: nil, runtime_test_input_units: 0,
+        runtime_test_output_units: 0, runtime_test_usage_observed: false
       )
     end
 

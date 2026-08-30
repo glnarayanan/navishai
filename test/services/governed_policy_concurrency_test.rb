@@ -92,7 +92,10 @@ class GovernedPolicyConcurrencyTest < ActiveSupport::TestCase
         "approved_by_membership_id", "approved_by_user_id", "approved_at"
       )
       @workspace.runtime_installations.create!(
-        **attributes, approved: true, approved_by_membership: @owner,
+        **attributes,
+        runtime_test_status: "passed", runtime_tested_at: Time.current,
+        runtime_tested_configuration_fingerprint: attributes.fetch("configuration_fingerprint"),
+        approved: true, approved_by_membership: @owner,
         approved_by_user: @owner.user, approved_at: Time.current
       )
     end

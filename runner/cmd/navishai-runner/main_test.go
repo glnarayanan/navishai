@@ -1,12 +1,23 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/admission"
+	"github.com/glnarayanan/navishai/runner/internal/execution"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 )
 
 func TestHealthEndpoints(t *testing.T) {
@@ -48,6 +59,80 @@ func TestHandlerRequiresASecret(t *testing.T) {
 	}
 }
 
+func TestOnlyEligibleLiveAdaptersDeclareRuntimeTestCapability(t *testing.T) {
+	for name, definition := range map[string]runtimecatalog.Definition{
+		"Codex": codex.Definition(), "Claude": claude.Definition(),
+		"Grok": grok.Definition(), "Cursor": cursor.Definition(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !hasCapability(definition.Capabilities, runtimecatalog.RuntimeTestCapability) {
+				t.Fatalf("%s did not declare %q", name, runtimecatalog.RuntimeTestCapability)
+			}
+		})
+	}
+
+	fixture := filepath.Join("..", "..", "internal", "scripted", "testdata", "success.json")
+	config := execution.Config{
+		Scripted: map[string]string{"workspace_default": fixture},
+		Adapters: map[string]execution.AdapterConfig{"scripted": {Enabled: true}},
+	}
+	installations, err := execution.ScriptedInstallations(
+		config, []byte("runner-configuration-test-key-at-least-32-bytes"), time.Now(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installations) != 1 || hasCapability(installations[0].Capabilities, runtimecatalog.RuntimeTestCapability) {
+		t.Fatalf("scripted installation unexpectedly declared runtime testing: %#v", installations)
+	}
+}
+
+func TestHandlerRegistersBothRuntimeDetectionVersions(t *testing.T) {
+	secret := []byte("runner-test-secret-that-is-at-least-32-bytes")
+	store, err := admission.OpenStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := newHandler(secret, store, "", time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range []struct {
+		path    string
+		version string
+	}{
+		{path: runtimecatalog.LegacyDetectionPath, version: protocol.Version},
+		{path: runtimecatalog.DetectionPath, version: runtimecatalog.DetectionVersion},
+	} {
+		t.Run(endpoint.version, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{
+				"protocol_version": endpoint.version,
+				"workspace_key":    "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+			})
+			request := httptest.NewRequest(http.MethodPost, endpoint.path, bytes.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+			request.Header.Set("X-NavishAI-Timestamp", timestamp)
+			signature, err := protocol.Sign(secret, timestamp, http.MethodPost, endpoint.path, body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("X-NavishAI-Signature", signature)
+			response := httptest.NewRecorder()
+
+			handler.ServeHTTP(response, request)
+
+			if response.Code != http.StatusOK {
+				t.Fatalf("expected status %d, got %d: %s", http.StatusOK, response.Code, response.Body.String())
+			}
+			var payload map[string]any
+			if json.Unmarshal(response.Body.Bytes(), &payload) != nil || payload["protocol_version"] != endpoint.version {
+				t.Fatalf("unexpected response %#v", payload)
+			}
+		})
+	}
+}
+
 func TestTLSFiles(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -81,4 +166,13 @@ func TestTLSFiles(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasCapability(capabilities []string, wanted string) bool {
+	for _, capability := range capabilities {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
 }
