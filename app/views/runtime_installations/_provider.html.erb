@@ -32,6 +32,12 @@
                  else
                    "Test required"
                  end %>
+<% status_tone = case status_text
+                 when "Ready" then "status-success"
+                 when "Approval required", "Test required" then "status-warning"
+                 when "Test failed" then "status-danger"
+                 else "status-neutral"
+                 end %>
 <% test_disabled_reason = if installation.nil?
                             "No compatible #{provider_name} runtime is available on this runner. Refresh after it is installed, allowed by the runner, and signed in."
                           elsif installation.compatibility_status == "incompatible"
@@ -43,6 +49,20 @@
                           elsif installation.health_status != "available"
                             "The #{provider_name} runtime is not healthy enough to run a connection test."
                           end %>
+<% test_action_primary = test_disabled_reason.nil? && [ "Test required", "Test failed" ].include?(status_text) %>
+<% approval_disabled_reason = if installation.nil?
+                                nil
+                              elsif !live_provider_available
+                                "Live #{provider_name} settings are unavailable. Refresh status before allowing this provider in the workspace."
+                              elsif installation.compatibility_status == "incompatible"
+                                "Install a supported #{provider_name} runtime before allowing this provider in the workspace."
+                              elsif installation.health_status == "missing"
+                                "The #{provider_name} runtime was not found during the latest status refresh. Refresh status before allowing this provider in the workspace."
+                              elsif installation.health_status != "available"
+                                "The #{provider_name} runtime must be healthy before allowing this provider in the workspace."
+                              elsif !current_test_passed
+                                "Run a successful connection test before allowing this provider in the workspace."
+                              end %>
 
 <section class="runtime-installation" id="runtime-<%= installation&.id || adapter_key %>" aria-labelledby="runtime-<%= installation&.id || adapter_key %>-title">
   <div class="runtime-installation-heading">
@@ -51,7 +71,7 @@
       <h2 id="runtime-<%= installation&.id || adapter_key %>-title"><%= provider_name %></h2>
       <p class="provider-settings-status"><%= provider ? "Settings saved" : "Runtime detected" %></p>
     </div>
-    <span class="status-badge <%= ready ? "status-success" : "status-neutral" %>"><%= status_text %></span>
+    <span class="status-badge <%= status_tone %>"><%= status_text %></span>
   </div>
 
   <dl class="runtime-facts provider-facts">
@@ -76,33 +96,37 @@
   <% if installation&.incompatibility_reason.present? %>
     <p class="runtime-status-note">This provider version is not supported by your installation.</p>
   <% elsif provider && configured_model.blank? %>
-    <p class="runtime-status-note"><%= provider_name %> will use its provider default model. This adapter does not expose a model list to NavishAI.</p>
+    <p class="runtime-status-note"><%= provider_name %> will use its default model for now. You can enter an exact model ID in Edit settings.</p>
   <% end %>
 
-  <% if installation&.runtime_test_status == "passed" %>
+  <% if current_test_passed %>
     <%= render "shared/notice", kind: "success", title: "Connection test passed",
-      body: installation.runtime_test_usage_observed? ? "The selected model answered successfully. Provider usage was reported for this test." : "The selected model answered successfully." %>
-  <% elsif installation&.runtime_test_status == "failed" %>
+      body: if installation.approved?
+        installation.runtime_test_usage_observed? ? "The selected model answered successfully. Provider usage was reported for this test." : "The selected model answered successfully."
+      else
+        "The selected model answered successfully. Allow this provider in the workspace below to finish setup."
+      end %>
+  <% elsif current_test_failed %>
     <%= render "shared/notice", kind: "destructive", title: "Connection test failed",
       body: "The provider could not answer the test. Check its credentials and model, then try again." %>
   <% end %>
 
   <% if @can_configure %>
     <div class="provider-actions" aria-label="Actions for <%= provider_name %>">
-      <% if provider %>
-        <%= link_to "Edit settings", edit_workspace_provider_connection_path(Current.workspace, adapter_key), class: "button button-secondary button-compact" %>
-      <% end %>
       <% if installation && test_disabled_reason.nil? %>
         <%= button_to installation.runtime_tested_at ? "Test again" : "Test connection",
           test_workspace_runtime_installation_path(Current.workspace, installation),
-          class: "button button-secondary button-compact" %>
+          class: "button #{test_action_primary ? "button-primary" : "button-secondary"} button-compact" %>
       <% else %>
         <button type="button" class="button button-secondary button-compact" disabled aria-describedby="runtime-<%= installation&.id || adapter_key %>-test-requirement">Test connection</button>
       <% end %>
       <% if provider %>
+        <%= link_to "Edit settings", edit_workspace_provider_connection_path(Current.workspace, adapter_key), class: "button button-secondary button-compact" %>
+      <% end %>
+      <% if provider %>
         <%= button_to "Remove provider", workspace_provider_connection_path(Current.workspace, adapter_key),
           method: :delete, class: "button button-quiet button-compact provider-remove-button",
-          form: { data: { turbo_confirm: "Remove #{provider_name} from this workspace?" } } %>
+          form: { class: "provider-remove-form", data: { turbo_confirm: "Remove #{provider_name} from this workspace? Its saved sign-in settings and workspace access will be removed. You will need to set it up again before using it." } } %>
       <% end %>
       <% if test_disabled_reason %>
         <p class="provider-action-note" id="runtime-<%= installation&.id || adapter_key %>-test-requirement"><%= test_disabled_reason %></p>
@@ -113,12 +137,21 @@
       <%= form_with model: installation, url: workspace_runtime_installation_path(Current.workspace, installation),
         method: :patch, class: "runtime-policy-form" do |form| %>
         <label class="runtime-approval-toggle">
-          <%= form.check_box :approved, disabled: approval_disabled %>
+          <% approval_aria = approval_disabled_reason ? { describedby: "runtime-#{installation.id}-approval-requirement" } : {} %>
+          <% if approval_disabled %>
+            <%= form.hidden_field :approved, value: installation.approved? ? "1" : "0" %>
+            <%= form.check_box :approved, disabled: true, include_hidden: false, aria: approval_aria %>
+          <% else %>
+            <%= form.check_box :approved, aria: approval_aria %>
+          <% end %>
           <span>
             <strong>Allow this provider in the workspace</strong>
-            <small><%= current_test_passed ? "The current connection passed its test." : "Run a successful connection test before allowing access." %></small>
+            <small><%= current_test_passed ? (installation.approved? ? "The current connection passed its test." : "The current connection passed its test. Allow it in the workspace below.") : "Run a successful connection test before allowing access." %></small>
           </span>
         </label>
+        <% if approval_disabled_reason %>
+          <p class="runtime-status-note runtime-policy-note" id="runtime-<%= installation.id %>-approval-requirement"><%= approval_disabled_reason %></p>
+        <% end %>
 
         <details class="provider-advanced-settings">
           <summary>Workspace access</summary>
@@ -153,7 +186,8 @@
           <%= form.hidden_field :max_input_units %>
           <%= form.hidden_field :max_output_units %>
         </details>
-        <%= form.submit "Save workspace access", class: "button button-secondary button-compact" %>
+        <%= form.submit "Save workspace access",
+          class: "button #{status_text == "Approval required" ? "button-primary" : "button-secondary"} button-compact" %>
       <% end %>
     <% end %>
   <% else %>

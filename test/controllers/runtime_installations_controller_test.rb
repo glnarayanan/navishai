@@ -117,8 +117,12 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
       assert_select "button[disabled]", text: "Test connection"
       assert_select ".provider-action-note", text: /No compatible Codex runtime is available/
       assert_select "a", text: "Edit settings"
+      assert_select "form.provider-remove-form[data-turbo-confirm=?]",
+        "Remove Codex from this workspace? Its saved sign-in settings and workspace access will be removed. You will need to set it up again before using it."
     end
     assert_not_includes response.body, "Not selected"
+    assert_includes response.body, "will use its default model for now"
+    assert_not_includes response.body, "does not expose a model list"
   ensure
     ProviderConnectionGateway.define_singleton_method(:new, original) if original
   end
@@ -132,9 +136,17 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-warning", text: "Test required"
     assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-primary", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions a.button-secondary", text: "Edit settings", count: 1
+    actions_html = css_select("#runtime-#{@installation.id} .provider-actions").sole.to_html
+    assert_operator actions_html.index("Test connection"), :<, actions_html.index("Edit settings")
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='submit'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[aria-describedby='runtime-#{@installation.id}-approval-requirement']", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", text: /Run a successful connection test before allowing this provider in the workspace/
   end
 
   test "a current passing test without approval requires approval" do
@@ -147,9 +159,13 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#runtime-#{@installation.id} .status-badge", text: "Approval required"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-warning", text: "Approval required"
     assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-secondary", text: "Test again", count: 1
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input.button-primary[value='Save workspace access'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", count: 0
   end
 
   test "an approved provider with a current passing test is ready" do
@@ -166,7 +182,9 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#runtime-#{@installation.id} .status-badge", text: "Ready"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-success", text: "Ready"
     assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-secondary", text: "Test again", count: 1
   end
 
   test "a failed current test is labeled test failed" do
@@ -182,7 +200,9 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#runtime-#{@installation.id} .status-badge", text: "Test failed"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-danger", text: "Test failed"
     assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-primary", text: "Test again", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
   end
 
@@ -200,9 +220,37 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#runtime-#{@installation.id} .status-badge", text: "Runtime unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-neutral", text: "Runtime unavailable"
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
-    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][name='runtime_installation[approved]'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='1']", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='0']", count: 0
     assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='submit'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", text: /Live Fixture settings are unavailable.*allowing this provider in the workspace/
+  end
+
+  test "approved policy changes preserve approval when the disabled value is posted" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    patch workspace_runtime_installation_path(@workspace, @installation), params: {
+      runtime_installation: approval_attributes.merge(
+        approved: "1", allowed_tools: %w[case_read knowledge_search],
+        allowed_data_classes: %w[case_content customer_identity], max_steps: "12"
+      )
+    }
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    installation = @installation.reload
+    assert installation.approved?
+    assert_equal %w[case_read knowledge_search], installation.allowed_tools
+    assert_equal %w[case_content customer_identity], installation.allowed_data_classes
+    assert_equal 12, installation.max_steps
   end
 
   test "catalog failure blocks stale standalone runtime access" do

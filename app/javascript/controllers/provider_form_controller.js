@@ -192,7 +192,7 @@ export default class extends Controller {
 
   showModelState(status) {
     const messages = {
-      unsupported: "This provider does not expose a model list here. Enter the exact model ID manually.",
+      unsupported: "Model suggestions are not available for this provider. Enter the exact model ID manually.",
       failed: "Models could not be loaded. Enter the exact model ID manually or refresh.",
       unavailable: "Model discovery is unavailable. Enter the exact model ID manually or refresh."
     }
@@ -231,14 +231,14 @@ export default class extends Controller {
 
   modelHint(required) {
     return required
-      ? "Enter the exact model ID enabled for this account. Model suggestions below are guidance only; this field is the authority."
-      : "Leave blank to use the provider default. Enter an exact model ID only to override it; this field remains the authority."
+      ? "Enter the exact model ID enabled for this account. Choose a suggestion when available, or enter an ID manually."
+      : "Leave blank to use the provider default. Enter an exact model ID only to override it."
   }
 
   apiKeyHint(secretConfigured) {
     return secretConfigured === "true"
       ? "A key is already saved. Leave this blank to keep it."
-      : "The key is relayed securely to your self-hosted provider vault. The web app does not persist it."
+      : "Stored encrypted on this self-hosted deployment and never shown again."
   }
 
   sync() {

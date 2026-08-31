@@ -123,7 +123,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "input[name='provider_connection[api_key]'][value='']"
     assert_select "input[name='provider_connection[model]'][value=?]", "gpt-5.6"
     assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
-    assert_select "[data-provider-form-target='modelHint']", text: /this field is the authority/
+    assert_select "[data-provider-form-target='modelHint']", text: /Choose a suggestion when available/
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Leave this blank to keep it/
     assert_select "[data-provider-form-target='modelRefresh'].button-compact", text: "Refresh models"
     assert_select "[data-provider-form-target='modelState'][aria-live='polite']"
@@ -131,7 +131,10 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal models_workspace_provider_connections_path(@workspace), discovery["data-models-url"]
     assert_equal "api_key", discovery["data-saved-auth-mode"]
     assert_not_includes discovery.attributes.keys, "data-api-key"
+    assert_operator response.body.index('id="provider_connection_api_key"'), :<, response.body.index('id="provider_connection_model"')
     assert_includes response.body, "Leave this blank to keep it"
+    assert_not_includes response.body, "field is the authority"
+    assert_not_includes response.body, "Live guidance"
     assert_includes response.body, "Save and continue to test"
     assert_not_includes response.body, "saved-provider-secret"
   end
@@ -150,8 +153,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", "Add a provider"
     assert_select "input[type='submit'][value='Save and continue to test']"
     assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
-    assert_select "[data-provider-form-target='modelHint']", text: /this field is the authority/
-    assert_select "[data-provider-form-target='apiKeyHint']", text: /web app does not persist it/
+    assert_select "[data-provider-form-target='modelHint']", text: /Choose a suggestion when available/
+    assert_select "[data-provider-form-target='apiKeyHint']", text: /Stored encrypted on this self-hosted deployment and never shown again/
     assert_select ".field-hint", text: /model ID/
     assert_includes response.body, "Enter the exact model ID"
     assert_not_includes response.body, "data-models-url"

@@ -1651,6 +1651,30 @@ details,
   box-shadow: var(--shadow);
 }
 
+.runtime-installation:target {
+  animation: runtime-installation-target 220ms ease-out;
+}
+
+@keyframes runtime-installation-target {
+  0% {
+    outline: 0.1875rem solid var(--accent-soft);
+    outline-offset: 0.25rem;
+  }
+
+  100% {
+    outline: 0.1875rem solid transparent;
+    outline-offset: 0.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtime-installation:target {
+    animation: none;
+    outline: 2px solid var(--accent);
+    outline-offset: 0.25rem;
+  }
+}
+
 .runtime-list .runtime-installation {
   box-shadow: none;
 }
@@ -1738,6 +1762,11 @@ details,
 
 .provider-actions form:last-of-type {
   margin-left: auto;
+}
+
+.provider-actions .provider-remove-form {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--line);
 }
 
 .provider-remove-button {
@@ -1912,6 +1941,10 @@ details,
 
 .runtime-approval-toggle small {
   color: var(--muted);
+}
+
+.runtime-policy-note {
+  margin: -0.75rem 0 0;
 }
 
 .runtime-policy-form input[type="checkbox"] {
@@ -4003,6 +4036,11 @@ td {
 
   .provider-actions form:last-of-type {
     margin-left: 0;
+  }
+
+  .provider-actions .provider-remove-form {
+    padding-left: 0;
+    border-left: 0;
   }
 
   .agent-policy-editor {
