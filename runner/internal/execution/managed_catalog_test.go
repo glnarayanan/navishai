@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,12 +10,10 @@ import (
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
-	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
-	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 )
 
-func TestManagedCatalogActivatesDisabledTemplateWithoutRestartAndSkipsSubscriptionProbeForAPIKey(t *testing.T) {
+func TestManagedCatalogSkipsCLIProbeForAPIKeyConnection(t *testing.T) {
 	directory := t.TempDir()
 	home := filepath.Join(directory, "codex-home")
 	if err := os.Mkdir(home, 0o700); err != nil {
@@ -44,10 +43,10 @@ func TestManagedCatalogActivatesDisabledTemplateWithoutRestartAndSkipsSubscripti
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalog.supported = func() bool { return true }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
-	if len(installations) != 1 || installations[0].AdapterKey != codex.AdapterKey ||
-		installations[0].HealthStatus != "available" || installations[0].EffectiveModel != "gpt-test" {
-		t.Fatalf("configured disabled template was not activated: %#v", installations)
+	if len(installations) != 0 {
+		t.Fatalf("API-key connection was exposed as a CLI installation: %#v", installations)
 	}
 	if other := catalog.DetectWorkspace(context.Background(), "3d07f334-88ef-4fe4-a640-421e3ba79921"); len(other) != 0 {
 		t.Fatalf("managed connection leaked across workspaces: %#v", other)
@@ -76,6 +75,7 @@ func TestManagedCatalogProbesConfiguredSubscriptionHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalog.supported = func() bool { return true }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
 	if len(installations) != 1 || installations[0].HealthStatus != "available" ||
 		installations[0].AccountMetadata["authentication"] != "chatgpt_subscription" {
@@ -113,6 +113,7 @@ func TestManagedCatalogDoesNotProbeUnapprovedRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalog.supported = func() bool { return true }
 
 	if installations := catalog.DetectWorkspace(context.Background(), workspaceKey); len(installations) != 0 {
 		t.Fatalf("unapproved runtime was detected: %#v", installations)
@@ -124,67 +125,52 @@ func TestManagedCatalogDoesNotProbeUnapprovedRuntime(t *testing.T) {
 	}
 }
 
-func TestManagedConfigureDetectAndRuntimeTestUseSameWorkspaceConfigurationWithoutRestart(t *testing.T) {
+func TestManagedCatalogUnsupportedSupervisorFailsClosedBeforeProbes(t *testing.T) {
 	directory := t.TempDir()
 	home := filepath.Join(directory, "codex-home")
-	workRoot := filepath.Join(directory, "work")
 	if err := os.Mkdir(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(workRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	executable := filepath.Join(directory, "codex")
-	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho 'codex 0.149.0'\n"), 0o700); err != nil {
+	if err := os.WriteFile(executable, []byte("catalog-probe-fixture"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", directory)
-	store, _ := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
-	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "api_key", "gpt-test", "sk-test-secret"); err != nil {
-		t.Fatal(err)
-	}
-	config := managedCatalogTestConfig(home, executable)
-	config.WorkRoot = workRoot
-	identityKey := []byte("managed-catalog-identity-secret-at-least-32-bytes")
-	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
-	catalog, err := NewManagedCatalog(config, store, identityKey, func() time.Time { return now })
+	store, err := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	config := managedCatalogTestConfig(home, executable)
+	fixture, err := filepath.Abs(filepath.Join("..", "scripted", "testdata", "success.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Scripted = map[string]string{"workspace_default": fixture}
+	config.Adapters["scripted"] = AdapterConfig{
+		Enabled: true, Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
+		DataClasses: []string{"case_content"}, MaxTimeoutSeconds: 900, MaxSteps: 20,
+		MaxToolCalls: 50, MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
+	}
+	config.Supervisor.ApprovedExecutables = append(config.Supervisor.ApprovedExecutables, fixture)
+	catalog, err := NewManagedCatalog(config, store,
+		[]byte("managed-catalog-identity-secret-at-least-32-bytes"), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.supported = func() bool { return false }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
-	if len(installations) != 1 {
-		t.Fatalf("configured runtime was not detected: %#v", installations)
+	if len(installations) != 1 || installations[0].AdapterKey != "scripted" {
+		t.Fatalf("unsupported supervisor did not retain the deterministic scripted installation: %#v", installations)
 	}
-	registry := &Registry{
-		config: config, catalog: catalog, providers: store,
-		configurationIdentityKey: identityKey, now: func() time.Time { return now },
+	if resolved, ok := catalog.ResolveApprovedWorkspace(context.Background(), workspaceKey, installations[0].DetectionKey, []string{executable, fixture}); !ok || resolved.AdapterKey != "scripted" {
+		t.Fatalf("unsupported supervisor did not resolve the scripted installation: resolved=%#v ok=%t", resolved, ok)
 	}
-	registry.execute = func(_ context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
-		for index, event := range []struct {
-			typeName string
-			data     map[string]any
-		}{
-			{"run.started", map[string]any{"adapter": codex.AdapterKey, "scenario": "subscription", "attempt": 1}},
-			{"output.produced", map[string]any{"text": runtimeTestSentinel}},
-			{"run.completed", map[string]any{"outcome": "completed"}},
-		} {
-			canonical, err := protocol.NewCanonicalEvent(request.RunID, index+2, event.typeName, now, event.data)
-			if err != nil {
-				return err
-			}
-			if err := emit(canonical); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
-		WorkspaceKey: workspaceKey, RequestID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
-		DetectionKey: installations[0].DetectionKey, ConfigurationFingerprint: installations[0].ConfigurationFingerprint,
-	})
-	if err != nil || result.Status != "passed" || result.EffectiveModel != "gpt-test" {
-		t.Fatalf("configured runtime test failed: result=%#v err=%v", result, err)
+	availability := catalog.ProviderAvailability(httptest.NewRequest("GET", "/v1/providers/catalog", nil), workspaceKey, codex.AdapterKey)
+	if availability.Available || availability.HealthStatus != "unavailable" {
+		t.Fatalf("unsupported supervisor reported provider availability: %#v", availability)
 	}
 }
 

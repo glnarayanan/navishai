@@ -19,6 +19,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerapi"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/scripted"
@@ -36,6 +37,8 @@ type Registry struct {
 	configurationIdentityKey []byte
 	supervisor               *supervisor.Supervisor
 	processRunner            adapters.ProcessRunner
+	providerAPI              ProviderAPI
+	supported                func() bool
 	now                      func() time.Time
 	execute                  func(context.Context, protocol.AdmissionRequest, func(protocol.CanonicalEvent) error) error
 }
@@ -79,7 +82,7 @@ func newRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, provide
 	registry := &Registry{
 		config: config, catalog: catalog, providers: providers,
 		configurationIdentityKey: append([]byte(nil), configurationIdentityKey...),
-		supervisor:               processSupervisor, processRunner: processSupervisor, now: now,
+		supervisor:               processSupervisor, processRunner: processSupervisor, providerAPI: providerapi.New(), supported: supervisor.Supported, now: now,
 	}
 	registry.execute = registry.Execute
 	return registry, nil
@@ -91,6 +94,11 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	}
 	if request.Routing.AdapterKey == "scripted" {
 		return registry.executeScripted(ctx, request, emit)
+	}
+	if registry.providers != nil {
+		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "api_key" {
+			return ErrPolicyDenied
+		}
 	}
 	adapterConfig, credentials, ok := registry.effectiveAdapter(request.WorkspaceKey, request.Routing.AdapterKey)
 	if !ok || !adapterConfig.allows(request) || registry.supervisor == nil ||

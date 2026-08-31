@@ -9,11 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerapi"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
 )
 
@@ -28,6 +33,21 @@ type fakeModelDiscoveryProcessRunner struct {
 	request       supervisor.Request
 	calls         int
 	waitForCancel bool
+}
+
+type fakeProviderAPI struct {
+	models  []providerapi.ModelOption
+	err     error
+	adapter string
+	apiKey  string
+	calls   int
+	ctx     context.Context
+}
+
+func (client *fakeProviderAPI) DiscoverModels(ctx context.Context, adapterKey, apiKey string) ([]providerapi.ModelOption, error) {
+	client.calls++
+	client.ctx, client.adapter, client.apiKey = ctx, adapterKey, apiKey
+	return client.models, client.err
 }
 
 func (runner *fakeModelDiscoveryProcessRunner) Run(ctx context.Context, request supervisor.Request) (supervisor.Result, error) {
@@ -72,7 +92,7 @@ func newFakeModelDiscoveryRegistry(t *testing.T, adapterKey, authMode string, ru
 		}},
 		Supervisor: SupervisorConfig{ApprovedExecutables: []string{executable}, EgressProfiles: []EgressProfileConfig{{Key: "model_api"}}},
 	}
-	registry := &Registry{config: config, providers: store, processRunner: runner}
+	registry := &Registry{config: config, providers: store, processRunner: runner, supported: func() bool { return true }}
 	return registry, home
 }
 
@@ -101,18 +121,137 @@ func TestDiscoverModelsUsesBoundedFakeRunnerAndCodexAuthHome(t *testing.T) {
 	}
 }
 
-func TestDiscoverModelsUsesIsolatedCodexHomeForAPIKey(t *testing.T) {
-	runner := &fakeModelDiscoveryProcessRunner{result: supervisor.Result{
-		ExitCode:       0,
-		StandardOutput: `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5","visibility":"list"}]}`,
-	}}
-	registry, home := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "api_key", runner)
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
-	if result.Status != providerconfig.ModelDiscoveryAvailable {
-		t.Fatalf("unexpected API-key discovery result: %#v", result)
+func TestDiscoverModelsUsesDirectProviderAPIForAPIKeysWithoutProcessExecution(t *testing.T) {
+	for _, adapterKey := range []string{codex.AdapterKey, claude.AdapterKey} {
+		t.Run(adapterKey, func(t *testing.T) {
+			runner := &fakeModelDiscoveryProcessRunner{}
+			registry, _ := newFakeModelDiscoveryRegistry(t, adapterKey, "api_key", runner)
+			client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "future-model", Label: "Future Model", Default: true}}}
+			registry.providerAPI = client
+			result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, adapterKey)
+			if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 1 || result.Models[0].ID != "future-model" || !result.Models[0].Default {
+				t.Fatalf("unexpected API-key discovery result: %#v", result)
+			}
+			var deadline time.Time
+			hasDeadline := false
+			if client.ctx != nil {
+				deadline, hasDeadline = client.ctx.Deadline()
+			}
+			if client.calls != 1 || client.adapter != adapterKey || client.apiKey != "sk-model-discovery-test-value" || client.ctx == nil || client.ctx.Err() != nil || !hasDeadline || deadline.Sub(time.Now()) > modelDiscoveryTimeout {
+				t.Fatalf("direct provider API did not receive bounded request context and stored credentials: calls=%d adapter=%q context_nil=%t", client.calls, client.adapter, client.ctx == nil)
+			}
+			if runner.calls != 0 {
+				t.Fatalf("API-key discovery invoked the process runner: %d", runner.calls)
+			}
+		})
 	}
-	if runner.request.HomeDir == home || runner.request.HomeDir != runner.request.WorkingDir || runner.request.Credentials["CODEX_HOME"] != runner.request.WorkingDir || runner.request.Credentials["OPENAI_API_KEY"] == "" {
-		t.Fatalf("Codex API-key auth home/environment diverged from normal execution: request=%#v", runner.request)
+}
+
+func TestDiscoverModelsAPIKeyCanBeSavedBeforeModelSelection(t *testing.T) {
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", "", "sk-model-discovery-test-value"); err != nil {
+		t.Fatalf("blank-model API-key connection was not saved: %v", err)
+	}
+	client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "claude-future", Label: "Claude Future"}}}
+	registry := &Registry{
+		config: Config{Adapters: map[string]AdapterConfig{
+			claude.AdapterKey: {Profiles: []string{"profile"}, Roles: []string{"role"}, DataClasses: []string{"data"}},
+		}},
+		providers: store, providerAPI: client,
+	}
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, claude.AdapterKey)
+	if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 1 || client.calls != 1 {
+		t.Fatalf("saved incomplete API-key connection did not discover models: result=%#v calls=%d", result, client.calls)
+	}
+}
+
+func TestBlankAPIKeyConnectionRemainsCatalogAndExecutionFailClosed(t *testing.T) {
+	directory := t.TempDir()
+	home := filepath.Join(directory, "claude-home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(directory, "claude")
+	if err := os.WriteFile(executable, []byte("not-launched"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", "", "sk-awaiting-model-selection"); err != nil {
+		t.Fatal(err)
+	}
+	config := Config{
+		WorkRoot: t.TempDir(),
+		Adapters: map[string]AdapterConfig{claude.AdapterKey: {
+			HomeDir: home, EgressProfileKey: "model_api", Profiles: []string{"workspace_default"},
+			Roles: []string{"support_investigator"}, DataClasses: []string{"case_content"},
+		}},
+		Supervisor: SupervisorConfig{
+			ApprovedExecutables: []string{executable}, EgressProfiles: []EgressProfileConfig{{Key: "model_api"}},
+		},
+	}
+	catalog, err := NewManagedCatalog(config, store, testConfigurationIdentityKey, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.supported = func() bool { return true }
+	if installations := catalog.DetectWorkspace(context.Background(), workspaceOne); len(installations) != 0 {
+		t.Fatalf("incomplete API-key connection produced a catalog installation: %#v", installations)
+	}
+	if _, ok := catalog.ResolveApprovedWorkspace(context.Background(), workspaceOne, strings.Repeat("a", 64), []string{executable}); ok {
+		t.Fatal("incomplete API-key connection resolved as an approved runtime")
+	}
+	availability := catalog.ProviderAvailability(httptest.NewRequest(http.MethodGet, providerconfig.CatalogPath, nil), workspaceOne, claude.AdapterKey)
+	if availability.Available || availability.HealthStatus != "unavailable" {
+		t.Fatalf("incomplete API-key connection reported availability: %#v", availability)
+	}
+
+	runner := &fakeModelDiscoveryProcessRunner{}
+	client := &fakeProviderAPI{}
+	registry := &Registry{
+		config: config, catalog: catalog, providers: store, processRunner: runner, providerAPI: client,
+		supported: func() bool { return true },
+	}
+	if _, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+		WorkspaceKey: workspaceOne, RequestID: workspaceTwo,
+		DetectionKey: strings.Repeat("a", 64), ConfigurationFingerprint: strings.Repeat("b", 64),
+	}); !errors.Is(err, runtimecatalog.ErrTestConfigurationChanged) {
+		t.Fatalf("incomplete API-key connection did not fail closed for runtime test: %v", err)
+	}
+	request := executionRequest(t)
+	request.WorkspaceKey = workspaceOne
+	request.Routing.AdapterKey = claude.AdapterKey
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("incomplete API-key connection did not fail closed for execution: %v", err)
+	}
+	if runner.calls != 0 || client.calls != 0 {
+		t.Fatalf("fail-closed catalog/runtime paths invoked an external seam: process_calls=%d api_calls=%d", runner.calls, client.calls)
+	}
+}
+
+func TestDiscoverModelsSubscriptionNeverUsesProviderAPI(t *testing.T) {
+	runner := &fakeModelDiscoveryProcessRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: `{"models":[{"slug":"gpt-5.6-sol","display_name":"GPT-5.6-Sol","visibility":"list"}]}`}}
+	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
+	client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "should-not-be-used", Label: "Should not be used"}}}
+	registry.providerAPI = client
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	if result.Status != providerconfig.ModelDiscoveryAvailable || client.calls != 0 || runner.calls != 1 {
+		t.Fatalf("subscription discovery crossed provider API/process boundary: result=%#v api_calls=%d process_calls=%d", result, client.calls, runner.calls)
+	}
+}
+
+func TestDiscoverModelsUnsupportedSupervisorFailsClosedBeforeProcess(t *testing.T) {
+	runner := &fakeModelDiscoveryProcessRunner{}
+	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
+	registry.supported = func() bool { return false }
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 0 {
+		t.Fatalf("unsupported supervisor did not fail closed before process discovery: result=%#v calls=%d", result, runner.calls)
 	}
 }
 

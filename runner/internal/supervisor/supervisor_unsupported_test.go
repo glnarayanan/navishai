@@ -10,6 +10,9 @@ import (
 )
 
 func TestUnsupportedPlatformFailsClosed(t *testing.T) {
+	if Supported() {
+		t.Fatal("Supported() = true; want false on unsupported platform")
+	}
 	instance, err := New(Config{})
 	if instance == nil || err != nil {
 		t.Fatalf("New() = %#v, %v; want inert supervisor", instance, err)

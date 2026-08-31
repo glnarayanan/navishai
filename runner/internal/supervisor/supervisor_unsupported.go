@@ -66,6 +66,10 @@ type Result struct {
 
 type Supervisor struct{}
 
+// Supported reports whether this build can enforce the Linux supervisor
+// boundary required for subscription CLI execution.
+func Supported() bool { return false }
+
 func New(Config) (*Supervisor, error) {
 	return &Supervisor{}, nil
 }

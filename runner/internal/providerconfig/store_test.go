@@ -98,6 +98,20 @@ func TestStoreRetainsBlankAPIKeyOnlyForSameKeyModeAndRemovesOneAdapter(t *testin
 	}
 }
 
+func TestStoreAllowsBlankModelForNewAPIKeyConnection(t *testing.T) {
+	store, err := OpenStore("", testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", "", "sk-awaiting-model-selection")
+	if err != nil {
+		t.Fatalf("API-key credentials could not be saved before model discovery: %v", err)
+	}
+	if connection.AuthMode != "api_key" || connection.Model != "" || connection.APIKey == "" {
+		t.Fatalf("unexpected saved incomplete API-key connection: %#v", connection)
+	}
+}
+
 func TestStorePersistsExactCursorModelOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "providers")
 	store, err := OpenStore(path, testSecret)

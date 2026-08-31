@@ -117,6 +117,10 @@ type preparedRequest struct {
 	extraFiles  []*os.File
 }
 
+// Supported reports whether this build can enforce the Linux supervisor
+// boundary required for subscription CLI execution.
+func Supported() bool { return true }
+
 func New(config Config) (*Supervisor, error) {
 	helper, err := approvedExecutable(config.HelperPath)
 	if err != nil || config.Limits.WallTime <= 0 || config.Limits.CPUSeconds < 1 ||

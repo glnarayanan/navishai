@@ -18,11 +18,16 @@ import (
 const modelDiscoveryTimeout = 15 * time.Second
 
 func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, adapterKey string) providerconfig.ModelDiscovery {
+	if registry != nil && registry.providers != nil {
+		if connection, configured := registry.providers.Get(workspaceKey, adapterKey); configured && connection.AuthMode == "api_key" {
+			return registry.discoverAPIModels(request, workspaceKey, adapterKey, connection.APIKey)
+		}
+	}
 	spec, ok := modelDiscoverySpec(adapterKey)
 	if !ok {
 		return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryUnsupported}
 	}
-	if registry == nil || request == nil || registry.providers == nil || registry.processRunner == nil || registry.config.WorkRoot == "" {
+	if registry == nil || registry.supported == nil || !registry.supported() || request == nil || registry.providers == nil || registry.processRunner == nil || registry.config.WorkRoot == "" {
 		return failedModelDiscovery()
 	}
 	adapterConfig, credentials, ok := registry.effectiveAdapter(workspaceKey, adapterKey)
@@ -70,6 +75,38 @@ func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, ad
 		options = append(options, providerconfig.ModelOption{ID: model.ID, Label: model.Label, Default: model.Default})
 	}
 	return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryAvailable, Models: options}
+}
+
+func (registry *Registry) discoverAPIModels(request *http.Request, workspaceKey, adapterKey, apiKey string) providerconfig.ModelDiscovery {
+	if !isDirectProviderAPIAdapter(adapterKey) || registry == nil || request == nil || registry.providerAPI == nil || apiKey == "" {
+		return failedModelDiscovery()
+	}
+	adapter, ok := registry.config.Adapters[adapterKey]
+	if !ok || len(adapter.Profiles) == 0 || len(adapter.Roles) == 0 || len(adapter.DataClasses) == 0 {
+		return failedModelDiscovery()
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), modelDiscoveryTimeout)
+	defer cancel()
+	models, err := registry.providerAPI.DiscoverModels(ctx, adapterKey, apiKey)
+	if err != nil {
+		return failedModelDiscovery()
+	}
+	options := make([]providerconfig.ModelOption, 0, len(models))
+	for _, model := range models {
+		options = append(options, providerconfig.ModelOption{ID: model.ID, Label: model.Label, Default: model.Default})
+	}
+	if len(options) == 0 || adapters.ValidateModelOptions(toAdapterModelOptions(options)) != nil {
+		return failedModelDiscovery()
+	}
+	return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryAvailable, Models: options}
+}
+
+func toAdapterModelOptions(options []providerconfig.ModelOption) []adapters.ModelOption {
+	result := make([]adapters.ModelOption, 0, len(options))
+	for _, option := range options {
+		result = append(result, adapters.ModelOption{ID: option.ID, Label: option.Label, Default: option.Default})
+	}
+	return result
 }
 
 func modelDiscoverySpec(adapterKey string) (adapters.ModelDiscoverySpec, bool) {

@@ -406,7 +406,7 @@ func validateConnection(adapterKey string, connection Connection, requireInput b
 		containsControl(connection.Model) || len(connection.APIKey) > maximumKeyBytes || containsNUL(connection.APIKey) {
 		return ErrInvalidConnection
 	}
-	if definition.ModelRequired && connection.Model == "" {
+	if definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" {
 		return ErrInvalidConnection
 	}
 	if connection.AuthMode == "api_key" {

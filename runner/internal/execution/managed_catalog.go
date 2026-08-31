@@ -11,6 +11,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
+	"github.com/glnarayanan/navishai/runner/internal/supervisor"
 )
 
 type ManagedCatalog struct {
@@ -19,6 +20,7 @@ type ManagedCatalog struct {
 	identityKey []byte
 	now         func() time.Time
 	scripted    []runtimecatalog.Installation
+	supported   func() bool
 }
 
 func NewManagedCatalog(config Config, providers *providerconfig.Store, identityKey []byte, now func() time.Time) (*ManagedCatalog, error) {
@@ -32,7 +34,7 @@ func NewManagedCatalog(config Config, providers *providerconfig.Store, identityK
 	if err != nil {
 		return nil, err
 	}
-	return &ManagedCatalog{config: config, providers: providers, identityKey: append([]byte(nil), identityKey...), now: now, scripted: scripted}, nil
+	return &ManagedCatalog{config: config, providers: providers, identityKey: append([]byte(nil), identityKey...), now: now, scripted: scripted, supported: supervisor.Supported}, nil
 }
 
 func (catalog *ManagedCatalog) DetectWorkspace(ctx context.Context, workspaceKey string) []runtimecatalog.Installation {
@@ -52,6 +54,9 @@ func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, wor
 }
 
 func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, workspaceKey, adapterKey string) providerconfig.Availability {
+	if catalog == nil || catalog.supported == nil || !catalog.supported() {
+		return providerconfig.Availability{HealthStatus: "unavailable"}
+	}
 	definition, ok := catalog.definition(adapterKey, workspaceKey, false)
 	if !ok {
 		return providerconfig.Availability{HealthStatus: "unavailable"}
@@ -77,6 +82,9 @@ func (catalog *ManagedCatalog) approvedDetections(ctx context.Context, workspace
 
 func (catalog *ManagedCatalog) workspaceCatalog(workspaceKey string, configuredOnly bool) (*runtimecatalog.Catalog, error) {
 	definitions := make([]runtimecatalog.Definition, 0, 4)
+	if catalog.supported == nil || !catalog.supported() {
+		return runtimecatalog.NewWithInstallations(definitions, catalog.scripted, catalog.now)
+	}
 	for _, provider := range providerconfig.Definitions() {
 		definition, ok := catalog.definition(provider.AdapterKey, workspaceKey, configuredOnly)
 		if ok {
@@ -93,6 +101,9 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 	}
 	connection, configured := catalog.providers.Get(workspaceKey, adapterKey)
 	if configuredOnly && !configured {
+		return runtimecatalog.Definition{}, false
+	}
+	if configured && connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
 		return runtimecatalog.Definition{}, false
 	}
 	definition, ok := baseDefinition(adapterKey)
