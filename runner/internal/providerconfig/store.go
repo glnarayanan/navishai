@@ -409,9 +409,6 @@ func validateConnection(adapterKey string, connection Connection, requireInput b
 	if definition.ModelRequired && connection.Model == "" {
 		return ErrInvalidConnection
 	}
-	if adapterKey == CursorAdapterKey && connection.Model != "" {
-		return ErrInvalidConnection
-	}
 	if connection.AuthMode == "api_key" {
 		if connection.APIKey == "" {
 			return ErrInvalidConnection

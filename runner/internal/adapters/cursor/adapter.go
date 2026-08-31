@@ -35,6 +35,7 @@ type Invocation struct {
 	Executable       string
 	WorkingDir       string
 	CursorHome       string
+	Model            string
 	Prompt           string
 	EgressProfileKey string
 }
@@ -87,8 +88,12 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		return Result{}, err
 	}
 	normalized := Result{}
+	arguments := []string{"acp"}
+	if invocation.Model != "" {
+		arguments = []string{"--model", invocation.Model, "acp"}
+	}
 	process, processErr := runner.Interact(ctx, supervisor.Request{
-		Executable: invocation.Executable, Arguments: []string{"acp"}, WorkingDir: invocation.WorkingDir, HomeDir: invocation.CursorHome,
+		Executable: invocation.Executable, Arguments: arguments, WorkingDir: invocation.WorkingDir, HomeDir: invocation.CursorHome,
 		EgressProfileKey: invocation.EgressProfileKey,
 	}, func(exchangeContext context.Context, stream io.ReadWriter) error {
 		var err error

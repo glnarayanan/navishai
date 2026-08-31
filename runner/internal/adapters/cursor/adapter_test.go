@@ -107,6 +107,21 @@ func TestExecuteNegotiatesCursorLoginAndEmitsCanonicalOutput(t *testing.T) {
 	}
 }
 
+func TestExecuteSendsExplicitModelAsCursorGlobalFlag(t *testing.T) {
+	runner := &fakeInteractiveRunner{}
+	invocation := testInvocation()
+	invocation.Model = "gpt-5.5-medium"
+	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), invocation, runner, func(event protocol.CanonicalEvent) error {
+		return event.Validate()
+	})
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(runner.request.Arguments, []string{"--model", invocation.Model, "acp"}) {
+		t.Fatalf("explicit Cursor model was not sent as a global flag: %#v", runner.request.Arguments)
+	}
+}
+
 func TestExecuteFailsBeforeOutputWhenObservedUsageExceedsBudget(t *testing.T) {
 	invocation := testInvocation()
 	invocation.Admission.Routing.MaxOutputUnits = 19

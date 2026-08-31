@@ -268,9 +268,6 @@ func (config Config) validate() error {
 		egressKeys[profile.Key] = true
 	}
 	for key, adapter := range config.Adapters {
-		if key == cursorSubscriptionAdapter && adapter.Model != "" {
-			return errors.New("runner Cursor adapter does not support explicit model selection")
-		}
 		if !knownAdapters[key] || !distinctPolicyKeys(adapter.Profiles, knownProfiles) ||
 			!distinctPolicyKeys(adapter.Roles, knownRoles) || !distinctPolicyKeys(adapter.Tools, knownTools) ||
 			!distinctPolicyKeys(adapter.DataClasses, knownDataClasses) ||

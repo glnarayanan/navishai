@@ -142,7 +142,7 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	case cursor.AdapterKey:
 		_, err = cursor.New(registry.now).Execute(runContext, cursor.Invocation{
 			Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDir,
-			CursorHome: adapterConfig.HomeDir, Prompt: prompt, EgressProfileKey: adapterConfig.EgressProfileKey,
+			CursorHome: adapterConfig.HomeDir, Model: adapterConfig.Model, Prompt: prompt, EgressProfileKey: adapterConfig.EgressProfileKey,
 		}, registry.supervisor, emit)
 	default:
 		return ErrPolicyDenied

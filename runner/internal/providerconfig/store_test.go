@@ -98,6 +98,26 @@ func TestStoreRetainsBlankAPIKeyOnlyForSameKeyModeAndRemovesOneAdapter(t *testin
 	}
 }
 
+func TestStorePersistsExactCursorModelOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "providers")
+	store, err := OpenStore(path, testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const model = "gpt-5.5-medium"
+	if _, err := store.Configure(workspaceOne, CursorAdapterKey, "subscription", model, ""); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path, testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, ok := reopened.Get(workspaceOne, CursorAdapterKey)
+	if !ok || connection.Model != model {
+		t.Fatalf("Cursor model override was not persisted exactly: %#v", connection)
+	}
+}
+
 func TestStoreRejectsWrongVaultSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "providers")
 	store, _ := OpenStore(path, testSecret)

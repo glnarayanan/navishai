@@ -43,11 +43,6 @@ func TestLoadConfigRejectsDuplicateKeysAndPolicyValues(t *testing.T) {
 		"policy value": []byte(strings.Replace(
 			string(example), `"profiles": ["workspace_default", "fast", "thorough"]`, `"profiles": ["fast", "fast"]`, 1,
 		)),
-		"Cursor model": []byte(strings.Replace(
-			string(example),
-			"\"home_dir\": \"/var/lib/navishai/runtime/cursor\",\n      \"model\": \"\"",
-			"\"home_dir\": \"/var/lib/navishai/runtime/cursor\",\n      \"model\": \"cursor-model\"", 1,
-		)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "execution.json")
@@ -58,6 +53,29 @@ func TestLoadConfigRejectsDuplicateKeysAndPolicyValues(t *testing.T) {
 				t.Fatal("invalid execution config was accepted")
 			}
 		})
+	}
+}
+
+func TestLoadConfigAcceptsExplicitCursorModelOverride(t *testing.T) {
+	example, err := os.ReadFile(filepath.Join("..", "..", "..", "ops", "runner", "execution.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(strings.Replace(
+		string(example),
+		"\"home_dir\": \"/var/lib/navishai/runtime/cursor\",\n      \"model\": \"\"",
+		"\"home_dir\": \"/var/lib/navishai/runtime/cursor\",\n      \"model\": \"gpt-5.5-medium\"", 1,
+	))
+	path := filepath.Join(t.TempDir(), "execution.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Adapters[cursorSubscriptionAdapter].Model != "gpt-5.5-medium" {
+		t.Fatalf("explicit Cursor model was not loaded: %#v", config.Adapters[cursorSubscriptionAdapter])
 	}
 }
 
