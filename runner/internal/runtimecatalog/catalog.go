@@ -421,6 +421,12 @@ func approvedExecutable(path string) (string, error) {
 	return filepath.Clean(resolved), nil
 }
 
+// ResolveApprovedExecutable validates an explicitly approved executable path
+// without probing or launching the runtime.
+func ResolveApprovedExecutable(path string) (string, error) {
+	return approvedExecutable(path)
+}
+
 func detectionKey(adapterKey, path string) string {
 	file, err := os.Open(path)
 	if err != nil {

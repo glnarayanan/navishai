@@ -13,6 +13,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
@@ -34,6 +35,7 @@ type Registry struct {
 	providers                *providerconfig.Store
 	configurationIdentityKey []byte
 	supervisor               *supervisor.Supervisor
+	processRunner            adapters.ProcessRunner
 	now                      func() time.Time
 	execute                  func(context.Context, protocol.AdmissionRequest, func(protocol.CanonicalEvent) error) error
 }
@@ -77,7 +79,7 @@ func newRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, provide
 	registry := &Registry{
 		config: config, catalog: catalog, providers: providers,
 		configurationIdentityKey: append([]byte(nil), configurationIdentityKey...),
-		supervisor:               processSupervisor, now: now,
+		supervisor:               processSupervisor, processRunner: processSupervisor, now: now,
 	}
 	registry.execute = registry.Execute
 	return registry, nil

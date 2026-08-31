@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("configure runner execution: %v", err)
 	}
-	handler, err := newManagedHandlerWithRuntimeTesterAndStore(secret, store, searchStatePath, catalog, registry, runtimeTestStore, providerStore, catalog, time.Now)
+	handler, err := newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret, store, searchStatePath, catalog, registry, runtimeTestStore, providerStore, catalog, registry, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner protocol: %v", err)
 	}
@@ -216,6 +216,10 @@ func (unavailableProviderStatus) ProviderAvailability(*http.Request, string, str
 }
 
 func newManagedHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, tester runtimecatalog.RuntimeTester, runtimeTestStore *runtimecatalog.TestStore, providerStore *providerconfig.Store, providerStatus providerconfig.StatusSource, now func() time.Time) (http.Handler, error) {
+	return newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret, store, searchStatePath, catalog, tester, runtimeTestStore, providerStore, providerStatus, nil, now)
+}
+
+func newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, tester runtimecatalog.RuntimeTester, runtimeTestStore *runtimecatalog.TestStore, providerStore *providerconfig.Store, providerStatus providerconfig.StatusSource, discovery providerconfig.ModelDiscoverySource, now func() time.Time) (http.Handler, error) {
 	admissionHandler, err := admission.NewHandler(secret, store, now)
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
@@ -232,7 +236,7 @@ func newManagedHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.
 	if err != nil {
 		return nil, fmt.Errorf("create runtime test handler: %w", err)
 	}
-	providerHandler, err := providerconfig.NewHandler(secret, providerStore, providerStatus, now)
+	providerHandler, err := providerconfig.NewHandlerWithDiscovery(secret, providerStore, providerStatus, discovery, now)
 	if err != nil {
 		return nil, fmt.Errorf("create provider handler: %w", err)
 	}
@@ -263,6 +267,7 @@ func newManagedHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.
 	mux.Handle("POST "+runtimecatalog.TestPath, testHandler)
 	mux.Handle("POST "+providerconfig.CatalogPath, providerHandler)
 	mux.Handle("POST "+providerconfig.ConfigurePath, providerHandler)
+	mux.Handle("POST "+providerconfig.ModelsPath, providerHandler)
 	mux.Handle("POST "+providerconfig.RemovePath, providerHandler)
 	mux.Handle("POST "+providerconfig.PurgePath, providerHandler)
 	mux.Handle("POST "+websearch.Path, searchHandler)

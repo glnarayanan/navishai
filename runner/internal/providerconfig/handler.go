@@ -44,20 +44,28 @@ type Provider struct {
 }
 
 type Handler struct {
-	secret []byte
-	store  *Store
-	status StatusSource
-	now    func() time.Time
+	secret    []byte
+	store     *Store
+	status    StatusSource
+	discovery ModelDiscoverySource
+	now       func() time.Time
 }
 
 func NewHandler(secret []byte, store *Store, status StatusSource, now func() time.Time) (*Handler, error) {
+	return NewHandlerWithDiscovery(secret, store, status, unavailableModelDiscovery{}, now)
+}
+
+func NewHandlerWithDiscovery(secret []byte, store *Store, status StatusSource, discovery ModelDiscoverySource, now func() time.Time) (*Handler, error) {
 	if protocol.ValidateSecret(secret) != nil || store == nil || status == nil {
 		return nil, errors.New("provider handler configuration is invalid")
+	}
+	if discovery == nil {
+		discovery = unavailableModelDiscovery{}
 	}
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{secret: append([]byte(nil), secret...), store: store, status: status, now: now}, nil
+	return &Handler{secret: append([]byte(nil), secret...), store: store, status: status, discovery: discovery, now: now}, nil
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -94,6 +102,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.catalog(response, request, input)
 	case ConfigurePath:
 		handler.configure(response, request, input, protocol.Digest(body))
+	case ModelsPath:
+		handler.models(response, request, input)
 	case RemovePath:
 		handler.remove(response, request, input, protocol.Digest(body))
 	case PurgePath:
@@ -101,6 +111,38 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	default:
 		handler.writeError(response, http.StatusNotFound, "not_found", "Provider endpoint was not found.")
 	}
+}
+
+func (handler *Handler) models(response http.ResponseWriter, request *http.Request, input map[string]any) {
+	if len(input) != 3 || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) {
+		handler.invalid(response)
+		return
+	}
+	workspaceKey := stringValue(input["workspace_key"])
+	adapterKey := stringValue(input["adapter_key"])
+	if !validAdapterKey(adapterKey) {
+		handler.invalid(response)
+		return
+	}
+	result := ModelDiscovery{Status: ModelDiscoveryUnsupported}
+	if _, ok := Lookup(adapterKey); ok {
+		result = handler.discovery.DiscoverModels(request, workspaceKey, adapterKey)
+	}
+	if !validModelDiscovery(result) {
+		result = ModelDiscovery{Status: ModelDiscoveryFailed}
+	}
+	models := result.Models
+	if models == nil {
+		models = []ModelOption{}
+	}
+	_ = json.NewEncoder(response).Encode(struct {
+		ProtocolVersion string        `json:"protocol_version"`
+		WorkspaceKey    string        `json:"workspace_key"`
+		AdapterKey      string        `json:"adapter_key"`
+		Status          string        `json:"status"`
+		CheckedAt       string        `json:"checked_at"`
+		Models          []ModelOption `json:"models"`
+	}{protocol.Version, workspaceKey, adapterKey, result.Status, handler.now().UTC().Format(time.RFC3339Nano), models})
 }
 
 func (handler *Handler) catalog(response http.ResponseWriter, request *http.Request, input map[string]any) {
@@ -232,6 +274,12 @@ func (handler *Handler) writeError(response http.ResponseWriter, status int, cod
 		ProtocolVersion: protocol.Version,
 		Error:           protocol.ProtocolError{Code: code, Message: message},
 	})
+}
+
+type unavailableModelDiscovery struct{}
+
+func (unavailableModelDiscovery) DiscoverModels(*http.Request, string, string) ModelDiscovery {
+	return ModelDiscovery{Status: ModelDiscoveryUnsupported}
 }
 
 func stringValue(value any) string {

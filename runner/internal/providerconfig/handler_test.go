@@ -19,6 +19,21 @@ func (fixedStatus) ProviderAvailability(*http.Request, string, string) Availabil
 	return Availability{HealthStatus: "available", Available: true, ExecutableVersion: "1.2.3"}
 }
 
+type recordingModelDiscovery struct {
+	results    map[string]ModelDiscovery
+	workspaces []string
+	adapters   []string
+}
+
+func (source *recordingModelDiscovery) DiscoverModels(_ *http.Request, workspaceKey, adapterKey string) ModelDiscovery {
+	source.workspaces = append(source.workspaces, workspaceKey)
+	source.adapters = append(source.adapters, adapterKey)
+	if result, ok := source.results[workspaceKey]; ok {
+		return result
+	}
+	return ModelDiscovery{Status: ModelDiscoveryFailed}
+}
+
 func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	store, _ := OpenStore("", testSecret)
@@ -132,6 +147,158 @@ func TestHandlerPurgesOneWorkspaceThroughSignedProtocol(t *testing.T) {
 	handler.ServeHTTP(unsignedResponse, unsigned)
 	if unsignedResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("unsigned purge status=%d body=%s", unsignedResponse.Code, unsignedResponse.Body.String())
+	}
+}
+
+func TestHandlerDiscoversWorkspaceScopedModelsThroughSignedProtocol(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	store, _ := OpenStore("", testSecret)
+	source := &recordingModelDiscovery{results: map[string]ModelDiscovery{
+		workspaceOne: {Status: ModelDiscoveryAvailable, Models: []ModelOption{{ID: "gpt-5.6-sol", Label: "GPT-5.6-Sol", Default: true}}},
+		workspaceTwo: {Status: ModelDiscoveryAvailable, Models: []ModelOption{{ID: "gpt-5.5", Label: "GPT-5.5"}}},
+	}}
+	handler, err := NewHandlerWithDiscovery(testSecret, store, fixedStatus{}, source, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serve(t, handler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": CodexAdapterKey,
+	}, now, testSecret)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "sk-") || strings.Contains(response.Body.String(), "raw-command-output") {
+		t.Fatalf("unexpected model discovery response: status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		ProtocolVersion string        `json:"protocol_version"`
+		WorkspaceKey    string        `json:"workspace_key"`
+		AdapterKey      string        `json:"adapter_key"`
+		Status          string        `json:"status"`
+		CheckedAt       string        `json:"checked_at"`
+		Models          []ModelOption `json:"models"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ProtocolVersion != protocol.Version || payload.WorkspaceKey != workspaceOne || payload.AdapterKey != CodexAdapterKey ||
+		payload.Status != ModelDiscoveryAvailable || payload.CheckedAt != now.Format(time.RFC3339Nano) ||
+		len(payload.Models) != 1 || payload.Models[0].ID != "gpt-5.6-sol" || !payload.Models[0].Default {
+		t.Fatalf("unexpected model discovery payload: %#v", payload)
+	}
+	var exact map[string]any
+	if json.Unmarshal(response.Body.Bytes(), &exact) != nil || len(exact) != 6 {
+		t.Fatalf("model discovery response has unexpected fields: %s", response.Body.String())
+	}
+	other := serve(t, handler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceTwo, "adapter_key": CodexAdapterKey,
+	}, now, testSecret)
+	if other.Code != http.StatusOK || !strings.Contains(other.Body.String(), "gpt-5.5") || strings.Contains(other.Body.String(), "gpt-5.6-sol") {
+		t.Fatalf("workspace model discovery crossed isolation boundary: %s", other.Body.String())
+	}
+	if !strings.EqualFold(strings.Join(source.workspaces, ","), workspaceOne+","+workspaceTwo) || len(source.adapters) != 2 {
+		t.Fatalf("discovery source received unexpected scope: workspaces=%v adapters=%v", source.workspaces, source.adapters)
+	}
+}
+
+func TestHandlerReturnsBoundedDiscoveryStatusesAndRejectsInvalidSourceData(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for name, result := range map[string]ModelDiscovery{
+		"unsupported":    {Status: ModelDiscoveryUnsupported},
+		"failed":         {Status: ModelDiscoveryFailed},
+		"invalid status": {Status: "unknown"},
+		"duplicate":      {Status: ModelDiscoveryAvailable, Models: []ModelOption{{ID: "gpt", Label: "GPT"}, {ID: "gpt", Label: "GPT again"}}},
+		"control":        {Status: ModelDiscoveryAvailable, Models: []ModelOption{{ID: "gpt", Label: "GPT\nsecret"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store, _ := OpenStore("", testSecret)
+			source := &recordingModelDiscovery{results: map[string]ModelDiscovery{workspaceOne: result}}
+			handler, err := NewHandlerWithDiscovery(testSecret, store, fixedStatus{}, source, func() time.Time { return now })
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := serve(t, handler, ModelsPath, map[string]any{
+				"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": CursorAdapterKey,
+			}, now, testSecret)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var payload struct {
+				Status string        `json:"status"`
+				Models []ModelOption `json:"models"`
+			}
+			expectedStatus := result.Status
+			if !validModelDiscovery(result) {
+				expectedStatus = ModelDiscoveryFailed
+			}
+			if json.Unmarshal(response.Body.Bytes(), &payload) != nil || payload.Status != expectedStatus {
+				t.Fatalf("unexpected status response: %s", response.Body.String())
+			}
+			if result.Status == ModelDiscoveryAvailable || result.Status == "unknown" {
+				if payload.Status != ModelDiscoveryFailed {
+					t.Fatalf("invalid source data was not failed closed: %s", response.Body.String())
+				}
+			}
+			if payload.Status != ModelDiscoveryAvailable && len(payload.Models) != 0 {
+				t.Fatalf("non-available response returned models: %s", response.Body.String())
+			}
+		})
+	}
+
+	store, _ := OpenStore("", testSecret)
+	defaultHandler, err := NewHandler(testSecret, store, fixedStatus{}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serve(t, defaultHandler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": ClaudeAdapterKey,
+	}, now, testSecret)
+	var unsupported struct {
+		Status string        `json:"status"`
+		Models []ModelOption `json:"models"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &unsupported) != nil || unsupported.Status != ModelDiscoveryUnsupported || unsupported.Models == nil {
+		t.Fatalf("default discovery source was not bounded unsupported/empty: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestHandlerModelsRequiresSignedExactWorkspaceAndAdapterRequest(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	store, _ := OpenStore("", testSecret)
+	source := &recordingModelDiscovery{results: map[string]ModelDiscovery{workspaceOne: {Status: ModelDiscoveryUnsupported}}}
+	handler, err := NewHandlerWithDiscovery(testSecret, store, fixedStatus{}, source, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	badSignature := serve(t, handler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": CodexAdapterKey,
+	}, now, []byte("wrong-provider-secret-that-is-at-least-32-bytes"))
+	if badSignature.Code != http.StatusUnauthorized {
+		t.Fatalf("bad model signature status=%d", badSignature.Code)
+	}
+	for name, input := range map[string]map[string]any{
+		"extra field":       {"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": CodexAdapterKey, "extra": true},
+		"invalid workspace": {"protocol_version": protocol.Version, "workspace_key": "not-a-workspace", "adapter_key": CodexAdapterKey},
+		"invalid adapter":   {"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": "bad-adapter-key"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			response := serve(t, handler, ModelsPath, input, now, testSecret)
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("expected invalid model request, status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	unknown := serve(t, handler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne, "adapter_key": "future_provider",
+	}, now, testSecret)
+	var unknownPayload struct {
+		AdapterKey string        `json:"adapter_key"`
+		Status     string        `json:"status"`
+		Models     []ModelOption `json:"models"`
+	}
+	if unknown.Code != http.StatusOK || json.Unmarshal(unknown.Body.Bytes(), &unknownPayload) != nil ||
+		unknownPayload.AdapterKey != "future_provider" || unknownPayload.Status != ModelDiscoveryUnsupported || unknownPayload.Models == nil {
+		t.Fatalf("valid unknown adapter was not bounded unsupported/empty: status=%d body=%s", unknown.Code, unknown.Body.String())
+	}
+	if len(source.workspaces) != 0 {
+		t.Fatalf("valid unknown adapter invoked discovery source: workspaces=%v", source.workspaces)
 	}
 }
 
