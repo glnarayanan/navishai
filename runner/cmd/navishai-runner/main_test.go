@@ -168,6 +168,34 @@ func TestTLSFiles(t *testing.T) {
 	}
 }
 
+func TestProviderVaultSecretUsesIndependentSecretAndValidatesFallback(t *testing.T) {
+	shared := []byte("shared-runner-secret-that-is-at-least-32-bytes")
+	vault := "independent-provider-vault-secret-at-least-32-bytes"
+	resolved, err := providerVaultSecret(func(name string) string {
+		if name == "NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET" {
+			return vault
+		}
+		return ""
+	}, shared)
+	if err != nil || string(resolved) != vault {
+		t.Fatalf("independent vault secret was not selected: %q, err=%v", resolved, err)
+	}
+	resolved[0] = 'X'
+	if vault[0] == 'X' {
+		t.Fatal("vault secret was not copied")
+	}
+	fallback, err := providerVaultSecret(func(string) string { return "" }, shared)
+	if err != nil || string(fallback) != string(shared) {
+		t.Fatalf("shared-secret fallback failed: %q, err=%v", fallback, err)
+	}
+	if _, err := providerVaultSecret(func(string) string { return "short" }, shared); err == nil {
+		t.Fatal("short configured vault secret was accepted")
+	}
+	if _, err := providerVaultSecret(func(string) string { return "" }, []byte("short")); err == nil {
+		t.Fatal("short shared-secret fallback was accepted")
+	}
+}
+
 func hasCapability(capabilities []string, wanted string) bool {
 	for _, capability := range capabilities {
 		if capability == wanted {

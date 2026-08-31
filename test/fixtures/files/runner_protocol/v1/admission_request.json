@@ -24,6 +24,8 @@
   },
   "routing": {
     "detection_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "configuration_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "effective_model": "deterministic_fixture",
     "adapter_key": "scripted",
     "profile_key": "workspace_default",
     "selection_reason": "primary",

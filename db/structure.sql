@@ -1196,11 +1196,15 @@ CREATE FUNCTION public.protect_execution_routing_snapshot() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF ROW(OLD.runtime_installation_id, OLD.selected_runtime_detection_key, OLD.selected_adapter_key, OLD.selected_runtime_profile_key,
-         OLD.runtime_selection_reason, OLD.runtime_selection_detail, OLD.disclosed_data_classes, OLD.max_input_units, OLD.max_output_units)
+  IF ROW(OLD.runtime_installation_id, OLD.selected_runtime_detection_key, OLD.selected_adapter_key,
+         OLD.selected_runtime_profile_key, OLD.selected_runtime_configuration_fingerprint,
+         OLD.selected_effective_model, OLD.runtime_selection_reason, OLD.runtime_selection_detail,
+         OLD.disclosed_data_classes, OLD.max_input_units, OLD.max_output_units)
      IS DISTINCT FROM
-     ROW(NEW.runtime_installation_id, NEW.selected_runtime_detection_key, NEW.selected_adapter_key, NEW.selected_runtime_profile_key,
-         NEW.runtime_selection_reason, NEW.runtime_selection_detail, NEW.disclosed_data_classes, NEW.max_input_units, NEW.max_output_units) THEN
+     ROW(NEW.runtime_installation_id, NEW.selected_runtime_detection_key, NEW.selected_adapter_key,
+         NEW.selected_runtime_profile_key, NEW.selected_runtime_configuration_fingerprint,
+         NEW.selected_effective_model, NEW.runtime_selection_reason, NEW.runtime_selection_detail,
+         NEW.disclosed_data_classes, NEW.max_input_units, NEW.max_output_units) THEN
     RAISE EXCEPTION 'execution routing snapshot is durable';
   END IF;
   RETURN NEW;
@@ -3936,6 +3940,8 @@ CREATE TABLE public.execution_runs (
     input_artifact_id bigint,
     runtime_installation_id bigint,
     selected_runtime_detection_key character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    selected_runtime_configuration_fingerprint character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    selected_effective_model character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
     selected_adapter_key character varying DEFAULT 'scripted'::character varying NOT NULL,
     selected_runtime_profile_key character varying DEFAULT 'workspace_default'::character varying NOT NULL,
     runtime_selection_reason character varying DEFAULT 'primary'::character varying NOT NULL,
@@ -3957,6 +3963,7 @@ CREATE TABLE public.execution_runs (
     CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
+    CONSTRAINT execution_runs_runtime_configuration_snapshot CHECK ((((selected_runtime_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text) AND ((octet_length((selected_effective_model)::text) >= 1) AND (octet_length((selected_effective_model)::text) <= 200)) AND ((selected_effective_model)::text !~ '[\r\n]'::text))),
     CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND ((runtime_selection_reason)::text = ANY (ARRAY[('primary'::character varying)::text, ('fallback'::character varying)::text])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
     CONSTRAINT execution_runs_status CHECK (((status)::text = ANY (ARRAY[('admitting'::character varying)::text, ('admitted'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('timed_out'::character varying)::text, ('canceled'::character varying)::text, ('policy_denied'::character varying)::text])))

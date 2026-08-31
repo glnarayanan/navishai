@@ -35,6 +35,7 @@ type Invocation struct {
 	GrokHome         string
 	Model            string
 	Prompt           string
+	Credentials      map[string]string
 	EgressProfileKey string
 }
 
@@ -86,9 +87,13 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		return Result{}, err
 	}
 	normalized := Result{}
+	credentials := map[string]string{"GROK_HOME": invocation.GrokHome, "GROK_SUBAGENTS": "0", "GROK_MEMORY": "0", "GROK_WEB_FETCH": "0"}
+	for key, value := range invocation.Credentials {
+		credentials[key] = value
+	}
 	process, processErr := runner.Interact(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: []string{"agent", "--no-leader", "stdio"}, WorkingDir: invocation.WorkingDir,
-		Credentials:      map[string]string{"GROK_HOME": invocation.GrokHome, "GROK_SUBAGENTS": "0", "GROK_MEMORY": "0", "GROK_WEB_FETCH": "0"},
+		HomeDir: invocation.GrokHome, Credentials: credentials,
 		EgressProfileKey: invocation.EgressProfileKey,
 	}, func(exchangeContext context.Context, stream io.ReadWriter) error {
 		var err error

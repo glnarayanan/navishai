@@ -29,7 +29,7 @@ module RunnerProtocol
     KEYS = %w[protocol_version run_id idempotency_key workspace_key task agent routing].freeze
     TASK_KEYS = %w[task_key attempt title input_context expected_output].freeze
     AGENT_KEYS = %w[role_key policy_version instructions allowed_tools runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy].freeze
-    ROUTING_KEYS = %w[detection_key adapter_key profile_key selection_reason selection_detail data_classes max_input_units max_output_units].freeze
+    ROUTING_KEYS = %w[detection_key configuration_fingerprint effective_model adapter_key profile_key selection_reason selection_detail data_classes max_input_units max_output_units].freeze
 
     attr_reader :attributes
 
@@ -61,6 +61,8 @@ module RunnerProtocol
         },
         "routing" => {
           "detection_key" => run.selected_runtime_detection_key,
+          "configuration_fingerprint" => run.selected_runtime_configuration_fingerprint,
+          "effective_model" => run.selected_effective_model,
           "adapter_key" => run.selected_adapter_key,
           "profile_key" => run.selected_runtime_profile_key,
           "selection_reason" => run.runtime_selection_reason,
@@ -130,6 +132,13 @@ module RunnerProtocol
       object!(routing, ROUTING_KEYS, "routing")
       unless routing["detection_key"].is_a?(String) && routing["detection_key"].match?(/\A[0-9a-f]{64}\z/)
         raise MalformedMessage, "routing.detection_key is invalid"
+      end
+      unless routing["configuration_fingerprint"].is_a?(String) && routing["configuration_fingerprint"].match?(/\A[0-9a-f]{64}\z/)
+        raise MalformedMessage, "routing.configuration_fingerprint is invalid"
+      end
+      string!(routing["effective_model"], 200, "routing.effective_model")
+      if routing["effective_model"].match?(/[\r\n]/)
+        raise MalformedMessage, "routing.effective_model is invalid"
       end
       policy_key!(routing["adapter_key"], "routing.adapter_key")
       policy_key!(routing["profile_key"], "routing.profile_key")

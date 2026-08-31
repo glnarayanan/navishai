@@ -63,14 +63,16 @@ type AgentPolicy struct {
 }
 
 type RuntimeRouting struct {
-	DetectionKey    string   `json:"detection_key"`
-	AdapterKey      string   `json:"adapter_key"`
-	ProfileKey      string   `json:"profile_key"`
-	SelectionReason string   `json:"selection_reason"`
-	SelectionDetail string   `json:"selection_detail"`
-	DataClasses     []string `json:"data_classes"`
-	MaxInputUnits   int      `json:"max_input_units"`
-	MaxOutputUnits  int      `json:"max_output_units"`
+	DetectionKey             string   `json:"detection_key"`
+	AdapterKey               string   `json:"adapter_key"`
+	ProfileKey               string   `json:"profile_key"`
+	ConfigurationFingerprint string   `json:"configuration_fingerprint"`
+	EffectiveModel           string   `json:"effective_model"`
+	SelectionReason          string   `json:"selection_reason"`
+	SelectionDetail          string   `json:"selection_detail"`
+	DataClasses              []string `json:"data_classes"`
+	MaxInputUnits            int      `json:"max_input_units"`
+	MaxOutputUnits           int      `json:"max_output_units"`
 }
 
 type AdmissionResponse struct {
@@ -155,6 +157,8 @@ func (request AdmissionRequest) Validate() error {
 	}
 	routing := request.Routing
 	if len(routing.DetectionKey) != 64 || !isLowerHex(routing.DetectionKey) ||
+		len(routing.ConfigurationFingerprint) != 64 || !isLowerHex(routing.ConfigurationFingerprint) ||
+		!byteLength(routing.EffectiveModel, 1, 200) || strings.ContainsAny(routing.EffectiveModel, "\r\n\x00") ||
 		!runtimePattern.MatchString(routing.AdapterKey) || !runtimePattern.MatchString(routing.ProfileKey) ||
 		(routing.SelectionReason != "primary" && routing.SelectionReason != "fallback") ||
 		!byteLength(routing.SelectionDetail, 1, 500) ||

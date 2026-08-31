@@ -38,6 +38,8 @@ type Definition struct {
 	AccountMarker            string
 	AccountValidator         func(string) bool
 	AccountEnvironment       []string
+	AccountEnvironmentValues map[string]string
+	AccountHome              string
 	AccountMetadata          map[string]string
 	Capabilities             []string
 	EffectiveModel           string
@@ -70,6 +72,11 @@ type Catalog struct {
 	now         func() time.Time
 }
 
+type WorkspaceCatalog interface {
+	DetectWorkspace(context.Context, string) []Installation
+	ResolveApprovedWorkspace(context.Context, string, string, []string) (Installation, bool)
+}
+
 func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 	return NewWithInstallations(definitions, nil, now)
 }
@@ -83,7 +90,9 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 			(len(definition.AccountArguments) > 0 && ((definition.AccountMarker == "") == (definition.AccountValidator == nil) ||
 				len(definition.AccountMetadata) == 0)) ||
 			(len(definition.AccountEnvironment) > 0 && len(definition.AccountArguments) == 0) ||
-			!validEnvironmentNames(definition.AccountEnvironment) {
+			(len(definition.AccountEnvironmentValues) > 0 && len(definition.AccountArguments) == 0) ||
+			!validEnvironmentNames(definition.AccountEnvironment) || !validEnvironmentValues(definition.AccountEnvironmentValues) ||
+			(definition.AccountHome != "" && !filepath.IsAbs(definition.AccountHome)) {
 			return nil, ErrInvalidDefinition
 		}
 		seen[definition.AdapterKey] = true
@@ -147,6 +156,15 @@ func validEnvironmentNames(values []string) bool {
 	return true
 }
 
+func validEnvironmentValues(values map[string]string) bool {
+	for key, value := range values {
+		if !environmentNamePattern.MatchString(key) || strings.HasPrefix(key, "NAVISHAI_") || len(value) > 16*1024 || strings.ContainsRune(value, 0) {
+			return false
+		}
+	}
+	return true
+}
+
 func Empty() *Catalog {
 	catalog, _ := New(nil, time.Now)
 	return catalog
@@ -162,6 +180,39 @@ func (catalog *Catalog) Detect(ctx context.Context) []Installation {
 	}
 	sort.Slice(installations, func(i, j int) bool { return installations[i].AdapterKey < installations[j].AdapterKey })
 	return installations
+}
+
+// DetectApproved reports only installations whose resolved executable path is
+// present in the deployment policy. No runtime probe is started until the path
+// has passed that check.
+func (catalog *Catalog) DetectApproved(ctx context.Context, approvedPaths []string) []Installation {
+	approved := make(map[string]bool, len(approvedPaths))
+	for _, path := range approvedPaths {
+		resolved, err := approvedExecutable(path)
+		if err != nil {
+			return nil
+		}
+		approved[resolved] = true
+	}
+	installations := make([]Installation, 0, len(catalog.static)+len(catalog.definitions))
+	for _, installation := range catalog.static {
+		if approved[installation.ExecutablePath] {
+			installations = append(installations, installation)
+		}
+	}
+	for _, definition := range catalog.definitions {
+		resolved, ok := resolveExecutable(definition)
+		if !ok || !approved[resolved] {
+			continue
+		}
+		installations = append(installations, catalog.detectResolved(ctx, definition, resolved))
+	}
+	sort.Slice(installations, func(i, j int) bool { return installations[i].AdapterKey < installations[j].AdapterKey })
+	return installations
+}
+
+func (catalog *Catalog) DetectWorkspace(ctx context.Context, _ string) []Installation {
+	return catalog.Detect(ctx)
 }
 
 func (catalog *Catalog) ResolveApproved(ctx context.Context, wantedKey string, approvedPaths []string) (Installation, bool) {
@@ -193,6 +244,10 @@ func (catalog *Catalog) ResolveApproved(ctx context.Context, wantedKey string, a
 	return Installation{}, false
 }
 
+func (catalog *Catalog) ResolveApprovedWorkspace(ctx context.Context, _ string, wantedKey string, approvedPaths []string) (Installation, bool) {
+	return catalog.ResolveApproved(ctx, wantedKey, approvedPaths)
+}
+
 func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Installation, bool) {
 	resolved, ok := resolveExecutable(definition)
 	if !ok {
@@ -218,7 +273,7 @@ func resolveExecutable(definition Definition) (string, bool) {
 }
 
 func (catalog *Catalog) detectResolved(ctx context.Context, definition Definition, resolved string) Installation {
-	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil)
+	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil, "")
 	health := "available"
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
 	if probeErr != nil || version == "" || versionOverflowed {
@@ -226,7 +281,13 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	}
 	accountMetadata := map[string]string{"authentication": "managed_on_runner"}
 	if len(definition.AccountArguments) > 0 {
-		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, definition.AccountEnvironment)
+		environment := cloneEnvironment(definition.AccountEnvironmentValues)
+		for _, key := range definition.AccountEnvironment {
+			if value := os.Getenv(key); value != "" {
+				environment[key] = value
+			}
+		}
+		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, environment, definition.AccountHome)
 		authenticated := strings.Contains(accountOutput, definition.AccountMarker)
 		if definition.AccountValidator != nil {
 			authenticated = definition.AccountValidator(accountOutput)
@@ -251,24 +312,37 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	}
 }
 
-func probe(ctx context.Context, executable string, arguments, accountEnvironment []string) (string, error, bool) {
+func probe(ctx context.Context, executable string, arguments []string, accountEnvironment map[string]string, configuredHome string) (string, error, bool) {
 	probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	command := exec.CommandContext(probeContext, executable, arguments...)
 	home := os.TempDir()
-	if len(accountEnvironment) > 0 && os.Getenv("HOME") != "" {
+	if configuredHome != "" {
+		home = configuredHome
+	} else if len(accountEnvironment) > 0 && os.Getenv("HOME") != "" {
 		home = os.Getenv("HOME")
 	}
 	command.Env = []string{"HOME=" + home, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
-	for _, key := range accountEnvironment {
-		if value := os.Getenv(key); value != "" {
-			command.Env = append(command.Env, key+"="+value)
-		}
+	keys := make([]string, 0, len(accountEnvironment))
+	for key := range accountEnvironment {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		command.Env = append(command.Env, key+"="+accountEnvironment[key])
 	}
 	output := &boundedBuffer{maximum: maxVersionBytes}
 	command.Stdout, command.Stderr = output, output
 	err := command.Run()
 	return strings.TrimSpace(output.String()), err, output.overflowed
+}
+
+func cloneEnvironment(values map[string]string) map[string]string {
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func cloneMetadata(metadata map[string]string) map[string]string {

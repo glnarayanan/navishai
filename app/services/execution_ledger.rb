@@ -77,6 +77,8 @@ class ExecutionLedger
         runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key,
         runtime_installation: selection.installation,
         selected_runtime_detection_key: selection.installation.detection_key,
+        selected_runtime_configuration_fingerprint: selection.installation.configuration_fingerprint,
+        selected_effective_model: selection.installation.effective_model,
         selected_adapter_key: selection.installation.adapter_key,
         selected_runtime_profile_key: selection.profile_key,
         runtime_selection_reason: selection.reason,

@@ -423,9 +423,13 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 	}
 	homeDir := workingDir
 	if request.HomeDir != "" {
-		homeDir, err = approvedDirectory(request.HomeDir, supervisor.homeRoots)
-		if err != nil {
-			return preparedRequest{}, ErrInvalidRequest
+		if request.HomeDir == request.WorkingDir {
+			homeDir = workingDir
+		} else {
+			homeDir, err = approvedDirectory(request.HomeDir, supervisor.homeRoots)
+			if err != nil {
+				return preparedRequest{}, ErrInvalidRequest
+			}
 		}
 	}
 	argumentBytes := 0
@@ -461,7 +465,12 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 		environment = append(environment, profile.environment...)
 		extraFiles = []*os.File{profile.userNamespace, profile.networkNamespace}
 	}
-	readRoots, err := json.Marshal(append(supervisor.runtimeReadRoots, supervisor.executableRoots...))
+	readRootValues := append([]string{}, supervisor.runtimeReadRoots...)
+	readRootValues = append(readRootValues, supervisor.executableRoots...)
+	if homeDir != workingDir {
+		readRootValues = append(readRootValues, homeDir)
+	}
+	readRoots, err := json.Marshal(readRootValues)
 	if err != nil {
 		return preparedRequest{}, ErrInvalidRequest
 	}

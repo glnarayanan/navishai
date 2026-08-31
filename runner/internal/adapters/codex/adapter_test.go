@@ -27,8 +27,10 @@ func (runner *fakeRunner) Run(_ context.Context, request supervisor.Request) (su
 func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T) {
 	runner := &fakeRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: successfulJSONL}}
 	events := make([]protocol.CanonicalEvent, 0)
+	invocation := testInvocation()
+	invocation.Credentials = map[string]string{"OPENAI_API_KEY": "sk-test-value"}
 	result, err := New(func() time.Time { return testNow }).Execute(
-		context.Background(), testInvocation(), runner,
+		context.Background(), invocation, runner,
 		func(event protocol.CanonicalEvent) error {
 			if err := event.Validate(); err != nil {
 				t.Fatalf("invalid canonical event %#v: %v", event, err)
@@ -52,7 +54,7 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	if !reflect.DeepEqual(runner.request.Arguments, expectedArguments) || string(runner.request.Input) != "Investigate the case." {
 		t.Fatalf("unexpected process request %#v", runner.request)
 	}
-	if !reflect.DeepEqual(runner.request.Credentials, map[string]string{"CODEX_HOME": "/runtime/codex"}) {
+	if !reflect.DeepEqual(runner.request.Credentials, map[string]string{"CODEX_HOME": "/runtime/codex", "OPENAI_API_KEY": "sk-test-value"}) {
 		t.Fatalf("unexpected credential environment %#v", runner.request.Credentials)
 	}
 	if runner.request.EgressProfileKey != "model_api" {

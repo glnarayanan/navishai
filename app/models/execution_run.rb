@@ -36,6 +36,9 @@ class ExecutionRun < ApplicationRecord
   validates :memory_context_detail, presence: true, length: { maximum: 100 }, if: :memory_degraded?
   validates :memory_context_detail, absence: true, unless: :memory_degraded?
   validates :selected_runtime_detection_key, format: { with: /\A[0-9a-f]{64}\z/ }
+  validates :selected_runtime_configuration_fingerprint, format: { with: /\A[0-9a-f]{64}\z/ }
+  validates :selected_effective_model, presence: true, length: { maximum: 200 },
+    format: { without: /[\r\n]/ }
   validates :selected_adapter_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }
   validates :max_input_units, :max_output_units,
     numericality: { only_integer: true, in: 1..10_000_000 }

@@ -33,7 +33,11 @@ func TestDetectReportsOnlyResolvedRegisteredExecutables(t *testing.T) {
 		t.Fatalf("expected one installation, got %d", len(installations))
 	}
 	installation := installations[0]
-	if installation.ExecutablePath != executable || installation.ExecutableVersion != "fixture 2.4.1" ||
+	resolvedExecutable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installation.ExecutablePath != resolvedExecutable || installation.ExecutableVersion != "fixture 2.4.1" ||
 		installation.AdapterKey != "fixture" || installation.HealthStatus != "available" ||
 		installation.EffectiveModel != "fixture-model" || installation.ConfigurationFingerprint != strings.Repeat("a", 64) ||
 		installation.CompatibilityStatus != "compatible" ||
@@ -58,7 +62,7 @@ func TestDetectOmitsUnregisteredAndMissingExecutables(t *testing.T) {
 	catalog, err := New([]Definition{{
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"not-installed"},
 		VersionArguments: []string{"--version"},
-		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
+		EffectiveModel:   "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 	}}, time.Now)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +127,7 @@ func TestNewRejectsAmbiguousAccountValidatorsAndUnsafeEnvironmentNames(t *testin
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture"},
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth"},
 		AccountMetadata: map[string]string{"authentication": "fixture"},
-		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
+		EffectiveModel:  "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 	}
 	definitions := []Definition{
 		base,
@@ -184,5 +188,45 @@ func TestResolveApprovedRejectsChangedBytesBeforeRunningProbe(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("changed executable ran before its detection key was checked: %v", err)
+	}
+}
+
+func TestDetectApprovedDoesNotProbeUnapprovedExecutableOrExposeCredentialHome(t *testing.T) {
+	directory := t.TempDir()
+	credentialHome := filepath.Join(directory, "credential-home")
+	if err := os.Mkdir(credentialHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(directory, "unapproved-probe")
+	unapproved := filepath.Join(directory, "fixture-runtime")
+	script := "#!/bin/sh\nprintf '%s|%s' \"$HOME\" \"$ACCOUNT_HOME\" > " + marker + "\nprintf 'fixture 1.0.0\\n'\n"
+	if err := os.WriteFile(unapproved, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	approved := filepath.Join(directory, "approved-runtime")
+	if err := os.WriteFile(approved, []byte("#!/bin/sh\nprintf 'approved 1.0.0\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	t.Setenv("ACCOUNT_HOME", credentialHome)
+	catalog, err := New([]Definition{{
+		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture-runtime"},
+		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth", "status"},
+		AccountMarker: "authenticated", AccountEnvironment: []string{"ACCOUNT_HOME"}, AccountHome: credentialHome,
+		AccountMetadata: map[string]string{"authentication": "fixture_subscription"},
+		Capabilities:    []string{"structured_output"}, EffectiveModel: "fixture-model",
+		ConfigurationFingerprint: strings.Repeat("a", 64), MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
+	}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if installations := catalog.DetectApproved(context.Background(), []string{approved}); len(installations) != 0 {
+		t.Fatalf("unapproved runtime was detected: %#v", installations)
+	}
+	if contents, err := os.ReadFile(marker); err == nil {
+		t.Fatalf("unapproved runtime executed and observed credential paths: %q", contents)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
 	}
 }

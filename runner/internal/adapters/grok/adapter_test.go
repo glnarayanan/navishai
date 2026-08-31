@@ -85,7 +85,8 @@ func serveACP(stream net.Conn, toolRequest bool) error {
 func TestExecuteNegotiatesACPAndEmitsCanonicalOutput(t *testing.T) {
 	runner := &fakeInteractiveRunner{}
 	events := make([]protocol.CanonicalEvent, 0)
-	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), testInvocation(), runner, func(event protocol.CanonicalEvent) error {
+	invocation := testInvocation()
+	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), invocation, runner, func(event protocol.CanonicalEvent) error {
 		if err := event.Validate(); err != nil {
 			t.Fatal(err)
 		}
@@ -97,6 +98,9 @@ func TestExecuteNegotiatesACPAndEmitsCanonicalOutput(t *testing.T) {
 	}
 	if !reflect.DeepEqual(runner.request.Arguments, []string{"agent", "--no-leader", "stdio"}) || runner.request.Input != nil || runner.request.EgressProfileKey != "model_api" {
 		t.Fatalf("unexpected request %#v", runner.request)
+	}
+	if _, exists := runner.request.Credentials["XAI_API_KEY"]; exists || runner.request.Credentials["GROK_HOME"] != "/runtime/grok" {
+		t.Fatalf("unexpected subscription credential environment %#v", runner.request.Credentials)
 	}
 	types := make([]string, len(events))
 	for index, event := range events {

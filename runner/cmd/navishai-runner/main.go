@@ -18,6 +18,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/events"
 	"github.com/glnarayanan/navishai/runner/internal/execution"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/websearch"
 )
@@ -53,15 +54,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("load runner execution config: %v", err)
 	}
-	catalog, err := configuredRuntimeCatalog(executionConfig, secret, time.Now)
+	vaultSecret, err := providerVaultSecret(os.Getenv, secret)
+	if err != nil {
+		log.Fatal(err)
+	}
+	providerStore, err := providerconfig.OpenStore(statePath+".providers", vaultSecret)
+	if err != nil {
+		log.Fatalf("open provider state: %v", err)
+	}
+	catalog, err := execution.NewManagedCatalog(executionConfig, providerStore, secret, time.Now)
 	if err != nil {
 		log.Fatalf("configure runtime catalog: %v", err)
 	}
-	registry, err := execution.NewRegistry(executionConfig, catalog, secret, time.Now)
+	registry, err := execution.NewRegistryWithProviders(executionConfig, catalog, providerStore, secret, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner execution: %v", err)
 	}
-	handler, err := newHandlerWithRuntimeTesterAndStore(secret, store, searchStatePath, catalog, registry, runtimeTestStore, time.Now)
+	handler, err := newManagedHandlerWithRuntimeTesterAndStore(secret, store, searchStatePath, catalog, registry, runtimeTestStore, providerStore, catalog, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner protocol: %v", err)
 	}
@@ -99,6 +108,20 @@ func main() {
 	}
 	log.Printf("NavishAI runner listening on %s", address)
 	log.Fatal(server.ListenAndServe())
+}
+
+func providerVaultSecret(getenv func(string) string, sharedSecret []byte) ([]byte, error) {
+	configured := []byte(getenv("NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET"))
+	if len(configured) > 0 {
+		if len(configured) < 32 {
+			return nil, fmt.Errorf("NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET must contain at least 32 bytes")
+		}
+		return append([]byte(nil), configured...), nil
+	}
+	if protocol.ValidateSecret(sharedSecret) != nil {
+		return nil, fmt.Errorf("NAVISHAI_RUNNER_SHARED_SECRET must contain at least 32 bytes when the provider vault secret is unset")
+	}
+	return append([]byte(nil), sharedSecret...), nil
 }
 
 func tlsFiles(address string, getenv func(string) string) (string, string, error) {
@@ -160,7 +183,7 @@ func configuredRuntimeCatalog(config execution.Config, configurationIdentityKey 
 	)
 }
 
-func newHandlerWithCatalog(secret []byte, store *admission.Store, searchStatePath string, catalog *runtimecatalog.Catalog, now func() time.Time) (http.Handler, error) {
+func newHandlerWithCatalog(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, now func() time.Time) (http.Handler, error) {
 	return newHandlerWithRuntimeTester(secret, store, searchStatePath, catalog, unavailableRuntimeTester{}, now)
 }
 
@@ -170,7 +193,7 @@ func (unavailableRuntimeTester) TestRuntime(context.Context, runtimecatalog.Test
 	return runtimecatalog.TestResult{}, fmt.Errorf("runtime test is unavailable")
 }
 
-func newHandlerWithRuntimeTester(secret []byte, store *admission.Store, searchStatePath string, catalog *runtimecatalog.Catalog, tester runtimecatalog.RuntimeTester, now func() time.Time) (http.Handler, error) {
+func newHandlerWithRuntimeTester(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, tester runtimecatalog.RuntimeTester, now func() time.Time) (http.Handler, error) {
 	runtimeTestStore, err := runtimecatalog.OpenTestStore("")
 	if err != nil {
 		return nil, err
@@ -178,7 +201,21 @@ func newHandlerWithRuntimeTester(secret []byte, store *admission.Store, searchSt
 	return newHandlerWithRuntimeTesterAndStore(secret, store, searchStatePath, catalog, tester, runtimeTestStore, now)
 }
 
-func newHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, searchStatePath string, catalog *runtimecatalog.Catalog, tester runtimecatalog.RuntimeTester, runtimeTestStore *runtimecatalog.TestStore, now func() time.Time) (http.Handler, error) {
+func newHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, tester runtimecatalog.RuntimeTester, runtimeTestStore *runtimecatalog.TestStore, now func() time.Time) (http.Handler, error) {
+	providerStore, err := providerconfig.OpenStore("", secret)
+	if err != nil {
+		return nil, err
+	}
+	return newManagedHandlerWithRuntimeTesterAndStore(secret, store, searchStatePath, catalog, tester, runtimeTestStore, providerStore, unavailableProviderStatus{}, now)
+}
+
+type unavailableProviderStatus struct{}
+
+func (unavailableProviderStatus) ProviderAvailability(*http.Request, string, string) providerconfig.Availability {
+	return providerconfig.Availability{HealthStatus: "unavailable"}
+}
+
+func newManagedHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, searchStatePath string, catalog runtimecatalog.WorkspaceCatalog, tester runtimecatalog.RuntimeTester, runtimeTestStore *runtimecatalog.TestStore, providerStore *providerconfig.Store, providerStatus providerconfig.StatusSource, now func() time.Time) (http.Handler, error) {
 	admissionHandler, err := admission.NewHandler(secret, store, now)
 	if err != nil {
 		return nil, fmt.Errorf("create admission handler: %w", err)
@@ -194,6 +231,10 @@ func newHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, 
 	testHandler, err := runtimecatalog.NewTestHandlerWithStore(secret, tester, runtimeTestStore, now)
 	if err != nil {
 		return nil, fmt.Errorf("create runtime test handler: %w", err)
+	}
+	providerHandler, err := providerconfig.NewHandler(secret, providerStore, providerStatus, now)
+	if err != nil {
+		return nil, fmt.Errorf("create provider handler: %w", err)
 	}
 	searchStore, err := websearch.OpenStore(searchStatePath)
 	if err != nil {
@@ -220,6 +261,10 @@ func newHandlerWithRuntimeTesterAndStore(secret []byte, store *admission.Store, 
 	mux.Handle("POST "+runtimecatalog.LegacyDetectionPath, legacyRuntimeHandler)
 	mux.Handle("POST "+runtimecatalog.DetectionPath, runtimeHandler)
 	mux.Handle("POST "+runtimecatalog.TestPath, testHandler)
+	mux.Handle("POST "+providerconfig.CatalogPath, providerHandler)
+	mux.Handle("POST "+providerconfig.ConfigurePath, providerHandler)
+	mux.Handle("POST "+providerconfig.RemovePath, providerHandler)
+	mux.Handle("POST "+providerconfig.PurgePath, providerHandler)
 	mux.Handle("POST "+websearch.Path, searchHandler)
 	return mux, nil
 }

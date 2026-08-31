@@ -33,6 +33,12 @@ func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T
 			MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
 		}},
 	}
+	fingerprint, err := ScriptedConfigurationFingerprint(config, testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Routing.ConfigurationFingerprint = fingerprint
+	request.Routing.EffectiveModel = "deterministic_fixture"
 	registry, err := NewRegistry(config, runtimecatalog.Empty(), testConfigurationIdentityKey, func() time.Time {
 		return time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	})
@@ -68,6 +74,8 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 			request := request
 			request.Routing.AdapterKey = adapterKey
 			request.Routing.DetectionKey = testDetectionKey(t, adapterKey, executablePath)
+			request.Routing.ConfigurationFingerprint = strings.Repeat("a", 64)
+			request.Routing.EffectiveModel = "runtime_default"
 			installation := runtimecatalog.Installation{
 				DetectionKey: request.Routing.DetectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
 				ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
@@ -111,6 +119,16 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 			}
 			if len(events) > 0 && (events[0].EventType != "run.started" || events[0].Data["adapter"] != adapterKey) {
 				t.Fatalf("adapter branch emitted the wrong lifecycle: %#v", events)
+			}
+			stale := request
+			stale.Routing.ConfigurationFingerprint = strings.Repeat("f", 64)
+			if err := registry.Execute(context.Background(), stale, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
+				t.Fatalf("stale configuration fingerprint was not denied: %v", err)
+			}
+			stale = request
+			stale.Routing.EffectiveModel = "changed-model"
+			if err := registry.Execute(context.Background(), stale, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
+				t.Fatalf("stale effective model was not denied: %v", err)
 			}
 		})
 	}
@@ -215,7 +233,7 @@ func TestRuntimeTestAdmissionCarriesOnlyFixedSentinelContextAndZeroTools(t *test
 		MaxTimeoutSeconds: 900, MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
 	}
 
-	admission := runtimeTestAdmission(request, "codex_subscription", config)
+	admission := runtimeTestAdmission(request, "codex_subscription", config, "gpt-test", strings.Repeat("b", 64))
 
 	if err := admission.Validate(); err != nil {
 		t.Fatal(err)

@@ -83,6 +83,8 @@ type adapterConfigurationIdentity struct {
 	Enabled           bool                       `json:"enabled"`
 	HomeDir           string                     `json:"home_dir"`
 	EffectiveModel    string                     `json:"effective_model"`
+	AuthMode          string                     `json:"auth_mode,omitempty"`
+	CredentialDigest  string                     `json:"credential_digest,omitempty"`
 	EgressProfileKey  string                     `json:"egress_profile_key"`
 	EgressExecutable  string                     `json:"egress_executable"`
 	UserNamespace     string                     `json:"user_namespace"`
@@ -105,6 +107,10 @@ type configurationEnvironment struct {
 }
 
 func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, key []byte) (string, string, error) {
+	return adapterConfigurationIdentityFor(adapterKey, adapter, supervisor, "", "", key)
+}
+
+func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte) (string, string, error) {
 	if err := protocol.ValidateSecret(key); err != nil {
 		return "", "", err
 	}
@@ -112,13 +118,23 @@ func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supe
 	if model == "" {
 		model = runtimeDefaultModel
 	}
+	enabled := adapter.Enabled
+	if authMode != "" {
+		enabled = true
+	}
 	identity := adapterConfigurationIdentity{
-		Version: "v1", AdapterKey: adapterKey, Enabled: adapter.Enabled, HomeDir: adapter.HomeDir,
-		EffectiveModel: model, EgressProfileKey: adapter.EgressProfileKey,
+		Version: "v1", AdapterKey: adapterKey, Enabled: enabled, HomeDir: adapter.HomeDir,
+		EffectiveModel: model, AuthMode: authMode, EgressProfileKey: adapter.EgressProfileKey,
 		Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles), Tools: sortedCopy(adapter.Tools),
 		DataClasses: sortedCopy(adapter.DataClasses), MaxTimeoutSeconds: adapter.MaxTimeoutSeconds,
 		MaxSteps: adapter.MaxSteps, MaxToolCalls: adapter.MaxToolCalls,
 		MaxInputUnits: adapter.MaxInputUnits, MaxOutputUnits: adapter.MaxOutputUnits,
+	}
+	if apiKey != "" {
+		credentialDigest := hmac.New(sha256.New, key)
+		_, _ = credentialDigest.Write([]byte("navishai-provider-credential-v1\x00"))
+		_, _ = credentialDigest.Write([]byte(apiKey))
+		identity.CredentialDigest = hex.EncodeToString(credentialDigest.Sum(nil))
 	}
 	for _, profile := range supervisor.EgressProfiles {
 		if profile.Key != adapter.EgressProfileKey {

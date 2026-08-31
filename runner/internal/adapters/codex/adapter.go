@@ -33,6 +33,7 @@ type Invocation struct {
 	Model            string
 	Prompt           string
 	DisableTools     bool
+	Credentials      map[string]string
 	EgressProfileKey string
 }
 
@@ -91,9 +92,13 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 	}); err != nil {
 		return Result{}, err
 	}
+	credentials := map[string]string{"CODEX_HOME": invocation.CodexHome}
+	for key, value := range invocation.Credentials {
+		credentials[key] = value
+	}
 	process, processErr := runner.Run(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: arguments(invocation), WorkingDir: invocation.WorkingDir,
-		Input: []byte(invocation.Prompt), Credentials: map[string]string{"CODEX_HOME": invocation.CodexHome},
+		HomeDir: invocation.CodexHome, Input: []byte(invocation.Prompt), Credentials: credentials,
 		EgressProfileKey: invocation.EgressProfileKey,
 	})
 	if process.TimedOut {

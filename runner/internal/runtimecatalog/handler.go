@@ -21,21 +21,21 @@ var workspaceKeyPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9
 
 type Handler struct {
 	secret                       []byte
-	catalog                      *Catalog
+	catalog                      WorkspaceCatalog
 	now                          func() time.Time
 	version                      string
 	includeConfigurationIdentity bool
 }
 
-func NewHandler(secret []byte, catalog *Catalog, now func() time.Time) (*Handler, error) {
+func NewHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time) (*Handler, error) {
 	return newHandler(secret, catalog, now, DetectionVersion, true)
 }
 
-func NewLegacyHandler(secret []byte, catalog *Catalog, now func() time.Time) (*Handler, error) {
+func NewLegacyHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time) (*Handler, error) {
 	return newHandler(secret, catalog, now, protocol.Version, false)
 }
 
-func newHandler(secret []byte, catalog *Catalog, now func() time.Time, version string, includeConfigurationIdentity bool) (*Handler, error) {
+func newHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time, version string, includeConfigurationIdentity bool) (*Handler, error) {
 	if err := protocol.ValidateSecret(secret); err != nil {
 		return nil, err
 	}
@@ -81,7 +81,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Runtime detection request does not match the endpoint protocol.")
 		return
 	}
-	installations := handler.catalog.Detect(request.Context())
+	workspaceKey := stringValue(input["workspace_key"])
+	installations := handler.catalog.DetectWorkspace(request.Context(), workspaceKey)
 	var responseInstallations any = installations
 	if !handler.includeConfigurationIdentity {
 		responseInstallations = legacyInstallations(installations)

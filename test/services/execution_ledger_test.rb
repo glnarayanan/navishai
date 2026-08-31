@@ -66,6 +66,9 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_equal @task.assigned_agent_profile_version.runtime_profile_key, second.runtime_profile_key
     assert_equal runtime_installations(:acme_scripted), second.runtime_installation
     assert_equal runtime_installations(:acme_scripted).detection_key, second.selected_runtime_detection_key
+    assert_equal runtime_installations(:acme_scripted).configuration_fingerprint,
+      second.selected_runtime_configuration_fingerprint
+    assert_equal runtime_installations(:acme_scripted).effective_model, second.selected_effective_model
     assert_equal "scripted", second.selected_adapter_key
     assert_equal "primary", second.runtime_selection_reason
     assert_equal %w[approved_knowledge case_content customer_identity public_web_query], second.disclosed_data_classes
@@ -172,6 +175,11 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::StatementInvalid) do
       ExecutionRun.transaction(requires_new: true) do
         ExecutionRun.where(id: @run.id).update_all(selected_runtime_detection_key: "f" * 64)
+      end
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ExecutionRun.transaction(requires_new: true) do
+        ExecutionRun.where(id: @run.id).update_all(selected_runtime_configuration_fingerprint: "f" * 64)
       end
     end
 

@@ -16,6 +16,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/scripted"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
@@ -27,14 +28,26 @@ const runtimeTestSentinel = "NAVISHAI_RUNTIME_TEST_OK"
 
 type Registry struct {
 	config                   Config
-	catalog                  *runtimecatalog.Catalog
+	catalog                  runtimecatalog.WorkspaceCatalog
+	providers                *providerconfig.Store
 	configurationIdentityKey []byte
 	supervisor               *supervisor.Supervisor
 	now                      func() time.Time
 	execute                  func(context.Context, protocol.AdmissionRequest, func(protocol.CanonicalEvent) error) error
 }
 
-func NewRegistry(config Config, catalog *runtimecatalog.Catalog, configurationIdentityKey []byte, now func() time.Time) (*Registry, error) {
+func NewRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, configurationIdentityKey []byte, now func() time.Time) (*Registry, error) {
+	return newRegistry(config, catalog, nil, configurationIdentityKey, now)
+}
+
+func NewRegistryWithProviders(config Config, catalog runtimecatalog.WorkspaceCatalog, providers *providerconfig.Store, configurationIdentityKey []byte, now func() time.Time) (*Registry, error) {
+	if providers == nil {
+		return nil, ErrPolicyDenied
+	}
+	return newRegistry(config, catalog, providers, configurationIdentityKey, now)
+}
+
+func newRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, providers *providerconfig.Store, configurationIdentityKey []byte, now func() time.Time) (*Registry, error) {
 	if config.WorkRoot == "" || catalog == nil || protocol.ValidateSecret(configurationIdentityKey) != nil {
 		return nil, ErrPolicyDenied
 	}
@@ -53,14 +66,14 @@ func NewRegistry(config Config, catalog *runtimecatalog.Catalog, configurationId
 	}
 	config.WorkRoot = workRoot
 	var processSupervisor *supervisor.Supervisor
-	if anyLiveAdapter(config.Adapters) {
+	if (providers == nil && anyLegacyLiveAdapter(config.Adapters)) || (providers != nil && anyManagedAdapterTemplate(config)) {
 		processSupervisor, err = supervisor.New(config.Supervisor.build())
 		if err != nil {
 			return nil, fmt.Errorf("configure execution supervisor: %w", err)
 		}
 	}
 	registry := &Registry{
-		config: config, catalog: catalog,
+		config: config, catalog: catalog, providers: providers,
 		configurationIdentityKey: append([]byte(nil), configurationIdentityKey...),
 		supervisor:               processSupervisor, now: now,
 	}
@@ -75,21 +88,26 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	if request.Routing.AdapterKey == "scripted" {
 		return registry.executeScripted(ctx, request, emit)
 	}
-	adapterConfig, ok := registry.config.Adapters[request.Routing.AdapterKey]
-	if !ok || !adapterConfig.Enabled || !adapterConfig.allows(request) || registry.supervisor == nil ||
+	adapterConfig, credentials, ok := registry.effectiveAdapter(request.WorkspaceKey, request.Routing.AdapterKey)
+	if !ok || !adapterConfig.allows(request) || registry.supervisor == nil ||
 		adapterConfig.HomeDir == "" || adapterConfig.EgressProfileKey == "" {
 		return ErrPolicyDenied
 	}
-	installation, ok := registry.catalog.ResolveApproved(
-		ctx, request.Routing.DetectionKey, registry.config.Supervisor.ApprovedExecutables,
+	installation, ok := registry.catalog.ResolveApprovedWorkspace(
+		ctx, request.WorkspaceKey, request.Routing.DetectionKey, registry.config.Supervisor.ApprovedExecutables,
 	)
 	if !ok || installation.AdapterKey != request.Routing.AdapterKey || installation.HealthStatus != "available" ||
-		installation.CompatibilityStatus != "compatible" {
+		installation.CompatibilityStatus != "compatible" || installation.ConfigurationFingerprint != request.Routing.ConfigurationFingerprint ||
+		installation.EffectiveModel != request.Routing.EffectiveModel {
 		return ErrPolicyDenied
 	}
 	workingDir, err := registry.workingDirectory(request.RunID)
 	if err != nil {
 		return err
+	}
+	credentialHome := adapterConfig.HomeDir
+	if len(credentials) > 0 {
+		credentialHome = workingDir
 	}
 	prompt, err := executionPrompt(request)
 	if err != nil {
@@ -102,20 +120,20 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	case codex.AdapterKey:
 		_, err = codex.New(registry.now).Execute(runContext, codex.Invocation{
 			Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDir,
-			CodexHome: adapterConfig.HomeDir, Model: adapterConfig.Model, Prompt: prompt,
-			DisableTools: isRuntimeTestAdmission(request), EgressProfileKey: adapterConfig.EgressProfileKey,
+			CodexHome: credentialHome, Model: adapterConfig.Model, Prompt: prompt,
+			DisableTools: isRuntimeTestAdmission(request), Credentials: credentials, EgressProfileKey: adapterConfig.EgressProfileKey,
 		}, registry.supervisor, emit)
 	case claude.AdapterKey:
 		_, err = claude.New(registry.now).Execute(runContext, claude.Invocation{
 			Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDir,
-			ClaudeConfigDir: adapterConfig.HomeDir, Model: adapterConfig.Model, Prompt: prompt,
-			EgressProfileKey: adapterConfig.EgressProfileKey,
+			ClaudeConfigDir: credentialHome, Model: adapterConfig.Model, Prompt: prompt,
+			Credentials: credentials, EgressProfileKey: adapterConfig.EgressProfileKey,
 		}, registry.supervisor, emit)
 	case grok.AdapterKey:
 		_, err = grok.New(registry.now).Execute(runContext, grok.Invocation{
 			Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDir,
-			GrokHome: adapterConfig.HomeDir, Model: adapterConfig.Model, Prompt: prompt,
-			EgressProfileKey: adapterConfig.EgressProfileKey,
+			GrokHome: credentialHome, Model: adapterConfig.Model, Prompt: prompt,
+			Credentials: credentials, EgressProfileKey: adapterConfig.EgressProfileKey,
 		}, registry.supervisor, emit)
 	case cursor.AdapterKey:
 		_, err = cursor.New(registry.now).Execute(runContext, cursor.Invocation{
@@ -129,22 +147,30 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 }
 
 func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalog.TestRequest) (runtimecatalog.TestResult, error) {
-	installation, ok := registry.catalog.ResolveApproved(ctx, request.DetectionKey, registry.config.Supervisor.ApprovedExecutables)
+	installation, ok := registry.catalog.ResolveApprovedWorkspace(ctx, request.WorkspaceKey, request.DetectionKey, registry.config.Supervisor.ApprovedExecutables)
 	if !ok || !supportsRuntimeTest(installation) ||
 		installation.ConfigurationFingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	adapterConfig, ok := registry.config.Adapters[installation.AdapterKey]
-	if !ok || !adapterConfig.Enabled || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
+	adapterConfig, _, ok := registry.effectiveAdapter(request.WorkspaceKey, installation.AdapterKey)
+	if !ok || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	model, fingerprint, err := AdapterConfigurationIdentity(
-		installation.AdapterKey, adapterConfig, registry.config.Supervisor, registry.configurationIdentityKey,
+	authMode, apiKey := "", ""
+	if registry.providers != nil {
+		connection, configured := registry.providers.Get(request.WorkspaceKey, installation.AdapterKey)
+		if !configured {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		authMode, apiKey = connection.AuthMode, connection.APIKey
+	}
+	model, fingerprint, err := adapterConfigurationIdentityFor(
+		installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
 	)
 	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	admission := runtimeTestAdmission(request, installation.AdapterKey, adapterConfig)
+	admission := runtimeTestAdmission(request, installation.AdapterKey, adapterConfig, model, fingerprint)
 	if admission.Validate() != nil {
 		return runtimecatalog.TestResult{}, ErrPolicyDenied
 	}
@@ -161,7 +187,32 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
 }
 
-func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string, config AdapterConfig) protocol.AdmissionRequest {
+func (registry *Registry) effectiveAdapter(workspaceKey, adapterKey string) (AdapterConfig, map[string]string, bool) {
+	adapter, ok := registry.config.Adapters[adapterKey]
+	if !ok || (registry.providers == nil && !adapter.Enabled) ||
+		(registry.providers != nil && !managedAdapterTemplateValid(registry.config, adapterKey, adapter)) {
+		return AdapterConfig{}, nil, false
+	}
+	credentials := make(map[string]string)
+	if registry.providers == nil {
+		return adapter, credentials, true
+	}
+	connection, configured := registry.providers.Get(workspaceKey, adapterKey)
+	if !configured {
+		return AdapterConfig{}, nil, false
+	}
+	adapter.Model = connection.Model
+	if connection.AuthMode == "api_key" {
+		definition, found := providerconfig.Lookup(adapterKey)
+		if !found || definition.CredentialEnv == "" || connection.APIKey == "" {
+			return AdapterConfig{}, nil, false
+		}
+		credentials[definition.CredentialEnv] = connection.APIKey
+	}
+	return adapter, credentials, true
+}
+
+func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string, config AdapterConfig, model, fingerprint string) protocol.AdmissionRequest {
 	timeout := min(config.MaxTimeoutSeconds, 30)
 	return protocol.AdmissionRequest{
 		ProtocolVersion: protocol.Version,
@@ -181,6 +232,7 @@ func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string,
 		},
 		Routing: protocol.RuntimeRouting{
 			DetectionKey: request.DetectionKey, AdapterKey: adapterKey, ProfileKey: config.Profiles[0],
+			ConfigurationFingerprint: fingerprint, EffectiveModel: model,
 			SelectionReason: "primary", SelectionDetail: "Explicit owner or administrator runtime connectivity test.",
 			DataClasses: []string{}, MaxInputUnits: min(config.MaxInputUnits, 512), MaxOutputUnits: min(config.MaxOutputUnits, 32),
 		},
@@ -254,8 +306,10 @@ func min(left, right int) int {
 func (registry *Registry) executeScripted(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
 	config, ok := registry.config.Adapters["scripted"]
 	path := registry.config.Scripted[request.Routing.ProfileKey]
+	fingerprint, fingerprintErr := ScriptedConfigurationFingerprint(registry.config, registry.configurationIdentityKey)
 	if !ok || !config.Enabled || !config.allows(request) || path == "" ||
-		ScriptedDetectionKey(path) != request.Routing.DetectionKey {
+		fingerprintErr != nil || ScriptedDetectionKey(path) != request.Routing.DetectionKey ||
+		request.Routing.ConfigurationFingerprint != fingerprint || request.Routing.EffectiveModel != "deterministic_fixture" {
 		return ErrPolicyDenied
 	}
 	script, err := scripted.Load(path)
@@ -300,9 +354,18 @@ func (config AdapterConfig) allows(request protocol.AdmissionRequest) bool {
 		request.Routing.MaxOutputUnits <= config.MaxOutputUnits
 }
 
-func anyLiveAdapter(configs map[string]AdapterConfig) bool {
-	for key, config := range configs {
-		if key != "scripted" && config.Enabled {
+func anyManagedAdapterTemplate(config Config) bool {
+	for key, adapter := range config.Adapters {
+		if managedAdapterTemplateValid(config, key, adapter) {
+			return true
+		}
+	}
+	return false
+}
+
+func anyLegacyLiveAdapter(configs map[string]AdapterConfig) bool {
+	for key, adapter := range configs {
+		if key != "scripted" && adapter.Enabled {
 			return true
 		}
 	}
