@@ -19,7 +19,94 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         provider_connection: { adapter_key: "codex", auth_mode: "api_key", model: "gpt-5", api_key: "should-not-leave" }
       }
       assert_response :forbidden
+
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      assert_response :forbidden
     end
+  end
+
+  test "an Owner gets sanitized model discovery for a configured provider" do
+    sign_in_as users(:owner)
+    @gateway.models_result = {
+      "status" => "available", "checked_at" => "2026-08-31T12:00:00Z",
+      "models" => [ { "id" => "gpt-5.6", "label" => "GPT-5.6", "default" => true } ],
+      "workspace_key" => @workspace.runner_key, "adapter_key" => "codex", "api_key" => "must-not-leak"
+    }
+
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+    end
+
+    assert_response :success
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_equal "no-cache", response.headers["Pragma"]
+    assert_equal(
+      {
+        "status" => "available", "checked_at" => "2026-08-31T12:00:00Z",
+        "models" => [ { "id" => "gpt-5.6", "label" => "GPT-5.6", "default" => true } ]
+      }, JSON.parse(response.body)
+    )
+    assert_equal [ [ @workspace.runner_key, "codex" ] ], @gateway.models_calls
+    assert_not_includes response.body, "must-not-leak"
+  end
+
+  test "an Owner receives unsupported and failed discovery states without inventing models" do
+    sign_in_as users(:owner)
+
+    %w[unsupported failed].each do |status|
+      @gateway.models_result = {
+        "status" => status, "checked_at" => "2026-08-31T12:00:00Z", "models" => []
+      }
+      with_gateway(@gateway) do
+        post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      end
+
+      assert_response :success
+      assert_equal({ "status" => status, "checked_at" => "2026-08-31T12:00:00Z", "models" => [] }, JSON.parse(response.body))
+    end
+  end
+
+  test "unknown, unconfigured, and invalid adapters return not found without discovery" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "missing" }
+      assert_response :not_found
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "claude" }
+      assert_response :not_found
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "A" * 65 }
+      assert_response :not_found
+    end
+
+    assert_empty @gateway.models_calls
+  end
+
+  test "unavailable and malformed discovery responses are stable and sanitized" do
+    sign_in_as users(:owner)
+
+    @gateway.models_error = RunnerClient::Unavailable.new("secret transport detail")
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+    end
+    assert_response :service_unavailable
+    assert_equal({ "status" => "unavailable", "models" => [] }, JSON.parse(response.body))
+    assert_not_includes response.body, "secret transport detail"
+
+    @gateway.models_error = RunnerClient::MalformedResponse.new("raw provider output")
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+    end
+    assert_response :bad_gateway
+    assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
+    assert_not_includes response.body, "raw provider output"
+
+    @gateway.models_error = RunnerClient::AuthenticationError.new("provider token detail")
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+    end
+    assert_response :bad_gateway
+    assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
+    assert_not_includes response.body, "provider token detail"
   end
 
   test "an Owner gets a no-store form without a previously saved key" do
@@ -210,13 +297,15 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     class FakeProviderGateway
-      attr_accessor :detect_error
-      attr_reader :configure_calls, :remove_calls
+      attr_accessor :detect_error, :models_error, :models_result
+      attr_reader :configure_calls, :remove_calls, :models_calls
 
       def initialize(catalog)
         @catalog = catalog
         @configure_calls = []
         @remove_calls = []
+        @models_calls = []
+        @models_result = { "status" => "unsupported", "checked_at" => "2026-08-31T12:00:00Z", "models" => [] }
       end
 
       def catalog(workspace_key:)
@@ -230,6 +319,13 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
           "configured" => true, "secret_configured" => attributes.fetch(:api_key).present? || provider.fetch("secret_configured"),
           "auth_mode" => attributes.fetch(:auth_mode), "model" => attributes.fetch(:model), "health_status" => "available"
         )
+      end
+
+      def models(workspace_key:, adapter_key:)
+        @models_calls << [ workspace_key, adapter_key ]
+        raise models_error if models_error
+
+        models_result
       end
 
       def remove(workspace_key:, request_id:, adapter_key:)

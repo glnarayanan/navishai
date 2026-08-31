@@ -48,6 +48,27 @@ class ProviderConnectionsController < ApplicationController
     redirect_to workspace_runtime_installations_path(Current.workspace), alert: user_facing_error(error)
   end
 
+  def models
+    workspace = Current.require_workspace!
+    adapter_key = params[:adapter_key]
+    return head :not_found unless adapter_key.is_a?(String) && adapter_key.match?(ProviderConnectionProtocol::KEY_PATTERN)
+
+    gateway = ProviderConnectionGateway.new
+    provider = gateway.catalog(workspace_key: workspace.runner_key).find do |candidate|
+      candidate.fetch("adapter_key") == adapter_key
+    end
+    return head :not_found unless provider&.fetch("configured")
+
+    discovery = gateway.models(workspace_key: workspace.runner_key, adapter_key:)
+    render json: discovery.slice("status", "checked_at", "models")
+  rescue RunnerClient::Unavailable
+    render json: { status: "unavailable", models: [] }, status: :service_unavailable
+  rescue RunnerClient::MalformedResponse
+    render json: { status: "failed", models: [] }, status: :bad_gateway
+  rescue RunnerClient::Error
+    render json: { status: "failed", models: [] }, status: :bad_gateway
+  end
+
   private
     def configure_provider(adapter_key: nil)
       workspace = Current.require_workspace!
