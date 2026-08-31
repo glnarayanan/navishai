@@ -9,19 +9,19 @@
 <% approval_disabled = !runtime_available || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
 <% ready = installation&.runnable? && current_test_passed && live_provider_available %>
 <% runtime_status = if installation.nil?
-                      "Runtime unavailable"
+                      "Unavailable"
                     elsif installation.compatibility_status == "incompatible"
-                      "Runtime incompatible"
+                      "Update required"
                     elsif installation.health_status == "missing"
-                      "Runtime missing"
+                      "Not found"
                     elsif !live_provider_available
-                      "Runtime unavailable"
+                      "Unavailable"
                     elsif installation.health_status == "available"
-                      "Runtime ready"
+                      "Available"
                     else
-                      "Runtime unavailable"
+                      "Unavailable"
                     end %>
-<% status_text = if runtime_status != "Runtime ready"
+<% status_text = if runtime_status != "Available"
                    runtime_status
                  elsif ready
                    "Ready"
@@ -80,7 +80,7 @@
       <dd><%= provider&.fetch("auth_mode").to_s.humanize.presence || installation&.account_metadata&.fetch("authentication", nil).to_s.humanize.presence || "Existing provider account" %></dd>
     </div>
     <div><dt>Model</dt><dd><%= model %></dd></div>
-    <div><dt>Runtime</dt><dd><%= runtime_status %></dd></div>
+    <div><dt>Connection</dt><dd><%= runtime_status %></dd></div>
     <div>
       <dt>Connection test</dt>
       <dd>
@@ -96,7 +96,7 @@
   <% if installation&.incompatibility_reason.present? %>
     <p class="runtime-status-note">This provider version is not supported by your installation.</p>
   <% elsif provider && configured_model.blank? %>
-    <p class="runtime-status-note"><%= provider_name %> will use its default model for now. You can enter an exact model ID in Edit settings.</p>
+    <p class="runtime-status-note"><%= provider.fetch("model_required") ? "Choose an exact model ID in Edit settings before testing this provider." : "#{provider_name} will use its default model for now. You can enter an exact model ID in Edit settings." %></p>
   <% end %>
 
   <% if current_test_passed %>
@@ -201,7 +201,11 @@
     <details class="provider-technical-details">
       <summary>Technical details</summary>
       <dl class="runtime-facts">
-        <div><dt>Executable</dt><dd><code><%= installation.executable_path %></code></dd></div>
+        <% built_in_transport = installation.account_metadata.to_h["transport"] == "built_in_https" %>
+        <div>
+          <dt><%= built_in_transport ? "Transport" : "Executable" %></dt>
+          <dd><%= built_in_transport ? "Built-in HTTPS" : content_tag(:code, installation.executable_path) %></dd>
+        </div>
         <div><dt>Provider version</dt><dd><%= provider&.fetch("executable_version").presence || installation.executable_version %></dd></div>
         <div><dt>Compatibility</dt><dd><%= installation.compatibility_status.humanize %></dd></div>
         <div><dt>Last checked</dt><dd><%= time_tag installation.checked_at, installation.checked_at.to_fs(:short) %></dd></div>

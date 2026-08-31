@@ -92,7 +92,14 @@ class ProviderConnectionsController < ApplicationController
       )
       return unless refresh_after_provider_change(workspace:, gateway:)
 
-      installation = workspace.runtime_installations.find_by(adapter_key:)
+      if action_name == "create" && attributes.fetch(:auth_mode) == "api_key" &&
+          attributes.fetch(:model).blank? && provider.fetch("model_required")
+        redirect_to edit_workspace_provider_connection_path(workspace, adapter_key),
+          notice: "#{configured.fetch("name")} key saved. Choose a model to continue."
+        return
+      end
+
+      installation = current_installation_for(workspace:, provider: configured, adapter_key:)
       notice = if installation&.health_status == "available" && installation.compatibility_status != "incompatible"
         "#{configured.fetch("name")} settings were saved. Test the connection before allowing workspace access."
       else
@@ -167,6 +174,37 @@ class ProviderConnectionsController < ApplicationController
       @provider_catalog = @provider_catalog.reject { |provider| provider.fetch("configured") }
     end
 
+    def current_installation_for(workspace:, provider:, adapter_key:)
+      candidates = workspace.runtime_installations.where(adapter_key:).to_a
+      return if candidates.empty?
+
+      model = provider.fetch("model").presence
+      version = provider.fetch("executable_version").presence
+      return if model.blank? && version.blank?
+
+      candidates = candidates.select { |installation| installation.effective_model == model } if model
+      candidates = candidates.select { |installation| installation.executable_version == version } if version
+      return if candidates.empty?
+
+      built_in = candidates.select { |installation| installation.account_metadata.to_h["transport"] == "built_in_https" }
+      candidates = if provider.fetch("auth_mode") == "api_key"
+        built_in
+      else
+        candidates - built_in
+      end
+      return if candidates.empty?
+
+      candidates = candidates.reject { |installation| installation.health_status == "missing" }
+      return if candidates.empty?
+
+      healthy = candidates.select do |installation|
+        installation.health_status == "available" && installation.compatibility_status != "incompatible"
+      end
+      candidates = healthy if healthy.any?
+
+      candidates.max_by { |installation| [ installation.checked_at.to_i, installation.id ] }
+    end
+
     def selected_provider
       adapter_key = params.dig(:provider_connection, :adapter_key).presence || params[:adapter_key].presence
       @provider_catalog.find { |provider| provider.fetch("adapter_key") == adapter_key }
@@ -178,12 +216,16 @@ class ProviderConnectionsController < ApplicationController
       unless provider.fetch("auth_modes").include?(auth_mode)
         raise RunnerClient::ConfigurationError, "Choose a supported sign-in method."
       end
-      if provider.fetch("model_required") && model.blank?
+      if provider.fetch("model_required") && model.blank? && !blank_model_allowed_for_initial_api_key?(provider, attributes)
         raise RunnerClient::ConfigurationError, "Enter the model this provider should use."
       end
       if auth_mode == "api_key" && attributes.fetch(:api_key).blank? && !provider.fetch("secret_configured")
         raise RunnerClient::ConfigurationError, "Enter an API key."
       end
+    end
+
+    def blank_model_allowed_for_initial_api_key?(provider, attributes)
+      action_name == "create" && !provider.fetch("configured") && attributes.fetch(:auth_mode) == "api_key"
     end
 
     def provider_params

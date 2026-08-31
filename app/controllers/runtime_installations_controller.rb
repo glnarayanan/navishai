@@ -78,6 +78,9 @@ class RuntimeInstallationsController < ApplicationController
     def load_provider_catalog(workspace)
       @provider_catalog = ProviderConnectionGateway.new.catalog(workspace_key: workspace.runner_key)
       @configured_providers = @provider_catalog.select { |provider| provider.fetch("configured") }
+      @current_installations = @configured_providers.each_with_object({}) do |provider, installations|
+        installations[provider.fetch("adapter_key")] = current_installation_for(provider)
+      end
       catalog_keys = @provider_catalog.map { |provider| provider.fetch("adapter_key") }
       @standalone_installations = @installations.reject do |installation|
         catalog_keys.include?(installation.adapter_key) || installation.health_status == "missing"
@@ -85,12 +88,44 @@ class RuntimeInstallationsController < ApplicationController
     rescue RunnerClient::Error => error
       @provider_catalog = []
       @configured_providers = []
+      @current_installations = {}
       @standalone_installations = @installations.reject { |installation| installation.health_status == "missing" }
       @provider_catalog_error = if error.is_a?(RunnerClient::ClientConfigurationError)
         "The provider service is not configured. Start the runner to manage provider connections."
       else
         "Live provider settings are unavailable. Showing the last known connection state."
       end
+    end
+
+    def current_installation_for(provider)
+      candidates = @installations.select { |installation| installation.adapter_key == provider.fetch("adapter_key") }
+      return if candidates.empty?
+
+      model = provider.fetch("model").presence
+      version = provider.fetch("executable_version").presence
+      return if model.blank? && version.blank?
+
+      candidates = candidates.select { |installation| installation.effective_model == model } if model
+      candidates = candidates.select { |installation| installation.executable_version == version } if version
+      return if candidates.empty?
+
+      built_in = candidates.select { |installation| installation.account_metadata.to_h["transport"] == "built_in_https" }
+      candidates = if provider.fetch("auth_mode") == "api_key"
+        built_in
+      else
+        candidates - built_in
+      end
+      return if candidates.empty?
+
+      candidates = candidates.reject { |installation| installation.health_status == "missing" }
+      return if candidates.empty?
+
+      healthy = candidates.select do |installation|
+        installation.health_status == "available" && installation.compatibility_status != "incompatible"
+      end
+      candidates = healthy if healthy.any?
+
+      candidates.max_by { |installation| [ installation.checked_at.to_i, installation.id ] }
     end
 
     def installation_params

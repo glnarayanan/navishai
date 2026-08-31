@@ -46,21 +46,6 @@
       <p class="field-hint" id="provider-api-key-hint" data-provider-form-target="apiKeyHint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "Stored encrypted on this self-hosted deployment and never shown again." %></p>
     </div>
 
-    <div>
-      <%= form.label :model, provider.fetch("model_required") ? "Model ID" : "Model override (optional)",
-        data: { provider_form_target: "modelLabel" } %>
-      <%= form.text_field :model, value: selected_model, autocomplete: "off",
-        required: provider.fetch("model_required"), data: { provider_form_target: "model" },
-        aria: { describedby: "provider-model-hint" } %>
-      <p class="field-hint" id="provider-model-hint" data-provider-form-target="modelHint">
-        <% if provider.fetch("model_required") %>
-          Enter the exact model ID enabled for this account. Choose a suggestion when available, or enter an ID manually.
-        <% else %>
-          Leave blank to use the provider default. Enter an exact model ID only to override it.
-        <% end %>
-      </p>
-    </div>
-
     <% if editing %>
       <section class="provider-model-discovery" data-provider-form-target="modelDiscovery"
         data-models-url="<%= models_workspace_provider_connections_path(Current.workspace) %>"
@@ -68,8 +53,8 @@
         aria-labelledby="provider-model-discovery-heading">
         <div class="provider-model-discovery-heading">
           <div>
-            <h2 id="provider-model-discovery-heading">Available models</h2>
-            <p class="field-hint">Suggestions are optional. Use one to copy an exact model ID into the field above.</p>
+            <h2 id="provider-model-discovery-heading">Choose a model</h2>
+            <p class="field-hint">Loaded from the connected provider. Your current choice stays selected.</p>
           </div>
           <button type="button" class="button button-secondary button-compact" data-provider-form-target="modelRefresh"
             data-action="click->provider-form#refreshModels">Refresh models</button>
@@ -78,15 +63,37 @@
           Model suggestions load here when available.
         </p>
         <div hidden data-provider-form-target="modelSelectField">
-          <label for="provider-discovered-model">Detected model</label>
-          <select id="provider-discovered-model" data-provider-form-target="discoveredModels"
+          <label for="provider-discovered-model">Available models</label>
+          <select id="provider-discovered-model" name="provider_connection[model]" disabled
+            data-provider-form-target="discoveredModels"
             data-action="change->provider-form#modelDiscovered">
-            <option value="">Choose a model to copy its exact ID</option>
+            <option value="">Choose a discovered model</option>
           </select>
-          <p class="field-hint">Choose a suggestion to copy its exact ID into Model ID. You can also enter an ID manually.</p>
+          <p class="field-hint">Select manual entry when the model is not listed.</p>
         </div>
       </section>
     <% end %>
+
+    <div data-provider-form-target="manualModelField">
+      <%= form.label :model, editing ? "Exact model ID (manual)" : (provider.fetch("model_required") ? "Model ID (optional for now)" : "Model override (optional)"),
+        data: { provider_form_target: "modelLabel" } %>
+      <%= form.text_field :model, value: selected_model, autocomplete: "off",
+        required: provider.fetch("model_required") && (editing || selected_auth_mode != "api_key"),
+        data: { provider_form_target: "model", model_required: provider.fetch("model_required").to_s,
+                allow_blank_api_key: (!editing).to_s },
+        aria: { describedby: "provider-model-hint" } %>
+      <p class="field-hint" id="provider-model-hint" data-provider-form-target="modelHint">
+        <% if editing && provider.fetch("model_required") %>
+          Use this only when the model is not listed above.
+        <% elsif provider.fetch("model_required") && selected_auth_mode == "api_key" %>
+          Leave blank to save the key and load available models next, or enter an exact model ID now.
+        <% elsif provider.fetch("model_required") %>
+          Enter the exact model ID enabled for this account.
+        <% else %>
+          Leave blank to use the provider default. Enter an exact model ID only to override it.
+        <% end %>
+      </p>
+    </div>
   </div>
 
   <div class="provider-form-actions">

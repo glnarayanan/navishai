@@ -24,9 +24,9 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
 
     within "#runtime-codex_subscription" do
       assert_text "Settings saved"
-      assert_text "Runtime unavailable"
+      assert_text "Unavailable"
       assert_text "Provider default"
-      assert_text "This adapter does not expose a model list to NavishAI."
+      assert_text "Codex will use its default model for now. You can enter an exact model ID in Edit settings."
       assert_button "Test connection", disabled: true
       assert_link "Edit settings"
       assert_no_text "Not selected"
@@ -63,22 +63,22 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Add a provider"
     assert_select "Provider", selected: "Codex"
     assert_field "Sign-in method", with: "api_key"
-    assert_field "Model ID"
+    assert_field "Model ID (optional for now)"
     assert_field "API key", type: "password"
     select "Claude", from: "Provider"
     assert_field "Sign-in method", with: "subscription"
     assert_no_field "API key", visible: true
     select "Codex", from: "Provider"
     select "API key", from: "Sign-in method"
-    fill_in "Model ID", with: "gpt-5.6"
+    fill_in "Model ID (optional for now)", with: "gpt-5.6"
     fill_in "API key", with: "one-time-provider-key"
-    assert_button "Save provider settings"
+    assert_button "Save and continue to test"
     assert_no_text "/etc/navishai"
     save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-desktop.png") if ENV["CAPTURE_RUNTIMES"]
 
     page.current_window.resize_to(320, 844)
     assert_no_horizontal_overflow
-    assert_operator find_button("Save provider settings").rect.height, :>=, 48
+    assert_operator find_button("Save and continue to test").rect.height, :>=, 48
     save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-mobile.png") if ENV["CAPTURE_RUNTIMES"]
   ensure
     ProviderConnectionGateway.define_singleton_method(:new, original) if original

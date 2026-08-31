@@ -111,7 +111,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "#runtime-codex_subscription" do
       assert_select ".provider-settings-status", text: "Settings saved"
-      assert_select ".status-badge", text: "Runtime unavailable"
+      assert_select ".status-badge", text: "Unavailable"
       assert_select "dt", text: "Model"
       assert_select "dd", text: "Provider default"
       assert_select "button[disabled]", text: "Test connection"
@@ -187,6 +187,87 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-secondary", text: "Test again", count: 1
   end
 
+  test "the provider page selects the current built-in transport over a stale same-adapter runtime" do
+    @installation.update!(effective_model: "fixture-model")
+    current = create_installation(@workspace, key: "c" * 64)
+    current.update!(
+      executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" }, effective_model: "fixture-model"
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("auth_mode" => "api_key", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{current.id}", count: 1 do
+      assert_select "dt", text: "Transport"
+      assert_select "dd", text: "Built-in HTTPS"
+      assert_select ".status-badge", text: "Test required"
+    end
+    assert_select "#runtime-#{@installation.id}", count: 0
+    assert_not_includes response.body, "/navishai/provider-api/fixture"
+  end
+
+  test "the provider page switches between current subscription and built-in transports" do
+    @installation.update!(effective_model: "fixture-model", executable_version: "NavishAI provider API 1.0.0")
+    current = create_installation(@workspace, key: "d" * 64)
+    current.update!(
+      executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" }, effective_model: "fixture-model"
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("auth_mode" => "api_key", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+      get workspace_runtime_installations_path(@workspace)
+      assert_select "#runtime-#{current.id}", count: 1
+      assert_select "#runtime-#{@installation.id}", count: 0
+    end
+
+    with_provider_catalog([ live_provider.merge("auth_mode" => "subscription", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+      get workspace_runtime_installations_path(@workspace)
+      assert_select "#runtime-#{@installation.id}", count: 1
+      assert_select "#runtime-#{current.id}", count: 0
+    end
+  end
+
+  test "the provider page prefers an available exact runtime over a newer missing runtime" do
+    @installation.update!(
+      effective_model: "fixture-model", executable_version: "fixture 2.4.1", checked_at: 1.hour.ago,
+      account_metadata: { "authentication" => "managed_on_runner", "transport" => "managed_runner" }
+    )
+    missing = create_installation(@workspace, key: "e" * 64)
+    missing.update!(
+      effective_model: "fixture-model", executable_version: "fixture 2.4.1", health_status: "missing",
+      checked_at: 1.minute.from_now,
+      account_metadata: { "authentication" => "managed_on_runner", "transport" => "managed_runner" }
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 1
+    assert_select "#runtime-#{missing.id}", count: 0
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+  end
+
+  test "a catalog version mismatch does not reuse a stale same-adapter runtime" do
+    @installation.update!(effective_model: "fixture-model", executable_version: "fixture 1.0.0")
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("executable_version" => "fixture 2.4.1") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-fixture .status-badge", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id}", count: 0
+  end
+
   test "a failed current test is labeled test failed" do
     @installation.update!(
       runtime_test_status: "failed", runtime_test_failure_code: "provider_error", runtime_tested_at: Time.current,
@@ -219,8 +300,8 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_select "#runtime-#{@installation.id} .status-badge", text: "Runtime unavailable"
-    assert_select "#runtime-#{@installation.id} .status-badge.status-neutral", text: "Runtime unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-neutral", text: "Unavailable"
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][name='runtime_installation[approved]'][disabled]", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='1']", count: 1
@@ -271,7 +352,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     get workspace_runtime_installations_path(@workspace)
 
     assert_response :success
-    assert_select "#runtime-#{@installation.id} .status-badge", text: "Runtime unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Unavailable"
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
     assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
@@ -318,7 +399,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
         "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
-        "effective_model" => "runtime_default", "status" => "passed", "failure_code" => nil,
+        "effective_model" => "fixture-model", "status" => "passed", "failure_code" => nil,
         "usage_observed" => true, "input_units" => 8, "output_units" => 2,
         "tested_at" => "2026-08-31T12:00:00Z"
       }
@@ -391,6 +472,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
         account_metadata: { "authentication" => "managed_on_runner" },
         capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",
         compatibility_status: "compatible", incompatibility_reason: "", health_status: "available",
+        effective_model: "fixture-model",
         checked_at: Time.current
       )
     end
@@ -414,8 +496,8 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     def live_provider
       {
         "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
-        "auth_modes" => [ "api_key" ], "model_required" => true, "configured" => true,
-        "secret_configured" => true, "auth_mode" => "api_key", "model" => "fixture-model",
+        "auth_modes" => %w[api_key subscription], "model_required" => true, "configured" => true,
+        "secret_configured" => true, "auth_mode" => "subscription", "model" => "fixture-model",
         "health_status" => "available", "available" => true, "executable_version" => "fixture 2.4.1"
       }
     end

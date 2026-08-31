@@ -40,7 +40,7 @@
   <% else %>
     <div class="runtime-list" aria-label="AI providers">
       <% @configured_providers.each do |provider| %>
-        <%= render "provider", provider:, installation: @installations.find { |item| item.adapter_key == provider.fetch("adapter_key") } %>
+        <%= render "provider", provider:, installation: @current_installations[provider.fetch("adapter_key")] %>
       <% end %>
       <% @standalone_installations.each do |installation| %>
         <%= render "provider", provider: nil, installation: %>

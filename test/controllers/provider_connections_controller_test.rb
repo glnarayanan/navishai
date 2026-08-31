@@ -122,11 +122,12 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", "Edit Codex"
     assert_select "input[name='provider_connection[api_key]'][value='']"
     assert_select "input[name='provider_connection[model]'][value=?]", "gpt-5.6"
-    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
-    assert_select "[data-provider-form-target='modelHint']", text: /Choose a suggestion when available/
+    assert_select "[data-provider-form-target='modelLabel']", text: "Exact model ID (manual)"
+    assert_select "[data-provider-form-target='modelHint']", text: /only when the model is not listed above/
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Leave this blank to keep it/
     assert_select "[data-provider-form-target='modelRefresh'].button-compact", text: "Refresh models"
     assert_select "[data-provider-form-target='modelState'][aria-live='polite']"
+    assert_select "select[data-provider-form-target='discoveredModels'][name='provider_connection[model]'][disabled]", count: 1
     discovery = css_select("[data-provider-form-target='modelDiscovery']").sole
     assert_equal models_workspace_provider_connections_path(@workspace), discovery["data-models-url"]
     assert_equal "api_key", discovery["data-saved-auth-mode"]
@@ -152,11 +153,13 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='provider_connection[adapter_key]'] option[data-model-required='true'][data-secret-configured='false'][data-description=?]", "Connect Claude to this workspace."
     assert_select "h1", "Add a provider"
     assert_select "input[type='submit'][value='Save and continue to test']"
-    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
-    assert_select "[data-provider-form-target='modelHint']", text: /Choose a suggestion when available/
+    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID (optional for now)"
+    assert_select "[data-provider-form-target='modelHint']", text: /load available models next/
+    assert_select "input[name='provider_connection[model]'][required]", count: 0
+    assert_select "input[name='provider_connection[model]'][data-model-required='true'][data-allow-blank-api-key='true']", count: 1
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Stored encrypted on this self-hosted deployment and never shown again/
     assert_select ".field-hint", text: /model ID/
-    assert_includes response.body, "Enter the exact model ID"
+    assert_includes response.body, "Leave blank to save the key"
     assert_not_includes response.body, "data-models-url"
   end
 
@@ -209,6 +212,110 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "provider-secret-value"
   end
 
+  test "an initial API-key setup can save without a model and continues in edit" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "", api_key: "provider-secret-value"
+        }
+      }
+      assert_redirected_to edit_workspace_provider_connection_path(@workspace, "claude")
+      assert_equal "Claude key saved. Choose a model to continue.", flash[:notice]
+      get edit_workspace_provider_connection_path(@workspace, "claude")
+    end
+
+    assert_response :success
+    assert_equal "provider-secret-value", @gateway.configure_calls.sole.fetch(:api_key)
+    assert_select "input[name='provider_connection[model]'][value='']"
+    assert_select "[data-provider-form-target='modelDiscovery'][data-models-url]", count: 1
+  end
+
+  test "a key-only setup can save an exact model on the next edit" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "", api_key: "provider-secret-value"
+        }
+      }
+      assert_redirected_to edit_workspace_provider_connection_path(@workspace, "claude")
+
+      patch workspace_provider_connection_path(@workspace, "claude"), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "claude-sonnet-4-5", api_key: ""
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal 2, @gateway.configure_calls.size
+    assert_equal "", @gateway.configure_calls.last.fetch(:api_key)
+    assert_equal "claude-sonnet-4-5", @gateway.configure_calls.last.fetch(:model)
+  end
+
+  test "saving a model anchors the current transport installation" do
+    installation = runtime_installations(:acme_scripted)
+    installation.update!(
+      adapter_key: "codex", executable_path: "/navishai/provider-api/codex",
+      executable_version: "codex 1.0.0", effective_model: "gpt-5.6",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      health_status: "available", checked_at: 1.hour.ago
+    )
+    missing = installation.dup
+    missing.assign_attributes(
+      detection_key: "e" * 64, health_status: "missing", checked_at: 1.minute.from_now,
+      approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil,
+      runtime_test_status: "untested", runtime_tested_at: nil, runtime_tested_configuration_fingerprint: nil,
+      runtime_test_failure_code: nil, runtime_test_input_units: 0, runtime_test_output_units: 0,
+      runtime_test_usage_observed: false
+    )
+    missing.save!
+    original = RuntimeRegistry.method(:refresh!)
+    RuntimeRegistry.define_singleton_method(:refresh!) { |**| [] }
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "codex", auth_mode: "api_key", model: "gpt-5.6", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{installation.id}")
+    assert_equal "Codex settings were saved. Test the connection before allowing workspace access.", flash[:notice]
+  ensure
+    RuntimeRegistry.define_singleton_method(:refresh!, original) if original
+  end
+
+  test "saving a model does not anchor a stale runtime with mismatched version" do
+    installation = runtime_installations(:acme_scripted)
+    installation.update!(
+      adapter_key: "codex", executable_path: "/navishai/provider-api/codex",
+      executable_version: "codex stale", effective_model: "gpt-5.6",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" }
+    )
+    original = RuntimeRegistry.method(:refresh!)
+    RuntimeRegistry.define_singleton_method(:refresh!) { |**| [] }
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "codex", auth_mode: "api_key", model: "gpt-5.6", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "Codex settings were saved. No compatible runtime is available to test yet.", flash[:notice]
+  ensure
+    RuntimeRegistry.define_singleton_method(:refresh!, original) if original
+  end
+
   test "subscription configuration does not require an API key parameter" do
     sign_in_as users(:owner)
 
@@ -222,6 +329,34 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
     assert_equal "", @gateway.configure_calls.sole.fetch(:api_key)
+  end
+
+  test "subscription configuration still requires a model" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: { adapter_key: "claude", auth_mode: "subscription", model: "", api_key: "" }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_select "[role='alert']", text: "Enter the model this provider should use."
+    assert_empty @gateway.configure_calls
+  end
+
+  test "editing a configured provider still requires a model" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      patch workspace_provider_connection_path(@workspace, "codex"), params: {
+        provider_connection: { adapter_key: "codex", auth_mode: "api_key", model: "", api_key: "" }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_select "[role='alert']", text: "Enter the model this provider should use."
+    assert_empty @gateway.configure_calls
   end
 
   test "blank API key on edit means keep the runner secret" do
@@ -411,10 +546,11 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       def configure(**attributes)
         @configure_calls << attributes
         provider = @catalog.find { |item| item.fetch("adapter_key") == attributes.fetch(:adapter_key) }
-        provider.merge(
+        provider.merge!(
           "configured" => true, "secret_configured" => attributes.fetch(:api_key).present? || provider.fetch("secret_configured"),
           "auth_mode" => attributes.fetch(:auth_mode), "model" => attributes.fetch(:model), "health_status" => "available"
         )
+        provider
       end
 
       def models(workspace_key:, adapter_key:)
