@@ -138,7 +138,9 @@ class ProviderConnectionsController < ApplicationController
     end
 
     def provider_params
-      @provider_params ||= params.expect(provider_connection: %i[ adapter_key auth_mode model api_key ]).to_h.symbolize_keys
+      @provider_params ||= params.expect(
+        provider_connection: %i[ adapter_key auth_mode model api_key ]
+      ).to_h.symbolize_keys.reverse_merge(api_key: "")
     end
 
     def require_provider_admin

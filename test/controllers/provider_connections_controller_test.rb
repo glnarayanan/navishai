@@ -82,6 +82,21 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "provider-secret-value"
   end
 
+  test "subscription configuration does not require an API key parameter" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "subscription", model: "claude-sonnet-4-5"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "", @gateway.configure_calls.sole.fetch(:api_key)
+  end
+
   test "blank API key on edit means keep the runner secret" do
     sign_in_as users(:owner)
 
