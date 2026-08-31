@@ -157,13 +157,15 @@ func TestRuntimeTestOrchestratesSentinelAndFailsClosed(t *testing.T) {
 		MaxTimeoutSeconds: 60, MaxSteps: 1, MaxToolCalls: 0, MaxInputUnits: 1_000, MaxOutputUnits: 100,
 	}
 	config := Config{
-		WorkRoot: workRoot, Adapters: map[string]AdapterConfig{"scripted": adapter},
+		WorkRoot: workRoot, Scripted: map[string]string{"workspace_default": executablePath},
+		Adapters:   map[string]AdapterConfig{"scripted": adapter},
 		Supervisor: SupervisorConfig{ApprovedExecutables: []string{executablePath}},
 	}
-	model, fingerprint, err := AdapterConfigurationIdentity("scripted", adapter, config.Supervisor, testConfigurationIdentityKey)
+	fingerprint, err := ScriptedConfigurationFingerprint(config, testConfigurationIdentityKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	model := "deterministic_fixture"
 	detectionKey := testDetectionKey(t, "scripted", executablePath)
 	installation := runtimecatalog.Installation{
 		DetectionKey: detectionKey, AdapterKey: "scripted", ProtocolVersion: protocol.Version,
@@ -280,7 +282,11 @@ func testExecutable(t *testing.T, directory, name, command string) string {
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+command+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
 }
 
 func testDetectionKey(t *testing.T, adapterKey, path string) string {

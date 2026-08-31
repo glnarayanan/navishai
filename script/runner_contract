@@ -26,15 +26,16 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cat >"$fixture_path" <<'JSON'
-{"scenario":"runner contract","attempts":[{"number":1,"result":"success","delay_millis":0,"tool_calls":["case_read","conversation_read"],"output_json":"{\"text\":\"The scripted runner completed this task.\"}","usage":{"input_units":10,"output_units":8}}]}
+{"scenario":"runner contract","attempts":[{"number":1,"result":"success","delay_millis":0,"tool_calls":[],"output_json":"{\"text\":\"NAVISHAI_RUNTIME_TEST_OK\"}","usage":{"input_units":10,"output_units":8}}]}
 JSON
+chmod 700 "$fixture_path"
 fixture_digest=$(ruby -rdigest -e 'path = ARGV.fetch(0); real = File.realpath(path); digest = Digest::SHA256.new; digest << "scripted\0#{real}\0"; File.open(real, "rb") { |file| digest << file.read(16_384) until file.eof? }; puts digest.hexdigest' "$fixture_path")
 cat >"$config_path" <<JSON
 {
   "work_root":"$PWD/tmp",
   "scripted_fixtures":{"workspace_default":"$fixture_path"},
   "adapters":{"scripted":{"enabled":true,"home_dir":"","model":"","egress_profile_key":"","profiles":["workspace_default"],"roles":["support_coordinator"],"tools":["case_read","conversation_read"],"data_classes":["case_content","customer_identity"],"max_timeout_seconds":900,"max_steps":20,"max_tool_calls":50,"max_input_units":100000,"max_output_units":25000}},
-  "supervisor":{"helper_path":"","namespace_launcher_path":"","allowed_executable_roots":[],"approved_executables":[],"allowed_working_roots":[],"allowed_home_roots":[],"runtime_read_roots":[],"egress_profiles":[],"limits":{"wall_time_seconds":0,"cpu_seconds":0,"memory_bytes":0,"open_files":0,"processes":0,"output_bytes":0,"kill_grace_millis":0}}
+  "supervisor":{"helper_path":"","namespace_launcher_path":"","allowed_executable_roots":[],"approved_executables":["$fixture_path"],"allowed_working_roots":[],"allowed_home_roots":[],"runtime_read_roots":[],"egress_profiles":[],"limits":{"wall_time_seconds":0,"cpu_seconds":0,"memory_bytes":0,"open_files":0,"processes":0,"output_bytes":0,"kill_grace_millis":0}}
 }
 JSON
 

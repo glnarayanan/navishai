@@ -152,21 +152,25 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		installation.ConfigurationFingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	adapterConfig, _, ok := registry.effectiveAdapter(request.WorkspaceKey, installation.AdapterKey)
+	var adapterConfig AdapterConfig
+	if installation.AdapterKey == "scripted" {
+		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
+		ok = ok && adapterConfig.Enabled
+	} else {
+		adapterConfig, _, ok = registry.effectiveAdapter(request.WorkspaceKey, installation.AdapterKey)
+	}
 	if !ok || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
 	authMode, apiKey := "", ""
-	if registry.providers != nil {
+	if registry.providers != nil && installation.AdapterKey != "scripted" {
 		connection, configured := registry.providers.Get(request.WorkspaceKey, installation.AdapterKey)
 		if !configured {
 			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 		}
 		authMode, apiKey = connection.AuthMode, connection.APIKey
 	}
-	model, fingerprint, err := adapterConfigurationIdentityFor(
-		installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
-	)
+	model, fingerprint, err := registry.runtimeTestConfiguration(installation.AdapterKey, adapterConfig, authMode, apiKey)
 	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
@@ -185,6 +189,16 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		return nil
 	})
 	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
+}
+
+func (registry *Registry) runtimeTestConfiguration(adapterKey string, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
+	if adapterKey == "scripted" {
+		fingerprint, err := ScriptedConfigurationFingerprint(registry.config, registry.configurationIdentityKey)
+		return "deterministic_fixture", fingerprint, err
+	}
+	return adapterConfigurationIdentityFor(
+		adapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
+	)
 }
 
 func (registry *Registry) effectiveAdapter(workspaceKey, adapterKey string) (AdapterConfig, map[string]string, bool) {
@@ -412,7 +426,7 @@ func ScriptedInstallations(config Config, configurationIdentityKey []byte, check
 			DetectionKey: key, AdapterKey: "scripted", ProtocolVersion: protocol.Version,
 			ExecutablePath: resolved, ExecutableVersion: "scripted 1.0.0",
 			AccountMetadata: map[string]string{"authentication": "built_in"},
-			Capabilities:    []string{"structured_output", "tool_calling"},
+			Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
 			EffectiveModel:  "deterministic_fixture", ConfigurationFingerprint: fingerprint,
 			MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 			HealthStatus: "available", CheckedAt: checkedAt.UTC().Format(time.RFC3339Nano),

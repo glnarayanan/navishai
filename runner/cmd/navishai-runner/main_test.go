@@ -59,7 +59,7 @@ func TestHandlerRequiresASecret(t *testing.T) {
 	}
 }
 
-func TestOnlyEligibleLiveAdaptersDeclareRuntimeTestCapability(t *testing.T) {
+func TestRunnableAdaptersDeclareRuntimeTestCapability(t *testing.T) {
 	for name, definition := range map[string]runtimecatalog.Definition{
 		"Codex": codex.Definition(), "Claude": claude.Definition(),
 		"Grok": grok.Definition(), "Cursor": cursor.Definition(),
@@ -82,8 +82,8 @@ func TestOnlyEligibleLiveAdaptersDeclareRuntimeTestCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(installations) != 1 || hasCapability(installations[0].Capabilities, runtimecatalog.RuntimeTestCapability) {
-		t.Fatalf("scripted installation unexpectedly declared runtime testing: %#v", installations)
+	if len(installations) != 1 || !hasCapability(installations[0].Capabilities, runtimecatalog.RuntimeTestCapability) {
+		t.Fatalf("scripted installation did not declare runtime testing: %#v", installations)
 	}
 }
 
