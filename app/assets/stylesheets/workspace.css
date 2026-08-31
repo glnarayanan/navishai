@@ -112,6 +112,11 @@
   .workspace-card > .button {
     width: 100%;
   }
+
+  .is-app .provider-actions .button.button-compact,
+  .is-app .runtime-heading-actions .button.button-compact {
+    min-height: 3rem;
+  }
 }
 
 .is-app .button:active,

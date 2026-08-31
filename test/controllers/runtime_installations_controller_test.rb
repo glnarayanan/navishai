@@ -88,6 +88,41 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     ProviderConnectionGateway.define_singleton_method(:new, original) if original
   end
 
+  test "saved provider settings stay distinct from runtime and connection test state" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [
+        {
+          "adapter_key" => "codex_subscription", "name" => "Codex",
+          "description" => "Run OpenAI Codex with a ChatGPT subscription or OpenAI API key.",
+          "auth_modes" => %w[api_key subscription], "model_required" => false, "configured" => true,
+          "secret_configured" => false, "auth_mode" => "subscription", "model" => "",
+          "health_status" => "unavailable", "available" => false, "executable_version" => ""
+        }
+      ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-codex_subscription" do
+      assert_select ".provider-settings-status", text: "Settings saved"
+      assert_select ".status-badge", text: "Runtime unavailable"
+      assert_select "dt", text: "Model"
+      assert_select "dd", text: "Provider default"
+      assert_select "button[disabled]", text: "Test connection"
+      assert_select ".provider-action-note", text: /No compatible Codex runtime is available/
+      assert_select "a", text: "Edit settings"
+    end
+    assert_not_includes response.body, "Not selected"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
   test "the provider page identifies missing runner configuration" do
     sign_in_as users(:owner)
     original = ProviderConnectionGateway.method(:new)

@@ -7,7 +7,13 @@
       <p>Connect, test, and control the AI services this workspace can use.</p>
     </div>
     <% if @can_configure %>
-      <%= link_to "Add provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-primary button-compact" %>
+      <div class="runtime-heading-actions">
+        <% if @configured_providers.any? || @standalone_installations.any? %>
+          <%= button_to "Refresh status", detect_workspace_runtime_installations_path(Current.workspace),
+            class: "button button-secondary button-compact" %>
+        <% end %>
+        <%= link_to "Add provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-primary button-compact" %>
+      </div>
     <% end %>
   </div>
 
@@ -32,7 +38,7 @@
       <% end %>
     </section>
   <% else %>
-    <div class="runtime-list" aria-label="Provider connections">
+    <div class="runtime-list" aria-label="AI providers">
       <% @configured_providers.each do |provider| %>
         <%= render "provider", provider:, installation: @installations.find { |item| item.adapter_key == provider.fetch("adapter_key") } %>
       <% end %>
@@ -42,14 +48,4 @@
     </div>
   <% end %>
 
-  <% if @can_configure && (@configured_providers.any? || @standalone_installations.any?) %>
-    <div class="provider-refresh">
-      <div>
-        <strong>Provider status</strong>
-        <span>Refresh after credentials, model, or provider service changes.</span>
-      </div>
-      <%= button_to "Refresh status", detect_workspace_runtime_installations_path(Current.workspace),
-        class: "button button-secondary button-compact" %>
-    </div>
-  <% end %>
 </main>

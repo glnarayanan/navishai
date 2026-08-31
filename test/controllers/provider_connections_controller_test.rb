@@ -49,6 +49,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='provider_connection[adapter_key]'] option", count: 1
     assert_select "select[name='provider_connection[adapter_key]'] option", text: "Claude"
     assert_select "h1", "Add a provider"
+    assert_select "input[type='submit'][value='Save provider settings']"
+    assert_select ".field-hint", text: /model ID/
   end
 
   test "runner setup failures do not blame provider credentials" do
@@ -75,6 +77,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "Claude settings were saved. No compatible runtime is available to test yet.", flash[:notice]
     assert_equal "provider-secret-value", @gateway.configure_calls.sole.fetch(:api_key)
     event = @workspace.audit_events.find_by!(action: "runtime.provider_configured")
     assert_equal "runtime.provider_configured", event.action

@@ -38,11 +38,17 @@
     </div>
 
     <div>
-      <%= form.label :model, "Model" %>
+      <%= form.label :model, provider.fetch("model_required") ? "Model ID" : "Model override (optional)" %>
       <%= form.text_field :model, value: selected_model, autocomplete: "off",
         required: provider.fetch("model_required"), data: { provider_form_target: "model" },
         aria: { describedby: "provider-model-hint" } %>
-      <p class="field-hint" id="provider-model-hint">Use the exact model name enabled for this provider account.</p>
+      <p class="field-hint" id="provider-model-hint">
+        <% if provider.fetch("model_required") %>
+          Enter the exact model ID enabled for this account. This adapter does not expose a model list to NavishAI.
+        <% else %>
+          Leave blank to use the provider default. Enter a model ID only to override it; this adapter does not expose a model list to NavishAI.
+        <% end %>
+      </p>
     </div>
 
     <div class="field-wide" data-provider-form-target="apiKeyField">
@@ -56,7 +62,8 @@
   </div>
 
   <div class="provider-form-actions">
+    <p>Saving stores these settings. The provider is connected only after its current runtime passes a connection test.</p>
     <%= link_to "Cancel", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary" %>
-    <%= form.submit editing ? "Save connection" : "Connect provider", class: "button button-primary" %>
+    <%= form.submit "Save provider settings", class: "button button-primary" %>
   </div>
 <% end %>

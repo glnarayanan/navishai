@@ -2,6 +2,51 @@ require "application_system_test_case"
 require "digest"
 
 class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
+  test "saved provider settings show a truthful blocked test state on desktop and mobile" do
+    workspace = workspaces(:acme_support)
+    RuntimeInstallation.where(workspace:).delete_all
+    catalog = [
+      provider_payload(
+        "codex_subscription", "Codex", %w[api_key subscription],
+        "Run OpenAI Codex with a ChatGPT subscription or OpenAI API key."
+      ).merge(
+        "model_required" => false, "configured" => true, "auth_mode" => "subscription",
+        "health_status" => "unavailable", "available" => false, "executable_version" => ""
+      )
+    ]
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) { |workspace_key:| catalog }
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    sign_in(users(:owner))
+    visit workspace_runtime_installations_path(workspace)
+
+    within "#runtime-codex_subscription" do
+      assert_text "Settings saved"
+      assert_text "Runtime unavailable"
+      assert_text "Provider default"
+      assert_text "This adapter does not expose a model list to NavishAI."
+      assert_button "Test connection", disabled: true
+      assert_link "Edit settings"
+      assert_no_text "Not selected"
+    end
+    assert_button "Refresh status"
+    save_screenshot Rails.root.join(".amp/in/artifacts/provider-runtime-blocked-desktop.png") if ENV["CAPTURE_RUNTIMES"]
+
+    page.current_window.resize_to(320, 844)
+    assert_no_horizontal_overflow
+    provider_card = find("#runtime-codex_subscription")
+    within provider_card do
+      assert_operator find_button("Test connection", disabled: true).rect.height, :>=, 48
+      assert_operator find(".status-badge").rect.width, :<, provider_card.rect.width / 2
+    end
+    assert_operator find_button("Refresh status").rect.height, :>=, 48
+    save_screenshot Rails.root.join(".amp/in/artifacts/provider-runtime-blocked-mobile.png") if ENV["CAPTURE_RUNTIMES"]
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
   test "an Owner configures provider credentials in a responsive app form" do
     catalog = [
       provider_payload("codex", "Codex", %w[api_key subscription], "Use Codex for workspace tasks."),
@@ -18,22 +63,22 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Add a provider"
     assert_select "Provider", selected: "Codex"
     assert_field "Sign-in method", with: "api_key"
-    assert_field "Model"
+    assert_field "Model ID"
     assert_field "API key", type: "password"
     select "Claude", from: "Provider"
     assert_field "Sign-in method", with: "subscription"
     assert_no_field "API key", visible: true
     select "Codex", from: "Provider"
     select "API key", from: "Sign-in method"
-    fill_in "Model", with: "gpt-5.6"
+    fill_in "Model ID", with: "gpt-5.6"
     fill_in "API key", with: "one-time-provider-key"
-    assert_button "Connect provider"
+    assert_button "Save provider settings"
     assert_no_text "/etc/navishai"
     save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-desktop.png") if ENV["CAPTURE_RUNTIMES"]
 
     page.current_window.resize_to(320, 844)
     assert_no_horizontal_overflow
-    assert_operator find_button("Connect provider").rect.height, :>=, 48
+    assert_operator find_button("Save provider settings").rect.height, :>=, 48
     save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-mobile.png") if ENV["CAPTURE_RUNTIMES"]
   ensure
     ProviderConnectionGateway.define_singleton_method(:new, original) if original

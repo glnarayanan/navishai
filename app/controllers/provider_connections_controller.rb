@@ -67,7 +67,13 @@ class ProviderConnectionsController < ApplicationController
       record_provider_change!(workspace:, adapter_key:, action: "runtime.provider_configured")
       return unless refresh_after_provider_change(workspace:, gateway:)
 
-      redirect_to workspace_runtime_installations_path(workspace), notice: "#{configured.fetch("name")} settings were saved. Test the connection before allowing workspace access."
+      installation = workspace.runtime_installations.find_by(adapter_key:)
+      notice = if installation&.health_status == "available" && installation.compatibility_status != "incompatible"
+        "#{configured.fetch("name")} settings were saved. Test the connection before allowing workspace access."
+      else
+        "#{configured.fetch("name")} settings were saved. No compatible runtime is available to test yet."
+      end
+      redirect_to workspace_runtime_installations_path(workspace), notice:
     rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
       render_configuration_error(error, adapter_key:)
     rescue ProviderConnectionProtocol::MalformedMessage => error

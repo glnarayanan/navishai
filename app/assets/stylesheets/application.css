@@ -1524,6 +1524,10 @@ details,
   min-width: 0;
 }
 
+.runtime-installation-heading .status-badge {
+  width: fit-content;
+}
+
 .runtime-safety-note {
   display: grid;
   gap: 0.25rem;
@@ -1651,6 +1655,12 @@ details,
   box-shadow: none;
 }
 
+.runtime-heading > .runtime-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
 .runtime-installation code {
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1722,6 +1732,10 @@ details,
   gap: 0.625rem;
 }
 
+.provider-settings-status {
+  color: var(--muted);
+}
+
 .provider-actions form:last-of-type {
   margin-left: auto;
 }
@@ -1731,28 +1745,11 @@ details,
 }
 
 .provider-action-note {
+  flex-basis: 100%;
+  margin: 0;
   color: var(--muted);
   font-size: 0.875rem;
-}
-
-.provider-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-top: 2rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
-}
-
-.provider-refresh > div {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.provider-refresh span {
-  color: var(--muted);
-  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .provider-form-shell {
@@ -1791,10 +1788,19 @@ details,
 
 .provider-form-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--line);
+}
+
+.provider-form-actions p {
+  max-width: 34rem;
+  margin: 0 auto 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .provider-test-action > div {
@@ -3939,10 +3945,14 @@ td {
   }
 
   .provider-key-note,
-  .provider-refresh,
   .provider-form-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .runtime-heading > .runtime-heading-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .provider-actions {
@@ -3952,7 +3962,8 @@ td {
   .provider-actions .button,
   .provider-actions form,
   .provider-actions form .button,
-  .provider-refresh .button {
+  .runtime-heading-actions form,
+  .runtime-heading-actions .button {
     width: 100%;
   }
 
