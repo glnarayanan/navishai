@@ -1,8 +1,20 @@
 class ProviderConnectionGateway < RunnerClient
   def catalog(workspace_key:)
     body = JSON.generate(protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:)
-    response = signed_provider_post(ProviderConnectionProtocol::CATALOG_PATH, body:)
+    response = signed_provider_post(ProviderConnectionProtocol::CATALOG_PATH, body:, timeout_error: Unavailable)
     ProviderConnectionProtocol.parse_catalog(response.body, workspace_key:)
+  rescue ProviderConnectionProtocol::MalformedMessage => error
+    raise MalformedResponse, error.message
+  end
+
+  def models(workspace_key:, adapter_key:)
+    body = JSON.generate(
+      protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, adapter_key:
+    )
+    response = signed_provider_post(
+      ProviderConnectionProtocol::MODELS_PATH, body:, read_timeout: 20, timeout_error: Unavailable
+    )
+    ProviderConnectionProtocol.parse_models(response.body, workspace_key:, adapter_key:)
   rescue ProviderConnectionProtocol::MalformedMessage => error
     raise MalformedResponse, error.message
   end
@@ -40,7 +52,7 @@ class ProviderConnectionGateway < RunnerClient
   end
 
   private
-    def signed_provider_post(path, body:, read_timeout: 10)
+    def signed_provider_post(path, body:, read_timeout: 10, timeout_error: AmbiguousResult)
       timestamp = @clock.call.to_i.to_s
       request = Net::HTTP::Post.new(path)
       request["Content-Type"] = "application/json"
@@ -54,7 +66,7 @@ class ProviderConnectionGateway < RunnerClient
 
       response
     rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error
-      raise AmbiguousResult, "provider configuration outcome is unknown: #{error.class}"
+      raise timeout_error, "provider request outcome is unknown: #{error.class}"
     rescue OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
       raise Unavailable, "runner is unavailable: #{error.class}"
     end

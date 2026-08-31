@@ -1,6 +1,7 @@
 module ProviderConnectionProtocol
   VERSION = "v1"
   CATALOG_PATH = "/v1/providers/catalog"
+  MODELS_PATH = "/v1/providers/models"
   CONFIGURE_PATH = "/v1/providers/configure"
   REMOVE_PATH = "/v1/providers/remove"
   PURGE_WORKSPACE_PATH = "/v1/providers/purge-workspace"
@@ -9,6 +10,13 @@ module ProviderConnectionProtocol
     health_status available executable_version
   ].freeze
   KEY_PATTERN = /\A[a-z][a-z0-9_]{0,63}\z/
+  MODEL_RESPONSE_KEYS = %w[protocol_version workspace_key adapter_key status checked_at models].freeze
+  MODEL_OPTION_KEYS = %w[id label default].freeze
+  MODEL_STATUSES = %w[available unsupported failed].freeze
+  MAX_MODEL_OPTIONS = 100
+  MAX_MODEL_ID_BYTES = 200
+  MAX_MODEL_LABEL_BYTES = 200
+  MAX_CHECKED_AT_BYTES = 64
 
   class MalformedMessage < StandardError; end
 
@@ -32,6 +40,39 @@ module ProviderConnectionProtocol
     object!(attributes, %w[protocol_version workspace_key provider], "response")
     common_response!(attributes, workspace_key:)
     provider!(attributes.fetch("provider"))
+  end
+
+  def parse_models(body, workspace_key:, adapter_key:)
+    attributes = parse_json(body)
+    object!(attributes, MODEL_RESPONSE_KEYS, "response")
+    common_response!(attributes, workspace_key:)
+    key!(attributes.fetch("adapter_key"), "adapter_key")
+    equal!(attributes.fetch("adapter_key"), adapter_key, "adapter_key")
+    status = attributes.fetch("status")
+    unless MODEL_STATUSES.include?(status)
+      raise MalformedMessage, "status is invalid"
+    end
+    checked_at!(attributes.fetch("checked_at"))
+    models = attributes.fetch("models")
+    unless models.is_a?(Array) && models.size <= MAX_MODEL_OPTIONS
+      raise MalformedMessage, "models is invalid"
+    end
+
+    parsed = models.map.with_index { |model, index| model!(model, index) }
+    ids = parsed.map { |model| model.fetch("id") }
+    raise MalformedMessage, "models contain duplicate IDs" unless ids.uniq.size == ids.size
+
+    defaults = parsed.count { |model| model.fetch("default") }
+    raise MalformedMessage, "models contain multiple defaults" if defaults > 1
+
+    if status == "available" && parsed.empty?
+      raise MalformedMessage, "available model discovery must include models"
+    end
+    if %w[unsupported failed].include?(status) && parsed.any?
+      raise MalformedMessage, "#{status} model discovery must not include models"
+    end
+
+    attributes.deep_dup.freeze
   end
 
   def parse_workspace_purge(body, workspace_key:)
@@ -78,6 +119,34 @@ module ProviderConnectionProtocol
     provider.deep_dup.freeze
   end
   private_class_method :provider!
+
+  def model!(model, index)
+    name = "models[#{index}]"
+    object!(model, MODEL_OPTION_KEYS, name)
+    model_text!(model.fetch("id"), MAX_MODEL_ID_BYTES, "#{name}.id")
+    model_text!(model.fetch("label"), MAX_MODEL_LABEL_BYTES, "#{name}.label")
+    boolean!(model.fetch("default"), "#{name}.default")
+    model
+  end
+  private_class_method :model!
+
+  def checked_at!(value)
+    valid = value.is_a?(String) && value.valid_encoding? && value.bytesize.between?(1, MAX_CHECKED_AT_BYTES)
+    raise MalformedMessage, "checked_at is invalid" unless valid
+
+    Time.iso8601(value)
+  rescue ArgumentError, TypeError
+    raise MalformedMessage, "checked_at is invalid"
+  end
+  private_class_method :checked_at!
+
+  def model_text!(value, maximum, name)
+    valid = value.is_a?(String) && value.valid_encoding? && value.bytesize.between?(1, maximum) &&
+      !value.match?(/\A\p{White_Space}|\p{White_Space}\z/) &&
+      !value.each_codepoint.any? { |codepoint| codepoint <= 0x1f || codepoint.between?(0x7f, 0x9f) }
+    raise MalformedMessage, "#{name} is invalid" unless valid
+  end
+  private_class_method :model_text!
 
   def object!(value, keys, name)
     raise MalformedMessage, "#{name} must be an object" unless value.is_a?(Hash)
