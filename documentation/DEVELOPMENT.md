@@ -70,6 +70,8 @@ Managers, Admins, and Owners can maintain approved text, ingest plain-text uploa
 
 Set `NAVISHAI_RUNNER_SHARED_SECRET` to the same random value of at least 32 bytes for Rails and the Go runner. Rails uses `NAVISHAI_RUNNER_ADDRESS`, which defaults to `http://127.0.0.1:8081`. Cleartext HTTP works only on a loopback address; other addresses must use HTTPS. Set `NAVISHAI_RUNNER_BIND_ADDRESS` to change the Go listener from `127.0.0.1:8081`. Set `NAVISHAI_RUNNER_STATE_PATH` to change its durable run and event-outbox store from `tmp/runner-admissions.json`. The runner stores its encrypted provider vault beside that file at `<NAVISHAI_RUNNER_STATE_PATH>.providers`, so the containing directory must be persistent and writable by the runner. Set a separate `NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET` of at least 32 random bytes and retain it with the backup secret set; the runner falls back to the shared protocol secret only for compatibility. The runner also needs `NAVISHAI_RUNNER_EXECUTION_CONFIG` and `NAVISHAI_CONTROL_PLANE_ADDRESS`; the latter is the Rails origin that receives signed runner events.
 
+`bin/dev` starts both Rails and a loopback development runner, waits for runner readiness, and stops both processes together. It creates distinct persistent development secrets under ignored `storage/development-runner/` files and generates a writable local execution policy under `tmp/development-runner/`. On platforms without the Linux amd64 supervisor boundary, provider setup and runner protocol development remain available, but every attempt to execute a model process fails closed.
+
 Start the runner with:
 
 ```sh

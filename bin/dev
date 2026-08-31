@@ -1,2 +1,45 @@
 #!/usr/bin/env ruby
-exec "./bin/rails", "server", *ARGV
+require_relative "../config/boot"
+require_relative "../lib/navishai/development_environment"
+
+development = Navishai::DevelopmentEnvironment.new
+plan = development.prepare(rails_arguments: ARGV)
+children = {}
+
+terminate_children = lambda do
+  children.each_key do |pid|
+    Process.kill("TERM", -pid)
+  rescue Errno::ESRCH
+    nil
+  end
+end
+
+%w[INT TERM].each do |signal|
+  Signal.trap(signal) { terminate_children.call }
+end
+
+puts "== Starting development runner on #{plan.runner_health_uri.host}:#{plan.runner_health_uri.port} =="
+runner_pid = Process.spawn(plan.runner_environment, *plan.runner_command, chdir: plan.root, pgroup: true)
+children[runner_pid] = "development runner"
+unless development.wait_until_runner_ready(plan, runner_pid:)
+  warn "Development runner failed to become ready. See its output above."
+  terminate_children.call
+  Process.wait(runner_pid) rescue nil
+  exit 1
+end
+puts "== Development runner is ready =="
+
+rails_pid = Process.spawn(plan.rails_environment, *plan.rails_command, chdir: plan.root, pgroup: true)
+children[rails_pid] = "Rails server"
+
+pid, status = Process.wait2(-1)
+name = children.delete(pid) || "development child"
+warn "#{name} exited with #{status.inspect}; stopping remaining development processes."
+terminate_children.call
+children.each_key do |child_pid|
+  Process.wait(child_pid)
+rescue Errno::ECHILD
+  nil
+end
+
+exit(status.success? ? 0 : status.exitstatus || 1)
