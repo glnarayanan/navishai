@@ -2,26 +2,35 @@
 <% provider_name = provider&.fetch("name") || adapter_key.humanize %>
 <% configured_model = provider&.fetch("model").presence || installation&.effective_model.presence %>
 <% model = configured_model.present? && configured_model != "runtime_default" ? configured_model : "Provider default" %>
+<% live_provider_available = @provider_catalog_error.blank? && (provider.nil? || (provider.fetch("available") && provider.fetch("health_status") == "available")) %>
 <% current_test_passed = installation && installation.runtime_test_status == "passed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
-<% approval_disabled = !installation || installation.health_status != "available" || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
-<% ready = installation&.runnable? && current_test_passed %>
+<% current_test_failed = installation && installation.runtime_test_status == "failed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
+<% runtime_available = installation && installation.health_status == "available" && live_provider_available %>
+<% approval_disabled = !runtime_available || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
+<% ready = installation&.runnable? && current_test_passed && live_provider_available %>
 <% runtime_status = if installation.nil?
                       "Runtime unavailable"
                     elsif installation.compatibility_status == "incompatible"
                       "Runtime incompatible"
                     elsif installation.health_status == "missing"
                       "Runtime missing"
+                    elsif !live_provider_available
+                      "Runtime unavailable"
                     elsif installation.health_status == "available"
                       "Runtime ready"
                     else
                       "Runtime unavailable"
                     end %>
-<% status_text = if ready
-                   "Ready"
-                 elsif installation&.runtime_test_status == "failed"
-                   "Test failed"
-                 else
+<% status_text = if runtime_status != "Runtime ready"
                    runtime_status
+                 elsif ready
+                   "Ready"
+                 elsif current_test_failed
+                   "Test failed"
+                 elsif current_test_passed && !installation.approved?
+                   "Approval required"
+                 else
+                   "Test required"
                  end %>
 <% test_disabled_reason = if installation.nil?
                             "No compatible #{provider_name} runtime is available on this runner. Refresh after it is installed, allowed by the runner, and signed in."
@@ -29,6 +38,8 @@
                             "Install a supported #{provider_name} runtime version before testing this connection."
                           elsif installation.health_status == "missing"
                             "The #{provider_name} runtime was not found during the latest status refresh."
+                          elsif !live_provider_available
+                            "Live #{provider_name} settings are unavailable. Refresh status before testing this connection."
                           elsif installation.health_status != "available"
                             "The #{provider_name} runtime is not healthy enough to run a connection test."
                           end %>

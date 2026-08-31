@@ -157,6 +157,23 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "data-models-url"
   end
 
+  test "the add page explains when every supported provider is already connected" do
+    sign_in_as users(:owner)
+    catalog = provider_catalog.map do |provider|
+      provider.merge("configured" => true, "secret_configured" => true, "auth_mode" => "api_key", "model" => "configured-model")
+    end
+    gateway = FakeProviderGateway.new(catalog)
+
+    with_gateway(gateway) do
+      get new_workspace_provider_connection_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "h2", "All supported providers are connected"
+    assert_select "a[href='#{workspace_runtime_installations_path(@workspace)}']", text: "Manage providers"
+    assert_not_includes response.body, "Provider options are temporarily unavailable"
+  end
+
   test "runner setup failures do not blame provider credentials" do
     sign_in_as users(:owner)
 

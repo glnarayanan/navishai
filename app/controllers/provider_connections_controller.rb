@@ -163,6 +163,7 @@ class ProviderConnectionsController < ApplicationController
 
     def load_new_catalog
       load_catalog
+      @all_providers_configured = @provider_catalog.present? && @provider_catalog.all? { |provider| provider.fetch("configured") }
       @provider_catalog = @provider_catalog.reject { |provider| provider.fetch("configured") }
     end
 

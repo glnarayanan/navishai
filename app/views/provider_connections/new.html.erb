@@ -12,6 +12,12 @@
 
   <% if @provider %>
     <%= render "form", provider: @provider %>
+  <% elsif @all_providers_configured %>
+    <section class="empty-state provider-empty">
+      <h2>All supported providers are connected</h2>
+      <p>Manage an existing provider connection to change its sign-in method, model, or access.</p>
+      <%= link_to "Manage providers", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary button-compact" %>
+    </section>
   <% else %>
     <section class="empty-state provider-empty">
       <h2>Provider options are temporarily unavailable</h2>

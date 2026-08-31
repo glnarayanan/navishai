@@ -123,6 +123,130 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     ProviderConnectionGateway.define_singleton_method(:new, original) if original
   end
 
+  test "a live available provider requires a current test before approval" do
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+  end
+
+  test "a current passing test without approval requires approval" do
+    mark_test_passed!(@installation)
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Approval required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 0
+  end
+
+  test "an approved provider with a current passing test is ready" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Ready"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+  end
+
+  test "a failed current test is labeled test failed" do
+    @installation.update!(
+      runtime_test_status: "failed", runtime_test_failure_code: "provider_error", runtime_tested_at: Time.current,
+      runtime_tested_configuration_fingerprint: @installation.configuration_fingerprint
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test failed"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+  end
+
+  test "live provider unavailability blocks stale runtime access" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("available" => false, "health_status" => "unavailable") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Runtime unavailable"
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
+  end
+
+  test "catalog failure blocks stale standalone runtime access" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      raise RunnerClient::Unavailable, "runner catalog endpoint timed out"
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Runtime unavailable"
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
+    assert_not_includes response.body, "runner catalog endpoint timed out"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a successful catalog omission preserves standalone runtime behavior" do
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("adapter_key" => "other", "name" => "Other") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} h2", text: "Fixture"
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+  end
+
   test "the provider page identifies missing runner configuration" do
     sign_in_as users(:owner)
     original = ProviderConnectionGateway.method(:new)
@@ -237,5 +361,24 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
         runtime_test_status: "passed", runtime_tested_at: Time.current,
         runtime_tested_configuration_fingerprint: installation.configuration_fingerprint
       )
+    end
+
+    def live_provider
+      {
+        "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
+        "auth_modes" => [ "api_key" ], "model_required" => true, "configured" => true,
+        "secret_configured" => true, "auth_mode" => "api_key", "model" => "fixture-model",
+        "health_status" => "available", "available" => true, "executable_version" => "fixture 2.4.1"
+      }
+    end
+
+    def with_provider_catalog(catalog)
+      gateway = Object.new
+      gateway.define_singleton_method(:catalog) { |workspace_key:| catalog }
+      original = ProviderConnectionGateway.method(:new)
+      ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+      yield
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original) if original
     end
 end
