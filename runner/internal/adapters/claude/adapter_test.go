@@ -139,7 +139,7 @@ func TestParserIgnoresUnknownEventsButRejectsBoundaryChanges(t *testing.T) {
 		t.Fatalf("unexpected tolerant parse result=%#v err=%v", result, err)
 	}
 	for _, output := range []string{
-		strings.Replace(successfulJSONL, `"claude_code_version":"2.1.241"`, `"claude_code_version":"2.1.168"`, 1),
+		strings.Replace(successfulJSONL, `"claude_code_version":"2.1.241"`, `"claude_code_version":"2.1"`, 1),
 		strings.Replace(successfulJSONL, `"output_tokens":24`, `"output_tokens":-1`, 1),
 		strings.Replace(successfulJSONL, `"usage":{"input_tokens":20,"cache_read_input_tokens":120,"cache_creation_input_tokens":5,"output_tokens":24},`, "", 1),
 		strings.Replace(successfulJSONL, `"session_id":"3d07f334-88ef-4fe4-a640-421e3ba79921","is_error"`, `"session_id":"4d07f334-88ef-4fe4-a640-421e3ba79921","is_error"`, 1),
@@ -174,6 +174,12 @@ func testInvocation() Invocation {
 		},
 		Executable: "/opt/claude", WorkingDir: "/work/run", ClaudeConfigDir: "/runtime/claude",
 		Model: "sonnet", Prompt: "Investigate the case.", EgressProfileKey: "model_api",
+	}
+}
+
+func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
+	if !compatibleVersion("Claude Code 2.1.168") || !compatibleVersion("Claude Code 3.0.0") || compatibleVersion("Claude Code development build") {
+		t.Fatal("unexpected observed-version result")
 	}
 }
 

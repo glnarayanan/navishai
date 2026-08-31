@@ -109,6 +109,12 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		return runtimecatalog.Definition{}, false
 	}
 	definition.EffectiveModel, definition.ConfigurationFingerprint = model, fingerprint
+	definition.ConfigurationIdentity = func(executablePath, detectionKey, observedVersion string) (string, string, error) {
+		return AdapterConfigurationIdentityForRuntime(
+			adapterKey, adapterConfig, catalog.config.Supervisor, authMode, apiKey, catalog.identityKey,
+			executablePath, detectionKey, observedVersion,
+		)
+	}
 	definition.AccountHome = adapterConfig.HomeDir
 	definition.AccountEnvironmentValues = make(map[string]string)
 	if !configured || authMode == "api_key" {

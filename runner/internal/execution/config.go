@@ -12,9 +12,11 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
 )
 
@@ -83,6 +85,9 @@ type adapterConfigurationIdentity struct {
 	Enabled           bool                       `json:"enabled"`
 	HomeDir           string                     `json:"home_dir"`
 	EffectiveModel    string                     `json:"effective_model"`
+	ExecutablePath    string                     `json:"executable_path"`
+	DetectionKey      string                     `json:"detection_key"`
+	ObservedVersion   string                     `json:"observed_version"`
 	AuthMode          string                     `json:"auth_mode,omitempty"`
 	CredentialDigest  string                     `json:"credential_digest,omitempty"`
 	EgressProfileKey  string                     `json:"egress_profile_key"`
@@ -110,7 +115,30 @@ func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supe
 	return adapterConfigurationIdentityFor(adapterKey, adapter, supervisor, "", "", key)
 }
 
+// AdapterConfigurationIdentityForRuntime adds the immutable runtime evidence
+// that was actually detected to the provider configuration identity. The
+// ordinary identity helper remains available for configuration validation
+// before a runtime has been resolved.
+func AdapterConfigurationIdentityForRuntime(
+	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
+	executablePath, detectionKey, observedVersion string,
+) (string, string, error) {
+	if err := validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion); err != nil {
+		return "", "", err
+	}
+	return adapterConfigurationIdentityForRuntime(
+		adapterKey, adapter, supervisor, authMode, apiKey, key, executablePath, detectionKey, observedVersion,
+	)
+}
+
 func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte) (string, string, error) {
+	return adapterConfigurationIdentityForRuntime(adapterKey, adapter, supervisor, authMode, apiKey, key, "", "", "")
+}
+
+func adapterConfigurationIdentityForRuntime(
+	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
+	executablePath, detectionKey, observedVersion string,
+) (string, string, error) {
 	if err := protocol.ValidateSecret(key); err != nil {
 		return "", "", err
 	}
@@ -124,7 +152,8 @@ func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, s
 	}
 	identity := adapterConfigurationIdentity{
 		Version: "v1", AdapterKey: adapterKey, Enabled: enabled, HomeDir: adapter.HomeDir,
-		EffectiveModel: model, AuthMode: authMode, EgressProfileKey: adapter.EgressProfileKey,
+		EffectiveModel: model, ExecutablePath: executablePath, DetectionKey: detectionKey,
+		ObservedVersion: observedVersion, AuthMode: authMode, EgressProfileKey: adapter.EgressProfileKey,
 		Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles), Tools: sortedCopy(adapter.Tools),
 		DataClasses: sortedCopy(adapter.DataClasses), MaxTimeoutSeconds: adapter.MaxTimeoutSeconds,
 		MaxSteps: adapter.MaxSteps, MaxToolCalls: adapter.MaxToolCalls,
@@ -161,6 +190,19 @@ func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, s
 	return model, hex.EncodeToString(digest.Sum(nil)), nil
 }
 
+func validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion string) error {
+	if executablePath == "" || len(executablePath) > 4096 || strings.ContainsAny(executablePath, "\r\n\x00") {
+		return errors.New("invalid runtime executable path")
+	}
+	if !runtimeDetectionKeyPattern.MatchString(detectionKey) {
+		return errors.New("invalid runtime detection key")
+	}
+	if !runtimecatalog.ValidObservedVersion(observedVersion) {
+		return errors.New("invalid runtime observed version")
+	}
+	return nil
+}
+
 func sortedCopy(values []string) []string {
 	result := append([]string(nil), values...)
 	sort.Strings(result)
@@ -191,7 +233,10 @@ func LoadConfig(path string) (Config, error) {
 	return config, nil
 }
 
-var policyKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+var (
+	policyKeyPattern           = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	runtimeDetectionKeyPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 var knownAdapters = map[string]bool{
 	"scripted": true, "codex_subscription": true, "claude_subscription": true,

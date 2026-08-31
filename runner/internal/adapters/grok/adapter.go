@@ -351,11 +351,5 @@ func containsProhibitedUpdate(value any) bool {
 }
 
 func compatibleVersion(value string) bool {
-	match := regexp.MustCompile(`\b1\.0\.(\d+)\b`).FindStringSubmatch(value)
-	if len(match) != 2 {
-		return false
-	}
-	var patch int
-	_, err := fmt.Sscanf(match[1], "%d", &patch)
-	return err == nil && patch >= 4 && patch <= 99
+	return runtimecatalog.ValidObservedVersion(value)
 }

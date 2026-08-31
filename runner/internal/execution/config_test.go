@@ -152,3 +152,62 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 		t.Fatal("short configuration identity key was accepted")
 	}
 }
+
+func TestAdapterConfigurationIdentityBindsResolvedRuntimeEvidence(t *testing.T) {
+	identityKey := []byte("runner-configuration-test-key-at-least-32-bytes")
+	adapter := AdapterConfig{
+		Enabled: true, HomeDir: "/runtime/codex", Model: "gpt-test", EgressProfileKey: "model_api",
+		Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
+		Tools: []string{"case_read"}, DataClasses: []string{"case_content"},
+		MaxTimeoutSeconds: 60, MaxSteps: 1, MaxToolCalls: 0, MaxInputUnits: 1000, MaxOutputUnits: 100,
+	}
+	supervisor := SupervisorConfig{EgressProfiles: []EgressProfileConfig{{Key: "model_api", Executable: "/opt/navishai/egress", Environment: map[string]string{}}}}
+	identity := func(current AdapterConfig, authMode, apiKey, path, detection, version string) (string, string, error) {
+		return AdapterConfigurationIdentityForRuntime(
+			"codex_subscription", current, supervisor, authMode, apiKey, identityKey,
+			path, detection, version,
+		)
+	}
+	_, baseline, err := identity(adapter, "subscription", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, evidence := range map[string][3]string{
+		"resolved path":    {"/opt/navishai/runtimes/codex-next", strings.Repeat("a", 64), "codex 0.149.0"},
+		"detection digest": {"/opt/navishai/runtimes/codex", strings.Repeat("b", 64), "codex 0.149.0"},
+		"observed version": {"/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.150.0"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, changed, err := identity(adapter, "subscription", "", evidence[0], evidence[1], evidence[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed == baseline {
+				t.Fatalf("runtime evidence change did not invalidate fingerprint: %q", evidence)
+			}
+		})
+	}
+	_, repeated, err := identity(adapter, "subscription", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0")
+	if err != nil || repeated != baseline {
+		t.Fatalf("same runtime evidence was not stable: %q %v", repeated, err)
+	}
+	if _, _, err := identity(adapter, "subscription", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "development build"); err == nil {
+		t.Fatal("unbounded observed version evidence was accepted")
+	}
+	_, authChanged, err := identity(adapter, "api_key", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authChanged == baseline {
+		t.Fatal("authentication mode change did not invalidate fingerprint")
+	}
+	policyChanged := adapter
+	policyChanged.MaxSteps++
+	_, policyFingerprint, err := identity(policyChanged, "subscription", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policyFingerprint == baseline {
+		t.Fatal("policy change did not invalidate fingerprint")
+	}
+}

@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -44,8 +46,12 @@ type Definition struct {
 	Capabilities             []string
 	EffectiveModel           string
 	ConfigurationFingerprint string
-	MinimumVersion           string
-	MaximumVersion           string
+	// ConfigurationIdentity is evaluated after the executable has been
+	// resolved and its version probe has completed. It lets managed adapters
+	// bind the identity to the exact runtime evidence used for this report.
+	ConfigurationIdentity func(executablePath, detectionKey, observedVersion string) (string, string, error)
+	MinimumVersion        string
+	MaximumVersion        string
 }
 
 type Installation struct {
@@ -143,6 +149,23 @@ func validInstallation(installation Installation) bool {
 
 func validConfigurationIdentity(model, fingerprint string) bool {
 	return len(model) > 0 && len(model) <= 200 && !strings.ContainsAny(model, "\r\n\x00") && lowerHexPattern.MatchString(fingerprint)
+}
+
+// ValidObservedVersion accepts bounded version evidence without imposing a
+// numeric compatibility ceiling. Maintained version fields remain part of a
+// detection report, while future releases are evaluated by the behavioral
+// connection test rather than rejected by a stale range.
+func ValidObservedVersion(value string) bool {
+	if len(value) == 0 || len(value) > maxVersionBytes || !utf8.ValidString(value) {
+		return false
+	}
+	for _, runeValue := range value {
+		if unicode.IsControl(runeValue) {
+			return false
+		}
+	}
+	_, ok := semanticVersion(value)
+	return ok
 }
 
 func validEnvironmentNames(values []string) bool {
@@ -279,6 +302,16 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	if probeErr != nil || version == "" || versionOverflowed {
 		health, compatibility, reason = "unhealthy", "unknown", "The runtime version probe failed."
 	}
+	detection := detectionKey(definition.AdapterKey, resolved)
+	effectiveModel, configurationFingerprint := definition.EffectiveModel, definition.ConfigurationFingerprint
+	if definition.ConfigurationIdentity != nil && compatibility == "compatible" {
+		model, fingerprint, identityErr := definition.ConfigurationIdentity(resolved, detection, version)
+		if identityErr != nil || !validConfigurationIdentity(model, fingerprint) {
+			health, compatibility, reason = "unhealthy", "unknown", "The runtime configuration identity could not be computed."
+		} else {
+			effectiveModel, configurationFingerprint = model, fingerprint
+		}
+	}
 	accountMetadata := map[string]string{"authentication": "managed_on_runner"}
 	if len(definition.AccountArguments) > 0 {
 		environment := cloneEnvironment(definition.AccountEnvironmentValues)
@@ -302,10 +335,10 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	capabilities := append([]string(nil), definition.Capabilities...)
 	sort.Strings(capabilities)
 	return Installation{
-		DetectionKey: detectionKey(definition.AdapterKey, resolved), AdapterKey: definition.AdapterKey,
+		DetectionKey: detection, AdapterKey: definition.AdapterKey,
 		ProtocolVersion: definition.ProtocolVersion, ExecutablePath: resolved, ExecutableVersion: version,
 		AccountMetadata: accountMetadata, Capabilities: capabilities,
-		EffectiveModel: definition.EffectiveModel, ConfigurationFingerprint: definition.ConfigurationFingerprint,
+		EffectiveModel: effectiveModel, ConfigurationFingerprint: configurationFingerprint,
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,
 		CheckedAt: catalog.now().UTC().Format(time.RFC3339Nano),
@@ -353,15 +386,9 @@ func cloneMetadata(metadata map[string]string) map[string]string {
 	return result
 }
 
-func compatibilityFor(output, minimum, maximum string) (string, string) {
-	version, versionOK := semanticVersion(output)
-	minimumVersion, minimumOK := semanticVersion(minimum)
-	maximumVersion, maximumOK := semanticVersion(maximum)
-	if !versionOK || !minimumOK || !maximumOK {
+func compatibilityFor(output string, _ string, _ string) (string, string) {
+	if !ValidObservedVersion(output) {
 		return "unknown", "Version compatibility has not been reported."
-	}
-	if compareVersions(version, minimumVersion) < 0 || compareVersions(version, maximumVersion) > 0 {
-		return "incompatible", "The detected version is outside the maintained compatibility range."
 	}
 	return "compatible", ""
 }
@@ -380,18 +407,6 @@ func semanticVersion(value string) ([3]int, bool) {
 		version[index] = parsed
 	}
 	return version, true
-}
-
-func compareVersions(left, right [3]int) int {
-	for index := range left {
-		if left[index] < right[index] {
-			return -1
-		}
-		if left[index] > right[index] {
-			return 1
-		}
-	}
-	return 0
 }
 
 func approvedExecutable(path string) (string, error) {

@@ -26,7 +26,6 @@ const (
 
 var (
 	sessionIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	versionPattern   = regexp.MustCompile(`\b2\.1\.(\d+)\b`)
 )
 
 type Invocation struct {
@@ -265,12 +264,7 @@ func parseJSONL(output string) (normalizedResult, error) {
 }
 
 func compatibleVersion(value string) bool {
-	match := versionPattern.FindStringSubmatch(value)
-	if len(match) != 2 {
-		return false
-	}
-	patch, err := strconv.Atoi(match[1])
-	return err == nil && patch >= 169 && patch <= 299
+	return runtimecatalog.ValidObservedVersion(value)
 }
 
 func sumUnits(values ...int) (int, bool) {

@@ -136,9 +136,9 @@ func TestExecuteFailsClosedOnReverseClientRequest(t *testing.T) {
 	}
 }
 
-func TestCompatibleVersionUsesMaintainedRange(t *testing.T) {
-	if !compatibleVersion("grok 1.0.8 (abc123) [stable]") || compatibleVersion("grok 1.0.3 (old) [stable]") || compatibleVersion("grok 1.1.0 (new) [stable]") {
-		t.Fatal("unexpected Grok compatibility result")
+func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
+	if !compatibleVersion("grok 1.0.8 (abc123) [stable]") || !compatibleVersion("grok 1.0.3 (old) [stable]") || !compatibleVersion("grok 1.1.0 (new) [stable]") || compatibleVersion("grok development build") {
+		t.Fatal("unexpected Grok observed-version result")
 	}
 }
 

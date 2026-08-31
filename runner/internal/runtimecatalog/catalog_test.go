@@ -46,14 +46,74 @@ func TestDetectReportsOnlyResolvedRegisteredExecutables(t *testing.T) {
 	}
 }
 
-func TestCompatibilityBlocksVersionsOutsideMaintainedRange(t *testing.T) {
+func TestCompatibilityAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
 	status, reason := compatibilityFor("fixture 3.0.0", "2.0.0", "2.9.99")
-	if status != "incompatible" || reason == "" {
-		t.Fatalf("expected an incompatible result, got %q %q", status, reason)
+	if status != "compatible" || reason != "" {
+		t.Fatalf("expected a compatible result, got %q %q", status, reason)
 	}
 	status, reason = compatibilityFor("development build", "2.0.0", "2.9.99")
 	if status != "unknown" || reason == "" {
 		t.Fatalf("expected an unknown result, got %q %q", status, reason)
+	}
+	status, reason = compatibilityFor(strings.Repeat("3", maxVersionBytes+1), "2.0.0", "2.9.99")
+	if status != "unknown" || reason == "" {
+		t.Fatalf("expected oversized evidence to remain unknown, got %q %q", status, reason)
+	}
+}
+
+func TestValidObservedVersionRejectsControlAndUnboundedEvidence(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{name: "future semantic version", value: "provider 99.1.2 (stable)", valid: true},
+		{name: "carriage return", value: "provider 1.2.3\r", valid: false},
+		{name: "line feed", value: "provider 1.2.3\n", valid: false},
+		{name: "null", value: "provider 1.2.3\x00", valid: false},
+		{name: "ascii control", value: "provider 1.2.3\x1b", valid: false},
+		{name: "oversized", value: strings.Repeat("x", maxVersionBytes+1), valid: false},
+		{name: "no semantic version", value: "development build", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ValidObservedVersion(test.value); got != test.valid {
+				t.Fatalf("ValidObservedVersion(%q) = %v, want %v", test.value, got, test.valid)
+			}
+		})
+	}
+}
+
+func TestDetectBindsConfigurationIdentityToRuntimeEvidence(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "fixture-runtime")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nprintf 'fixture 3.0.0\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	identityCalls := 0
+	catalog, err := New([]Definition{{
+		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture-runtime"},
+		VersionArguments: []string{"--version"}, Capabilities: []string{"structured_output"},
+		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
+		MinimumVersion: "2.0.0", MaximumVersion: "2.9.99",
+		ConfigurationIdentity: func(path, key, version string) (string, string, error) {
+			identityCalls++
+			if path == "" || len(key) != 64 || version != "fixture 3.0.0" {
+				t.Fatalf("identity callback received incomplete evidence: %q %q %q", path, key, version)
+			}
+			return "fixture-model-v2", strings.Repeat("b", 64), nil
+		},
+	}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installations := catalog.Detect(context.Background())
+	if len(installations) != 1 || identityCalls != 1 {
+		t.Fatalf("expected one identity-bound installation, calls=%d installations=%#v", identityCalls, installations)
+	}
+	if installations[0].EffectiveModel != "fixture-model-v2" || installations[0].ConfigurationFingerprint != strings.Repeat("b", 64) {
+		t.Fatalf("runtime identity was not applied: %#v", installations[0])
 	}
 }
 

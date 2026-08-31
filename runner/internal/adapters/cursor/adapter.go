@@ -26,7 +26,7 @@ const (
 
 var (
 	sessionIDPattern       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	versionPattern         = regexp.MustCompile(`\b(2026)\.(\d{1,2})\.(\d{1,2})\b`)
+	versionPattern         = regexp.MustCompile(`\b(\d{4})\.(\d{1,2})\.(\d{1,2})\b`)
 	errProhibitedOperation = errors.New("Cursor requested a prohibited operation")
 )
 
@@ -324,14 +324,15 @@ func hasAuthMethod(methods []struct {
 }
 
 func compatibleVersion(value string) bool {
+	if !runtimecatalog.ValidObservedVersion(value) {
+		return false
+	}
 	match := versionPattern.FindStringSubmatch(value)
 	if len(match) != 4 {
 		return false
 	}
-	parsed, err := time.Parse("2006.1.2", strings.Join(match[1:], "."))
-	minimum := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
-	maximum := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
-	return err == nil && !parsed.Before(minimum) && !parsed.After(maximum)
+	_, err := time.Parse("2006.1.2", strings.Join(match[1:], "."))
+	return err == nil && len(value) <= 8*1024
 }
 
 func terminalFailureCode(stopReason string) string {

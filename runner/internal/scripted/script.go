@@ -44,12 +44,27 @@ type Output struct {
 }
 
 func Load(path string) (Script, error) {
-	file, err := os.Open(path)
+	body, err := ReadFixture(path)
 	if err != nil {
 		return Script{}, fmt.Errorf("open script: %w", err)
 	}
+	return Decode(bytes.NewReader(body))
+}
+
+// ReadFixture returns one bounded snapshot of a scripted fixture. Callers
+// that need both its digest and parsed form can use this snapshot for both
+// operations without reopening a mutable path.
+func ReadFixture(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
 	defer file.Close()
-	return Decode(file)
+	body, err := io.ReadAll(io.LimitReader(file, maxFixtureBytes+1))
+	if err != nil || len(body) > maxFixtureBytes {
+		return nil, ErrInvalidScript
+	}
+	return body, nil
 }
 
 func Decode(reader io.Reader) (Script, error) {

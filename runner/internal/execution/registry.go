@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
@@ -170,7 +172,7 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		}
 		authMode, apiKey = connection.AuthMode, connection.APIKey
 	}
-	model, fingerprint, err := registry.runtimeTestConfiguration(installation.AdapterKey, adapterConfig, authMode, apiKey)
+	model, fingerprint, err := registry.runtimeTestConfiguration(installation, adapterConfig, authMode, apiKey)
 	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
@@ -191,13 +193,19 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
 }
 
-func (registry *Registry) runtimeTestConfiguration(adapterKey string, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
-	if adapterKey == "scripted" {
-		fingerprint, err := ScriptedConfigurationFingerprint(registry.config, registry.configurationIdentityKey)
+func (registry *Registry) runtimeTestConfiguration(installation runtimecatalog.Installation, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
+	if installation.AdapterKey == "scripted" {
+		_, detectionKey, fingerprint, _, err := scriptedRuntimeIdentity(
+			registry.config, registry.configurationIdentityKey, installation.ExecutablePath,
+		)
+		if err == nil && detectionKey != installation.DetectionKey {
+			return "", "", runtimecatalog.ErrTestConfigurationChanged
+		}
 		return "deterministic_fixture", fingerprint, err
 	}
-	return adapterConfigurationIdentityFor(
-		adapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
+	return AdapterConfigurationIdentityForRuntime(
+		installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
+		installation.ExecutablePath, installation.DetectionKey, installation.ExecutableVersion,
 	)
 }
 
@@ -320,17 +328,13 @@ func min(left, right int) int {
 func (registry *Registry) executeScripted(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
 	config, ok := registry.config.Adapters["scripted"]
 	path := registry.config.Scripted[request.Routing.ProfileKey]
-	fingerprint, fingerprintErr := ScriptedConfigurationFingerprint(registry.config, registry.configurationIdentityKey)
+	_, detectionKey, fingerprint, script, fingerprintErr := scriptedRuntimeIdentity(registry.config, registry.configurationIdentityKey, path)
 	if !ok || !config.Enabled || !config.allows(request) || path == "" ||
-		fingerprintErr != nil || ScriptedDetectionKey(path) != request.Routing.DetectionKey ||
+		fingerprintErr != nil || detectionKey != request.Routing.DetectionKey ||
 		request.Routing.ConfigurationFingerprint != fingerprint || request.Routing.EffectiveModel != "deterministic_fixture" {
 		return ErrPolicyDenied
 	}
-	script, err := scripted.Load(path)
-	if err != nil {
-		return err
-	}
-	_, err = scripted.New(registry.now).Execute(ctx, request, script, emit)
+	_, err := scripted.New(registry.now).Execute(ctx, request, script, emit)
 	return err
 }
 
@@ -391,16 +395,17 @@ func ScriptedDetectionKey(path string) string {
 	if err != nil {
 		return ""
 	}
-	file, err := os.Open(resolved)
+	body, err := scripted.ReadFixture(resolved)
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
+	return scriptedDetectionKeyFromBytes(resolved, body)
+}
+
+func scriptedDetectionKeyFromBytes(resolved string, body []byte) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("scripted\x00" + resolved + "\x00"))
-	if _, err := file.WriteTo(digest); err != nil {
-		return ""
-	}
+	_, _ = digest.Write(body)
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
@@ -409,15 +414,13 @@ func ScriptedInstallations(config Config, configurationIdentityKey []byte, check
 	if !ok || !adapter.Enabled {
 		return nil, nil
 	}
-	fingerprint, err := ScriptedConfigurationFingerprint(config, configurationIdentityKey)
-	if err != nil {
+	if err := protocol.ValidateSecret(configurationIdentityKey); err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
 	installations := []runtimecatalog.Installation{}
 	for _, path := range config.Scripted {
-		resolved, err := filepath.EvalSymlinks(path)
-		key := ScriptedDetectionKey(path)
+		resolved, key, fingerprint, _, err := scriptedRuntimeIdentity(config, configurationIdentityKey, path)
 		if err != nil || key == "" || seen[key] {
 			continue
 		}
@@ -436,10 +439,45 @@ func ScriptedInstallations(config Config, configurationIdentityKey []byte, check
 }
 
 func ScriptedConfigurationFingerprint(config Config, configurationIdentityKey []byte) (string, error) {
-	_, fingerprint, err := AdapterConfigurationIdentity(
-		"scripted", config.Adapters["scripted"], config.Supervisor, configurationIdentityKey,
-	)
+	path := config.Scripted["workspace_default"]
+	if path == "" {
+		profiles := make([]string, 0, len(config.Scripted))
+		for profile := range config.Scripted {
+			profiles = append(profiles, profile)
+		}
+		sort.Strings(profiles)
+		if len(profiles) > 0 {
+			path = config.Scripted[profiles[0]]
+		}
+	}
+	_, _, fingerprint, _, err := scriptedRuntimeIdentity(config, configurationIdentityKey, path)
 	return fingerprint, err
+}
+
+func scriptedRuntimeIdentity(config Config, configurationIdentityKey []byte, path string) (string, string, string, scripted.Script, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", "", "", scripted.Script{}, err
+	}
+	body, err := scripted.ReadFixture(resolved)
+	if err != nil {
+		return "", "", "", scripted.Script{}, err
+	}
+	detectionKey := scriptedDetectionKeyFromBytes(resolved, body)
+	if detectionKey == "" {
+		return "", "", "", scripted.Script{}, errors.New("scripted fixture detection failed")
+	}
+	fixture, err := scripted.Decode(bytes.NewReader(body))
+	if err != nil {
+		return "", "", "", scripted.Script{}, err
+	}
+	adapter := config.Adapters["scripted"]
+	adapter.Model = "deterministic_fixture"
+	_, fingerprint, err := AdapterConfigurationIdentityForRuntime(
+		"scripted", adapter, config.Supervisor, "", "", configurationIdentityKey,
+		resolved, detectionKey, "scripted 1.0.0",
+	)
+	return resolved, detectionKey, fingerprint, fixture, err
 }
 
 func contains(values []string, wanted string) bool {

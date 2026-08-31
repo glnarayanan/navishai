@@ -16,6 +16,7 @@ import (
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
+	"github.com/glnarayanan/navishai/runner/internal/scripted"
 )
 
 var testConfigurationIdentityKey = []byte("runner-configuration-test-key-at-least-32-bytes")
@@ -59,6 +60,93 @@ func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T
 	request.Routing.DataClasses = append(request.Routing.DataClasses, "retrieved_memory")
 	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != ErrPolicyDenied {
 		t.Fatalf("expected policy denial, got %v", err)
+	}
+}
+
+func TestScriptedCatalogIdentityMatchesExecutionAndInvalidatesChangedSymlink(t *testing.T) {
+	directory := t.TempDir()
+	fixturePath := filepath.Join("..", "scripted", "testdata", "success.json")
+	fixture, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstTarget := filepath.Join(directory, "fixture-first.json")
+	secondTarget := filepath.Join(directory, "fixture-second.json")
+	configuredPath := filepath.Join(directory, "configured.json")
+	if err := os.WriteFile(firstTarget, fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondTarget, fixture, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(firstTarget, configuredPath); err != nil {
+		t.Fatal(err)
+	}
+	request := executionRequest(t)
+	config := Config{
+		WorkRoot: t.TempDir(), Scripted: map[string]string{"workspace_default": configuredPath},
+		Adapters: map[string]AdapterConfig{"scripted": {
+			Enabled: true, Profiles: []string{"workspace_default"}, Roles: []string{request.Agent.RoleKey},
+			Tools: request.Agent.AllowedTools, DataClasses: request.Routing.DataClasses,
+			MaxTimeoutSeconds: 900, MaxSteps: 20, MaxToolCalls: 50,
+			MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
+		}},
+	}
+	installations, err := ScriptedInstallations(config, testConfigurationIdentityKey, time.Now())
+	if err != nil || len(installations) != 1 {
+		t.Fatalf("expected one catalog installation, installations=%#v err=%v", installations, err)
+	}
+	first := installations[0]
+	if fingerprint, err := ScriptedConfigurationFingerprint(config, testConfigurationIdentityKey); err != nil || fingerprint != first.ConfigurationFingerprint {
+		t.Fatalf("catalog and configured-path fingerprints diverged: %q %#v", fingerprint, err)
+	}
+	resolved, detectionKey, fingerprint, snapshot, err := scriptedRuntimeIdentity(config, testConfigurationIdentityKey, configuredPath)
+	if err != nil || resolved != first.ExecutablePath || detectionKey != first.DetectionKey || fingerprint != first.ConfigurationFingerprint {
+		t.Fatalf("runtime identity snapshot diverged from catalog: path=%q key=%q fingerprint=%q err=%v", resolved, detectionKey, fingerprint, err)
+	}
+	request.Routing.DetectionKey = first.DetectionKey
+	request.Routing.ConfigurationFingerprint = first.ConfigurationFingerprint
+	catalog, err := runtimecatalog.NewWithInstallations(nil, installations, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry, err := NewRegistry(config, catalog, testConfigurationIdentityKey, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != nil {
+		t.Fatalf("catalog fingerprint was rejected by execution identity: %v", err)
+	}
+	if err := os.Remove(configuredPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secondTarget, configuredPath); err != nil {
+		t.Fatal(err)
+	}
+	snapshotResult, err := scripted.New(time.Now).Execute(context.Background(), request, snapshot, func(protocol.CanonicalEvent) error { return nil })
+	if err != nil || snapshotResult.Status != scripted.Completed {
+		t.Fatalf("validated scripted snapshot was not executable after path swap: result=%#v err=%v", snapshotResult, err)
+	}
+	installations, err = ScriptedInstallations(config, testConfigurationIdentityKey, time.Now())
+	if err != nil || len(installations) != 1 {
+		t.Fatalf("expected one rediscovered installation, installations=%#v err=%v", installations, err)
+	}
+	second := installations[0]
+	if second.DetectionKey == first.DetectionKey || second.ConfigurationFingerprint == first.ConfigurationFingerprint {
+		t.Fatal("symlink target change did not invalidate scripted identity")
+	}
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != ErrPolicyDenied {
+		t.Fatalf("stale scripted identity was not denied after symlink change: %v", err)
+	}
+	if err := os.WriteFile(secondTarget, append(fixture, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := ScriptedInstallations(config, testConfigurationIdentityKey, time.Now())
+	if err != nil || len(updated) != 1 {
+		t.Fatalf("expected one content-change rediscovery, installations=%#v err=%v", updated, err)
+	}
+	if updated[0].DetectionKey == second.DetectionKey || updated[0].ConfigurationFingerprint == second.ConfigurationFingerprint {
+		t.Fatal("scripted content change did not invalidate identity")
 	}
 }
 
@@ -150,8 +238,18 @@ func TestRuntimeTestEligibilityUsesOnlyTheDeclaredCapability(t *testing.T) {
 func TestRuntimeTestOrchestratesSentinelAndFailsClosed(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	workRoot := t.TempDir()
-	executableRoot := t.TempDir()
-	executablePath := testExecutable(t, executableRoot, "test-runtime", "exit 0")
+	fixture, err := os.ReadFile(filepath.Join("..", "scripted", "testdata", "success.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	executablePath := filepath.Join(t.TempDir(), "test-runtime.json")
+	if err := os.WriteFile(executablePath, fixture, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executablePath, err = filepath.EvalSymlinks(executablePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	adapter := AdapterConfig{
 		Enabled: true, Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
 		MaxTimeoutSeconds: 60, MaxSteps: 1, MaxToolCalls: 0, MaxInputUnits: 1_000, MaxOutputUnits: 100,

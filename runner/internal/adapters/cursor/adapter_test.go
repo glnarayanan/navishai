@@ -137,9 +137,9 @@ func TestExecuteRejectsBlockingCursorExtension(t *testing.T) {
 	}
 }
 
-func TestCompatibleVersionUsesMaintainedDateRange(t *testing.T) {
-	if !compatibleVersion("cursor-agent 2026.08.11") || compatibleVersion("2026.03.10") || compatibleVersion("2026.04.31") || compatibleVersion("2027.01.01") {
-		t.Fatal("unexpected version result")
+func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
+	if !compatibleVersion("cursor-agent 2026.08.11") || !compatibleVersion("2026.03.10") || compatibleVersion("2026.04.31") || !compatibleVersion("2027.01.01") || compatibleVersion("cursor development build") {
+		t.Fatal("unexpected observed-version result")
 	}
 }
 
