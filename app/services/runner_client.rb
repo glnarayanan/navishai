@@ -5,6 +5,7 @@ require "openssl"
 class RunnerClient
   class Error < StandardError; end
   class ConfigurationError < Error; end
+  class ClientConfigurationError < ConfigurationError; end
   class Unavailable < Error; end
   class AmbiguousResult < Error; end
   class AuthenticationError < Error; end
@@ -24,7 +25,7 @@ class RunnerClient
     @secret = secret.to_s.b
     @cert_store = build_cert_store(ca_file)
     @clock = clock
-    raise ConfigurationError, "runner shared secret must contain at least 32 bytes" if @secret.bytesize < 32
+    raise ClientConfigurationError, "runner shared secret must contain at least 32 bytes" if @secret.bytesize < 32
   end
 
   def admit!(task:, run:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
@@ -155,14 +156,14 @@ class RunnerClient
   def parse_address(address)
     uri = URI.parse(address)
     unless %w[http https].include?(uri.scheme) && uri.host.present? && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil? && [ "", "/" ].include?(uri.path)
-      raise ConfigurationError, "runner address must be an HTTP origin"
+      raise ClientConfigurationError, "runner address must be an HTTP origin"
     end
     if uri.scheme != "https" && !loopback?(uri.host)
-      raise ConfigurationError, "runner address must use HTTPS outside loopback"
+      raise ClientConfigurationError, "runner address must use HTTPS outside loopback"
     end
     uri
   rescue URI::InvalidURIError
-    raise ConfigurationError, "runner address is invalid"
+    raise ClientConfigurationError, "runner address is invalid"
   end
 
   def loopback?(host)
@@ -173,14 +174,14 @@ class RunnerClient
 
   def build_cert_store(ca_file)
     return if ca_file.blank?
-    raise ConfigurationError, "runner CA file requires an HTTPS runner address" unless @base_uri.scheme == "https"
+    raise ClientConfigurationError, "runner CA file requires an HTTPS runner address" unless @base_uri.scheme == "https"
 
     store = OpenSSL::X509::Store.new
     store.set_default_paths
     store.add_file(ca_file)
     store
   rescue OpenSSL::X509::StoreError, SystemCallError => error
-    raise ConfigurationError, "runner CA file could not be loaded: #{error.message}"
+    raise ClientConfigurationError, "runner CA file could not be loaded: #{error.message}"
   end
 
   def perform(request, read_timeout: 10)

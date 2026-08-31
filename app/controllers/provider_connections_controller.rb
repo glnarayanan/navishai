@@ -162,6 +162,8 @@ class ProviderConnectionsController < ApplicationController
         "The provider service did not confirm the change. Check connection status before trying again."
       when RunnerClient::AuthenticationError, RunnerClient::PolicyDenied
         "This provider change was refused. Check your workspace access and try again."
+      when RunnerClient::ClientConfigurationError
+        "The provider service is not configured. Start the runner, then try again."
       when RunnerClient::ConfigurationError, RunnerClient::Conflict
         "Check the provider, sign-in method, model, and credentials, then try again."
       else

@@ -51,6 +51,17 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", "Add a provider"
   end
 
+  test "runner setup failures do not blame provider credentials" do
+    sign_in_as users(:owner)
+
+    with_gateway(-> { raise RunnerClient::ClientConfigurationError, "runner shared secret must contain at least 32 bytes" }) do
+      get new_workspace_provider_connection_path(@workspace)
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider service is not configured. Start the runner, then try again.", flash[:alert]
+  end
+
   test "an Owner configures a provider through the runner and never persists the key" do
     sign_in_as users(:owner)
 

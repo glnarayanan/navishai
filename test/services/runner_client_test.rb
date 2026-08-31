@@ -3,11 +3,11 @@ require "tempfile"
 
 class RunnerClientTest < ActiveSupport::TestCase
   test "rejects short secrets and cleartext non-loopback addresses" do
-    assert_raises(RunnerClient::ConfigurationError) { RunnerClient.new(secret: "short") }
-    assert_raises(RunnerClient::ConfigurationError) do
+    assert_raises(RunnerClient::ClientConfigurationError) { RunnerClient.new(secret: "short") }
+    assert_raises(RunnerClient::ClientConfigurationError) do
       RunnerClient.new(address: "http://runner.internal:8081", secret: "s" * 32)
     end
-    assert_raises(RunnerClient::ConfigurationError) do
+    assert_raises(RunnerClient::ClientConfigurationError) do
       RunnerClient.new(address: "http://127.0.0.1:8081", secret: "s" * 32, ca_file: "/tmp/runner-ca.pem")
     end
   end
@@ -35,7 +35,7 @@ class RunnerClientTest < ActiveSupport::TestCase
   end
 
   test "fails closed when a custom runner CA cannot be loaded" do
-    assert_raises(RunnerClient::ConfigurationError) do
+    assert_raises(RunnerClient::ClientConfigurationError) do
       RunnerClient.new(address: "https://runner:8081", secret: "s" * 32, ca_file: "/missing/runner-ca.pem")
     end
   end

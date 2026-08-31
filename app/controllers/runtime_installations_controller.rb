@@ -78,11 +78,15 @@ class RuntimeInstallationsController < ApplicationController
       @standalone_installations = @installations.reject do |installation|
         catalog_keys.include?(installation.adapter_key) || installation.health_status == "missing"
       end
-    rescue RunnerClient::Error
+    rescue RunnerClient::Error => error
       @provider_catalog = []
       @configured_providers = []
       @standalone_installations = @installations.reject { |installation| installation.health_status == "missing" }
-      @provider_catalog_error = "Live provider settings are unavailable. Showing the last known connection state."
+      @provider_catalog_error = if error.is_a?(RunnerClient::ClientConfigurationError)
+        "The provider service is not configured. Start the runner to manage provider connections."
+      else
+        "Live provider settings are unavailable. Showing the last known connection state."
+      end
     end
 
     def installation_params

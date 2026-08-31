@@ -88,6 +88,22 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     ProviderConnectionGateway.define_singleton_method(:new, original) if original
   end
 
+  test "the provider page identifies missing runner configuration" do
+    sign_in_as users(:owner)
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) do
+      raise RunnerClient::ClientConfigurationError, "runner shared secret must contain at least 32 bytes"
+    end
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "[role='alert']", text: "The provider service is not configured. Start the runner to manage provider connections."
+    assert_not_includes response.body, "runner shared secret"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
   test "an Owner explicitly tests an installation and persists only safe evidence" do
     sign_in_as users(:owner)
     client = Object.new
