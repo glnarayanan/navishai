@@ -121,7 +121,18 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "no-cache", response.headers["Pragma"]
     assert_select "h1", "Edit Codex"
     assert_select "input[name='provider_connection[api_key]'][value='']"
+    assert_select "input[name='provider_connection[model]'][value=?]", "gpt-5.6"
+    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
+    assert_select "[data-provider-form-target='modelHint']", text: /this field is the authority/
+    assert_select "[data-provider-form-target='apiKeyHint']", text: /Leave this blank to keep it/
+    assert_select "[data-provider-form-target='modelRefresh'].button-compact", text: "Refresh models"
+    assert_select "[data-provider-form-target='modelState'][aria-live='polite']"
+    discovery = css_select("[data-provider-form-target='modelDiscovery']").sole
+    assert_equal models_workspace_provider_connections_path(@workspace), discovery["data-models-url"]
+    assert_equal "api_key", discovery["data-saved-auth-mode"]
+    assert_not_includes discovery.attributes.keys, "data-api-key"
     assert_includes response.body, "Leave this blank to keep it"
+    assert_includes response.body, "Save and continue to test"
     assert_not_includes response.body, "saved-provider-secret"
   end
 
@@ -135,9 +146,15 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "select[name='provider_connection[adapter_key]'] option", count: 1
     assert_select "select[name='provider_connection[adapter_key]'] option", text: "Claude"
+    assert_select "select[name='provider_connection[adapter_key]'] option[data-model-required='true'][data-secret-configured='false'][data-description=?]", "Connect Claude to this workspace."
     assert_select "h1", "Add a provider"
-    assert_select "input[type='submit'][value='Save provider settings']"
+    assert_select "input[type='submit'][value='Save and continue to test']"
+    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
+    assert_select "[data-provider-form-target='modelHint']", text: /this field is the authority/
+    assert_select "[data-provider-form-target='apiKeyHint']", text: /web app does not persist it/
     assert_select ".field-hint", text: /model ID/
+    assert_includes response.body, "Enter the exact model ID"
+    assert_not_includes response.body, "data-models-url"
   end
 
   test "runner setup failures do not blame provider credentials" do

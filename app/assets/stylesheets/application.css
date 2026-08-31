@@ -1786,6 +1786,38 @@ details,
   margin: 0;
 }
 
+.provider-model-discovery {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.provider-model-discovery-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.provider-model-discovery-heading h2,
+.provider-model-discovery-heading p,
+.provider-model-discovery-state,
+.provider-model-discovery .field-hint {
+  margin: 0;
+}
+
+.provider-model-discovery-heading h2 {
+  font-size: 1rem;
+}
+
+.provider-model-discovery-state {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
 .provider-form-actions {
   display: flex;
   align-items: center;
@@ -3932,7 +3964,8 @@ td {
   .provider-setup,
   .provider-setup-steps,
   .provider-test-action,
-  .provider-form-fields {
+  .provider-form-fields,
+  .provider-model-discovery-heading {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3940,7 +3973,8 @@ td {
   .provider-test-action .button,
   .runtime-heading .button,
   .runtime-policy-form > .button,
-  .provider-form-actions .button {
+  .provider-form-actions .button,
+  .provider-model-discovery-heading .button {
     width: 100%;
   }
 

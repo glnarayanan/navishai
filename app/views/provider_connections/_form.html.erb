@@ -1,6 +1,6 @@
 <% editing = provider.fetch("configured") %>
 <% selected_auth_mode = @submitted_auth_mode.presence || provider.fetch("auth_mode").presence || provider.fetch("auth_modes").first %>
-<% selected_model = @submitted_model.presence || provider.fetch("model") %>
+<% selected_model = @submitted_model.nil? ? provider.fetch("model") : @submitted_model %>
 <% form_url = editing ? workspace_provider_connection_path(Current.workspace, provider.fetch("adapter_key")) : workspace_provider_connections_path(Current.workspace) %>
 <% form_method = editing ? :patch : :post %>
 
@@ -38,18 +38,46 @@
     </div>
 
     <div>
-      <%= form.label :model, provider.fetch("model_required") ? "Model ID" : "Model override (optional)" %>
+      <%= form.label :model, provider.fetch("model_required") ? "Model ID" : "Model override (optional)",
+        data: { provider_form_target: "modelLabel" } %>
       <%= form.text_field :model, value: selected_model, autocomplete: "off",
         required: provider.fetch("model_required"), data: { provider_form_target: "model" },
         aria: { describedby: "provider-model-hint" } %>
-      <p class="field-hint" id="provider-model-hint">
+      <p class="field-hint" id="provider-model-hint" data-provider-form-target="modelHint">
         <% if provider.fetch("model_required") %>
-          Enter the exact model ID enabled for this account. This adapter does not expose a model list to NavishAI.
+          Enter the exact model ID enabled for this account. Model suggestions below are guidance only; this field is the authority.
         <% else %>
-          Leave blank to use the provider default. Enter a model ID only to override it; this adapter does not expose a model list to NavishAI.
+          Leave blank to use the provider default. Enter an exact model ID only to override it; this field remains the authority.
         <% end %>
       </p>
     </div>
+
+    <% if editing %>
+      <section class="provider-model-discovery" data-provider-form-target="modelDiscovery"
+        data-models-url="<%= models_workspace_provider_connections_path(Current.workspace) %>"
+        data-saved-auth-mode="<%= provider.fetch("auth_mode") %>"
+        aria-labelledby="provider-model-discovery-heading">
+        <div class="provider-model-discovery-heading">
+          <div>
+            <h2 id="provider-model-discovery-heading">Available models</h2>
+            <p class="field-hint">Live guidance from this provider. Keep the exact Model ID field above as the final authority.</p>
+          </div>
+          <button type="button" class="button button-secondary button-compact" data-provider-form-target="modelRefresh"
+            data-action="click->provider-form#refreshModels">Refresh models</button>
+        </div>
+        <p class="provider-model-discovery-state" data-provider-form-target="modelState" aria-live="polite" aria-atomic="true">
+          Model suggestions load here when available.
+        </p>
+        <div hidden data-provider-form-target="modelSelectField">
+          <label for="provider-discovered-model">Detected model</label>
+          <select id="provider-discovered-model" data-provider-form-target="discoveredModels"
+            data-action="change->provider-form#modelDiscovered">
+            <option value="">Choose a model to copy its exact ID</option>
+          </select>
+          <p class="field-hint">Selecting a model copies its exact ID into the Model ID field. It does not change the saved value until you save.</p>
+        </div>
+      </section>
+    <% end %>
 
     <div class="field-wide" data-provider-form-target="apiKeyField">
       <%= form.label :api_key, "API key" %>
@@ -57,13 +85,13 @@
         required: selected_auth_mode == "api_key" && !provider.fetch("secret_configured"),
         data: { provider_form_target: "apiKey", secret_configured: provider.fetch("secret_configured").to_s },
         aria: { describedby: "provider-api-key-hint" } %>
-      <p class="field-hint" id="provider-api-key-hint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "The key is relayed securely to your self-hosted provider vault. The web app does not persist it." %></p>
+      <p class="field-hint" id="provider-api-key-hint" data-provider-form-target="apiKeyHint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "The key is relayed securely to your self-hosted provider vault. The web app does not persist it." %></p>
     </div>
   </div>
 
   <div class="provider-form-actions">
-    <p>Saving stores these settings. The provider is connected only after its current runtime passes a connection test.</p>
+    <p>Save and continue to test this provider. Saving stores these settings; the provider is connected only after its current runtime passes a connection test.</p>
     <%= link_to "Cancel", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary" %>
-    <%= form.submit "Save provider settings", class: "button button-primary" %>
+    <%= form.submit "Save and continue to test", class: "button button-primary" %>
   </div>
 <% end %>
