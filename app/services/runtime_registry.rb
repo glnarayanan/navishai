@@ -13,6 +13,10 @@ class RuntimeRegistry
     new(workspace:, membership:).test!(installation:, client:)
   end
 
+  def self.invalidate_adapter!(workspace:, membership:, adapter_key:)
+    new(workspace:, membership:).invalidate_adapter!(adapter_key:)
+  end
+
   def initialize(workspace:, membership:)
     @workspace = workspace
     @membership = workspace.memberships.find(membership.id)
@@ -112,6 +116,19 @@ class RuntimeRegistry
     record
   rescue ActiveRecord::RecordInvalid, KeyError, ArgumentError => error
     raise InvalidPolicy, error.message
+  end
+
+  def invalidate_adapter!(adapter_key:)
+    RuntimeInstallation.transaction do
+      lock_workspace!
+      @workspace.runtime_installations.where(adapter_key:).lock.find_each do |installation|
+        audit_revoke!(installation) if installation.approved?
+        reset_runtime_test!(installation)
+        installation.save!
+      end
+    end
+  rescue ActiveRecord::RecordInvalid => error
+    raise InvalidPolicy, error.record.errors.full_messages.to_sentence
   end
 
   private

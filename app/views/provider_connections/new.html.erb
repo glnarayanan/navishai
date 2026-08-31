@@ -1,0 +1,21 @@
+<% content_for :title, "Add AI provider · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell provider-form-shell page-family-config">
+  <%= link_to "← AI providers", workspace_runtime_installations_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">AI providers</p>
+      <h1>Add a provider</h1>
+      <p>Choose how this workspace connects, then test it before granting access to customer data.</p>
+    </div>
+  </div>
+
+  <% if @provider %>
+    <%= render "form", provider: @provider %>
+  <% else %>
+    <section class="empty-state provider-empty">
+      <h2>Provider options are temporarily unavailable</h2>
+      <p>Try again in a moment or check System health.</p>
+    </section>
+  <% end %>
+</main>

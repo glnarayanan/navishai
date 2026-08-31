@@ -32,6 +32,11 @@ class SecurityBaselineTest < ActionDispatch::IntegrationTest
       password_confirmation: "password-value",
       bootstrap_token: "bootstrap-value",
       deployment_token: "deployment-value",
+      api_key: "provider-key",
+      credential_value: "credential-value",
+      authorization_code: "authorization-code",
+      device_code: "device-code",
+      provider_credential: "provider-credential",
       email_address: "owner@example.com",
       public_web_query: "owner@example.com token=secret",
       safe_role: "manager"
@@ -43,6 +48,11 @@ class SecurityBaselineTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filtered[:password_confirmation]
     assert_equal "[FILTERED]", filtered[:bootstrap_token]
     assert_equal "[FILTERED]", filtered[:deployment_token]
+    assert_equal "[FILTERED]", filtered[:api_key]
+    assert_equal "[FILTERED]", filtered[:credential_value]
+    assert_equal "[FILTERED]", filtered[:authorization_code]
+    assert_equal "[FILTERED]", filtered[:device_code]
+    assert_equal "[FILTERED]", filtered[:provider_credential]
     assert_equal "[FILTERED]", filtered[:email_address]
     assert_equal "[FILTERED]", filtered[:public_web_query]
     assert_equal "manager", filtered[:safe_role]

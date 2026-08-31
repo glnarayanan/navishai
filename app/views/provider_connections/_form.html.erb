@@ -1,0 +1,62 @@
+<% editing = provider.fetch("configured") %>
+<% selected_auth_mode = @submitted_auth_mode.presence || provider.fetch("auth_mode").presence || provider.fetch("auth_modes").first %>
+<% selected_model = @submitted_model.presence || provider.fetch("model") %>
+<% form_url = editing ? workspace_provider_connection_path(Current.workspace, provider.fetch("adapter_key")) : workspace_provider_connections_path(Current.workspace) %>
+<% form_method = editing ? :patch : :post %>
+
+<%= form_with url: form_url, method: form_method, scope: :provider_connection,
+  class: "provider-connection-form", data: { controller: "provider-form" } do |form| %>
+  <% if @provider_form_error %>
+    <p class="inline-error" role="alert"><%= @provider_form_error %></p>
+  <% end %>
+
+  <div class="provider-form-fields">
+    <div class="field-wide">
+      <%= form.label :adapter_key, "Provider" %>
+      <% if editing %>
+        <%= form.hidden_field :adapter_key, value: provider.fetch("adapter_key") %>
+        <input type="text" value="<%= provider.fetch("name") %>" disabled aria-describedby="provider-description">
+      <% else %>
+        <%= form.select :adapter_key,
+          options_for_select(@provider_catalog.map { |item| [ item.fetch("name"), item.fetch("adapter_key"), {
+            "data-auth-modes" => item.fetch("auth_modes").join(","),
+            "data-model-required" => item.fetch("model_required").to_s,
+            "data-secret-configured" => item.fetch("secret_configured").to_s,
+            "data-description" => item.fetch("description")
+          } ] }, provider.fetch("adapter_key")), {},
+          data: { provider_form_target: "provider", action: "change->provider-form#providerChanged" },
+          aria: { describedby: "provider-description" } %>
+      <% end %>
+      <p class="field-hint" id="provider-description" data-provider-form-target="description"><%= provider.fetch("description") %></p>
+    </div>
+
+    <div>
+      <%= form.label :auth_mode, "Sign-in method" %>
+      <%= form.select :auth_mode,
+        options_for_select(provider.fetch("auth_modes").map { |mode| [ mode.humanize, mode ] }, selected_auth_mode), {},
+        data: { provider_form_target: "authMode", action: "change->provider-form#authChanged" } %>
+    </div>
+
+    <div>
+      <%= form.label :model, "Model" %>
+      <%= form.text_field :model, value: selected_model, autocomplete: "off",
+        required: provider.fetch("model_required"), data: { provider_form_target: "model" },
+        aria: { describedby: "provider-model-hint" } %>
+      <p class="field-hint" id="provider-model-hint">Use the exact model name enabled for this provider account.</p>
+    </div>
+
+    <div class="field-wide" data-provider-form-target="apiKeyField">
+      <%= form.label :api_key, "API key" %>
+      <%= form.password_field :api_key, value: "", autocomplete: "new-password",
+        required: selected_auth_mode == "api_key" && !provider.fetch("secret_configured"),
+        data: { provider_form_target: "apiKey", secret_configured: provider.fetch("secret_configured").to_s },
+        aria: { describedby: "provider-api-key-hint" } %>
+      <p class="field-hint" id="provider-api-key-hint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "The key is relayed securely to your self-hosted provider vault. The web app does not persist it." %></p>
+    </div>
+  </div>
+
+  <div class="provider-form-actions">
+    <%= link_to "Cancel", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary" %>
+    <%= form.submit editing ? "Save connection" : "Connect provider", class: "button button-primary" %>
+  </div>
+<% end %>

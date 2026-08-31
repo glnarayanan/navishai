@@ -1546,6 +1546,28 @@ details,
   margin-top: 2rem;
 }
 
+.provider-key-note {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem 0.75rem;
+  margin-top: 1.5rem;
+  padding-block: 0.875rem;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.provider-key-note strong {
+  flex: none;
+  color: var(--ink);
+}
+
+.provider-empty {
+  max-width: 44rem;
+  margin-top: 2rem;
+}
+
 .provider-setup {
   display: grid;
   grid-template-columns: minmax(14rem, 0.7fr) minmax(0, 1.3fr);
@@ -1625,6 +1647,10 @@ details,
   box-shadow: var(--shadow);
 }
 
+.runtime-list .runtime-installation {
+  box-shadow: none;
+}
+
 .runtime-installation code {
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1687,6 +1713,88 @@ details,
   gap: 1.5rem;
   padding-block: 1.25rem;
   border-block: 1px solid var(--line);
+}
+
+.provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.provider-actions form:last-of-type {
+  margin-left: auto;
+}
+
+.provider-remove-button {
+  color: var(--danger);
+}
+
+.provider-action-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.provider-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.provider-refresh > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.provider-refresh span {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.provider-form-shell {
+  max-width: 58rem;
+  padding-bottom: 5rem;
+}
+
+.provider-form-shell > .back-link {
+  display: inline-flex;
+  margin-bottom: 1.5rem;
+}
+
+.provider-connection-form {
+  display: grid;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.provider-form-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem 1rem;
+}
+
+.provider-form-fields > div {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+}
+
+.provider-form-fields .field-hint {
+  margin: 0;
+}
+
+.provider-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
 }
 
 .provider-test-action > div {
@@ -3817,15 +3925,39 @@ td {
 
   .provider-setup,
   .provider-setup-steps,
-  .provider-test-action {
+  .provider-test-action,
+  .provider-form-fields {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 
   .provider-test-action .button,
   .runtime-heading .button,
-  .runtime-policy-form > .button {
+  .runtime-policy-form > .button,
+  .provider-form-actions .button {
     width: 100%;
+  }
+
+  .provider-key-note,
+  .provider-refresh,
+  .provider-form-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .provider-actions {
+    display: grid;
+  }
+
+  .provider-actions .button,
+  .provider-actions form,
+  .provider-actions form .button,
+  .provider-refresh .button {
+    width: 100%;
+  }
+
+  .provider-actions form:last-of-type {
+    margin-left: 0;
   }
 
   .agent-policy-editor {

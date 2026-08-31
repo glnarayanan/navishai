@@ -1,0 +1,14 @@
+<% content_for :title, "Edit #{@provider.fetch("name")} · #{Current.workspace.name} — NavishAI" %>
+
+<main class="page-shell provider-form-shell page-family-config">
+  <%= link_to "← AI providers", workspace_runtime_installations_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">AI providers</p>
+      <h1>Edit <%= @provider.fetch("name") %></h1>
+      <p>Change the sign-in method or model, then test the updated connection.</p>
+    </div>
+  </div>
+
+  <%= render "form", provider: @provider %>
+</main>

@@ -14,7 +14,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     get workspace_runtime_installations_path(@workspace)
     assert_response :success
     assert_select "h1", "AI providers"
-    assert_select "code", "/opt/navishai/fixture"
+    assert_select "code", { text: "/opt/navishai/fixture", count: 0 }
     assert_select ".runtime-policy-form", count: 0
     assert_select "form[action='#{detect_workspace_runtime_installations_path(@workspace)}']", count: 0
 
@@ -64,6 +64,30 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a removed provider does not linger as a standalone connection" do
+    sign_in_as users(:owner)
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [
+        {
+          "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
+          "auth_modes" => [ "api_key" ], "model_required" => true, "configured" => false,
+          "secret_configured" => false, "auth_mode" => "", "model" => "", "health_status" => "not_configured",
+          "available" => true, "executable_version" => "fixture 2.4.1"
+        }
+      ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 0
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
   test "an Owner explicitly tests an installation and persists only safe evidence" do
     sign_in_as users(:owner)
     client = Object.new
@@ -88,6 +112,25 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "Provider connection test passed.", flash[:notice]
     assert_equal "passed", @installation.reload.runtime_test_status
     assert_equal({ "status" => "passed" }, AuditEvent.order(:id).last.metadata)
+  end
+
+  test "runner failures render customer-facing copy without internal details" do
+    sign_in_as users(:owner)
+    client = Object.new
+    client.define_singleton_method(:detect_runtimes!) do |workspace_key:|
+      raise RunnerClient::Unavailable, "dial tcp 10.0.0.4:8081: connection refused"
+    end
+    client.define_singleton_method(:catalog) { |workspace_key:| [] }
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+
+    post detect_workspace_runtime_installations_path(@workspace)
+
+    assert_response :service_unavailable
+    assert_select "[role='alert']", text: "The provider service is unavailable. Existing connections were not changed."
+    assert_not_includes response.body, "10.0.0.4"
+  ensure
+    RunnerClient.define_singleton_method(:new, original) if original
   end
 
   private

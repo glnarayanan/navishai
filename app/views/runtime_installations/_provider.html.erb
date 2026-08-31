@@ -1,0 +1,138 @@
+<% adapter_key = provider&.fetch("adapter_key") || installation.adapter_key %>
+<% provider_name = provider&.fetch("name") || adapter_key.humanize %>
+<% model = provider&.fetch("model").presence || installation&.effective_model.presence || "Not selected" %>
+<% current_test_passed = installation && installation.runtime_test_status == "passed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
+<% approval_disabled = !installation || installation.health_status != "available" || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
+<% ready = installation&.runnable? && current_test_passed %>
+<% status_text = if ready
+                   "Ready"
+                 elsif installation&.runtime_test_status == "failed"
+                   "Test failed"
+                 elsif installation&.health_status == "available"
+                   "Test needed"
+                 elsif provider&.fetch("configured")
+                   provider.fetch("health_status").humanize
+                 else
+                   installation&.health_status.to_s.humanize.presence || "Unavailable"
+                 end %>
+
+<section class="runtime-installation" id="runtime-<%= installation&.id || adapter_key %>" aria-labelledby="runtime-<%= installation&.id || adapter_key %>-title">
+  <div class="runtime-installation-heading">
+    <div>
+      <span class="eyebrow">Provider connection</span>
+      <h2 id="runtime-<%= installation&.id || adapter_key %>-title"><%= provider_name %></h2>
+      <p><%= model %></p>
+    </div>
+    <span class="status-badge <%= ready ? "status-success" : "status-neutral" %>"><%= status_text %></span>
+  </div>
+
+  <dl class="runtime-facts provider-facts">
+    <div>
+      <dt>Sign-in</dt>
+      <dd><%= provider&.fetch("auth_mode").to_s.humanize.presence || installation&.account_metadata&.fetch("authentication", nil).to_s.humanize.presence || "Existing provider account" %></dd>
+    </div>
+    <div><dt>Model</dt><dd><%= model %></dd></div>
+    <% if @can_configure %>
+      <div><dt>Provider version</dt><dd><%= provider&.fetch("executable_version").presence || installation&.executable_version.presence || "Not available" %></dd></div>
+    <% end %>
+    <div><dt>Connection test</dt><dd><%= installation&.runtime_tested_at ? time_tag(installation.runtime_tested_at, installation.runtime_tested_at.to_fs(:short)) : "Not run yet" %></dd></div>
+  </dl>
+
+  <% if installation&.incompatibility_reason.present? %>
+    <p class="runtime-status-note">This provider version is not supported by your installation.</p>
+  <% end %>
+
+  <% if installation&.runtime_test_status == "passed" %>
+    <%= render "shared/notice", kind: "success", title: "Connection test passed",
+      body: installation.runtime_test_usage_observed? ? "The selected model answered successfully. Provider usage was reported for this test." : "The selected model answered successfully." %>
+  <% elsif installation&.runtime_test_status == "failed" %>
+    <%= render "shared/notice", kind: "destructive", title: "Connection test failed",
+      body: "The provider could not answer the test. Check its credentials and model, then try again." %>
+  <% end %>
+
+  <% if @can_configure %>
+    <div class="provider-actions" aria-label="Actions for <%= provider_name %>">
+      <% if provider %>
+        <%= link_to "Edit connection", edit_workspace_provider_connection_path(Current.workspace, adapter_key), class: "button button-secondary button-compact" %>
+      <% end %>
+      <% if installation %>
+        <%= button_to installation.runtime_tested_at ? "Test again" : "Test connection",
+          test_workspace_runtime_installation_path(Current.workspace, installation),
+          class: "button button-secondary button-compact",
+          disabled: installation.health_status != "available" || installation.compatibility_status == "incompatible" %>
+      <% else %>
+        <span class="provider-action-note">Refresh status before testing this connection.</span>
+      <% end %>
+      <% if provider %>
+        <%= button_to "Remove provider", workspace_provider_connection_path(Current.workspace, adapter_key),
+          method: :delete, class: "button button-quiet button-compact provider-remove-button",
+          form: { data: { turbo_confirm: "Remove #{provider_name} from this workspace?" } } %>
+      <% end %>
+    </div>
+
+    <% if installation %>
+      <%= form_with model: installation, url: workspace_runtime_installation_path(Current.workspace, installation),
+        method: :patch, class: "runtime-policy-form" do |form| %>
+        <label class="runtime-approval-toggle">
+          <%= form.check_box :approved, disabled: approval_disabled %>
+          <span>
+            <strong>Allow this provider in the workspace</strong>
+            <small><%= current_test_passed ? "The current connection passed its test." : "Run a successful connection test before allowing access." %></small>
+          </span>
+        </label>
+
+        <details class="provider-advanced-settings">
+          <summary>Workspace access</summary>
+          <p>Choose which specialist roles, actions, and customer data this provider may receive.</p>
+          <div class="runtime-policy-groups">
+            <fieldset>
+              <legend>Roles</legend>
+              <% AgentPolicy::ROLE_DEFINITIONS.each do |key, definition| %>
+                <label><%= check_box_tag "runtime_installation[allowed_role_keys][]", key, installation.allowed_role_keys.include?(key), id: "runtime_#{installation.id}_role_#{key}" %><span><%= CrewConfiguration::CREWS.fetch(definition.fetch(:crew_kind)) %> · <%= definition.fetch(:name) %></span></label>
+              <% end %>
+            </fieldset>
+            <fieldset>
+              <legend>Allowed actions</legend>
+              <% AgentPolicy::TOOLS.each do |key, label| %>
+                <label><%= check_box_tag "runtime_installation[allowed_tools][]", key, installation.allowed_tools.include?(key), id: "runtime_#{installation.id}_tool_#{key}" %><span><%= label %></span></label>
+              <% end %>
+            </fieldset>
+            <fieldset>
+              <legend>Customer data</legend>
+              <% RuntimeInstallation::DATA_CLASSES.each do |key, label| %>
+                <label><%= check_box_tag "runtime_installation[allowed_data_classes][]", key, installation.allowed_data_classes.include?(key), id: "runtime_#{installation.id}_data_#{key}" %><span><%= label %></span></label>
+              <% end %>
+            </fieldset>
+          </div>
+
+          <% installation.profile_keys.each do |profile_key| %>
+            <%= hidden_field_tag "runtime_installation[profile_keys][]", profile_key %>
+          <% end %>
+          <%= form.hidden_field :max_timeout_seconds %>
+          <%= form.hidden_field :max_steps %>
+          <%= form.hidden_field :max_tool_calls %>
+          <%= form.hidden_field :max_input_units %>
+          <%= form.hidden_field :max_output_units %>
+        </details>
+        <%= form.submit "Save workspace access", class: "button button-secondary button-compact" %>
+      <% end %>
+    <% end %>
+  <% else %>
+    <p class="runtime-readonly-policy">
+      <strong>Workspace access</strong>
+      <span><%= pluralize(installation&.allowed_role_keys.to_a.size, "role") %> · <%= pluralize(installation&.allowed_tools.to_a.size, "action") %> · <%= pluralize(installation&.allowed_data_classes.to_a.size, "data class") %></span>
+    </p>
+  <% end %>
+
+  <% if installation && @can_configure %>
+    <details class="provider-technical-details">
+      <summary>Technical details</summary>
+      <dl class="runtime-facts">
+        <div><dt>Executable</dt><dd><code><%= installation.executable_path %></code></dd></div>
+        <div><dt>Compatibility</dt><dd><%= installation.compatibility_status.humanize %></dd></div>
+        <div><dt>Last checked</dt><dd><%= time_tag installation.checked_at, installation.checked_at.to_fs(:short) %></dd></div>
+        <div><dt>Capabilities</dt><dd><%= installation.capabilities.map(&:humanize).join(", ").presence || "None reported" %></dd></div>
+      </dl>
+    </details>
+  <% end %>
+</section>

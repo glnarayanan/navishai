@@ -2,6 +2,43 @@ require "application_system_test_case"
 require "digest"
 
 class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
+  test "an Owner configures provider credentials in a responsive app form" do
+    catalog = [
+      provider_payload("codex", "Codex", %w[api_key subscription], "Use Codex for workspace tasks."),
+      provider_payload("claude", "Claude", %w[subscription], "Use the runner's existing Claude sign-in.")
+    ]
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) { |workspace_key:| catalog }
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    sign_in(users(:owner))
+    visit new_workspace_provider_connection_path(workspaces(:acme_support))
+
+    assert_selector "h1", text: "Add a provider"
+    assert_select "Provider", selected: "Codex"
+    assert_field "Sign-in method", with: "api_key"
+    assert_field "Model"
+    assert_field "API key", type: "password"
+    select "Claude", from: "Provider"
+    assert_field "Sign-in method", with: "subscription"
+    assert_no_field "API key", visible: true
+    select "Codex", from: "Provider"
+    select "API key", from: "Sign-in method"
+    fill_in "Model", with: "gpt-5.6"
+    fill_in "API key", with: "one-time-provider-key"
+    assert_button "Connect provider"
+    assert_no_text "/etc/navishai"
+    save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-desktop.png") if ENV["CAPTURE_RUNTIMES"]
+
+    page.current_window.resize_to(320, 844)
+    assert_no_horizontal_overflow
+    assert_operator find_button("Connect provider").rect.height, :>=, 48
+    save_screenshot Rails.root.join(".amp/in/artifacts/provider-connection-mobile.png") if ENV["CAPTURE_RUNTIMES"]
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
   test "an Owner reviews and approves a runtime policy on desktop and mobile" do
     workspace = workspaces(:acme_support)
     installation = workspace.runtime_installations.create!(
@@ -27,8 +64,9 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     visit workspace_runtime_installations_path(workspace)
 
     assert_text "AI providers"
-    assert_text "Provider sign-in stays on your runner"
-    assert_selector ".provider-setup", text: "/etc/navishai/execution.json", visible: :all
+    assert_text "API keys stay private"
+    assert_link "Add provider"
+    assert_no_text "/etc/navishai/execution.json"
     assert_text "fixture-model"
     within "#runtime-#{untested.id}" do
       assert_field "Allow this provider in the workspace", disabled: true
@@ -44,11 +82,13 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
       assert_no_field "Timeout cap (seconds)"
       assert_no_field "Step cap"
       assert_no_field "Input-unit cap"
-      click_button "Save provider access"
+      click_button "Save workspace access"
     end
 
     assert_text "Provider access saved."
-    assert_text "Approved"
+    within "#runtime-#{installation.id}" do
+      assert_text "Ready"
+    end
     assert installation.reload.runnable?
     assert_equal %w[workspace_default], installation.profile_keys
     assert_equal original_limits, installation.slice(*original_limits.keys)
@@ -69,12 +109,22 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     assert_operator runtimes_link.rect.height, :>=, 48
     find("body").send_keys(:escape)
     within "#runtime-#{installation.id}" do
-      assert_operator find_button("Save provider access").rect.height, :>=, 48
+      assert_operator find_button("Save workspace access").rect.height, :>=, 48
     end
     save_screenshot Rails.root.join(".amp/in/artifacts/runtime-approvals-mobile.png") if ENV["CAPTURE_RUNTIMES"]
   end
 
   private
+    def provider_payload(adapter_key, name, auth_modes, description)
+      {
+        "adapter_key" => adapter_key, "name" => name, "description" => description,
+        "auth_modes" => auth_modes, "model_required" => true, "configured" => false,
+        "secret_configured" => false, "auth_mode" => "", "model" => "",
+        "health_status" => "not_configured", "available" => true,
+        "executable_version" => "#{adapter_key} 1.0.0"
+      }
+    end
+
     def sign_in(user)
       visit new_session_path
       fill_in "Email address", with: user.email_address

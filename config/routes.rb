@@ -55,6 +55,8 @@ Rails.application.routes.draw do
       post :detect, on: :collection
       post :test, on: :member
     end
+    resources :provider_connections, path: "provider-connections", param: :adapter_key,
+      only: %i[ new create edit update destroy ]
     resource :usage_rates, path: "usage-rates", only: %i[ show create ], controller: "usage_rates" do
       post :rollback
     end

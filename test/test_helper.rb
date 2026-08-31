@@ -36,6 +36,15 @@ module ActiveSupport
       installation
     end
 
+    def provider_purge_gateway(calls: nil)
+      Object.new.tap do |gateway|
+        gateway.define_singleton_method(:purge_workspace) do |workspace_key:|
+          calls << workspace_key if calls
+          true
+        end
+      end
+    end
+
     def create_governed_policy_canary(workspace:, membership:, support_case: nil)
       approve_scripted_runtime(workspace:, membership:)
       ResolutionContractConfiguration.install_defaults!(workspace:)

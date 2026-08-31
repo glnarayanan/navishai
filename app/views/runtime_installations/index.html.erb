@@ -4,181 +4,52 @@
   <div class="page-heading runtime-heading">
     <div>
       <h1>AI providers</h1>
-      <p>Connect a provider on your runner, test the connection, and choose what this workspace may use.</p>
+      <p>Connect, test, and control the AI services this workspace can use.</p>
     </div>
     <% if @can_configure %>
-      <%= button_to "Find providers", detect_workspace_runtime_installations_path(Current.workspace),
-        class: "button button-primary button-compact" %>
+      <%= link_to "Add provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-primary button-compact" %>
     <% end %>
   </div>
 
-  <%= render "shared/notice", kind: "info", css: "runtime-safety-note", title: "Provider sign-in stays on your runner",
-    body: "NavishAI never asks for or stores the provider login token. It keeps only the provider, selected model, connection status, and workspace access settings." %>
+  <aside class="provider-key-note" role="note">
+    <strong>API keys stay private.</strong>
+    <span>Keys are encrypted in your self-hosted provider vault and are never shown again.</span>
+  </aside>
 
-  <section class="provider-setup" aria-labelledby="provider-setup-title">
-    <div>
-      <p class="eyebrow">First-time setup</p>
-      <h2 id="provider-setup-title">Connect an AI provider</h2>
-      <p>Use a supported subscription account for Codex, Claude, Grok, or Cursor. Provider credentials remain on the deployment runner.</p>
-    </div>
-    <ol class="provider-setup-steps">
-      <li><span>1</span><p><strong>Install and sign in</strong><small>Install the supported provider CLI on the runner host and complete its normal subscription sign-in.</small></p></li>
-      <li><span>2</span><p><strong>Choose the model</strong><small>Copy <code>ops/runner/execution.example.json</code> to <code>/etc/navishai/execution.json</code>, then enable the provider and set its model.</small></p></li>
-      <li><span>3</span><p><strong>Find and test it here</strong><small>Find providers, run a connection test, then approve the workspace access it needs.</small></p></li>
-    </ol>
-    <details class="provider-setup-help">
-      <summary>Runner setup details</summary>
-      <p>For Compose, set <code>NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH=/etc/navishai/execution.json</code>. For native Linux, set <code>NAVISHAI_RUNNER_EXECUTION_CONFIG=/etc/navishai/execution.json</code>. Keep the provider executable and signed-in account on the runner host, then restart the runner before finding providers.</p>
-    </details>
-  </section>
-
-  <section class="route-status" aria-label="AI provider status">
-    <dl>
-      <div><dt>Providers found</dt><dd><%= @installations.size %></dd></div>
-      <div><dt>Approved</dt><dd><%= @installations.count(&:runnable?) %></dd></div>
-      <div><dt>Last checked</dt><dd><%= @installations.filter_map(&:checked_at).max&.then { |at| time_tag at, at.to_fs(:short) } || "Not checked yet" %></dd></div>
-      <div><dt>Your access</dt><dd><%= @can_configure ? "Can connect and configure" : "Read-only" %></dd></div>
-    </dl>
-  </section>
-
+  <% if @provider_catalog_error %>
+    <p class="inline-error" role="alert"><%= @provider_catalog_error %></p>
+  <% end %>
   <% if @runtime_error %>
     <p class="inline-error" role="alert"><%= @runtime_error %></p>
   <% end %>
 
-  <% if @installations.empty? %>
-    <section class="empty-state runtime-empty">
-      <h2>No AI providers found</h2>
-      <p>Complete the runner setup above, then find providers again. If you cannot change settings, ask a workspace Owner or Admin.</p>
+  <% if @configured_providers.empty? && @standalone_installations.empty? %>
+    <section class="empty-state provider-empty">
+      <h2>No providers connected</h2>
+      <p>Add a provider, choose its sign-in method and model, then run a connection test.</p>
       <% if @can_configure %>
-        <%= button_to "Check provider setup", detect_workspace_runtime_installations_path(Current.workspace),
-          class: "button button-secondary button-compact" %>
+        <%= link_to "Add your first provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-secondary button-compact" %>
       <% end %>
     </section>
   <% else %>
-    <div class="runtime-list">
-      <% @installations.each do |installation| %>
-        <section class="runtime-installation" id="runtime-<%= installation.id %>" aria-labelledby="runtime-<%= installation.id %>-title">
-          <div class="runtime-installation-heading">
-            <div>
-              <span class="eyebrow">AI provider</span>
-              <h2 id="runtime-<%= installation.id %>-title"><%= installation.adapter_key.humanize %></h2>
-              <p><%= installation.effective_model %></p>
-            </div>
-            <% current_test_passed = installation.runtime_test_status == "passed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
-            <% approval_disabled = installation.health_status != "available" || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
-            <% ready = installation.runnable? && current_test_passed %>
-            <span class="status-badge <%= ready ? "status-success" : "status-neutral" %>">
-              <%= if ready
-                    "Ready"
-                  elsif installation.runtime_test_status == "failed"
-                    "Test failed"
-                  elsif installation.runtime_test_status == "untested" && installation.health_status == "available"
-                    "Test needed"
-                  else
-                    installation.health_status.humanize
-                  end %>
-            </span>
-          </div>
-
-          <dl class="runtime-facts">
-            <div><dt>Provider version</dt><dd><%= installation.executable_version %></dd></div>
-            <div><dt>Selected model</dt><dd><%= installation.effective_model %></dd></div>
-            <div><dt>Connection test</dt><dd><%= installation.runtime_tested_at ? time_tag(installation.runtime_tested_at, installation.runtime_tested_at.to_fs(:short)) : "Not run yet" %></dd></div>
-            <div><dt>Last detected</dt><dd><%= time_tag installation.checked_at, installation.checked_at.to_fs(:short) %></dd></div>
-          </dl>
-
-          <% if installation.incompatibility_reason.present? %>
-            <p class="runtime-status-note"><%= installation.incompatibility_reason %></p>
-          <% end %>
-          <div class="runtime-metadata provider-account-summary">
-            <div>
-              <h3>Provider account</h3>
-              <% installation.account_metadata.each do |key, value| %>
-                <span><%= key.humanize %>: <strong><%= value.humanize %></strong></span>
-              <% end %>
-            </div>
-          </div>
-
-          <% if installation.runtime_test_status == "passed" %>
-            <%= render "shared/notice", kind: "success", title: "Connection test passed",
-              body: installation.runtime_test_usage_observed? ? "The selected model answered through the runner. Provider usage was reported for this test." : "The selected model answered through the runner." %>
-          <% elsif installation.runtime_test_status == "failed" %>
-            <%= render "shared/notice", kind: "destructive", title: "Connection test failed",
-              body: "The runner returned #{installation.runtime_test_failure_code.to_s.humanize.downcase}. Check the provider sign-in and runner configuration, then test again." %>
-          <% end %>
-
-          <% if @can_configure %>
-            <div class="provider-test-action">
-              <div>
-                <h3>Test this connection</h3>
-                <p>Sends a short test with no customer content through the selected provider. It may use a small amount of subscription quota.</p>
-              </div>
-              <%= button_to installation.runtime_tested_at ? "Test again" : "Test connection",
-                test_workspace_runtime_installation_path(Current.workspace, installation),
-                class: "button button-secondary button-compact",
-                disabled: installation.health_status != "available" || installation.compatibility_status == "incompatible" %>
-            </div>
-
-            <%= form_with model: installation, url: workspace_runtime_installation_path(Current.workspace, installation),
-              method: :patch, class: "runtime-policy-form" do |form| %>
-              <label class="runtime-approval-toggle">
-                <%= form.check_box :approved, disabled: approval_disabled %>
-                <span><strong>Allow this provider in the workspace</strong><small><%= current_test_passed ? "The current provider configuration passed its connection test." : "Run a successful connection test before allowing access." %></small></span>
-              </label>
-
-              <details class="provider-advanced-settings">
-                <summary>Workspace access</summary>
-                <p>Choose which specialist roles, actions, and customer data this provider may receive. These settings do not change the provider account itself.</p>
-              <div class="runtime-policy-groups">
-                <fieldset>
-                  <legend>Roles</legend>
-                  <% AgentPolicy::ROLE_DEFINITIONS.each do |key, definition| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_role_keys][]", key, installation.allowed_role_keys.include?(key), id: "runtime_#{installation.id}_role_#{key}" %><span><%= CrewConfiguration::CREWS.fetch(definition.fetch(:crew_kind)) %> · <%= definition.fetch(:name) %></span></label>
-                  <% end %>
-                </fieldset>
-                <fieldset>
-                  <legend>Allowed actions</legend>
-                  <% AgentPolicy::TOOLS.each do |key, label| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_tools][]", key, installation.allowed_tools.include?(key), id: "runtime_#{installation.id}_tool_#{key}" %><span><%= label %></span></label>
-                  <% end %>
-                </fieldset>
-                <fieldset>
-                  <legend>Customer data</legend>
-                  <% RuntimeInstallation::DATA_CLASSES.each do |key, label| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_data_classes][]", key, installation.allowed_data_classes.include?(key), id: "runtime_#{installation.id}_data_#{key}" %><span><%= label %></span></label>
-                  <% end %>
-                </fieldset>
-              </div>
-
-              <% installation.profile_keys.each do |profile_key| %>
-                <%= hidden_field_tag "runtime_installation[profile_keys][]", profile_key %>
-              <% end %>
-              <%= form.hidden_field :max_timeout_seconds %>
-              <%= form.hidden_field :max_steps %>
-              <%= form.hidden_field :max_tool_calls %>
-              <%= form.hidden_field :max_input_units %>
-              <%= form.hidden_field :max_output_units %>
-              </details>
-              <%= form.submit "Save provider access", class: "button button-primary button-compact" %>
-            <% end %>
-          <% else %>
-            <p class="runtime-readonly-policy">
-              <strong>Workspace access</strong>
-              <span><%= pluralize(installation.allowed_role_keys.size, "role") %> · <%= pluralize(installation.allowed_tools.size, "tool") %> · <%= pluralize(installation.allowed_data_classes.size, "data class") %></span>
-            </p>
-          <% end %>
-
-          <details class="provider-technical-details">
-            <summary>Technical details</summary>
-            <dl class="runtime-facts">
-              <div><dt>Executable</dt><dd><code><%= installation.executable_path %></code></dd></div>
-              <div><dt>Compatibility</dt><dd><%= installation.compatibility_status.humanize %></dd></div>
-              <div><dt>Maintained range</dt><dd><%= [installation.minimum_version.presence, installation.maximum_version.presence].compact.join(" – ").presence || "Not reported" %></dd></div>
-              <div><dt>Capabilities</dt><dd><%= installation.capabilities.map(&:humanize).join(", ").presence || "None reported" %></dd></div>
-            </dl>
-          </details>
-        </section>
+    <div class="runtime-list" aria-label="Provider connections">
+      <% @configured_providers.each do |provider| %>
+        <%= render "provider", provider:, installation: @installations.find { |item| item.adapter_key == provider.fetch("adapter_key") } %>
       <% end %>
+      <% @standalone_installations.each do |installation| %>
+        <%= render "provider", provider: nil, installation: %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if @can_configure && (@configured_providers.any? || @standalone_installations.any?) %>
+    <div class="provider-refresh">
+      <div>
+        <strong>Provider status</strong>
+        <span>Refresh after credentials, model, or provider service changes.</span>
+      </div>
+      <%= button_to "Refresh status", detect_workspace_runtime_installations_path(Current.workspace),
+        class: "button button-secondary button-compact" %>
     </div>
   <% end %>
 </main>

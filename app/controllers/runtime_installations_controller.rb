@@ -14,7 +14,7 @@ class RuntimeInstallationsController < ApplicationController
     )
     redirect_to workspace_runtime_installations_path(Current.workspace), notice: "Provider check finished."
   rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
-    @runtime_error = error.message
+    @runtime_error = user_facing_runtime_error(error, action: :refresh)
     load_installations
     render :index, status: :service_unavailable
   end
@@ -30,7 +30,7 @@ class RuntimeInstallationsController < ApplicationController
     message = installation.reload.approved? ? "Provider access saved." : "Provider access removed."
     redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), notice: message
   rescue RuntimeRegistry::InvalidPolicy => error
-    @runtime_error = error.message
+    @runtime_error = user_facing_runtime_error(error, action: :access)
     @editing_installation_id = params[:id].to_i
     load_installations
     render :index, status: :unprocessable_content
@@ -47,11 +47,11 @@ class RuntimeInstallationsController < ApplicationController
     message = if installation.runtime_test_status == "passed"
       "Provider connection test passed."
     else
-      "Provider connection test failed: #{installation.runtime_test_failure_code}."
+      "Provider connection test failed. Check the credentials and model, then try again."
     end
     redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), notice: message
   rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
-    @runtime_error = error.message
+    @runtime_error = user_facing_runtime_error(error, action: :test)
     load_installations
     render :index, status: :service_unavailable
   end
@@ -68,6 +68,21 @@ class RuntimeInstallationsController < ApplicationController
       workspace = Current.require_workspace!
       @installations = workspace.runtime_installations.includes(:approved_by_user).ordered
       @can_configure = Current.require_membership!.can_configure_agents?
+      load_provider_catalog(workspace)
+    end
+
+    def load_provider_catalog(workspace)
+      @provider_catalog = ProviderConnectionGateway.new.catalog(workspace_key: workspace.runner_key)
+      @configured_providers = @provider_catalog.select { |provider| provider.fetch("configured") }
+      catalog_keys = @provider_catalog.map { |provider| provider.fetch("adapter_key") }
+      @standalone_installations = @installations.reject do |installation|
+        catalog_keys.include?(installation.adapter_key) || installation.health_status == "missing"
+      end
+    rescue RunnerClient::Error
+      @provider_catalog = []
+      @configured_providers = []
+      @standalone_installations = @installations.reject { |installation| installation.health_status == "missing" }
+      @provider_catalog_error = "Live provider settings are unavailable. Showing the last known connection state."
     end
 
     def installation_params
@@ -75,5 +90,18 @@ class RuntimeInstallationsController < ApplicationController
         :approved, :max_timeout_seconds, :max_steps, :max_tool_calls, :max_input_units, :max_output_units,
         { allowed_role_keys: [], allowed_tools: [], allowed_data_classes: [], profile_keys: [] }
       ])
+    end
+
+    def user_facing_runtime_error(error, action:)
+      return "The provider service is unavailable. Existing connections were not changed." if error.is_a?(RunnerClient::Unavailable)
+
+      case action
+      when :access
+        "Workspace access could not be saved. Review the selected roles, actions, and customer data, then try again."
+      when :test
+        "The connection test could not be completed. Existing provider settings were not changed."
+      else
+        "Provider status could not be refreshed. Existing connections were not changed."
+      end
     end
 end

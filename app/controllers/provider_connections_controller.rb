@@ -1,0 +1,171 @@
+class ProviderConnectionsController < ApplicationController
+  include WorkspaceAuthorization
+
+  SAFE_FORM_ERRORS = [
+    "Choose a supported sign-in method.",
+    "Enter the model this provider should use.",
+    "Enter an API key."
+  ].freeze
+
+  before_action :require_workspace
+  before_action :require_provider_admin
+  before_action :prevent_credential_caching
+
+  def new
+    load_new_catalog
+    @provider = selected_provider || @provider_catalog.first
+  rescue RunnerClient::Error => error
+    redirect_to workspace_runtime_installations_path(Current.workspace), alert: user_facing_error(error)
+  end
+
+  def create
+    configure_provider
+  end
+
+  def edit
+    load_catalog
+    @provider = @provider_catalog.find { |provider| provider.fetch("adapter_key") == params[:adapter_key] }
+    raise ActiveRecord::RecordNotFound unless @provider&.fetch("configured")
+  rescue RunnerClient::Error => error
+    redirect_to workspace_runtime_installations_path(Current.workspace), alert: user_facing_error(error)
+  end
+
+  def update
+    configure_provider(adapter_key: params[:adapter_key])
+  end
+
+  def destroy
+    workspace = Current.require_workspace!
+    gateway = ProviderConnectionGateway.new
+    provider = gateway.remove(
+      workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key: params[:adapter_key]
+    )
+    record_provider_change!(workspace:, adapter_key: params[:adapter_key], action: "runtime.provider_removed")
+    return unless refresh_after_provider_change(workspace:, gateway:)
+
+    redirect_to workspace_runtime_installations_path(workspace), notice: "#{provider.fetch("name")} was removed."
+  rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
+    redirect_to workspace_runtime_installations_path(Current.workspace), alert: user_facing_error(error)
+  end
+
+  private
+    def configure_provider(adapter_key: nil)
+      workspace = Current.require_workspace!
+      attributes = provider_params
+      adapter_key ||= attributes.fetch(:adapter_key)
+      gateway = ProviderConnectionGateway.new
+      catalog = gateway.catalog(workspace_key: workspace.runner_key)
+      provider = catalog.find { |candidate| candidate.fetch("adapter_key") == adapter_key }
+      raise ActiveRecord::RecordNotFound unless provider
+
+      validate_selection!(provider, attributes:)
+      configured = gateway.configure(
+        workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key:,
+        auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
+        api_key: attributes.fetch(:api_key)
+      )
+      record_provider_change!(workspace:, adapter_key:, action: "runtime.provider_configured")
+      return unless refresh_after_provider_change(workspace:, gateway:)
+
+      redirect_to workspace_runtime_installations_path(workspace), notice: "#{configured.fetch("name")} settings were saved. Test the connection before allowing workspace access."
+    rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
+      render_configuration_error(error, adapter_key:)
+    rescue ProviderConnectionProtocol::MalformedMessage => error
+      render_configuration_error(RunnerClient::ConfigurationError.new(error.message), adapter_key:)
+    end
+
+    def render_configuration_error(error, adapter_key:)
+      @provider_form_error = user_facing_error(error)
+      action_name == "update" ? load_catalog : load_new_catalog
+      @provider = @provider_catalog.find { |candidate| candidate.fetch("adapter_key") == adapter_key } || selected_provider || @provider_catalog.first
+      @submitted_auth_mode = provider_params[:auth_mode]
+      @submitted_model = provider_params[:model]
+      render action_name == "update" ? :edit : :new, status: :unprocessable_content
+    rescue RunnerClient::Error
+      redirect_to workspace_runtime_installations_path(Current.workspace), alert: @provider_form_error
+    end
+
+    def refresh_runtime_installations(workspace:, gateway:)
+      RuntimeRegistry.refresh!(
+        workspace:, membership: Current.require_membership!, client: gateway
+      )
+    end
+
+    def record_provider_change!(workspace:, adapter_key:, action:)
+      RuntimeInstallation.transaction do
+        RuntimeRegistry.invalidate_adapter!(
+          workspace:, membership: Current.require_membership!, adapter_key:
+        )
+        audit_event(action, workspace:, subject: workspace)
+      end
+    end
+
+    def refresh_after_provider_change(workspace:, gateway:)
+      refresh_runtime_installations(workspace:, gateway:)
+      true
+    rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy
+      redirect_to workspace_runtime_installations_path(workspace),
+        alert: "The provider change was saved, but its status could not be refreshed. Refresh status again."
+      false
+    end
+
+    def load_catalog
+      @provider_catalog = ProviderConnectionGateway.new.catalog(workspace_key: Current.require_workspace!.runner_key)
+    end
+
+    def load_new_catalog
+      load_catalog
+      @provider_catalog = @provider_catalog.reject { |provider| provider.fetch("configured") }
+    end
+
+    def selected_provider
+      adapter_key = params.dig(:provider_connection, :adapter_key).presence || params[:adapter_key].presence
+      @provider_catalog.find { |provider| provider.fetch("adapter_key") == adapter_key }
+    end
+
+    def validate_selection!(provider, attributes:)
+      auth_mode = attributes.fetch(:auth_mode)
+      model = attributes.fetch(:model)
+      unless provider.fetch("auth_modes").include?(auth_mode)
+        raise RunnerClient::ConfigurationError, "Choose a supported sign-in method."
+      end
+      if provider.fetch("model_required") && model.blank?
+        raise RunnerClient::ConfigurationError, "Enter the model this provider should use."
+      end
+      if auth_mode == "api_key" && attributes.fetch(:api_key).blank? && !provider.fetch("secret_configured")
+        raise RunnerClient::ConfigurationError, "Enter an API key."
+      end
+    end
+
+    def provider_params
+      @provider_params ||= params.expect(provider_connection: %i[ adapter_key auth_mode model api_key ]).to_h.symbolize_keys
+    end
+
+    def require_provider_admin
+      return if Current.require_membership!.can_configure_agents?
+
+      head :forbidden
+    end
+
+    def prevent_credential_caching
+      response.headers["Cache-Control"] = "no-store"
+      response.headers["Pragma"] = "no-cache"
+    end
+
+    def user_facing_error(error)
+      return error.message if SAFE_FORM_ERRORS.include?(error.message)
+
+      case error
+      when RunnerClient::Unavailable
+        "The provider service is unavailable. Your existing connections were not changed."
+      when RunnerClient::AmbiguousResult
+        "The provider service did not confirm the change. Check connection status before trying again."
+      when RunnerClient::AuthenticationError, RunnerClient::PolicyDenied
+        "This provider change was refused. Check your workspace access and try again."
+      when RunnerClient::ConfigurationError, RunnerClient::Conflict
+        "Check the provider, sign-in method, model, and credentials, then try again."
+      else
+        "The provider change could not be completed. No credentials were saved in the web app."
+      end
+    end
+end

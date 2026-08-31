@@ -138,6 +138,8 @@ class AuditEvent < ApplicationRecord
     "runtime.installation_revoked" => {},
     "runtime.installation_tested" => { "status" => %w[passed failed] },
     "runtime.installations_checked" => { "detected_count" => Integer },
+    "runtime.provider_configured" => {},
+    "runtime.provider_removed" => {},
     "usage_rate.published" => { "from_version" => Integer, "to_version" => Integer },
     "usage_rate.rolled_back" => { "from_version" => Integer, "to_version" => Integer },
     "scorecard.backtested" => { "version" => Integer, "sample_count" => Integer },
