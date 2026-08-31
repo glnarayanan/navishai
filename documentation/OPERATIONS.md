@@ -4,6 +4,12 @@ PostgreSQL is authoritative for tenant, business, audit, policy, memory, and exe
 
 Do not copy a live local file or Supermemory store. Stop every writer before taking those archives. Keep backup encryption, access control, expiry, and off-site copies in the operator's backup system. NavishAI archives contain customer content even when the files have opaque names.
 
+## Provider connections
+
+The deployment owner supplies approved adapter binaries, runner-readable subscription credential homes, deny-by-default egress profiles, and immutable execution-policy ceilings. NavishAI does not install a provider CLI, open a provider browser or terminal, or create a subscription login. After that bootstrap, a Workspace Owner or Admin uses **Providers** to connect an API key or select an existing runner login, choose the supported model, test the exact configuration, and approve access. Configure and remove apply immediately; they do not require an edit to `/etc/navishai/execution.json` or a runner restart.
+
+An API key crosses Rails only in the synchronous signed configure request and is stored only in the encrypted Workspace-scoped vault at `<NAVISHAI_RUNNER_STATE_PATH>.providers`. Preserve that file with runner state and preserve `NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET` separately in the host secret manager. Losing or changing the vault secret makes the saved provider state unreadable. A provider connection change alters its configuration fingerprint and invalidates stale test and approval evidence; run admission also checks the exact frozen fingerprint and effective model. Workspace deletion first purges that Workspace's provider connections and request history from the vault. If the provider service cannot confirm the purge, deletion fails visibly and remains available for an Owner retry instead of leaving unreachable credentials behind.
+
 ## Reliability cockpit
 
 Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Workspace-scoped runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. Shared Solid Queue rows and process heartbeats are not Workspace evidence and are excluded from this view. This view aids diagnosis; it does not replace host alerts or an external monitor.
@@ -65,13 +71,13 @@ The backup command starts PostgreSQL if needed, stops jobs, web, and the runner,
 The `navishai-backup-v1` directory contains:
 
 - custom-format dumps for primary, cache, queue, and cable PostgreSQL databases;
-- tar archives for Rails local storage, runner state, and Supermemory state;
+- tar archives for Rails local storage, runner state including the encrypted provider vault, and Supermemory state;
 - the exact container image references;
 - the source Git revision and SHA-256 digests for `compose.yaml` and `.env`;
 - environment key names, but no environment values;
 - SHA-256 checksums for every archive member.
 
-Back up `.env`, runner TLS keys, SMTP and integration secrets, runtime subscription credentials, and any external object-store credentials in the host's secret manager. The archive records the `.env` digest so an operator can match the separately protected copy without exposing it.
+Back up `.env`, the provider-vault secret, runner TLS keys, SMTP and integration secrets, runtime subscription credential homes, and any external object-store credentials in the host's secret manager. The archive records the `.env` digest so an operator can match the separately protected copy without exposing it. A restore must pair the provider vault with the same vault secret; do not treat an unreadable or newly empty vault as a successful restore.
 
 `verify_backup` checks every checksum, uses the PostgreSQL image pinned by the current Compose configuration to parse each database dump, and reads every tar directory. It never runs an image reference supplied by the archive. It does not need a running database, but Docker may need to pull the configured image. Verification does not prove restore. Run a restore test on a schedule and before an upgrade.
 

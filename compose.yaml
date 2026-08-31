@@ -66,6 +66,7 @@ services:
     environment:
       NAVISHAI_RUNNER_BIND_ADDRESS: 0.0.0.0:8081
       NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
+      NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET: ${NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET:?set NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET}
       NAVISHAI_RUNNER_STATE_PATH: /var/lib/navishai/admissions.json
       NAVISHAI_RUNNER_EXECUTION_CONFIG: /etc/navishai/execution.json
       NAVISHAI_CONTROL_PLANE_ADDRESS: http://supermemory:3000
@@ -77,6 +78,7 @@ services:
       - runner_data:/var/lib/navishai
       - ${NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH:-./ops/runner/execution.example.json}:/etc/navishai/execution.json:ro
       - ${NAVISHAI_RUNTIME_EXECUTABLES_PATH:-./ops/runtime-executables}:/opt/navishai/runtimes:ro
+      # Subscription logins are provisioned on the host; the runner needs read access only.
       - ${NAVISHAI_RUNTIME_STATE_PATH:-./ops/runtime-state}:/var/lib/navishai/runtime:ro
       - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.crt:/run/navishai/tls.crt:ro
       - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.key:/run/navishai/tls.key:ro
