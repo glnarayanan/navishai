@@ -217,6 +217,65 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "", @gateway.configure_calls.sole.fetch(:api_key)
   end
 
+  test "a confirmed configuration redirects when local invalidation fails" do
+    sign_in_as users(:owner)
+    original = RuntimeRegistry.method(:invalidate_adapter!)
+    RuntimeRegistry.define_singleton_method(:invalidate_adapter!) do |**|
+      raise RuntimeRegistry::InvalidPolicy, "local invalidation failed"
+    end
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "claude-sonnet-4-5", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again.", flash[:alert]
+    assert_nil flash[:notice]
+    assert_equal "provider-secret-value", @gateway.configure_calls.sole.fetch(:api_key)
+  ensure
+    RuntimeRegistry.define_singleton_method(:invalidate_adapter!, original)
+  end
+
+  test "a confirmed removal redirects when local invalidation fails" do
+    sign_in_as users(:owner)
+    original = RuntimeRegistry.method(:invalidate_adapter!)
+    RuntimeRegistry.define_singleton_method(:invalidate_adapter!) do |**|
+      raise RuntimeRegistry::InvalidPolicy, "local invalidation failed"
+    end
+
+    with_gateway(@gateway) do
+      delete workspace_provider_connection_path(@workspace, "codex")
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again.", flash[:alert]
+    assert_nil flash[:notice]
+    assert_equal [ "codex" ], @gateway.remove_calls
+  ensure
+    RuntimeRegistry.define_singleton_method(:invalidate_adapter!, original)
+  end
+
+  test "a confirmed configuration uses the confirmed-change alert when local refresh fails" do
+    sign_in_as users(:owner)
+    @gateway.detect_error = ActiveRecord::StatementInvalid.new("local status refresh failed")
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "claude-sonnet-4-5", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again.", flash[:alert]
+    assert_nil flash[:notice]
+  end
+
   test "an Owner removes a provider through the runner" do
     sign_in_as users(:owner)
 
@@ -241,7 +300,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
-    assert_equal "The provider change was saved, but its status could not be refreshed. Refresh status again.", flash[:alert]
+    assert_equal "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again.", flash[:alert]
     installation.reload
     refute installation.approved?
     assert_equal "untested", installation.runtime_test_status
@@ -260,7 +319,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
-    assert_equal "The provider change was saved, but its status could not be refreshed. Refresh status again.", flash[:alert]
+    assert_equal "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again.", flash[:alert]
     installation.reload
     refute installation.approved?
     assert_equal "untested", installation.runtime_test_status

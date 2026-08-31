@@ -165,6 +165,33 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "status" => "passed" }, AuditEvent.order(:id).last.metadata)
   end
 
+  test "a completed failed connection test redirects with an alert" do
+    sign_in_as users(:owner)
+    client = Object.new
+    installation = @installation
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => installation.effective_model, "status" => "failed", "failure_code" => "provider_error",
+        "usage_observed" => false, "input_units" => 0, "output_units" => 0,
+        "tested_at" => "2026-08-31T12:00:00Z"
+      }
+    end
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+    begin
+      post test_workspace_runtime_installation_path(@workspace, @installation)
+    ensure
+      RunnerClient.define_singleton_method(:new, original)
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    assert_equal "Provider connection test failed. Check the credentials and model, then try again.", flash[:alert]
+    assert_nil flash[:notice]
+    assert_equal "failed", @installation.reload.runtime_test_status
+  end
+
   test "runner failures render customer-facing copy without internal details" do
     sign_in_as users(:owner)
     client = Object.new

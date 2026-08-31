@@ -49,7 +49,11 @@ class RuntimeInstallationsController < ApplicationController
     else
       "Provider connection test failed. Check the credentials and model, then try again."
     end
-    redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), notice: message
+    if installation.runtime_test_status == "passed"
+      redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), notice: message
+    else
+      redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), alert: message
+    end
   rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
     @runtime_error = user_facing_runtime_error(error, action: :test)
     load_installations

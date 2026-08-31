@@ -40,7 +40,9 @@ class ProviderConnectionsController < ApplicationController
     provider = gateway.remove(
       workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key: params[:adapter_key]
     )
-    record_provider_change!(workspace:, adapter_key: params[:adapter_key], action: "runtime.provider_removed")
+    return unless record_confirmed_provider_change(
+      workspace:, adapter_key: params[:adapter_key], action: "runtime.provider_removed"
+    )
     return unless refresh_after_provider_change(workspace:, gateway:)
 
     redirect_to workspace_runtime_installations_path(workspace), notice: "#{provider.fetch("name")} was removed."
@@ -85,7 +87,9 @@ class ProviderConnectionsController < ApplicationController
         auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
         api_key: attributes.fetch(:api_key)
       )
-      record_provider_change!(workspace:, adapter_key:, action: "runtime.provider_configured")
+      return unless record_confirmed_provider_change(
+        workspace:, adapter_key:, action: "runtime.provider_configured"
+      )
       return unless refresh_after_provider_change(workspace:, gateway:)
 
       installation = workspace.runtime_installations.find_by(adapter_key:)
@@ -94,7 +98,12 @@ class ProviderConnectionsController < ApplicationController
       else
         "#{configured.fetch("name")} settings were saved. No compatible runtime is available to test yet."
       end
-      redirect_to workspace_runtime_installations_path(workspace), notice:
+      redirect_path = if installation
+        workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}")
+      else
+        workspace_runtime_installations_path(workspace)
+      end
+      redirect_to redirect_path, notice:
     rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
       render_configuration_error(error, adapter_key:)
     rescue ProviderConnectionProtocol::MalformedMessage => error
@@ -127,13 +136,25 @@ class ProviderConnectionsController < ApplicationController
       end
     end
 
+    def record_confirmed_provider_change(workspace:, adapter_key:, action:)
+      record_provider_change!(workspace:, adapter_key:, action:)
+      true
+    rescue RuntimeRegistry::InvalidPolicy, ActiveRecord::ActiveRecordError
+      redirect_to workspace_runtime_installations_path(workspace), alert: confirmed_change_failure_message
+      false
+    end
+
     def refresh_after_provider_change(workspace:, gateway:)
       refresh_runtime_installations(workspace:, gateway:)
       true
-    rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy
+    rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy, ActiveRecord::ActiveRecordError
       redirect_to workspace_runtime_installations_path(workspace),
-        alert: "The provider change was saved, but its status could not be refreshed. Refresh status again."
+        alert: confirmed_change_failure_message
       false
+    end
+
+    def confirmed_change_failure_message
+      "The provider change was confirmed and saved, but local status could not be refreshed. Refresh status again."
     end
 
     def load_catalog
