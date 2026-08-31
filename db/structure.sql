@@ -15380,6 +15380,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260831143000'),
 ('20260831121000'),
 ('20260831120000'),
 ('20260829000000'),
