@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
@@ -38,14 +39,26 @@ func NewManagedCatalog(config Config, providers *providerconfig.Store, identityK
 }
 
 func (catalog *ManagedCatalog) DetectWorkspace(ctx context.Context, workspaceKey string) []runtimecatalog.Installation {
+	installations := catalog.apiKeyInstallations(workspaceKey)
 	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true)
-	if err != nil {
-		return nil
+	if err == nil {
+		installations = append(installations, catalog.approvedDetections(ctx, workspaceCatalog)...)
 	}
-	return catalog.approvedDetections(ctx, workspaceCatalog)
+	sort.Slice(installations, func(left, right int) bool {
+		if installations[left].AdapterKey == installations[right].AdapterKey {
+			return installations[left].DetectionKey < installations[right].DetectionKey
+		}
+		return installations[left].AdapterKey < installations[right].AdapterKey
+	})
+	return installations
 }
 
 func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, workspaceKey, wantedKey string, approvedPaths []string) (runtimecatalog.Installation, bool) {
+	for _, installation := range catalog.apiKeyInstallations(workspaceKey) {
+		if installation.DetectionKey == wantedKey {
+			return installation, true
+		}
+	}
 	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true)
 	if err != nil {
 		return runtimecatalog.Installation{}, false
@@ -54,6 +67,16 @@ func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, wor
 }
 
 func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, workspaceKey, adapterKey string) providerconfig.Availability {
+	if catalog != nil && catalog.providers != nil {
+		if connection, configured := catalog.providers.Get(workspaceKey, adapterKey); configured && connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
+			adapter, ok := catalog.config.Adapters[adapterKey]
+			installation, available := providerAPIInstallation(workspaceKey, adapterKey, adapter, connection, catalog.identityKey, catalog.now())
+			if !ok || !available {
+				return providerconfig.Availability{HealthStatus: "unavailable"}
+			}
+			return providerconfig.Availability{HealthStatus: installation.HealthStatus, Available: true, ExecutableVersion: installation.ExecutableVersion}
+		}
+	}
 	if catalog == nil || catalog.supported == nil || !catalog.supported() {
 		return providerconfig.Availability{HealthStatus: "unavailable"}
 	}
@@ -74,6 +97,24 @@ func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, works
 	return providerconfig.Availability{
 		HealthStatus: installation.HealthStatus, Available: available, ExecutableVersion: installation.ExecutableVersion,
 	}
+}
+
+func (catalog *ManagedCatalog) apiKeyInstallations(workspaceKey string) []runtimecatalog.Installation {
+	if catalog == nil || catalog.providers == nil {
+		return nil
+	}
+	installations := make([]runtimecatalog.Installation, 0, 2)
+	for _, adapterKey := range []string{codex.AdapterKey, claude.AdapterKey} {
+		connection, configured := catalog.providers.Get(workspaceKey, adapterKey)
+		if !configured {
+			continue
+		}
+		adapter, ok := catalog.config.Adapters[adapterKey]
+		if installation, available := providerAPIInstallation(workspaceKey, adapterKey, adapter, connection, catalog.identityKey, catalog.now()); available {
+			installations = append(installations, installation)
+		}
+	}
+	return installations
 }
 
 func (catalog *ManagedCatalog) approvedDetections(ctx context.Context, workspaceCatalog *runtimecatalog.Catalog) []runtimecatalog.Installation {

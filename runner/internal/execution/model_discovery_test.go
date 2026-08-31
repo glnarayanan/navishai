@@ -36,18 +36,31 @@ type fakeModelDiscoveryProcessRunner struct {
 }
 
 type fakeProviderAPI struct {
-	models  []providerapi.ModelOption
-	err     error
-	adapter string
-	apiKey  string
-	calls   int
-	ctx     context.Context
+	models          []providerapi.ModelOption
+	err             error
+	adapter         string
+	apiKey          string
+	calls           int
+	ctx             context.Context
+	generation      providerapi.GenerationResult
+	generationErr   error
+	generationCalls int
+	prompt          string
+	model           string
+	outputTokens    int
 }
 
 func (client *fakeProviderAPI) DiscoverModels(ctx context.Context, adapterKey, apiKey string) ([]providerapi.ModelOption, error) {
 	client.calls++
 	client.ctx, client.adapter, client.apiKey = ctx, adapterKey, apiKey
 	return client.models, client.err
+}
+
+func (client *fakeProviderAPI) Generate(ctx context.Context, adapterKey, apiKey, model, prompt string, outputTokens int) (providerapi.GenerationResult, error) {
+	client.generationCalls++
+	client.ctx, client.adapter, client.apiKey = ctx, adapterKey, apiKey
+	client.model, client.prompt, client.outputTokens = model, prompt, outputTokens
+	return client.generation, client.generationErr
 }
 
 func (runner *fakeModelDiscoveryProcessRunner) Run(ctx context.Context, request supervisor.Request) (supervisor.Result, error) {

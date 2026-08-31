@@ -14,7 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerapi"
+	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/scripted"
 )
@@ -372,6 +376,224 @@ func TestEvaluateRuntimeTestRequiresExactSentinelAndRejectsToolUse(t *testing.T)
 	if result.Status != "failed" || result.FailureCode != "prohibited_tool_use" {
 		t.Fatalf("tool use was not rejected: %#v", result)
 	}
+}
+
+func TestDirectProviderAPIExecutionUsesCanonicalEventsAndLeavesWorkRootUntouched(t *testing.T) {
+	registry, request, client, workRoot := directProviderAPIRegistry(t, providerapi.GenerationResult{
+		Text: runtimeTestSentinel, InputTokens: 8, OutputTokens: 3,
+	}, nil)
+	before, err := os.ReadDir(workRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := []protocol.CanonicalEvent{}
+	if err := registry.Execute(context.Background(), request, func(event protocol.CanonicalEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("direct provider API execution failed: %v", err)
+	}
+	if client.generationCalls != 1 || client.adapter != codex.AdapterKey || client.apiKey != "sk-direct-provider-value" || client.model != request.Routing.EffectiveModel {
+		t.Fatalf("unexpected direct provider API invocation: %#v", client)
+	}
+	if client.outputTokens != providerapi.MaxOutputTokens {
+		t.Fatalf("provider API output ceiling was not clamped: got %d", client.outputTokens)
+	}
+	if len(events) != 4 || events[0].EventType != "run.started" || events[0].Data["scenario"] != "api_key" ||
+		events[1].EventType != "output.produced" || events[2].EventType != "usage.observed" || events[3].EventType != "run.completed" {
+		t.Fatalf("unexpected direct provider API lifecycle: %#v", events)
+	}
+	after, err := os.ReadDir(workRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != len(after) {
+		t.Fatalf("direct provider API execution touched work root: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestDirectProviderAPIRuntimeTestUsesSameGeneratePathAndExactSentinel(t *testing.T) {
+	registry, request, client, workRoot := directProviderAPIRegistry(t, providerapi.GenerationResult{
+		Text: runtimeTestSentinel, InputTokens: 2, OutputTokens: 1,
+	}, nil)
+	installations := registry.catalog.(*ManagedCatalog).apiKeyInstallations(workspaceOne)
+	if len(installations) != 1 {
+		t.Fatalf("direct provider API installation was not available: %#v", installations)
+	}
+	installation := installations[0]
+	result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+		WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: installation.DetectionKey,
+		ConfigurationFingerprint: installation.ConfigurationFingerprint,
+	})
+	if err != nil || result.Status != "passed" || client.generationCalls != 1 {
+		t.Fatalf("direct provider API runtime test failed: result=%#v err=%v calls=%d", result, err, client.generationCalls)
+	}
+	if _, err := os.Stat(filepath.Join(workRoot, request.RunID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("direct provider API runtime test touched work root: %v", err)
+	}
+	client.generation = providerapi.GenerationResult{Text: "not-the-sentinel", InputTokens: 2, OutputTokens: 1}
+	result, err = registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+		WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: installation.DetectionKey,
+		ConfigurationFingerprint: installation.ConfigurationFingerprint,
+	})
+	if err != nil || result.Status != "failed" || client.generationCalls != 2 {
+		t.Fatalf("non-sentinel provider API runtime test did not fail: result=%#v err=%v calls=%d", result, err, client.generationCalls)
+	}
+}
+
+func TestDirectProviderAPIRejectsToolsBeforeCallingProvider(t *testing.T) {
+	registry, request, client, _ := directProviderAPIRegistry(t, providerapi.GenerationResult{
+		Text: "should not be used", InputTokens: 1, OutputTokens: 1,
+	}, nil)
+	request.Agent.AllowedTools = []string{"case_read"}
+	request.Agent.MaxToolCalls = 1
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("tool-enabled direct API request was not denied: %v", err)
+	}
+	if client.generationCalls != 0 {
+		t.Fatalf("provider API was called for a tool-enabled request: %d", client.generationCalls)
+	}
+}
+
+func TestDirectProviderAPIMapsTypedFailureWithoutProviderDetails(t *testing.T) {
+	registry, request, client, _ := directProviderAPIRegistry(t, providerapi.GenerationResult{}, &providerapi.Error{Code: providerapi.CodeAuthentication, StatusCode: 401})
+	events := []protocol.CanonicalEvent{}
+	if err := registry.Execute(context.Background(), request, func(event protocol.CanonicalEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("typed provider failure returned an execution error: %v", err)
+	}
+	if client.generationCalls != 1 || len(events) != 2 || events[1].EventType != "run.failed" || events[1].Data["code"] != "provider_api_failed" || events[1].Data["retryable"] != false {
+		t.Fatalf("typed provider failure was not mapped safely: %#v", events)
+	}
+	encoded, _ := json.Marshal(events)
+	if bytes.Contains(encoded, []byte("sk-direct-provider-value")) || bytes.Contains(encoded, []byte("401")) {
+		t.Fatalf("provider failure event exposed secret/provider detail: %s", encoded)
+	}
+}
+
+func TestSubscriptionRuntimeTestsKeepCLIInstallationSemantics(t *testing.T) {
+	for _, adapterKey := range []string{codex.AdapterKey, claude.AdapterKey} {
+		t.Run(adapterKey, func(t *testing.T) {
+			store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := "subscription-model"
+			if _, err := store.Configure(workspaceOne, adapterKey, "subscription", model, ""); err != nil {
+				t.Fatal(err)
+			}
+			workRoot := t.TempDir()
+			home := t.TempDir()
+			executable := testExecutable(t, t.TempDir(), "approved", "exit 0")
+			request := executionRequest(t)
+			request.WorkspaceKey = workspaceOne
+			request.Routing.AdapterKey = adapterKey
+			adapter := AdapterConfig{
+				HomeDir: home, EgressProfileKey: "model_api", Profiles: []string{request.Routing.ProfileKey},
+				Roles: []string{request.Agent.RoleKey}, DataClasses: append([]string(nil), request.Routing.DataClasses...),
+				MaxTimeoutSeconds: request.Agent.TimeoutSeconds, MaxSteps: request.Agent.MaxSteps, MaxToolCalls: request.Agent.MaxToolCalls,
+				MaxInputUnits: request.Routing.MaxInputUnits, MaxOutputUnits: request.Routing.MaxOutputUnits,
+			}
+			supervisorConfig := SupervisorConfig{
+				ApprovedExecutables: []string{executable}, EgressProfiles: []EgressProfileConfig{{Key: "model_api"}},
+			}
+			detectionKey := testDetectionKey(t, adapterKey, executable)
+			_, fingerprint, err := AdapterConfigurationIdentityForRuntime(
+				adapterKey, adapter, supervisorConfig, "subscription", "", testConfigurationIdentityKey,
+				executable, detectionKey, "runtime 1.0.0",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			installation := runtimecatalog.Installation{
+				DetectionKey: detectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
+				ExecutablePath: executable, ExecutableVersion: "runtime 1.0.0",
+				AccountMetadata: map[string]string{"authentication": "managed_on_runner"},
+				Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output"}, EffectiveModel: model,
+				ConfigurationFingerprint: fingerprint, MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
+				CompatibilityStatus: "compatible", HealthStatus: "available", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			}
+			catalog, err := runtimecatalog.NewWithInstallations(nil, []runtimecatalog.Installation{installation}, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client := &fakeProviderAPI{}
+			registry := &Registry{
+				config:  Config{WorkRoot: workRoot, Adapters: map[string]AdapterConfig{adapterKey: adapter}, Supervisor: supervisorConfig},
+				catalog: catalog, providers: store, providerAPI: client, configurationIdentityKey: testConfigurationIdentityKey, now: time.Now,
+			}
+			executed := false
+			registry.execute = func(_ context.Context, admission protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
+				executed = true
+				if isDirectProviderAPIInstallation(installation, providerconfig.Connection{AuthMode: "subscription", Model: model}) {
+					t.Fatal("subscription installation was treated as built-in provider API")
+				}
+				for _, event := range []protocol.CanonicalEvent{
+					{EventType: "output.produced", Data: map[string]any{"text": runtimeTestSentinel}},
+					{EventType: "usage.observed", Data: map[string]any{"input_units": 1, "output_units": 1}},
+					{EventType: "run.completed", Data: map[string]any{"outcome": "completed"}},
+				} {
+					if err := emit(event); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+				WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: detectionKey, ConfigurationFingerprint: fingerprint,
+			})
+			if err != nil || result.Status != "passed" || !executed || client.generationCalls != 0 {
+				t.Fatalf("subscription runtime test did not preserve process path: result=%#v err=%v executed=%t api_calls=%d", result, err, executed, client.generationCalls)
+			}
+		})
+	}
+}
+
+func directProviderAPIRegistry(t *testing.T, generation providerapi.GenerationResult, generationErr error) (*Registry, protocol.AdmissionRequest, *fakeProviderAPI, string) {
+	t.Helper()
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", "future-direct-model", "sk-direct-provider-value"); err != nil {
+		t.Fatal(err)
+	}
+	request := executionRequest(t)
+	request.WorkspaceKey = workspaceOne
+	request.Routing.AdapterKey = codex.AdapterKey
+	request.Agent.AllowedTools = nil
+	request.Agent.MaxToolCalls = 0
+	workRoot := t.TempDir()
+	config := Config{
+		WorkRoot: workRoot,
+		Adapters: map[string]AdapterConfig{codex.AdapterKey: {
+			Profiles: []string{request.Routing.ProfileKey}, Roles: []string{request.Agent.RoleKey},
+			Tools: []string{}, DataClasses: append([]string(nil), request.Routing.DataClasses...),
+			MaxTimeoutSeconds: request.Agent.TimeoutSeconds, MaxSteps: request.Agent.MaxSteps, MaxToolCalls: 0,
+			MaxInputUnits: request.Routing.MaxInputUnits, MaxOutputUnits: providerapi.MaxOutputTokens + 100,
+		}},
+	}
+	catalog, err := NewManagedCatalog(config, store, testConfigurationIdentityKey, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installations := catalog.apiKeyInstallations(workspaceOne)
+	if len(installations) != 1 {
+		t.Fatalf("direct provider API fixture produced %d installations: %#v", len(installations), installations)
+	}
+	request.Routing.DetectionKey = installations[0].DetectionKey
+	request.Routing.ConfigurationFingerprint = installations[0].ConfigurationFingerprint
+	request.Routing.EffectiveModel = installations[0].EffectiveModel
+	request.Routing.MaxOutputUnits = providerapi.MaxOutputTokens + 100
+	client := &fakeProviderAPI{generation: generation, generationErr: generationErr}
+	registry := &Registry{
+		config: config, catalog: catalog, providers: store, configurationIdentityKey: testConfigurationIdentityKey,
+		providerAPI: client, now: time.Now,
+	}
+	registry.execute = registry.Execute
+	return registry, request, client, workRoot
 }
 
 func testExecutable(t *testing.T, directory, name, command string) string {

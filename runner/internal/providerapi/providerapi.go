@@ -26,12 +26,13 @@ const (
 	maxResponseBodyBytes = 2 * 1024 * 1024
 	maxOutputTextBytes   = 100 * 1024
 	maxModelOptions      = 100
-	maxOutputTokens      = 16 * 1024
 	maxUsageTokens       = 10_000_000
 
 	openAIBaseURL    = "https://api.openai.com"
 	anthropicBaseURL = "https://api.anthropic.com"
 	anthropicVersion = "2023-06-01"
+	MaxOutputTokens  = 16 * 1024
+	maxOutputTokens  = MaxOutputTokens
 )
 
 type ErrorCode string
@@ -132,7 +133,7 @@ func (client *Client) Generate(ctx context.Context, adapterKey, apiKey, model, p
 	if !validPrompt(prompt) {
 		return GenerationResult{}, providerError(CodeInvalidInput, 0)
 	}
-	if outputTokens <= 0 || outputTokens > maxOutputTokens {
+	if outputTokens <= 0 || outputTokens > MaxOutputTokens {
 		return GenerationResult{}, providerError(CodeInvalidInput, 0)
 	}
 

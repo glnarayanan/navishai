@@ -97,6 +97,9 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	}
 	if registry.providers != nil {
 		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "api_key" {
+			if isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
+				return registry.executeProviderAPIRequest(ctx, request, connection, emit)
+			}
 			return ErrPolicyDenied
 		}
 	}
@@ -165,24 +168,41 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
 	var adapterConfig AdapterConfig
+	authMode, apiKey := "", ""
+	directProviderAPI := false
+	var connection providerconfig.Connection
+	if registry.providers != nil && installation.AdapterKey != "scripted" {
+		connection, ok = registry.providers.Get(request.WorkspaceKey, installation.AdapterKey)
+		if !ok {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		authMode, apiKey = connection.AuthMode, connection.APIKey
+		directProviderAPI = isDirectProviderAPIInstallation(installation, connection)
+	}
+	if isDirectProviderAPIAdapter(installation.AdapterKey) {
+		if authMode == "api_key" && !directProviderAPI {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		if authMode != "api_key" && installation.AccountMetadata["transport"] == "built_in_https" {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+	}
 	if installation.AdapterKey == "scripted" {
 		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
 		ok = ok && adapterConfig.Enabled
+	} else if directProviderAPI {
+		if connection.AuthMode != "api_key" {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
+		adapterConfig.Model = connection.Model
 	} else {
 		adapterConfig, _, ok = registry.effectiveAdapter(request.WorkspaceKey, installation.AdapterKey)
 	}
 	if !ok || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	authMode, apiKey := "", ""
-	if registry.providers != nil && installation.AdapterKey != "scripted" {
-		connection, configured := registry.providers.Get(request.WorkspaceKey, installation.AdapterKey)
-		if !configured {
-			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
-		}
-		authMode, apiKey = connection.AuthMode, connection.APIKey
-	}
-	model, fingerprint, err := registry.runtimeTestConfiguration(installation, adapterConfig, authMode, apiKey)
+	model, fingerprint, err := registry.runtimeTestConfiguration(request.WorkspaceKey, installation, adapterConfig, authMode, apiKey)
 	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
@@ -190,11 +210,13 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	if admission.Validate() != nil {
 		return runtimecatalog.TestResult{}, ErrPolicyDenied
 	}
-	testWorkingDirectory := filepath.Join(registry.config.WorkRoot, admission.RunID)
-	if _, err := os.Lstat(testWorkingDirectory); !errors.Is(err, os.ErrNotExist) {
-		return runtimecatalog.TestResult{}, ErrPolicyDenied
+	if !directProviderAPI {
+		testWorkingDirectory := filepath.Join(registry.config.WorkRoot, admission.RunID)
+		if _, err := os.Lstat(testWorkingDirectory); !errors.Is(err, os.ErrNotExist) {
+			return runtimecatalog.TestResult{}, ErrPolicyDenied
+		}
+		defer os.RemoveAll(testWorkingDirectory)
 	}
-	defer os.RemoveAll(testWorkingDirectory)
 	events := []protocol.CanonicalEvent{}
 	executeErr := registry.execute(ctx, admission, func(event protocol.CanonicalEvent) error {
 		events = append(events, event)
@@ -203,7 +225,7 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
 }
 
-func (registry *Registry) runtimeTestConfiguration(installation runtimecatalog.Installation, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
+func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installation runtimecatalog.Installation, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
 	if installation.AdapterKey == "scripted" {
 		_, detectionKey, fingerprint, _, err := scriptedRuntimeIdentity(
 			registry.config, registry.configurationIdentityKey, installation.ExecutablePath,
@@ -212,6 +234,13 @@ func (registry *Registry) runtimeTestConfiguration(installation runtimecatalog.I
 			return "", "", runtimecatalog.ErrTestConfigurationChanged
 		}
 		return "deterministic_fixture", fingerprint, err
+	}
+	if authMode == "api_key" && isDirectProviderAPIInstallation(installation, providerconfig.Connection{
+		AuthMode: authMode, Model: adapterConfig.Model, APIKey: apiKey,
+	}) {
+		return providerAPIConfigurationIdentity(workspaceKey, installation.AdapterKey, adapterConfig, providerconfig.Connection{
+			AuthMode: authMode, Model: adapterConfig.Model, APIKey: apiKey,
+		}, registry.configurationIdentityKey)
 	}
 	return AdapterConfigurationIdentityForRuntime(
 		installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, apiKey, registry.configurationIdentityKey,
@@ -252,7 +281,7 @@ func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string,
 		IdempotencyKey:  "runtime-test-" + request.RequestID,
 		WorkspaceKey:    request.WorkspaceKey,
 		Task: protocol.Task{
-			TaskKey: request.RequestID, Attempt: 1, Title: "Verify configured subscription runtime",
+			TaskKey: request.RequestID, Attempt: 1, Title: "Verify configured provider runtime",
 			InputContext:   "This fixed connectivity check contains no customer or workspace data.",
 			ExpectedOutput: runtimeTestSentinel,
 		},
@@ -272,7 +301,7 @@ func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string,
 }
 
 func isRuntimeTestAdmission(request protocol.AdmissionRequest) bool {
-	return request.Task.Title == "Verify configured subscription runtime" &&
+	return request.Task.Title == "Verify configured provider runtime" &&
 		request.Task.InputContext == "This fixed connectivity check contains no customer or workspace data." &&
 		request.Task.ExpectedOutput == runtimeTestSentinel &&
 		request.Agent.Instructions == "Return exactly the expected sentinel. Do not use tools, files, memory, web access, or other context." &&
