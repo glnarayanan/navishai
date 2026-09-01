@@ -136,7 +136,7 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 
 func validInstallation(installation Installation) bool {
 	if !lowerHexPattern.MatchString(installation.DetectionKey) || !policyKeyPattern.MatchString(installation.AdapterKey) ||
-		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || installation.ExecutableVersion == "" ||
+		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || !ValidObservedVersion(installation.ExecutableVersion) ||
 		!validTransport(installation.Transport) ||
 		!validExecutionMode(installation.ExecutionMode) ||
 		installation.CompatibilityStatus != "compatible" || installation.IncompatibilityReason != "" ||
@@ -148,8 +148,10 @@ func validInstallation(installation Installation) bool {
 	if _, ok := semanticVersion(installation.MinimumVersion); !ok {
 		return false
 	}
-	if _, ok := semanticVersion(installation.MaximumVersion); !ok {
-		return false
+	if installation.MaximumVersion != "" {
+		if _, ok := semanticVersion(installation.MaximumVersion); !ok {
+			return false
+		}
 	}
 	if _, err := time.Parse(time.RFC3339Nano, installation.CheckedAt); err != nil {
 		return false
@@ -336,6 +338,8 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
 	if probeErr != nil || version == "" || versionOverflowed {
 		health, compatibility, reason = "unhealthy", "unknown", "The runtime version probe failed."
+	} else if compatibility != "compatible" {
+		health = "unhealthy"
 	}
 	detection := detectionKey(definition.AdapterKey, resolved)
 	effectiveModel, configurationFingerprint := definition.EffectiveModel, definition.ConfigurationFingerprint
@@ -423,9 +427,25 @@ func cloneMetadata(metadata map[string]string) map[string]string {
 	return result
 }
 
-func compatibilityFor(output string, _ string, _ string) (string, string) {
-	if !ValidObservedVersion(output) {
+func compatibilityFor(output, minimum, _ string) (string, string) {
+	observed, ok := semanticVersion(output)
+	if !ValidObservedVersion(output) || !ok {
 		return "unknown", "Version compatibility has not been reported."
+	}
+	if minimum != "" {
+		minimumVersion, minimumOK := semanticVersion(minimum)
+		if !minimumOK {
+			return "unknown", "Version compatibility has not been reported."
+		}
+		for index := range observed {
+			if observed[index] == minimumVersion[index] {
+				continue
+			}
+			if observed[index] < minimumVersion[index] {
+				return "incompatible", "The runtime version is below the minimum supported version."
+			}
+			break
+		}
 	}
 	return "compatible", ""
 }

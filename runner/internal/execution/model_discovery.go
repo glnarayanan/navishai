@@ -23,10 +23,14 @@ func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, ad
 		return failedModelDiscovery()
 	}
 	if executionMode == protocol.ExecutionModeHostTrusted {
-		if adapterKey != cursor.AdapterKey {
+		switch adapterKey {
+		case cursor.AdapterKey:
+			return registry.discoverCursorHostModels(request, workspaceKey)
+		case codex.AdapterKey:
+			return registry.discoverCodexHostModels(request, workspaceKey)
+		default:
 			return failedModelDiscovery()
 		}
-		return registry.discoverCursorHostModels(request, workspaceKey)
 	}
 	spec, ok := modelDiscoverySpec(adapterKey)
 	if !ok {

@@ -110,7 +110,14 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 				return ErrPolicyDenied
 			}
 			if connection.AuthMode == "subscription" && connection.ExecutionMode == protocol.ExecutionModeHostTrusted {
-				return registry.executeCursorHost(ctx, request, connection, emit)
+				switch request.Routing.AdapterKey {
+				case codexSubscriptionAdapter:
+					return registry.executeCodexHost(ctx, request, connection, emit)
+				case cursorSubscriptionAdapter:
+					return registry.executeCursorHost(ctx, request, connection, emit)
+				default:
+					return ErrPolicyDenied
+				}
 			}
 		}
 	}
@@ -163,10 +170,15 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		}
 		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
 		adapterConfig.Model = connection.Model
-	} else if installation.AdapterKey == cursorSubscriptionAdapter && executionMode == protocol.ExecutionModeHostTrusted {
+	} else if isHostTrustedSubscriptionAdapter(installation.AdapterKey) && executionMode == protocol.ExecutionModeHostTrusted {
 		if connection.AuthMode != "subscription" || connection.ExecutionMode != protocol.ExecutionModeHostTrusted ||
 			registry.cursorHost == nil || !registry.cursorHost.Supported() || !registry.config.HostTrustedEnabled {
 			return runtimecatalog.TestResult{}, ErrPolicyDenied
+		}
+		if installation.AdapterKey == codexSubscriptionAdapter {
+			if _, ok := registry.cursorHost.(codexHostSource); !ok {
+				return runtimecatalog.TestResult{}, ErrPolicyDenied
+			}
 		}
 		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
 		adapterConfig.Model = connection.Model
@@ -217,7 +229,7 @@ func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installa
 			AuthMode: authMode, ExecutionMode: executionMode, Model: adapterConfig.Model, APIKey: apiKey,
 		}, registry.configurationIdentityKey)
 	}
-	if installation.AdapterKey == cursorSubscriptionAdapter && authMode == "subscription" && executionMode == protocol.ExecutionModeHostTrusted &&
+	if isHostTrustedSubscriptionAdapter(installation.AdapterKey) && authMode == "subscription" && executionMode == protocol.ExecutionModeHostTrusted &&
 		installation.Transport == runtimecatalog.TransportManagedProcess && installation.ExecutionMode == protocol.ExecutionModeHostTrusted {
 		return AdapterConfigurationIdentityForRuntime(
 			installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, "", registry.configurationIdentityKey,
@@ -259,7 +271,7 @@ func runtimeTestExecutionBoundary(installation runtimecatalog.Installation, dire
 		}
 		return installation.ExecutionMode, protocol.IsolationPolicyStrongRequired, true
 	}
-	if installation.AdapterKey == cursorSubscriptionAdapter && installation.Transport == runtimecatalog.TransportManagedProcess &&
+	if isHostTrustedSubscriptionAdapter(installation.AdapterKey) && installation.Transport == runtimecatalog.TransportManagedProcess &&
 		installation.ExecutionMode == protocol.ExecutionModeHostTrusted {
 		return installation.ExecutionMode, protocol.IsolationPolicyHostTrustedAllowed, true
 	}

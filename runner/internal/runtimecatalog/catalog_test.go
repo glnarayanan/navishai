@@ -55,6 +55,10 @@ func TestCompatibilityAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
 	if status != "compatible" || reason != "" {
 		t.Fatalf("expected a compatible result, got %q %q", status, reason)
 	}
+	status, reason = compatibilityFor("fixture 1.9.99", "2.0.0", "2.9.99")
+	if status != "incompatible" || reason == "" {
+		t.Fatalf("expected a below-minimum result, got %q %q", status, reason)
+	}
 	status, reason = compatibilityFor("development build", "2.0.0", "2.9.99")
 	if status != "unknown" || reason == "" {
 		t.Fatalf("expected an unknown result, got %q %q", status, reason)

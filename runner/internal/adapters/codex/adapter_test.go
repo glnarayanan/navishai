@@ -3,15 +3,67 @@ package codex
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
 )
 
 var testNow = time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+
+func TestDefinitionRetainsMinimumWithoutArbitraryMaximum(t *testing.T) {
+	definition := Definition()
+	if definition.MinimumVersion != "0.149.0" || definition.MaximumVersion != "" {
+		t.Fatalf("unexpected Codex version bounds: minimum=%q maximum=%q", definition.MinimumVersion, definition.MaximumVersion)
+	}
+	if !runtimecatalog.ValidObservedVersion("codex 99.999.999 (stable)") {
+		t.Fatal("newer valid Codex version evidence was rejected")
+	}
+	for _, value := range []string{"codex development", "codex 99.999.999\x00", "codex 99.999"} {
+		if runtimecatalog.ValidObservedVersion(value) {
+			t.Fatalf("malformed Codex version evidence was accepted: %q", value)
+		}
+	}
+}
+
+func TestCatalogAcceptsFutureCodexVersionButFailsClosedForMalformedEvidence(t *testing.T) {
+	directory := t.TempDir()
+	executable := filepath.Join(directory, "codex")
+	versionFile := filepath.Join(directory, "version.txt")
+	script := "#!/bin/sh\ncase \"$1\" in\n--version) cat \"" + versionFile + "\";;\nlogin) printf 'Logged in using ChatGPT\\n';;\n*) exit 1;;\nesac\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	catalog, err := runtimecatalog.New([]runtimecatalog.Definition{Definition()}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, version, health, compatibility string
+	}{
+		{name: "future", version: "codex 99.999.999", health: "available", compatibility: "compatible"},
+		{name: "malformed", version: "codex development", health: "unhealthy", compatibility: "unknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(versionFile, []byte(test.version+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			installations := catalog.Detect(context.Background())
+			if len(installations) != 1 || installations[0].HealthStatus != test.health || installations[0].CompatibilityStatus != test.compatibility {
+				t.Fatalf("unexpected Codex detection for %q: %#v", test.version, installations)
+			}
+			if test.name == "future" && installations[0].MaximumVersion != "" {
+				t.Fatalf("future Codex detection retained an arbitrary maximum: %#v", installations[0])
+			}
+		})
+	}
+}
 
 type fakeRunner struct {
 	request supervisor.Request
@@ -70,6 +122,56 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	expectedTypes := []string{"run.started", "tool.completed", "output.produced", "usage.observed", "run.completed"}
 	if !reflect.DeepEqual(eventTypes, expectedTypes) {
 		t.Fatalf("unexpected events %#v", eventTypes)
+	}
+}
+
+func TestExecuteRejectsToolEventsWhenToolsAreDisabled(t *testing.T) {
+	runner := &fakeRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: successfulJSONL}}
+	events := make([]protocol.CanonicalEvent, 0)
+	invocation := testInvocation()
+	invocation.DisableTools = true
+	result, err := New(func() time.Time { return testNow }).Execute(
+		context.Background(), invocation, runner,
+		func(event protocol.CanonicalEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil || result.Status != "failed" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
+		events[1].EventType != "run.failed" || events[1].Data["retryable"] != false {
+		t.Fatalf("tool event was not rejected as a non-retryable policy failure: result=%#v events=%#v err=%v", result, events, err)
+	}
+}
+
+func TestExecuteRejectsStartedToolWhenToolsAreDisabled(t *testing.T) {
+	assertDisabledToolsPolicyFailure(t, startedToolJSONL)
+}
+
+func TestExecuteRejectsUnknownCompletedItemWhenToolsAreDisabled(t *testing.T) {
+	assertDisabledToolsPolicyFailure(t, unknownItemJSONL)
+}
+
+func assertDisabledToolsPolicyFailure(t *testing.T, output string) {
+	t.Helper()
+	runner := &fakeRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: output}}
+	events := make([]protocol.CanonicalEvent, 0)
+	invocation := testInvocation()
+	invocation.DisableTools = true
+	result, err := New(func() time.Time { return testNow }).Execute(
+		context.Background(), invocation, runner,
+		func(event protocol.CanonicalEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	)
+	if err != nil || result.Status != "failed" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
+		events[1].EventType != "run.failed" || events[1].Data["retryable"] != false {
+		t.Fatalf("Codex item event was not rejected as a non-retryable policy failure: result=%#v events=%#v err=%v", result, events, err)
+	}
+	for _, event := range events {
+		if event.EventType == "output.produced" || event.EventType == "tool.completed" {
+			t.Fatalf("policy failure emitted an output or tool event: %#v", events)
+		}
 	}
 }
 
@@ -174,4 +276,16 @@ const successfulJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4fe
 {"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"Summary only"}}
 {"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Cited answer."}}
 {"type":"turn.completed","usage":{"input_tokens":120,"cached_input_tokens":100,"output_tokens":24,"reasoning_output_tokens":4}}
+`
+
+const startedToolJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4fe4-a640-421e3ba79921"}
+{"type":"item.started","item":{"id":"item_0","type":"command_execution"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Cited answer."}}
+{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":24}}
+`
+
+const unknownItemJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4fe4-a640-421e3ba79921"}
+{"type":"item.completed","item":{"id":"item_0","type":"future_tool","status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Cited answer."}}
+{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":24}}
 `

@@ -23,6 +23,7 @@ import (
 const (
 	runtimeDefaultModel       = "runtime_default"
 	configurationIdentityV1   = "navishai-runtime-configuration-v1"
+	codexSubscriptionAdapter  = "codex_subscription"
 	cursorSubscriptionAdapter = "cursor_acp_subscription"
 )
 

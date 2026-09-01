@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
@@ -19,10 +20,13 @@ import (
 )
 
 type fakeCursorHostSource struct {
-	supported      bool
-	executeCalls   int
-	discoveryCalls int
-	invocation     cursor.Invocation
+	supported           bool
+	executeCalls        int
+	discoveryCalls      int
+	codexExecuteCalls   int
+	codexDiscoveryCalls int
+	invocation          cursor.Invocation
+	codexInvocation     codex.Invocation
 }
 
 func (source *fakeCursorHostSource) Supported() bool {
@@ -44,6 +48,23 @@ func (source *fakeCursorHostSource) Execute(_ context.Context, invocation cursor
 func (source *fakeCursorHostSource) DiscoverModels(context.Context, string, string, string) ([]adapters.ModelOption, error) {
 	source.discoveryCalls++
 	return []adapters.ModelOption{{ID: "gpt-5.5", Label: "gpt-5.5"}, {ID: "composer-2.5", Label: "composer-2.5"}}, nil
+}
+
+func (source *fakeCursorHostSource) ExecuteCodex(_ context.Context, invocation codex.Invocation, emit func(protocol.CanonicalEvent) error) (codex.Result, error) {
+	source.codexExecuteCalls++
+	source.codexInvocation = invocation
+	if err := emit(protocol.CanonicalEvent{EventType: "output.produced", Data: map[string]any{"text": runtimeTestSentinel}}); err != nil {
+		return codex.Result{}, err
+	}
+	if err := emit(protocol.CanonicalEvent{EventType: "run.completed", Data: map[string]any{"outcome": "completed"}}); err != nil {
+		return codex.Result{}, err
+	}
+	return codex.Result{Status: "completed", Output: runtimeTestSentinel}, nil
+}
+
+func (source *fakeCursorHostSource) DiscoverCodexModels(context.Context, string, string, string) ([]adapters.ModelOption, error) {
+	source.codexDiscoveryCalls++
+	return []adapters.ModelOption{{ID: "gpt-5.6-sol", Label: "GPT-5.6-Sol"}}, nil
 }
 
 func TestCursorHostUsesOneSourceForDiscoveryRuntimeTestAndExecution(t *testing.T) {
@@ -107,7 +128,7 @@ func TestCursorHostRejectsStrongIsolationPolicy(t *testing.T) {
 	}
 }
 
-func TestManagedCatalogExposesHostModeOnlyForCursorSource(t *testing.T) {
+func TestManagedCatalogExposesHostModeForCodexAndCursorSources(t *testing.T) {
 	catalog := &ManagedCatalog{
 		config:               Config{HostTrustedEnabled: true},
 		supported:            func() bool { return false },
@@ -116,12 +137,42 @@ func TestManagedCatalogExposesHostModeOnlyForCursorSource(t *testing.T) {
 	if modes := catalog.supportedExecutionModes(cursor.AdapterKey); len(modes) != 1 || modes[0] != protocol.ExecutionModeHostTrusted {
 		t.Fatalf("unexpected Cursor host modes: %#v", modes)
 	}
-	if modes := catalog.supportedExecutionModes("codex_subscription"); len(modes) != 0 {
-		t.Fatalf("non-Cursor host mode was exposed: %#v", modes)
+	if modes := catalog.supportedExecutionModes(codex.AdapterKey); !contains(modes, protocol.ExecutionModeHostTrusted) || contains(modes, protocol.ExecutionModeStrongIsolated) {
+		t.Fatalf("unexpected Codex host modes: %#v", modes)
+	}
+	for _, adapterKey := range []string{"claude_subscription", "grok_acp_subscription"} {
+		if modes := catalog.supportedExecutionModes(adapterKey); contains(modes, protocol.ExecutionModeHostTrusted) {
+			t.Fatalf("unsupported host adapter was exposed: adapter=%q modes=%#v", adapterKey, modes)
+		}
 	}
 	catalog.hostTrustedSupported = func() bool { return false }
 	if modes := catalog.supportedExecutionModes(cursor.AdapterKey); len(modes) != 0 {
 		t.Fatalf("unsupported host source was exposed: %#v", modes)
+	}
+}
+
+func TestCodexHostUsesOneSourceForDiscoveryRuntimeTestAndExecution(t *testing.T) {
+	registry, request, source, installation := codexHostTestRegistry(t)
+	discovery := registry.DiscoverModels(newHostModelsRequest(), workspaceOne, codex.AdapterKey, protocol.ExecutionModeHostTrusted)
+	if discovery.Status != providerconfig.ModelDiscoveryAvailable || len(discovery.Models) != 1 || source.codexDiscoveryCalls != 1 {
+		t.Fatalf("host Codex discovery failed: result=%#v source=%#v", discovery, source)
+	}
+	testResult, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+		WorkspaceKey: workspaceOne, RequestID: workspaceTwo, DetectionKey: installation.DetectionKey,
+		ExecutionMode: protocol.ExecutionModeHostTrusted, ConfigurationFingerprint: installation.ConfigurationFingerprint,
+	})
+	if err != nil || testResult.Status != "passed" {
+		t.Fatalf("host Codex runtime test failed: result=%#v err=%v", testResult, err)
+	}
+	if source.codexExecuteCalls != 1 || !source.codexInvocation.DisableTools {
+		t.Fatalf("runtime test did not use the constrained Codex source: calls=%d invocation=%#v", source.codexExecuteCalls, source.codexInvocation)
+	}
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != nil {
+		t.Fatalf("host Codex execution failed: %v", err)
+	}
+	if source.codexExecuteCalls != 2 || source.codexInvocation.Executable != installation.ExecutablePath ||
+		source.codexInvocation.Admission.Routing.ExecutionMode != protocol.ExecutionModeHostTrusted || !source.codexInvocation.DisableTools {
+		t.Fatalf("host Codex execution did not use the exact source invocation: %#v", source.codexInvocation)
 	}
 }
 
@@ -186,6 +237,78 @@ func cursorHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest,
 	registry := &Registry{
 		config: Config{
 			WorkRoot: workRoot, Adapters: map[string]AdapterConfig{cursor.AdapterKey: adapterConfig},
+			Supervisor: supervisorConfig, HostTrustedEnabled: true,
+		},
+		catalog: catalog, providers: store, configurationIdentityKey: testConfigurationIdentityKey,
+		cursorHost: source, supported: func() bool { return false }, now: time.Now,
+	}
+	registry.execute = registry.Execute
+	request.Routing.DetectionKey = detectionKey
+	request.Routing.ConfigurationFingerprint = fingerprint
+	request.Routing.EffectiveModel = model
+	return registry, request, source, installation
+}
+
+func codexHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, *fakeCursorHostSource, runtimecatalog.Installation) {
+	t.Helper()
+	workRoot := t.TempDir()
+	homeDir := t.TempDir()
+	executable := filepath.Join(workRoot, "codex")
+	if err := os.WriteFile(executable, []byte("codex-host-test-runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "subscription", protocol.ExecutionModeHostTrusted, "gpt-5.6-sol", ""); err != nil {
+		t.Fatal(err)
+	}
+	request := executionRequest(t)
+	request.WorkspaceKey = workspaceOne
+	request.Routing.AdapterKey = codex.AdapterKey
+	request.Routing.ExecutionMode = protocol.ExecutionModeHostTrusted
+	request.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
+	adapterConfig := AdapterConfig{
+		Enabled: true, HomeDir: homeDir, EgressProfileKey: "model_api",
+		Profiles: []string{request.Routing.ProfileKey}, Roles: []string{request.Agent.RoleKey},
+		Tools: append([]string(nil), request.Agent.AllowedTools...), DataClasses: append([]string(nil), request.Routing.DataClasses...),
+		MaxTimeoutSeconds: request.Agent.TimeoutSeconds, MaxSteps: request.Agent.MaxSteps,
+		MaxToolCalls: request.Agent.MaxToolCalls, MaxInputUnits: request.Routing.MaxInputUnits,
+		MaxOutputUnits: request.Routing.MaxOutputUnits,
+	}
+	supervisorConfig := SupervisorConfig{
+		ApprovedExecutables: []string{executable},
+		EgressProfiles:      []EgressProfileConfig{{Key: "model_api"}},
+	}
+	detectionKey := testDetectionKey(t, codex.AdapterKey, executable)
+	version := "codex 0.250.0"
+	model, fingerprint, err := AdapterConfigurationIdentityForRuntime(
+		codex.AdapterKey, adapterConfig, supervisorConfig, "subscription", "", testConfigurationIdentityKey,
+		executable, detectionKey, version, protocol.ExecutionModeHostTrusted,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := runtimecatalog.Installation{
+		DetectionKey: detectionKey, AdapterKey: codex.AdapterKey, ProtocolVersion: protocol.Version,
+		ExecutablePath: executable, ExecutableVersion: version,
+		AccountMetadata: map[string]string{"authentication": "chatgpt_subscription"},
+		Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:       runtimecatalog.TransportManagedProcess, ExecutionMode: protocol.ExecutionModeHostTrusted,
+		EffectiveModel: model, ConfigurationFingerprint: fingerprint,
+		MinimumVersion: codex.Definition().MinimumVersion, MaximumVersion: codex.Definition().MaximumVersion,
+		CompatibilityStatus: "compatible", HealthStatus: "available",
+		CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	catalog, err := runtimecatalog.NewWithInstallations(nil, []runtimecatalog.Installation{installation}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &fakeCursorHostSource{supported: true}
+	registry := &Registry{
+		config: Config{
+			WorkRoot: workRoot, Adapters: map[string]AdapterConfig{codex.AdapterKey: adapterConfig},
 			Supervisor: supervisorConfig, HostTrustedEnabled: true,
 		},
 		catalog: catalog, providers: store, configurationIdentityKey: testConfigurationIdentityKey,

@@ -29,9 +29,24 @@ const (
 	hostInteractionOutputLimit  = 256 * 1024
 	hostDiscoveryOutputLimit    = adapters.MaxModelDiscoveryOutputBytes
 	hostErrorOutputLimit        = 64 * 1024
+	hostCodexInputLimit         = 128 * 1024
 )
 
-var errInvalidHostRequest = errors.New("invalid Cursor host process request")
+var codexExecutionPrefix = [...]string{
+	"exec", "--json", "--color", "never", "--sandbox", "read-only", "--ephemeral",
+	"--ignore-user-config", "--ignore-rules", "-c", `approval_policy="never"`,
+	"-c", `web_search="disabled"`,
+}
+
+var errInvalidHostRequest = errors.New("invalid host-trusted process request")
+
+type hostRequestKind uint8
+
+const (
+	hostCursorDiscovery hostRequestKind = iota
+	hostCursorInteractive
+	hostCodex
+)
 
 type darwinRunner struct {
 	grace time.Duration
@@ -51,20 +66,38 @@ func (runner *darwinRunner) Run(ctx context.Context, request supervisor.Request)
 	if !validHostRequest(request, false) || !validDiscoveryArguments(request.Arguments) {
 		return supervisor.Result{}, errInvalidHostRequest
 	}
+	return runner.run(ctx, request, hostDiscoveryOutputLimit, hostCursorDiscovery)
+}
+
+func (runner *darwinRunner) RunCodex(ctx context.Context, request supervisor.Request) (supervisor.Result, error) {
+	if !validCodexHostRequest(request) {
+		return supervisor.Result{}, errInvalidHostRequest
+	}
+	return runner.run(ctx, request, hostInteractionOutputLimit, hostCodex)
+}
+
+func (runner *darwinRunner) run(ctx context.Context, request supervisor.Request, outputLimit int, kind hostRequestKind) (supervisor.Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	child, err := startExactChild(request)
+	child, err := startExactChild(request, kind)
 	if err != nil {
 		return supervisor.Result{}, err
 	}
-	stdout := newBoundedCapture(hostDiscoveryOutputLimit, child.markOutputExceeded)
+	stdout := newBoundedCapture(outputLimit, child.markOutputExceeded)
 	stderr := newBoundedCapture(hostErrorOutputLimit, child.markOutputExceeded)
 	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
 	go drain(child.stdout, stdout, stdoutDone)
 	go drain(child.stderr, stderr, stderrDone)
+	var inputErr error
+	if len(request.Input) > 0 {
+		_, inputErr = child.input.WriteBounded(request.Input, hostInteractionWriteTimeout)
+	}
 	_ = child.input.Close()
+	if inputErr != nil {
+		child.stopAfterClose(runner.grace)
+	}
 
 	timedOut, canceled := false, false
 	select {
@@ -85,6 +118,9 @@ func (runner *darwinRunner) Run(ctx context.Context, request supervisor.Request)
 	if result.OutputExceeded {
 		return result, supervisor.ErrOutputLimit
 	}
+	if inputErr != nil && !timedOut && !canceled {
+		return result, inputErr
+	}
 	if waitErr := child.waitError(); waitErr != nil && !timedOut && !canceled {
 		var exitError *exec.ExitError
 		if !errors.As(waitErr, &exitError) {
@@ -101,7 +137,7 @@ func (runner *darwinRunner) InteractSession(ctx context.Context, request supervi
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	child, err := startExactChild(request)
+	child, err := startExactChild(request, hostCursorInteractive)
 	if err != nil {
 		return supervisor.Result{}, err
 	}
@@ -188,13 +224,22 @@ type exactChild struct {
 	outputExceeded  bool
 }
 
-func startExactChild(request supervisor.Request) (*exactChild, error) {
-	if !validHostRequest(request, len(request.Arguments) > 0 && validInteractiveArguments(request.Arguments)) {
+func startExactChild(request supervisor.Request, kind hostRequestKind) (*exactChild, error) {
+	valid := false
+	switch kind {
+	case hostCursorDiscovery:
+		valid = validHostRequest(request, false) && validDiscoveryArguments(request.Arguments)
+	case hostCursorInteractive:
+		valid = validHostRequest(request, true) && validInteractiveArguments(request.Arguments)
+	case hostCodex:
+		valid = validCodexHostRequest(request)
+	}
+	if !valid {
 		return nil, errInvalidHostRequest
 	}
 	command := exec.Command(request.Executable, request.Arguments...)
 	command.Dir = request.WorkingDir
-	command.Env = hostEnvironment(request.HomeDir)
+	command.Env = hostEnvironment(request)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -542,12 +587,36 @@ func validHostRequest(request supervisor.Request, interactive bool) bool {
 	return validDiscoveryArguments(request.Arguments)
 }
 
+func validCodexHostRequest(request supervisor.Request) bool {
+	if !validExecutableNamed(request.Executable, "codex") || !validDirectory(request.WorkingDir) || !validDirectory(request.HomeDir) ||
+		containsInvalidText(request.EgressProfileKey) {
+		return false
+	}
+	if len(request.Input) == 0 {
+		return len(request.Credentials) == 0 && validCodexDiscoveryArguments(request.Arguments)
+	}
+	return request.EgressProfileKey != "" && validHostText(string(request.Input), hostCodexInputLimit, true) &&
+		validCodexCredentials(request.Credentials, request.HomeDir) &&
+		validCodexExecutionArguments(request.Arguments, request.WorkingDir)
+}
+
 func validExecutable(path string) bool {
+	return validExecutableNamed(path, "cursor-agent", "agent")
+}
+
+func validExecutableNamed(path string, names ...string) bool {
 	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\r\n\x00") {
 		return false
 	}
 	base := filepath.Base(path)
-	if base != "cursor-agent" && base != "agent" {
+	allowed := false
+	for _, name := range names {
+		if base == name {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
 		return false
 	}
 	info, err := os.Stat(path)
@@ -564,6 +633,42 @@ func validDirectory(path string) bool {
 
 func validDiscoveryArguments(arguments []string) bool {
 	return len(arguments) == 1 && arguments[0] == "--list-models"
+}
+
+func validCodexDiscoveryArguments(arguments []string) bool {
+	return len(arguments) == 2 && arguments[0] == "debug" && arguments[1] == "models"
+}
+
+func validCodexExecutionArguments(arguments []string, workingDir string) bool {
+	if len(arguments) < len(codexExecutionPrefix)+3 {
+		return false
+	}
+	for index, expected := range codexExecutionPrefix {
+		if arguments[index] != expected {
+			return false
+		}
+	}
+	index := len(codexExecutionPrefix)
+	if len(arguments) < index+4 || arguments[index] != "--disable" || arguments[index+1] != "shell_tool" ||
+		arguments[index+2] != "--disable" || arguments[index+3] != "unified_exec" {
+		return false
+	}
+	index += 4
+	if len(arguments) < index+3 || arguments[index] != "-C" || arguments[index+1] != workingDir {
+		return false
+	}
+	index += 2
+	if index < len(arguments) && arguments[index] == "-m" {
+		if len(arguments) < index+2 || !validHostText(arguments[index+1], 200, false) {
+			return false
+		}
+		index += 2
+	}
+	return len(arguments) == index+1 && arguments[index] == "-"
+}
+
+func validCodexCredentials(credentials map[string]string, homeDir string) bool {
+	return len(credentials) == 1 && credentials["CODEX_HOME"] == homeDir
 }
 
 func validInteractiveArguments(arguments []string) bool {
@@ -594,6 +699,10 @@ func containsInvalidText(value string) bool {
 	return !utf8.ValidString(value)
 }
 
-func hostEnvironment(homeDir string) []string {
-	return []string{"HOME=" + homeDir, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
+func hostEnvironment(request supervisor.Request) []string {
+	environment := []string{"HOME=" + request.HomeDir, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
+	if filepath.Base(request.Executable) == "codex" {
+		environment = append(environment, "CODEX_HOME="+request.HomeDir)
+	}
+	return environment
 }

@@ -112,10 +112,10 @@ func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, works
 					UnavailableReason: "Execution mode must be selected again for this provider.",
 				}
 			case protocol.ExecutionModeHostTrusted:
-				if adapterKey != cursor.AdapterKey || !catalog.hostTrustedAvailable() || connection.AuthMode != "subscription" {
+				if !isHostTrustedSubscriptionAdapter(adapterKey) || !catalog.hostTrustedAvailable() || connection.AuthMode != "subscription" {
 					return providerconfig.Availability{
 						SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
-						UnavailableReason: "Host-trusted execution is available only for an enabled macOS Cursor source.",
+						UnavailableReason: "Host-trusted execution is available only for an enabled macOS Codex or Cursor source.",
 					}
 				}
 				definition, ok := catalog.definition(adapterKey, workspaceKey, true)
@@ -135,10 +135,8 @@ func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, works
 					return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 				}
 				installation := installations[0]
-				available := installation.AdapterKey == cursor.AdapterKey &&
-					installation.Transport == runtimecatalog.TransportManagedProcess &&
-					installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
-					installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible"
+				available := (installation.AdapterKey == codex.AdapterKey && validCodexHostInstallation(installation)) ||
+					(installation.AdapterKey == cursor.AdapterKey && validCursorHostInstallation(installation))
 				return providerconfig.Availability{
 					SupportedExecutionModes: availableModes, HealthStatus: installation.HealthStatus, Available: available,
 					ExecutableVersion: installation.ExecutableVersion,
@@ -251,7 +249,7 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		executionMode = connection.ExecutionMode
 		adapterConfig.Model = connection.Model
 		if !contains(catalog.supportedExecutionModes(adapterKey), executionMode) ||
-			(executionMode == protocol.ExecutionModeHostTrusted && (adapterKey != cursor.AdapterKey || connection.AuthMode != "subscription" || !catalog.hostTrustedAvailable())) {
+			(executionMode == protocol.ExecutionModeHostTrusted && (!isHostTrustedSubscriptionAdapter(adapterKey) || connection.AuthMode != "subscription" || !catalog.hostTrustedAvailable())) {
 			return runtimecatalog.Definition{}, false
 		}
 	}
@@ -312,7 +310,7 @@ func (catalog *ManagedCatalog) supportedExecutionModes(adapterKey string) []stri
 	}
 	result := make([]string, 0, len(definition.SupportedExecutionModes))
 	for _, mode := range definition.SupportedExecutionModes {
-		if mode == protocol.ExecutionModeHostTrusted && (adapterKey != cursor.AdapterKey || !catalog.hostTrustedAvailable()) {
+		if mode == protocol.ExecutionModeHostTrusted && (!isHostTrustedSubscriptionAdapter(adapterKey) || !catalog.hostTrustedAvailable()) {
 			continue
 		}
 		if mode == protocol.ExecutionModeStrongIsolated && !catalog.strongIsolationAvailable() {
