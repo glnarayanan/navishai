@@ -28,6 +28,7 @@ func TestRuntimeTestHandlerAuthenticatesAndReturnsOnlyBoundedEvidence(t *testing
 		WorkspaceKey:             "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
 		RequestID:                "3d07f334-88ef-4fe4-a640-421e3ba79921",
 		DetectionKey:             "a" + string(bytes.Repeat([]byte("b"), 63)),
+		ExecutionMode:            protocol.ExecutionModeBounded,
 		ConfigurationFingerprint: string(bytes.Repeat([]byte("c"), 64)),
 	}
 	executions := 0
@@ -37,8 +38,9 @@ func TestRuntimeTestHandlerAuthenticatesAndReturnsOnlyBoundedEvidence(t *testing
 			t.Fatalf("unexpected test request %#v", request)
 		}
 		return TestResult{
-			Status: "passed", EffectiveModel: "fixture-model", ConfigurationFingerprint: request.ConfigurationFingerprint,
-			UsageObserved: true, InputUnits: 12, OutputUnits: 3, TestedAt: now,
+			Status: "passed", EffectiveModel: "fixture-model", ExecutionMode: request.ExecutionMode,
+			ConfigurationFingerprint: request.ConfigurationFingerprint,
+			UsageObserved:            true, InputUnits: 12, OutputUnits: 3, TestedAt: now,
 		}, nil
 	})
 	handler, err := NewTestHandler(secret, tester, func() time.Time { return now })
@@ -48,6 +50,7 @@ func TestRuntimeTestHandlerAuthenticatesAndReturnsOnlyBoundedEvidence(t *testing
 	body, _ := json.Marshal(map[string]string{
 		"protocol_version": protocol.Version, "workspace_key": wanted.WorkspaceKey,
 		"request_id": wanted.RequestID, "detection_key": wanted.DetectionKey,
+		"execution_mode":            wanted.ExecutionMode,
 		"configuration_fingerprint": wanted.ConfigurationFingerprint,
 	})
 	request := httptest.NewRequest(http.MethodPost, TestPath, bytes.NewReader(body))
@@ -68,7 +71,7 @@ func TestRuntimeTestHandlerAuthenticatesAndReturnsOnlyBoundedEvidence(t *testing
 	}
 	var payload map[string]any
 	if json.Unmarshal(response.Body.Bytes(), &payload) != nil || payload["status"] != "passed" ||
-		payload["effective_model"] != "fixture-model" || payload["failure_code"] != nil ||
+		payload["effective_model"] != "fixture-model" || payload["execution_mode"] != wanted.ExecutionMode || payload["failure_code"] != nil ||
 		payload["input_units"] != float64(12) || payload["output_units"] != float64(3) {
 		t.Fatalf("unexpected safe test response %#v", payload)
 	}
@@ -85,6 +88,7 @@ func TestRuntimeTestHandlerAuthenticatesAndReturnsOnlyBoundedEvidence(t *testing
 	conflictingBody, _ := json.Marshal(map[string]string{
 		"protocol_version": protocol.Version, "workspace_key": wanted.WorkspaceKey,
 		"request_id": wanted.RequestID, "detection_key": wanted.DetectionKey,
+		"execution_mode":            wanted.ExecutionMode,
 		"configuration_fingerprint": string(bytes.Repeat([]byte("d"), 64)),
 	})
 	conflict := httptest.NewRequest(http.MethodPost, TestPath, bytes.NewReader(conflictingBody))
@@ -112,7 +116,8 @@ func TestRuntimeTestHandlerMapsTesterAndEvidenceFailures(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	base := TestRequest{
 		WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c", RequestID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
-		DetectionKey: string(bytes.Repeat([]byte("b"), 64)), ConfigurationFingerprint: string(bytes.Repeat([]byte("c"), 64)),
+		DetectionKey: string(bytes.Repeat([]byte("b"), 64)), ExecutionMode: protocol.ExecutionModeBounded,
+		ConfigurationFingerprint: string(bytes.Repeat([]byte("c"), 64)),
 	}
 	cases := []struct {
 		name   string
@@ -124,7 +129,7 @@ func TestRuntimeTestHandlerMapsTesterAndEvidenceFailures(t *testing.T) {
 		{name: "configuration changed", err: ErrTestConfigurationChanged, status: http.StatusConflict, code: "runtime_configuration_changed"},
 		{name: "tester unavailable", err: errors.New("down"), status: http.StatusServiceUnavailable, code: "runtime_test_unavailable"},
 		{name: "invalid evidence", result: TestResult{Status: "passed"}, status: http.StatusInternalServerError, code: "invalid_runtime_test_result"},
-		{name: "bounded failure", result: TestResult{Status: "failed", FailureCode: "provider_rejected", EffectiveModel: "fixture", ConfigurationFingerprint: base.ConfigurationFingerprint, TestedAt: now}, status: http.StatusOK},
+		{name: "bounded failure", result: TestResult{Status: "failed", FailureCode: "provider_rejected", EffectiveModel: "fixture", ExecutionMode: base.ExecutionMode, ConfigurationFingerprint: base.ConfigurationFingerprint, TestedAt: now}, status: http.StatusOK},
 	}
 	for index, item := range cases {
 		t.Run(item.name, func(t *testing.T) {
@@ -138,7 +143,8 @@ func TestRuntimeTestHandlerMapsTesterAndEvidenceFailures(t *testing.T) {
 			}
 			body, _ := json.Marshal(map[string]string{
 				"protocol_version": protocol.Version, "workspace_key": requestValue.WorkspaceKey, "request_id": requestValue.RequestID,
-				"detection_key": requestValue.DetectionKey, "configuration_fingerprint": requestValue.ConfigurationFingerprint,
+				"detection_key": requestValue.DetectionKey, "execution_mode": requestValue.ExecutionMode,
+				"configuration_fingerprint": requestValue.ConfigurationFingerprint,
 			})
 			request := httptest.NewRequest(http.MethodPost, TestPath, bytes.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")

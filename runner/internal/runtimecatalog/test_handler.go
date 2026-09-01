@@ -25,6 +25,7 @@ type TestRequest struct {
 	WorkspaceKey             string
 	RequestID                string
 	DetectionKey             string
+	ExecutionMode            string
 	ConfigurationFingerprint string
 }
 
@@ -32,6 +33,7 @@ type TestResult struct {
 	Status                   string
 	FailureCode              string
 	EffectiveModel           string
+	ExecutionMode            string
 	ConfigurationFingerprint string
 	UsageObserved            bool
 	InputUnits               int
@@ -96,7 +98,7 @@ func (handler *TestHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		return
 	}
 	var input map[string]any
-	if json.Unmarshal(body, &input) != nil || len(input) != 5 || input["protocol_version"] != protocol.Version {
+	if json.Unmarshal(body, &input) != nil || len(input) != 6 || input["protocol_version"] != protocol.Version {
 		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Runtime test request does not match protocol v1.")
 		return
 	}
@@ -104,10 +106,12 @@ func (handler *TestHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		WorkspaceKey:             stringValue(input["workspace_key"]),
 		RequestID:                stringValue(input["request_id"]),
 		DetectionKey:             stringValue(input["detection_key"]),
+		ExecutionMode:            stringValue(input["execution_mode"]),
 		ConfigurationFingerprint: stringValue(input["configuration_fingerprint"]),
 	}
 	if !workspaceKeyPattern.MatchString(testRequest.WorkspaceKey) || !workspaceKeyPattern.MatchString(testRequest.RequestID) ||
 		!configurationIdentityPattern.MatchString(testRequest.DetectionKey) ||
+		!validExecutionMode(testRequest.ExecutionMode) ||
 		!configurationIdentityPattern.MatchString(testRequest.ConfigurationFingerprint) {
 		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Runtime test request does not match protocol v1.")
 		return
@@ -141,6 +145,7 @@ func (handler *TestHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		"workspace_key":             testRequest.WorkspaceKey,
 		"request_id":                testRequest.RequestID,
 		"detection_key":             testRequest.DetectionKey,
+		"execution_mode":            result.ExecutionMode,
 		"configuration_fingerprint": result.ConfigurationFingerprint,
 		"effective_model":           result.EffectiveModel,
 		"status":                    result.Status,
@@ -152,8 +157,9 @@ func (handler *TestHandler) ServeHTTP(response http.ResponseWriter, request *htt
 	})
 }
 
-func validTestResult(result TestResult, wantedFingerprint string) bool {
-	if result.ConfigurationFingerprint != wantedFingerprint || !validConfigurationIdentity(result.EffectiveModel, result.ConfigurationFingerprint) ||
+func validTestResult(result TestResult, wantedMode, wantedFingerprint string) bool {
+	if result.ExecutionMode != wantedMode || !validExecutionMode(result.ExecutionMode) ||
+		result.ConfigurationFingerprint != wantedFingerprint || !validConfigurationIdentity(result.EffectiveModel, result.ConfigurationFingerprint) ||
 		result.InputUnits < 0 || result.OutputUnits < 0 || result.TestedAt.IsZero() {
 		return false
 	}

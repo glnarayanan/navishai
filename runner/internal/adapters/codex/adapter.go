@@ -58,6 +58,8 @@ func Definition() runtimecatalog.Definition {
 		AccountEnvironment: []string{"CODEX_HOME"},
 		AccountMetadata:    map[string]string{"authentication": "chatgpt_subscription"},
 		Capabilities:       []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:          runtimecatalog.TransportManagedProcess,
+		ExecutionMode:      protocol.ExecutionModeStrongIsolated,
 		EffectiveModel:     "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
 		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}

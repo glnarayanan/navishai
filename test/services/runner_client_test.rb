@@ -158,7 +158,9 @@ class RunnerClientTest < ActiveSupport::TestCase
     report = {
       detection_key: "a" * 64, adapter_key: "fixture", protocol_version: "v1",
       executable_path: "/opt/fixture", executable_version: "fixture 1.0.0",
-      account_metadata: { authentication: "managed_on_runner" }, capabilities: [ "structured_output" ],
+      account_metadata: { authentication: "managed_on_runner", transport: "built_in_https" }, capabilities: [ "structured_output" ],
+      transport: "built_in_https",
+      execution_mode: "bounded",
       effective_model: "fixture-model", configuration_fingerprint: "b" * 64,
       minimum_version: "1.0.0", maximum_version: "1.x", compatibility_status: "compatible",
       incompatibility_reason: "", health_status: "available", checked_at: "2026-08-24T12:00:00Z"
@@ -183,6 +185,20 @@ class RunnerClientTest < ActiveSupport::TestCase
       secret:, timestamp: now.to_i.to_s, method: "POST", path: captured.path, body: captured.body
     ), captured["X-NavishAI-Signature"]
 
+    missing_mode = report.except(:execution_mode)
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::RuntimeDetectionResponse.parse(
+        JSON.generate(protocol_version: "v2", installations: [ missing_mode ])
+      )
+    end
+
+    missing_transport = report.except(:transport)
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::RuntimeDetectionResponse.parse(
+        JSON.generate(protocol_version: "v2", installations: [ missing_transport ])
+      )
+    end
+
     report[:account_metadata] = { access_token: "secret" }
     assert_raises(RunnerProtocol::MalformedMessage) do
       RunnerProtocol::RuntimeDetectionResponse.parse(JSON.generate(protocol_version: "v2", installations: [ report ]))
@@ -204,7 +220,7 @@ class RunnerClientTest < ActiveSupport::TestCase
     configuration_fingerprint = "b" * 64
     response = RunnerClient::Response.new(code: 200, body: JSON.generate(
       protocol_version: "v1", workspace_key:, request_id:, detection_key:, configuration_fingerprint:,
-      effective_model: "fixture-model", status: "passed", failure_code: nil, usage_observed: true,
+      execution_mode: "bounded", effective_model: "fixture-model", status: "passed", failure_code: nil, usage_observed: true,
       input_units: 12, output_units: 3, tested_at: now.iso8601
     ))
     client = RunnerClient.new(secret:, clock: -> { now })
@@ -214,19 +230,29 @@ class RunnerClientTest < ActiveSupport::TestCase
       response
     end
 
-    result = client.test_runtime!(workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+    result = client.test_runtime!(
+      workspace_key:, request_id:, detection_key:, execution_mode: "bounded", configuration_fingerprint:
+    )
 
     assert_equal "passed", result.fetch("status")
+    assert_equal "bounded", result.fetch("execution_mode")
     assert_equal 55, captured.last
     request = captured.first
     assert_equal RunnerProtocol::RUNTIME_TEST_PATH, request.path
+    assert_equal "bounded", JSON.parse(request.body).fetch("execution_mode")
     assert_equal RunnerProtocol.signature(
       secret:, timestamp: now.to_i.to_s, method: "POST", path: request.path, body: request.body
     ), request["X-NavishAI-Signature"]
     malformed = JSON.parse(response.body).merge("configuration_fingerprint" => "c" * 64)
     assert_raises(RunnerProtocol::MalformedMessage) do
       RunnerProtocol::RuntimeTestResponse.parse(
-        JSON.generate(malformed), workspace_key:, request_id:, detection_key:, configuration_fingerprint:
+        JSON.generate(malformed), workspace_key:, request_id:, detection_key:, execution_mode: "bounded", configuration_fingerprint:
+      )
+    end
+    missing_mode = JSON.parse(response.body).except("execution_mode")
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::RuntimeTestResponse.parse(
+        JSON.generate(missing_mode), workspace_key:, request_id:, detection_key:, execution_mode: "bounded", configuration_fingerprint:
       )
     end
   end

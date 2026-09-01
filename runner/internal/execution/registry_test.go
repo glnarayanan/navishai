@@ -181,6 +181,8 @@ func TestRegistryDeniesUnclassifiedProcessTransportsBeforeExecution(t *testing.T
 			installation := runtimecatalog.Installation{
 				DetectionKey: request.Routing.DetectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
 				ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
+				Transport:       runtimecatalog.TransportManagedProcess,
+				ExecutionMode:   protocol.ExecutionModeStrongIsolated,
 				AccountMetadata: map[string]string{"authentication": "managed_on_runner"}, Capabilities: []string{"structured_output"},
 				EffectiveModel: "runtime_default", ConfigurationFingerprint: strings.Repeat("a", 64),
 				MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
@@ -260,7 +262,8 @@ func TestRuntimeTestExecutionBoundaryMatchesTransport(t *testing.T) {
 		{name: "subscription process", adapterKey: "codex"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			mode, policy, known := runtimeTestExecutionBoundary(test.adapterKey, test.directProviderAPI)
+			installation := runtimecatalog.Installation{AdapterKey: test.adapterKey, ExecutionMode: test.wantMode}
+			mode, policy, known := runtimeTestExecutionBoundary(installation, test.directProviderAPI)
 			wantKnown := test.wantMode != ""
 			if mode != test.wantMode || policy != test.wantPolicy || known != wantKnown {
 				t.Fatalf("runtime-test boundary = %q/%q/%t, want %q/%q/%t", mode, policy, known, test.wantMode, test.wantPolicy, wantKnown)
@@ -302,6 +305,8 @@ func TestRuntimeTestOrchestratesSentinelAndFailsClosed(t *testing.T) {
 	installation := runtimecatalog.Installation{
 		DetectionKey: detectionKey, AdapterKey: "scripted", ProtocolVersion: protocol.Version,
 		ExecutablePath: executablePath, ExecutableVersion: "runtime 1.0.0",
+		Transport:       runtimecatalog.TransportBuiltInHTTPS,
+		ExecutionMode:   protocol.ExecutionModeBounded,
 		AccountMetadata: map[string]string{"authentication": "built_in"},
 		Capabilities:    []string{runtimecatalog.RuntimeTestCapability}, EffectiveModel: model,
 		ConfigurationFingerprint: fingerprint, MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
@@ -333,7 +338,7 @@ func TestRuntimeTestOrchestratesSentinelAndFailsClosed(t *testing.T) {
 	}
 	request := runtimecatalog.TestRequest{
 		WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c", RequestID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
-		DetectionKey: detectionKey, ConfigurationFingerprint: fingerprint,
+		DetectionKey: detectionKey, ExecutionMode: protocol.ExecutionModeBounded, ConfigurationFingerprint: fingerprint,
 	}
 	result, err := registry.TestRuntime(context.Background(), request)
 	if err != nil || result.Status != "passed" || executions != 1 {
@@ -360,7 +365,7 @@ func TestRuntimeTestAdmissionCarriesOnlyFixedSentinelContextAndZeroTools(t *test
 	request := runtimecatalog.TestRequest{
 		WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
 		RequestID:    "3d07f334-88ef-4fe4-a640-421e3ba79921",
-		DetectionKey: strings.Repeat("a", 64), ConfigurationFingerprint: strings.Repeat("b", 64),
+		DetectionKey: strings.Repeat("a", 64), ExecutionMode: protocol.ExecutionModeBounded, ConfigurationFingerprint: strings.Repeat("b", 64),
 	}
 	config := AdapterConfig{
 		Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
@@ -399,13 +404,13 @@ func TestEvaluateRuntimeTestRequiresExactSentinelAndRejectsToolUse(t *testing.T)
 		{EventType: "usage.observed", Data: map[string]any{"input_units": 12, "output_units": 3}},
 		{EventType: "run.completed", Data: map[string]any{"outcome": "completed"}},
 	}
-	result := evaluateRuntimeTest(events, nil, "fixture-model", strings.Repeat("a", 64), now)
-	if result.Status != "passed" || !result.UsageObserved || result.InputUnits != 12 || result.OutputUnits != 3 {
+	result := evaluateRuntimeTest(events, nil, protocol.ExecutionModeBounded, "fixture-model", strings.Repeat("a", 64), now)
+	if result.Status != "passed" || result.ExecutionMode != protocol.ExecutionModeBounded || !result.UsageObserved || result.InputUnits != 12 || result.OutputUnits != 3 {
 		t.Fatalf("exact sentinel did not pass: %#v", result)
 	}
 
 	events = append([]protocol.CanonicalEvent{{EventType: "tool.completed", Data: map[string]any{"tool": "shell", "result": "ok"}}}, events...)
-	result = evaluateRuntimeTest(events, nil, "fixture-model", strings.Repeat("a", 64), now)
+	result = evaluateRuntimeTest(events, nil, protocol.ExecutionModeBounded, "fixture-model", strings.Repeat("a", 64), now)
 	if result.Status != "failed" || result.FailureCode != "prohibited_tool_use" {
 		t.Fatalf("tool use was not rejected: %#v", result)
 	}
@@ -456,7 +461,7 @@ func TestDirectProviderAPIRuntimeTestUsesSameGeneratePathAndExactSentinel(t *tes
 	installation := installations[0]
 	result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
 		WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: installation.DetectionKey,
-		ConfigurationFingerprint: installation.ConfigurationFingerprint,
+		ExecutionMode: protocol.ExecutionModeBounded, ConfigurationFingerprint: installation.ConfigurationFingerprint,
 	})
 	if err != nil || result.Status != "passed" || client.generationCalls != 1 {
 		t.Fatalf("direct provider API runtime test failed: result=%#v err=%v calls=%d", result, err, client.generationCalls)
@@ -467,7 +472,7 @@ func TestDirectProviderAPIRuntimeTestUsesSameGeneratePathAndExactSentinel(t *tes
 	client.generation = providerapi.GenerationResult{Text: "not-the-sentinel", InputTokens: 2, OutputTokens: 1}
 	result, err = registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
 		WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: installation.DetectionKey,
-		ConfigurationFingerprint: installation.ConfigurationFingerprint,
+		ExecutionMode: protocol.ExecutionModeBounded, ConfigurationFingerprint: installation.ConfigurationFingerprint,
 	})
 	if err != nil || result.Status != "failed" || client.generationCalls != 2 {
 		t.Fatalf("non-sentinel provider API runtime test did not fail: result=%#v err=%v calls=%d", result, err, client.generationCalls)
@@ -541,7 +546,7 @@ func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) 
 				t.Fatal(err)
 			}
 			model := "subscription-model"
-			if _, err := store.Configure(workspaceOne, adapterKey, "subscription", model, ""); err != nil {
+			if _, err := store.Configure(workspaceOne, adapterKey, "subscription", protocol.ExecutionModeStrongIsolated, model, ""); err != nil {
 				t.Fatal(err)
 			}
 			workRoot := t.TempDir()
@@ -564,7 +569,7 @@ func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) 
 			detectionKey := testDetectionKey(t, adapterKey, executable)
 			_, fingerprint, err := AdapterConfigurationIdentityForRuntime(
 				adapterKey, adapter, supervisorConfig, "subscription", "", testConfigurationIdentityKey,
-				executable, detectionKey, "runtime 1.0.0",
+				executable, detectionKey, "runtime 1.0.0", protocol.ExecutionModeStrongIsolated,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -572,6 +577,8 @@ func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) 
 			installation := runtimecatalog.Installation{
 				DetectionKey: detectionKey, AdapterKey: adapterKey, ProtocolVersion: protocol.Version,
 				ExecutablePath: executable, ExecutableVersion: "runtime 1.0.0",
+				Transport:       runtimecatalog.TransportManagedProcess,
+				ExecutionMode:   protocol.ExecutionModeStrongIsolated,
 				AccountMetadata: map[string]string{"authentication": "managed_on_runner"},
 				Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output"}, EffectiveModel: model,
 				ConfigurationFingerprint: fingerprint, MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
@@ -589,7 +596,7 @@ func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) 
 			executed := false
 			registry.execute = func(_ context.Context, admission protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
 				executed = true
-				if isDirectProviderAPIInstallation(installation, providerconfig.Connection{AuthMode: "subscription", Model: model}) {
+				if isDirectProviderAPIInstallation(installation, providerconfig.Connection{AuthMode: "subscription", ExecutionMode: protocol.ExecutionModeStrongIsolated, Model: model}) {
 					t.Fatal("subscription installation was treated as built-in provider API")
 				}
 				for _, event := range []protocol.CanonicalEvent{
@@ -604,7 +611,8 @@ func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) 
 				return nil
 			}
 			result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
-				WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: detectionKey, ConfigurationFingerprint: fingerprint,
+				WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: detectionKey,
+				ExecutionMode: protocol.ExecutionModeStrongIsolated, ConfigurationFingerprint: fingerprint,
 			})
 			if !errors.Is(err, ErrPolicyDenied) || result.Status != "" || executed || client.generationCalls != 0 {
 				t.Fatalf("subscription runtime test was not denied before process execution: result=%#v err=%v executed=%t api_calls=%d", result, err, executed, client.generationCalls)
@@ -619,7 +627,7 @@ func directProviderAPIRegistry(t *testing.T, generation providerapi.GenerationRe
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", "future-direct-model", "sk-direct-provider-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", protocol.ExecutionModeBounded, "future-direct-model", "sk-direct-provider-value"); err != nil {
 		t.Fatal(err)
 	}
 	request := executionRequest(t)

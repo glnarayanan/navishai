@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 var testSecret = []byte("provider-store-test-secret-that-is-at-least-32-bytes")
@@ -26,10 +28,10 @@ func TestStoreEncryptsSecretsAndAtomicallyRetainsWorkspaceConnections(t *testing
 	}
 	secretOne := "sk-openai-secret-value"
 	secretTwo := "sk-anthropic-secret-value"
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "gpt-5", secretOne); err != nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", secretOne); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceTwo, ClaudeAdapterKey, "api_key", "claude-sonnet", secretTwo); err != nil {
+	if _, err := store.Configure(workspaceTwo, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "claude-sonnet", secretTwo); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -68,23 +70,23 @@ func TestStoreRetainsBlankAPIKeyOnlyForSameKeyModeAndRemovesOneAdapter(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "gpt-old", "sk-existing-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-old", "sk-existing-value"); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "gpt-new", "")
+	updated, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-new", "")
 	if err != nil || updated.APIKey != "sk-existing-value" || updated.Model != "gpt-new" {
 		t.Fatalf("blank edit did not retain existing key: %#v, err = %v", updated, err)
 	}
-	if _, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", "sonnet", ""); err == nil {
+	if _, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "sonnet", ""); err == nil {
 		t.Fatal("new API-key connection accepted a blank secret")
 	}
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "subscription", "", ""); err != nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "gpt-new", ""); err == nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-new", ""); err == nil {
 		t.Fatal("auth-mode switch reused a discarded API key")
 	}
-	if _, err := store.Configure(workspaceOne, CursorAdapterKey, "subscription", "", ""); err != nil {
+	if _, err := store.Configure(workspaceOne, CursorAdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Remove(workspaceOne, CodexAdapterKey); err != nil {
@@ -98,12 +100,79 @@ func TestStoreRetainsBlankAPIKeyOnlyForSameKeyModeAndRemovesOneAdapter(t *testin
 	}
 }
 
+func TestStoreRequiresAnExactExecutionModeForEachAuthenticationMode(t *testing.T) {
+	store, err := OpenStore("", testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeStrongIsolated, "gpt-5", "sk-conflicting-mode"); err == nil {
+		t.Fatal("API-key connection accepted a non-bounded execution mode")
+	}
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "subscription", protocol.ExecutionModeBounded, "", ""); err == nil {
+		t.Fatal("subscription connection accepted the bounded execution mode")
+	}
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "subscription", "", "", ""); err == nil {
+		t.Fatal("subscription connection accepted a missing execution mode")
+	}
+	connection, err := store.Configure(workspaceOne, CodexAdapterKey, "subscription", protocol.ExecutionModeHostTrusted, "", "")
+	if err != nil || connection.ExecutionMode != protocol.ExecutionModeHostTrusted {
+		t.Fatalf("host-trusted subscription mode was not stored exactly: %#v, err=%v", connection, err)
+	}
+}
+
+func TestOpenStoreMigratesMissingSubscriptionModeToLegacyUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "providers")
+	store, err := OpenStore(path, testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plaintext, err := json.Marshal(map[string]any{
+		"version": stateVersion,
+		"workspaces": map[string]any{
+			workspaceOne: map[string]any{
+				CodexAdapterKey: map[string]any{"auth_mode": "subscription", "model": "", "api_key": ""},
+			},
+		},
+		"requests": map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := store.encrypt(plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encrypted, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenStore(path, testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, ok := reopened.Get(workspaceOne, CodexAdapterKey)
+	if !ok || connection.ExecutionMode != protocol.ExecutionModeLegacyUnknown {
+		t.Fatalf("missing subscription mode was not preserved as legacy-unknown: %#v", connection)
+	}
+	rewritten, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewrittenPlaintext, err := reopened.decrypt(rewritten)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(rewrittenPlaintext, []byte(`"execution_mode":"legacy_unknown"`)) {
+		t.Fatalf("migrated execution mode was not persisted: %s", rewrittenPlaintext)
+	}
+}
+
 func TestStoreAllowsBlankModelForNewAPIKeyConnection(t *testing.T) {
 	store, err := OpenStore("", testSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", "", "sk-awaiting-model-selection")
+	connection, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "", "sk-awaiting-model-selection")
 	if err != nil {
 		t.Fatalf("API-key credentials could not be saved before model discovery: %v", err)
 	}
@@ -119,7 +188,7 @@ func TestStorePersistsExactCursorModelOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 	const model = "gpt-5.5-medium"
-	if _, err := store.Configure(workspaceOne, CursorAdapterKey, "subscription", model, ""); err != nil {
+	if _, err := store.Configure(workspaceOne, CursorAdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, model, ""); err != nil {
 		t.Fatal(err)
 	}
 	reopened, err := OpenStore(path, testSecret)
@@ -135,7 +204,7 @@ func TestStorePersistsExactCursorModelOverride(t *testing.T) {
 func TestStoreRejectsWrongVaultSecret(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "providers")
 	store, _ := OpenStore(path, testSecret)
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "", "sk-secret-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "", "sk-secret-value"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := OpenStore(path, []byte("different-provider-secret-that-is-at-least-32-bytes")); err == nil {
@@ -156,7 +225,7 @@ func TestOpenStoreScrubsLegacyRequestConnectionCopies(t *testing.T) {
 		"version": stateVersion,
 		"workspaces": map[string]any{
 			workspaceOne: map[string]any{
-				CodexAdapterKey: Connection{AuthMode: "api_key", Model: "gpt-5", APIKey: apiKey},
+				CodexAdapterKey: map[string]any{"auth_mode": "api_key", "model": "gpt-5", "api_key": apiKey},
 			},
 		},
 		"requests": map[string]any{
@@ -198,7 +267,7 @@ func TestOpenStoreScrubsLegacyRequestConnectionCopies(t *testing.T) {
 	if len(reopened.requests) != 1 {
 		t.Fatalf("legacy request history was not compacted: %#v", reopened.requests)
 	}
-	if _, replay, err := reopened.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", "gpt-5", apiKey); err != nil || !replay {
+	if _, replay, err := reopened.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", apiKey); err != nil || !replay {
 		t.Fatalf("scrubbed request record did not preserve replay metadata: replay=%v err=%v", replay, err)
 	}
 }
@@ -207,11 +276,11 @@ func TestFailedAtomicUpdateRollsBackMemoryAndLeavesPriorStateReadable(t *testing
 	directory := t.TempDir()
 	path := filepath.Join(directory, "providers")
 	store, _ := OpenStore(path, testSecret)
-	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", "gpt-stable", "sk-stable-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-stable", "sk-stable-value"); err != nil {
 		t.Fatal(err)
 	}
 	store.path = directory
-	if _, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", "sonnet", "sk-new-value"); err == nil {
+	if _, err := store.Configure(workspaceOne, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "sonnet", "sk-new-value"); err == nil {
 		t.Fatal("expected atomic replacement failure")
 	}
 	if _, ok := store.Get(workspaceOne, ClaudeAdapterKey); ok {
@@ -236,7 +305,7 @@ func TestConfigureRequestStoresSecretOnlyInTheActiveConnection(t *testing.T) {
 	apiKey := "sk-request-record-must-not-retain-this"
 	requestID := "eea34a0f-0d05-4b83-a0c9-cd7eb7686d15"
 	digest := strings.Repeat("a", 64)
-	if _, replay, err := store.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", "gpt-5", apiKey); err != nil || replay {
+	if _, replay, err := store.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", apiKey); err != nil || replay {
 		t.Fatalf("configure request replay=%v err=%v", replay, err)
 	}
 	if record := store.requests[requestID]; record.Digest != digest || record.Operation != "configure" {
@@ -266,17 +335,17 @@ func TestRequestHistoryKeepsOnlyLatestMutationPerWorkspaceAndAdapter(t *testing.
 	for index := 1; index <= 100; index++ {
 		requestID := fmt.Sprintf("00000000-0000-4000-8000-%012x", index)
 		digest := fmt.Sprintf("%064x", index)
-		if _, _, err := store.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", fmt.Sprintf("gpt-%d", index), "sk-bounded-history-value"); err != nil {
+		if _, _, err := store.ConfigureRequest(requestID, digest, workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, fmt.Sprintf("gpt-%d", index), "sk-bounded-history-value"); err != nil {
 			t.Fatal(err)
 		}
 		if len(store.requests) != 1 {
 			t.Fatalf("request history length = %d after mutation %d; want 1", len(store.requests), index)
 		}
 	}
-	if _, _, err := store.ConfigureRequest("00000000-0000-4000-8000-000000000101", strings.Repeat("b", 64), workspaceOne, ClaudeAdapterKey, "api_key", "sonnet", "sk-second-adapter-value"); err != nil {
+	if _, _, err := store.ConfigureRequest("00000000-0000-4000-8000-000000000101", strings.Repeat("b", 64), workspaceOne, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "sonnet", "sk-second-adapter-value"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.ConfigureRequest("00000000-0000-4000-8000-000000000102", strings.Repeat("c", 64), workspaceTwo, CodexAdapterKey, "api_key", "gpt-other", "sk-other-workspace-value"); err != nil {
+	if _, _, err := store.ConfigureRequest("00000000-0000-4000-8000-000000000102", strings.Repeat("c", 64), workspaceTwo, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-other", "sk-other-workspace-value"); err != nil {
 		t.Fatal(err)
 	}
 	if len(store.requests) != 3 {
@@ -293,7 +362,7 @@ func TestRemoveRequestPurgesConnectionSecretAndPriorReplayRecords(t *testing.T) 
 	apiKey := "sk-remove-must-erase-value"
 	configureID := "9434f3c6-4a99-40b1-8568-4cad9504920d"
 	removeID := "e11a1918-9194-4932-ae33-458c431d5536"
-	if _, _, err := store.ConfigureRequest(configureID, strings.Repeat("d", 64), workspaceOne, CodexAdapterKey, "api_key", "gpt-5", apiKey); err != nil {
+	if _, _, err := store.ConfigureRequest(configureID, strings.Repeat("d", 64), workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", apiKey); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.RemoveRequest(removeID, strings.Repeat("e", 64), workspaceOne, CodexAdapterKey); err != nil {
@@ -327,13 +396,13 @@ func TestPurgeWorkspaceRemovesOnlyTargetCredentialsAndRequestHistory(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.ConfigureRequest("44dcdf14-6995-4f64-998f-c2b614bcbaf0", strings.Repeat("1", 64), workspaceOne, CodexAdapterKey, "api_key", "gpt-5", "sk-workspace-one-codex"); err != nil {
+	if _, _, err := store.ConfigureRequest("44dcdf14-6995-4f64-998f-c2b614bcbaf0", strings.Repeat("1", 64), workspaceOne, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", "sk-workspace-one-codex"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.ConfigureRequest("13c1026b-72f8-410e-ab67-a4fa0231ef90", strings.Repeat("2", 64), workspaceOne, ClaudeAdapterKey, "api_key", "sonnet", "sk-workspace-one-claude"); err != nil {
+	if _, _, err := store.ConfigureRequest("13c1026b-72f8-410e-ab67-a4fa0231ef90", strings.Repeat("2", 64), workspaceOne, ClaudeAdapterKey, "api_key", protocol.ExecutionModeBounded, "sonnet", "sk-workspace-one-claude"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.ConfigureRequest("13d11d49-af69-4e5a-a076-1a1bb0c4425b", strings.Repeat("3", 64), workspaceTwo, CodexAdapterKey, "api_key", "gpt-5", "sk-workspace-two"); err != nil {
+	if _, _, err := store.ConfigureRequest("13d11d49-af69-4e5a-a076-1a1bb0c4425b", strings.Repeat("3", 64), workspaceTwo, CodexAdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-5", "sk-workspace-two"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.PurgeWorkspaceRequest("26937086-5b67-4cc0-9949-ffda802715a3", strings.Repeat("4", 64), workspaceOne); err != nil {

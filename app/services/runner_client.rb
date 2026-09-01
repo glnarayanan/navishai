@@ -98,10 +98,10 @@ class RunnerClient
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
-  def test_runtime!(workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+  def test_runtime!(workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
     body = JSON.generate(
       protocol_version: RunnerProtocol::VERSION, workspace_key:, request_id:, detection_key:,
-      configuration_fingerprint:
+      execution_mode:, configuration_fingerprint:
     )
     timestamp = @clock.call.to_i.to_s
     request = Net::HTTP::Post.new(RunnerProtocol::RUNTIME_TEST_PATH)
@@ -115,7 +115,7 @@ class RunnerClient
     raise_for_response(response) unless response.code == 200
 
     RunnerProtocol::RuntimeTestResponse.parse(
-      response.body, workspace_key:, request_id:, detection_key:, configuration_fingerprint:
+      response.body, workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:
     ).attributes
   rescue RunnerProtocol::MalformedMessage => error
     raise MalformedResponse, error.message

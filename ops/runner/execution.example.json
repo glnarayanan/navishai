@@ -1,6 +1,7 @@
 {
   "work_root": "/var/lib/navishai/runs",
   "scripted_fixtures": {},
+  "host_trusted_enabled": false,
   "adapters": {
     "codex_subscription": {
       "enabled": false,

@@ -192,11 +192,15 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     current = create_installation(@workspace, key: "c" * 64)
     current.update!(
       executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
-      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" }, effective_model: "fixture-model"
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", effective_model: "fixture-model"
     )
     sign_in_as users(:owner)
 
-    with_provider_catalog([ live_provider.merge("auth_mode" => "api_key", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+    with_provider_catalog([ live_provider.merge(
+      "auth_mode" => "api_key", "execution_mode" => "bounded", "model" => "fixture-model",
+      "executable_version" => "NavishAI provider API 1.0.0"
+    ) ]) do
       get workspace_runtime_installations_path(@workspace)
     end
 
@@ -215,11 +219,15 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     current = create_installation(@workspace, key: "d" * 64)
     current.update!(
       executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
-      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" }, effective_model: "fixture-model"
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", effective_model: "fixture-model"
     )
     sign_in_as users(:owner)
 
-    with_provider_catalog([ live_provider.merge("auth_mode" => "api_key", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+    with_provider_catalog([ live_provider.merge(
+      "auth_mode" => "api_key", "execution_mode" => "bounded", "model" => "fixture-model",
+      "executable_version" => "NavishAI provider API 1.0.0"
+    ) ]) do
       get workspace_runtime_installations_path(@workspace)
       assert_select "#runtime-#{current.id}", count: 1
       assert_select "#runtime-#{@installation.id}", count: 0
@@ -395,10 +403,11 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
   test "an Owner explicitly tests an installation and persists only safe evidence" do
     sign_in_as users(:owner)
     client = Object.new
-    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
-        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "configuration_fingerprint" => configuration_fingerprint,
         "effective_model" => "fixture-model", "status" => "passed", "failure_code" => nil,
         "usage_observed" => true, "input_units" => 8, "output_units" => 2,
         "tested_at" => "2026-08-31T12:00:00Z"
@@ -422,10 +431,11 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
     client = Object.new
     installation = @installation
-    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
-        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "configuration_fingerprint" => configuration_fingerprint,
         "effective_model" => installation.effective_model, "status" => "failed", "failure_code" => "provider_error",
         "usage_observed" => false, "input_units" => 0, "output_units" => 0,
         "tested_at" => "2026-08-31T12:00:00Z"
@@ -467,10 +477,11 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
   private
     def create_installation(workspace, key: "a" * 64)
       workspace.runtime_installations.create!(
-        detection_key: key, adapter_key: "fixture", protocol_version: "v1", execution_mode: "bounded",
-        executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
-        account_metadata: { "authentication" => "managed_on_runner" },
-        capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",
+      detection_key: key, adapter_key: "fixture", protocol_version: "v1", execution_mode: "strong_isolated",
+      executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
+      account_metadata: { "authentication" => "managed_on_runner" },
+      transport: "managed_process",
+      capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",
         compatibility_status: "compatible", incompatibility_reason: "", health_status: "available",
         effective_model: "fixture-model",
         checked_at: Time.current
@@ -498,7 +509,9 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
         "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
         "auth_modes" => %w[api_key subscription], "model_required" => true, "configured" => true,
         "secret_configured" => true, "auth_mode" => "subscription", "model" => "fixture-model",
-        "health_status" => "available", "available" => true, "executable_version" => "fixture 2.4.1"
+        "supported_execution_modes" => %w[bounded host_trusted strong_isolated], "execution_mode" => "strong_isolated",
+        "health_status" => "available", "available" => true, "unavailable_reason" => "",
+        "executable_version" => "fixture 2.4.1"
       }
     end
 

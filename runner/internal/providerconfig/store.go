@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 const (
@@ -33,9 +35,10 @@ var (
 )
 
 type Connection struct {
-	AuthMode string `json:"auth_mode"`
-	Model    string `json:"model"`
-	APIKey   string `json:"api_key"`
+	AuthMode      string `json:"auth_mode"`
+	ExecutionMode string `json:"execution_mode"`
+	Model         string `json:"model"`
+	APIKey        string `json:"api_key"`
 }
 
 type state struct {
@@ -88,16 +91,41 @@ func OpenStore(path string, secret []byte) (*Store, error) {
 		return nil, ErrStateUnreadable
 	}
 	var decoded state
-	if json.Unmarshal(plaintext, &decoded) != nil || decoded.Version != stateVersion || decoded.Workspaces == nil ||
+	var raw struct {
+		Workspaces map[string]map[string]json.RawMessage `json:"workspaces"`
+	}
+	if json.Unmarshal(plaintext, &decoded) != nil || json.Unmarshal(plaintext, &raw) != nil ||
+		decoded.Version != stateVersion || decoded.Workspaces == nil ||
 		len(decoded.Workspaces) > maximumWorkspaces {
 		return nil, ErrStateUnreadable
 	}
+	migrated := false
 	for workspaceKey, connections := range decoded.Workspaces {
 		if !validUUID(workspaceKey) || len(connections) > len(definitions) {
 			return nil, ErrStateUnreadable
 		}
 		for adapterKey, connection := range connections {
-			if validateConnection(adapterKey, connection, false) != nil {
+			rawConnection, ok := raw.Workspaces[workspaceKey][adapterKey]
+			if !ok {
+				return nil, ErrStateUnreadable
+			}
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(rawConnection, &fields) != nil {
+				return nil, ErrStateUnreadable
+			}
+			if _, present := fields["execution_mode"]; !present {
+				switch connection.AuthMode {
+				case "api_key":
+					connection.ExecutionMode = protocol.ExecutionModeBounded
+				case "subscription":
+					connection.ExecutionMode = protocol.ExecutionModeLegacyUnknown
+				default:
+					return nil, ErrStateUnreadable
+				}
+				decoded.Workspaces[workspaceKey][adapterKey] = connection
+				migrated = true
+			}
+			if validateStoredConnection(adapterKey, connection) != nil {
 				return nil, ErrStateUnreadable
 			}
 		}
@@ -118,7 +146,7 @@ func OpenStore(path string, secret []byte) (*Store, error) {
 	}
 	store.workspaces = decoded.Workspaces
 	store.requests = decoded.Requests
-	if compacted || legacyRequestConnectionsPresent(plaintext) {
+	if migrated || compacted || legacyRequestConnectionsPresent(plaintext) {
 		if err := store.persist(); err != nil {
 			return nil, fmt.Errorf("rewrite provider state: %w", err)
 		}
@@ -143,7 +171,7 @@ func (store *Store) List(workspaceKey string) map[string]Connection {
 	return result
 }
 
-func (store *Store) Configure(workspaceKey, adapterKey, authMode, model, apiKey string) (Connection, error) {
+func (store *Store) Configure(workspaceKey, adapterKey, authMode, executionMode, model, apiKey string) (Connection, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if !validUUID(workspaceKey) {
@@ -156,7 +184,7 @@ func (store *Store) Configure(workspaceKey, adapterKey, authMode, model, apiKey 
 		}
 		apiKey = current.APIKey
 	}
-	connection := Connection{AuthMode: authMode, Model: model, APIKey: apiKey}
+	connection := Connection{AuthMode: authMode, ExecutionMode: executionMode, Model: model, APIKey: apiKey}
 	if err := validateConnection(adapterKey, connection, true); err != nil {
 		return Connection{}, err
 	}
@@ -182,7 +210,7 @@ func (store *Store) Configure(workspaceKey, adapterKey, authMode, model, apiKey 
 	return connection, nil
 }
 
-func (store *Store) ConfigureRequest(requestID, digest, workspaceKey, adapterKey, authMode, model, apiKey string) (Connection, bool, error) {
+func (store *Store) ConfigureRequest(requestID, digest, workspaceKey, adapterKey, authMode, executionMode, model, apiKey string) (Connection, bool, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if replay, ok, err := store.resolveRequest(requestID, digest, workspaceKey, adapterKey, "configure"); ok || err != nil {
@@ -199,7 +227,7 @@ func (store *Store) ConfigureRequest(requestID, digest, workspaceKey, adapterKey
 		}
 		apiKey = current.APIKey
 	}
-	connection := Connection{AuthMode: authMode, Model: model, APIKey: apiKey}
+	connection := Connection{AuthMode: authMode, ExecutionMode: executionMode, Model: model, APIKey: apiKey}
 	if validateConnection(adapterKey, connection, true) != nil {
 		return Connection{}, false, ErrInvalidConnection
 	}
@@ -401,22 +429,45 @@ func distinctWorkspaceCount(workspaces map[string]map[string]Connection, request
 }
 
 func validateConnection(adapterKey string, connection Connection, requireInput bool) error {
+	if err := validateStoredConnection(adapterKey, connection); err != nil ||
+		connection.ExecutionMode == protocol.ExecutionModeLegacyUnknown {
+		return ErrInvalidConnection
+	}
+	if connection.AuthMode == "api_key" && connection.ExecutionMode != protocol.ExecutionModeBounded {
+		return ErrInvalidConnection
+	}
+	if connection.AuthMode == "subscription" &&
+		(connection.ExecutionMode != protocol.ExecutionModeHostTrusted && connection.ExecutionMode != protocol.ExecutionModeStrongIsolated) {
+		return ErrInvalidConnection
+	}
+	if definition, ok := definitions[adapterKey]; !ok ||
+		definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" {
+		return ErrInvalidConnection
+	}
+	if requireInput && connection.AuthMode == "api_key" && len(connection.APIKey) < 8 {
+		return ErrInvalidConnection
+	}
+	return nil
+}
+
+func validateStoredConnection(adapterKey string, connection Connection) error {
 	definition, ok := definitions[adapterKey]
 	if !ok || !contains(definition.AuthModes, connection.AuthMode) || len(connection.Model) > 200 ||
 		containsControl(connection.Model) || len(connection.APIKey) > maximumKeyBytes || containsNUL(connection.APIKey) {
 		return ErrInvalidConnection
 	}
-	if definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" {
+	if definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" &&
+		connection.ExecutionMode != protocol.ExecutionModeLegacyUnknown {
 		return ErrInvalidConnection
 	}
 	if connection.AuthMode == "api_key" {
-		if connection.APIKey == "" {
+		if connection.APIKey == "" || connection.ExecutionMode != protocol.ExecutionModeBounded {
 			return ErrInvalidConnection
 		}
-	} else if connection.APIKey != "" {
-		return ErrInvalidConnection
-	}
-	if requireInput && connection.AuthMode == "api_key" && len(connection.APIKey) < 8 {
+	} else if connection.APIKey != "" ||
+		(connection.ExecutionMode != protocol.ExecutionModeLegacyUnknown &&
+			connection.ExecutionMode != protocol.ExecutionModeHostTrusted &&
+			connection.ExecutionMode != protocol.ExecutionModeStrongIsolated) {
 		return ErrInvalidConnection
 	}
 	return nil

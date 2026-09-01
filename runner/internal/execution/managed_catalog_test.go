@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 )
 
@@ -30,7 +31,7 @@ func TestManagedCatalogProvidesBuiltInAPIForAPIKeyConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "api_key", "gpt-test", "sk-test-secret"); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "api_key", protocol.ExecutionModeBounded, "gpt-test", "sk-test-secret"); err != nil {
 		t.Fatal(err)
 	}
 	config := managedCatalogTestConfig(home, executable)
@@ -67,7 +68,7 @@ func TestManagedCatalogProbesConfiguredSubscriptionHome(t *testing.T) {
 	t.Setenv("PATH", directory)
 	store, _ := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", "", ""); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := NewManagedCatalog(managedCatalogTestConfig(home, executable), store,
@@ -105,7 +106,7 @@ func TestManagedCatalogDoesNotProbeUnapprovedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", "", ""); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	catalog, err := NewManagedCatalog(managedCatalogTestConfig(home, approved), store,
@@ -140,7 +141,7 @@ func TestManagedCatalogUnsupportedSupervisorFailsClosedBeforeProbes(t *testing.T
 		t.Fatal(err)
 	}
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", "", ""); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	config := managedCatalogTestConfig(home, executable)
@@ -194,11 +195,11 @@ func TestManagedConfigurationFingerprintChangesWithCredentialWithoutExposingIt(t
 	config := managedCatalogTestConfig("/runtime/codex", "/usr/bin/codex")
 	adapter := config.Adapters[codex.AdapterKey]
 	key := []byte("managed-catalog-identity-secret-at-least-32-bytes")
-	_, first, err := adapterConfigurationIdentityFor(codex.AdapterKey, adapter, config.Supervisor, "api_key", "sk-first-secret", key)
+	_, first, err := adapterConfigurationIdentityFor(codex.AdapterKey, adapter, config.Supervisor, "api_key", "sk-first-secret", key, protocol.ExecutionModeBounded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, second, err := adapterConfigurationIdentityFor(codex.AdapterKey, adapter, config.Supervisor, "api_key", "sk-second-secret", key)
+	_, second, err := adapterConfigurationIdentityFor(codex.AdapterKey, adapter, config.Supervisor, "api_key", "sk-second-secret", key, protocol.ExecutionModeBounded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +214,7 @@ func TestManagedCatalogProvidesBuiltInAPIInstallationWithoutSupervisor(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", "future-api-model", "sk-built-in-api-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", protocol.ExecutionModeBounded, "future-api-model", "sk-built-in-api-value"); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
@@ -249,7 +250,7 @@ func TestProviderAPIIdentitySeparatesWorkspaceKeyModelAndPolicyWhileDetectionSta
 	config := managedCatalogTestConfig("/runtime/codex", "/usr/bin/codex")
 	adapter := config.Adapters[codex.AdapterKey]
 	identityKey := []byte("managed-catalog-identity-secret-at-least-32-bytes")
-	connection := providerconfig.Connection{AuthMode: "api_key", Model: "future-api-model", APIKey: "sk-built-in-api-value"}
+	connection := providerconfig.Connection{AuthMode: "api_key", ExecutionMode: protocol.ExecutionModeBounded, Model: "future-api-model", APIKey: "sk-built-in-api-value"}
 	baseInstallation, ok := providerAPIInstallation(workspaceOne, codex.AdapterKey, adapter, connection, identityKey, time.Now())
 	if !ok {
 		t.Fatal("base direct provider API identity was rejected")
@@ -261,8 +262,8 @@ func TestProviderAPIIdentitySeparatesWorkspaceKeyModelAndPolicyWhileDetectionSta
 		connection providerconfig.Connection
 	}{
 		{name: "workspace", workspace: workspaceTwo, adapter: adapter, connection: connection},
-		{name: "credential", workspace: workspaceOne, adapter: adapter, connection: providerconfig.Connection{AuthMode: "api_key", Model: connection.Model, APIKey: "sk-another-api-value"}},
-		{name: "model", workspace: workspaceOne, adapter: adapter, connection: providerconfig.Connection{AuthMode: "api_key", Model: "another-future-model", APIKey: connection.APIKey}},
+		{name: "credential", workspace: workspaceOne, adapter: adapter, connection: providerconfig.Connection{AuthMode: "api_key", ExecutionMode: protocol.ExecutionModeBounded, Model: connection.Model, APIKey: "sk-another-api-value"}},
+		{name: "model", workspace: workspaceOne, adapter: adapter, connection: providerconfig.Connection{AuthMode: "api_key", ExecutionMode: protocol.ExecutionModeBounded, Model: "another-future-model", APIKey: connection.APIKey}},
 		{name: "policy", workspace: workspaceOne, adapter: func() AdapterConfig { changed := adapter; changed.MaxSteps++; return changed }(), connection: connection},
 	}
 	for _, variant := range variants {

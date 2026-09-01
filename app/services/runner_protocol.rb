@@ -337,7 +337,7 @@ module RunnerProtocol
     KEYS = %w[protocol_version installations].freeze
     INSTALLATION_KEYS = %w[
       detection_key adapter_key protocol_version executable_path executable_version account_metadata
-      capabilities effective_model configuration_fingerprint minimum_version maximum_version compatibility_status
+      capabilities transport execution_mode effective_model configuration_fingerprint minimum_version maximum_version compatibility_status
       incompatibility_reason health_status checked_at
     ].freeze
 
@@ -379,6 +379,12 @@ module RunnerProtocol
           raise MalformedMessage, "#{name}.account_metadata is invalid"
         end
         values!(installation["capabilities"], 32, "#{name}.capabilities")
+        unless RuntimeInstallation::KNOWN_TRANSPORTS.include?(installation["transport"])
+          raise MalformedMessage, "#{name}.transport is invalid"
+        end
+        unless RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(installation["execution_mode"])
+          raise MalformedMessage, "#{name}.execution_mode is invalid"
+        end
         string!(installation["effective_model"], 200, "#{name}.effective_model", /\A[^\r\n\x00]+\z/)
         string!(installation["configuration_fingerprint"], 64, "#{name}.configuration_fingerprint", /\A[0-9a-f]{64}\z/)
         string!(installation["minimum_version"], 100, "#{name}.minimum_version", nil, allow_empty: true)
@@ -419,24 +425,25 @@ module RunnerProtocol
 
   class RuntimeTestResponse
     KEYS = %w[
-      protocol_version workspace_key request_id detection_key configuration_fingerprint effective_model
+      protocol_version workspace_key request_id detection_key execution_mode configuration_fingerprint effective_model
       status failure_code usage_observed input_units output_units tested_at
     ].freeze
 
     attr_reader :attributes
 
-    def self.parse(body, workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+    def self.parse(body, workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
       raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
 
-      new(JSON.parse(body), workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+      new(JSON.parse(body), workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
     rescue JSON::ParserError
       raise MalformedMessage, "response body is not valid JSON"
     end
 
-    def initialize(attributes, workspace_key:, request_id:, detection_key:, configuration_fingerprint:)
+    def initialize(attributes, workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
       valid = attributes.is_a?(Hash) && attributes.keys.sort == KEYS.sort &&
         attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
         attributes["request_id"] == request_id && attributes["detection_key"] == detection_key &&
+        attributes["execution_mode"] == execution_mode && RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(attributes["execution_mode"]) &&
         attributes["configuration_fingerprint"] == configuration_fingerprint &&
         configuration_fingerprint.match?(/\A[0-9a-f]{64}\z/) &&
         attributes["effective_model"].is_a?(String) && attributes["effective_model"].bytesize.between?(1, 200) &&

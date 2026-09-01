@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 const (
@@ -30,7 +32,16 @@ type ModelDiscovery struct {
 }
 
 type ModelDiscoverySource interface {
-	DiscoverModels(request *http.Request, workspaceKey, adapterKey string) ModelDiscovery
+	DiscoverModels(request *http.Request, workspaceKey, adapterKey, executionMode string) ModelDiscovery
+}
+
+func validKnownExecutionMode(value string) bool {
+	switch value {
+	case protocol.ExecutionModeBounded, protocol.ExecutionModeHostTrusted, protocol.ExecutionModeStrongIsolated:
+		return true
+	default:
+		return false
+	}
 }
 
 func validModelDiscovery(result ModelDiscovery) bool {

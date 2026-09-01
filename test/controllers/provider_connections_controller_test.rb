@@ -30,7 +30,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     @gateway.models_result = {
       "status" => "available", "checked_at" => "2026-08-31T12:00:00Z",
       "models" => [ { "id" => "gpt-5.6", "label" => "GPT-5.6", "default" => true } ],
-      "workspace_key" => @workspace.runner_key, "adapter_key" => "codex", "api_key" => "must-not-leak"
+      "workspace_key" => @workspace.runner_key, "adapter_key" => "codex", "execution_mode" => "bounded",
+      "api_key" => "must-not-leak"
     }
 
     with_gateway(@gateway) do
@@ -46,7 +47,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         "models" => [ { "id" => "gpt-5.6", "label" => "GPT-5.6", "default" => true } ]
       }, JSON.parse(response.body)
     )
-    assert_equal [ [ @workspace.runner_key, "codex" ] ], @gateway.models_calls
+    assert_equal [ [ @workspace.runner_key, "codex", "bounded" ] ], @gateway.models_calls
     assert_not_includes response.body, "must-not-leak"
   end
 
@@ -262,6 +263,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       adapter_key: "codex", executable_path: "/navishai/provider-api/codex",
       executable_version: "codex 1.0.0", effective_model: "gpt-5.6",
       account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https",
       health_status: "available", checked_at: 1.hour.ago
     )
     missing = installation.dup
@@ -322,7 +324,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     with_gateway(@gateway) do
       post workspace_provider_connections_path(@workspace), params: {
         provider_connection: {
-          adapter_key: "claude", auth_mode: "subscription", model: "claude-sonnet-4-5"
+          adapter_key: "claude", auth_mode: "subscription", execution_mode: "strong_isolated", model: "claude-sonnet-4-5"
         }
       }
     end
@@ -336,7 +338,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     with_gateway(@gateway) do
       post workspace_provider_connections_path(@workspace), params: {
-        provider_connection: { adapter_key: "claude", auth_mode: "subscription", model: "", api_key: "" }
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "subscription", execution_mode: "strong_isolated", model: "", api_key: ""
+        }
       }
     end
 
@@ -511,7 +515,10 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         "adapter_key" => adapter_key, "name" => name, "description" => "Connect #{name} to this workspace.",
         "auth_modes" => %w[api_key subscription], "model_required" => true, "configured" => configured,
         "secret_configured" => secret_configured, "auth_mode" => auth_mode, "model" => model,
+        "supported_execution_modes" => %w[bounded host_trusted strong_isolated],
+        "execution_mode" => configured ? (auth_mode == "api_key" ? "bounded" : "strong_isolated") : "",
         "health_status" => configured ? "available" : "not_configured", "available" => true,
+        "unavailable_reason" => "",
         "executable_version" => "#{name.downcase} 1.0.0"
       }
     end
@@ -548,13 +555,15 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         provider = @catalog.find { |item| item.fetch("adapter_key") == attributes.fetch(:adapter_key) }
         provider.merge!(
           "configured" => true, "secret_configured" => attributes.fetch(:api_key).present? || provider.fetch("secret_configured"),
-          "auth_mode" => attributes.fetch(:auth_mode), "model" => attributes.fetch(:model), "health_status" => "available"
+          "auth_mode" => attributes.fetch(:auth_mode), "execution_mode" => attributes.fetch(:execution_mode),
+          "model" => attributes.fetch(:model), "health_status" => "available", "available" => true,
+          "unavailable_reason" => ""
         )
         provider
       end
 
-      def models(workspace_key:, adapter_key:)
-        @models_calls << [ workspace_key, adapter_key ]
+      def models(workspace_key:, adapter_key:, execution_mode:)
+        @models_calls << [ workspace_key, adapter_key, execution_mode ]
         raise models_error if models_error
 
         models_result
@@ -564,7 +573,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         @remove_calls << adapter_key
         @catalog.find { |item| item.fetch("adapter_key") == adapter_key }.merge(
           "configured" => false, "secret_configured" => false, "auth_mode" => "", "model" => "",
-          "health_status" => "not_configured"
+          "execution_mode" => "", "health_status" => "not_configured", "unavailable_reason" => ""
         )
       end
 

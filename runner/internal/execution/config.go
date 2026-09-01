@@ -27,10 +27,11 @@ const (
 )
 
 type Config struct {
-	WorkRoot   string                   `json:"work_root"`
-	Scripted   map[string]string        `json:"scripted_fixtures"`
-	Adapters   map[string]AdapterConfig `json:"adapters"`
-	Supervisor SupervisorConfig         `json:"supervisor"`
+	WorkRoot           string                   `json:"work_root"`
+	Scripted           map[string]string        `json:"scripted_fixtures"`
+	Adapters           map[string]AdapterConfig `json:"adapters"`
+	Supervisor         SupervisorConfig         `json:"supervisor"`
+	HostTrustedEnabled bool                     `json:"host_trusted_enabled"`
 }
 
 type AdapterConfig struct {
@@ -82,6 +83,8 @@ type SupervisorLimits struct {
 type adapterConfigurationIdentity struct {
 	Version           string                     `json:"version"`
 	AdapterKey        string                     `json:"adapter_key"`
+	Transport         runtimecatalog.Transport   `json:"transport"`
+	ExecutionMode     string                     `json:"execution_mode"`
 	Enabled           bool                       `json:"enabled"`
 	HomeDir           string                     `json:"home_dir"`
 	EffectiveModel    string                     `json:"effective_model"`
@@ -111,8 +114,8 @@ type configurationEnvironment struct {
 	Value string `json:"value"`
 }
 
-func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, key []byte) (string, string, error) {
-	return adapterConfigurationIdentityFor(adapterKey, adapter, supervisor, "", "", key)
+func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, key []byte, executionMode string) (string, string, error) {
+	return adapterConfigurationIdentityFor(adapterKey, adapter, supervisor, "", "", key, executionMode)
 }
 
 // AdapterConfigurationIdentityForRuntime adds the immutable runtime evidence
@@ -121,26 +124,34 @@ func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supe
 // before a runtime has been resolved.
 func AdapterConfigurationIdentityForRuntime(
 	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
-	executablePath, detectionKey, observedVersion string,
+	executablePath, detectionKey, observedVersion, executionMode string,
 ) (string, string, error) {
 	if err := validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion); err != nil {
 		return "", "", err
 	}
 	return adapterConfigurationIdentityForRuntime(
 		adapterKey, adapter, supervisor, authMode, apiKey, key, executablePath, detectionKey, observedVersion,
+		executionMode,
 	)
 }
 
-func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte) (string, string, error) {
-	return adapterConfigurationIdentityForRuntime(adapterKey, adapter, supervisor, authMode, apiKey, key, "", "", "")
+func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte, executionMode string) (string, string, error) {
+	return adapterConfigurationIdentityForRuntime(adapterKey, adapter, supervisor, authMode, apiKey, key, "", "", "", executionMode)
 }
 
 func adapterConfigurationIdentityForRuntime(
 	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
-	executablePath, detectionKey, observedVersion string,
+	executablePath, detectionKey, observedVersion, executionMode string,
 ) (string, string, error) {
 	if err := protocol.ValidateSecret(key); err != nil {
 		return "", "", err
+	}
+	if !validExecutionMode(executionMode) {
+		return "", "", errors.New("invalid execution mode")
+	}
+	transport := runtimecatalog.TransportManagedProcess
+	if executionMode == protocol.ExecutionModeBounded {
+		transport = runtimecatalog.TransportBuiltInHTTPS
 	}
 	model := adapter.Model
 	if model == "" {
@@ -151,7 +162,7 @@ func adapterConfigurationIdentityForRuntime(
 		enabled = true
 	}
 	identity := adapterConfigurationIdentity{
-		Version: "v1", AdapterKey: adapterKey, Enabled: enabled, HomeDir: adapter.HomeDir,
+		Version: "v1", AdapterKey: adapterKey, Transport: transport, ExecutionMode: executionMode, Enabled: enabled, HomeDir: adapter.HomeDir,
 		EffectiveModel: model, ExecutablePath: executablePath, DetectionKey: detectionKey,
 		ObservedVersion: observedVersion, AuthMode: authMode, EgressProfileKey: adapter.EgressProfileKey,
 		Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles), Tools: sortedCopy(adapter.Tools),
@@ -188,6 +199,15 @@ func adapterConfigurationIdentityForRuntime(
 	_, _ = digest.Write([]byte(configurationIdentityV1 + "\x00"))
 	_, _ = digest.Write(encoded)
 	return model, hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func validExecutionMode(mode string) bool {
+	switch mode {
+	case protocol.ExecutionModeBounded, protocol.ExecutionModeHostTrusted, protocol.ExecutionModeStrongIsolated:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion string) error {

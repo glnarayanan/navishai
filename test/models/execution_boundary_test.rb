@@ -11,10 +11,12 @@ class ExecutionBoundaryTest < ActiveSupport::TestCase
     assert @installation.reload.approved?
     assert_equal "passed", @installation.runtime_test_status
 
-    @installation.update!(execution_mode: "host_trusted")
+    @installation.update!(transport: "managed_process", execution_mode: "strong_isolated")
 
     @installation.reload
     assert_not @installation.approved?
+    assert_equal "managed_process", @installation.transport
+    assert_equal "strong_isolated", @installation.execution_mode
     assert_nil @installation.approved_by_membership_id
     assert_nil @installation.approved_by_user_id
     assert_nil @installation.approved_at
@@ -40,6 +42,58 @@ class ExecutionBoundaryTest < ActiveSupport::TestCase
     assert_equal original_fingerprint, @installation.runtime_tested_configuration_fingerprint
   end
 
+  test "the model rejects impossible known transport and execution mode pairs" do
+    @installation.assign_attributes(transport: "managed_process", execution_mode: "bounded")
+
+    assert_not @installation.valid?
+    assert_includes @installation.errors[:execution_mode], "is incompatible with runtime transport"
+  end
+
+  test "the database rejects impossible transport and execution mode writes" do
+    attributes = @installation.attributes.except("id", "detection_key", "created_at", "updated_at")
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      RuntimeInstallation.transaction(requires_new: true) do
+        RuntimeInstallation.insert_all!([ attributes.merge(
+          "detection_key" => "c" * 64, "transport" => "managed_process", "execution_mode" => "bounded"
+        ) ])
+      end
+    end
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      RuntimeInstallation.transaction(requires_new: true) do
+        @installation.update_columns(transport: "managed_process", execution_mode: "bounded")
+      end
+    end
+
+    assert_equal "built_in_https", @installation.reload.transport
+    assert_equal "bounded", @installation.execution_mode
+  end
+
+  test "the database rejects approving an installation with unknown transport" do
+    tested_at = Time.current
+    @installation.update_columns(
+      transport: "legacy_unknown", approved: false, approved_by_membership_id: nil,
+      approved_by_user_id: nil, approved_at: nil, runtime_test_status: "passed",
+      runtime_test_failure_code: nil, runtime_tested_at: tested_at,
+      runtime_tested_configuration_fingerprint: @installation.configuration_fingerprint
+    )
+
+    assert_raises(ActiveRecord::StatementInvalid) do
+      RuntimeInstallation.transaction(requires_new: true) do
+        @installation.update_columns(
+          approved: true, approved_by_membership_id: @owner.id, approved_by_user_id: @owner.user_id,
+          approved_at: tested_at
+        )
+      end
+    end
+
+    @installation.reload
+    assert_not @installation.approved?
+    assert_equal "legacy_unknown", @installation.transport
+    assert_not @installation.runnable?
+  end
+
   test "legacy runtimes cannot be approved or run" do
     @installation.update_columns(execution_mode: "legacy_unknown")
     @installation.reload
@@ -53,6 +107,16 @@ class ExecutionBoundaryTest < ActiveSupport::TestCase
 
     assert_not @installation.valid?
     assert_includes @installation.errors[:approved], "cannot be approved until execution mode is known"
+
+    @installation.update_columns(execution_mode: "bounded", transport: "legacy_unknown")
+    @installation.assign_attributes(
+      approved: true, approved_by_membership: @owner, approved_by_user: @owner.user, approved_at: Time.current,
+      runtime_test_status: "passed", runtime_tested_at: Time.current,
+      runtime_tested_configuration_fingerprint: @installation.configuration_fingerprint
+    )
+
+    assert_not @installation.valid?
+    assert_includes @installation.errors[:approved], "cannot be approved until runtime transport is known"
   end
 
   test "new profile versions default to the conservative isolation policy" do

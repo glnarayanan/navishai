@@ -5,6 +5,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -19,9 +20,11 @@ const (
 )
 
 type Availability struct {
-	HealthStatus      string
-	Available         bool
-	ExecutableVersion string
+	HealthStatus            string
+	Available               bool
+	ExecutableVersion       string
+	SupportedExecutionModes []string
+	UnavailableReason       string
 }
 
 type StatusSource interface {
@@ -29,18 +32,21 @@ type StatusSource interface {
 }
 
 type Provider struct {
-	AdapterKey        string   `json:"adapter_key"`
-	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	AuthModes         []string `json:"auth_modes"`
-	ModelRequired     bool     `json:"model_required"`
-	Configured        bool     `json:"configured"`
-	SecretConfigured  bool     `json:"secret_configured"`
-	AuthMode          string   `json:"auth_mode"`
-	Model             string   `json:"model"`
-	HealthStatus      string   `json:"health_status"`
-	Available         bool     `json:"available"`
-	ExecutableVersion string   `json:"executable_version"`
+	AdapterKey              string   `json:"adapter_key"`
+	Name                    string   `json:"name"`
+	Description             string   `json:"description"`
+	AuthModes               []string `json:"auth_modes"`
+	SupportedExecutionModes []string `json:"supported_execution_modes"`
+	ModelRequired           bool     `json:"model_required"`
+	Configured              bool     `json:"configured"`
+	SecretConfigured        bool     `json:"secret_configured"`
+	AuthMode                string   `json:"auth_mode"`
+	ExecutionMode           string   `json:"execution_mode"`
+	Model                   string   `json:"model"`
+	HealthStatus            string   `json:"health_status"`
+	Available               bool     `json:"available"`
+	UnavailableReason       string   `json:"unavailable_reason"`
+	ExecutableVersion       string   `json:"executable_version"`
 }
 
 type Handler struct {
@@ -114,19 +120,26 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) models(response http.ResponseWriter, request *http.Request, input map[string]any) {
-	if len(input) != 3 || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) {
+	if len(input) != 4 || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) ||
+		!validKnownExecutionMode(stringValue(input["execution_mode"])) {
 		handler.invalid(response)
 		return
 	}
 	workspaceKey := stringValue(input["workspace_key"])
 	adapterKey := stringValue(input["adapter_key"])
+	executionMode := stringValue(input["execution_mode"])
 	if !validAdapterKey(adapterKey) {
 		handler.invalid(response)
 		return
 	}
 	result := ModelDiscovery{Status: ModelDiscoveryUnsupported}
 	if _, ok := Lookup(adapterKey); ok {
-		result = handler.discovery.DiscoverModels(request, workspaceKey, adapterKey)
+		connection, configured := handler.store.Get(workspaceKey, adapterKey)
+		if !configured || connection.ExecutionMode != executionMode {
+			handler.writeError(response, http.StatusConflict, "provider_configuration_changed", "Provider configuration changed. Find providers again before discovering models.")
+			return
+		}
+		result = handler.discovery.DiscoverModels(request, workspaceKey, adapterKey, executionMode)
 	}
 	if !validModelDiscovery(result) {
 		result = ModelDiscovery{Status: ModelDiscoveryFailed}
@@ -139,10 +152,11 @@ func (handler *Handler) models(response http.ResponseWriter, request *http.Reque
 		ProtocolVersion string        `json:"protocol_version"`
 		WorkspaceKey    string        `json:"workspace_key"`
 		AdapterKey      string        `json:"adapter_key"`
+		ExecutionMode   string        `json:"execution_mode"`
 		Status          string        `json:"status"`
 		CheckedAt       string        `json:"checked_at"`
 		Models          []ModelOption `json:"models"`
-	}{protocol.Version, workspaceKey, adapterKey, result.Status, handler.now().UTC().Format(time.RFC3339Nano), models})
+	}{protocol.Version, workspaceKey, adapterKey, executionMode, result.Status, handler.now().UTC().Format(time.RFC3339Nano), models})
 }
 
 func (handler *Handler) catalog(response http.ResponseWriter, request *http.Request, input map[string]any) {
@@ -163,14 +177,26 @@ func (handler *Handler) catalog(response http.ResponseWriter, request *http.Requ
 }
 
 func (handler *Handler) configure(response http.ResponseWriter, request *http.Request, input map[string]any, digest string) {
-	if len(input) != 7 || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) ||
-		!validUUID(stringValue(input["request_id"])) {
+	if !hasExactFields(input, "protocol_version", "workspace_key", "request_id", "adapter_key", "auth_mode", "execution_mode", "model", "api_key") ||
+		input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) ||
+		!validUUID(stringValue(input["request_id"])) || !validAdapterKey(stringValue(input["adapter_key"])) ||
+		!validKnownExecutionMode(stringValue(input["execution_mode"])) {
 		handler.invalid(response)
 		return
 	}
 	workspaceKey := stringValue(input["workspace_key"])
 	adapterKey := stringValue(input["adapter_key"])
-	_, replay, err := handler.store.ConfigureRequest(stringValue(input["request_id"]), digest, workspaceKey, adapterKey, stringValue(input["auth_mode"]), stringValue(input["model"]), stringValue(input["api_key"]))
+	executionMode := stringValue(input["execution_mode"])
+	availability := handler.status.ProviderAvailability(request, workspaceKey, adapterKey)
+	if !contains(availability.SupportedExecutionModes, executionMode) {
+		handler.writeError(response, http.StatusUnprocessableEntity, "execution_mode_unavailable", "The requested provider execution mode is not available in this runner deployment.")
+		return
+	}
+	_, replay, err := handler.store.ConfigureRequest(
+		stringValue(input["request_id"]), digest, workspaceKey, adapterKey,
+		stringValue(input["auth_mode"]), executionMode,
+		stringValue(input["model"]), stringValue(input["api_key"]),
+	)
 	if err != nil {
 		status := http.StatusUnprocessableEntity
 		code := "invalid_request"
@@ -250,22 +276,63 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 	definition, _ := Lookup(adapterKey)
 	connection, configured := handler.store.Get(workspaceKey, adapterKey)
 	availability := handler.status.ProviderAvailability(request, workspaceKey, adapterKey)
+	supportedModes := append([]string(nil), definition.SupportedExecutionModes...)
+	if availability.SupportedExecutionModes != nil {
+		supportedModes = append([]string(nil), availability.SupportedExecutionModes...)
+	}
+	sort.Strings(supportedModes)
+	selectedMode := ""
+	if configured {
+		selectedMode = connection.ExecutionMode
+	}
 	health := availability.HealthStatus
 	if !configured {
 		health = "not_configured"
+	} else if selectedMode == protocol.ExecutionModeLegacyUnknown || selectedMode == "" {
+		health = "unavailable"
+	} else if !contains(supportedModes, selectedMode) {
+		health = "unavailable"
 	} else if health == "" {
 		health = "unavailable"
 	}
+	available := configured && availability.Available && health == "available" && contains(supportedModes, selectedMode)
+	reason := availability.UnavailableReason
+	if configured && selectedMode == protocol.ExecutionModeLegacyUnknown {
+		reason = "Execution mode must be selected again for this provider."
+	} else if configured && selectedMode == "" {
+		reason = "Execution mode is missing; configure this provider again."
+	} else if configured && !contains(supportedModes, selectedMode) {
+		reason = "The selected execution mode is not supported by this runner deployment."
+	} else if configured && !available && reason == "" {
+		reason = "The selected execution mode is unavailable in this runner deployment."
+	}
 	return Provider{
 		AdapterKey: definition.AdapterKey, Name: definition.Name, Description: definition.Description,
-		AuthModes: definition.AuthModes, ModelRequired: definition.ModelRequired, Configured: configured,
-		SecretConfigured: configured && connection.APIKey != "", AuthMode: connection.AuthMode, Model: connection.Model,
-		HealthStatus: health, Available: availability.Available, ExecutableVersion: availability.ExecutableVersion,
+		AuthModes: definition.AuthModes, SupportedExecutionModes: supportedModes, ModelRequired: definition.ModelRequired,
+		Configured: configured, SecretConfigured: configured && connection.APIKey != "", AuthMode: connection.AuthMode,
+		ExecutionMode: selectedMode, Model: connection.Model, HealthStatus: health, Available: available,
+		UnavailableReason: reason, ExecutableVersion: availability.ExecutableVersion,
 	}
 }
 
 func (handler *Handler) invalid(response http.ResponseWriter) {
 	handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Provider request does not match protocol v1.")
+}
+
+func hasExactFields(input map[string]any, fields ...string) bool {
+	if len(input) != len(fields) {
+		return false
+	}
+	expected := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		expected[field] = struct{}{}
+	}
+	for field := range input {
+		if _, ok := expected[field]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (handler *Handler) writeError(response http.ResponseWriter, status int, code, message string) {
@@ -278,7 +345,7 @@ func (handler *Handler) writeError(response http.ResponseWriter, status int, cod
 
 type unavailableModelDiscovery struct{}
 
-func (unavailableModelDiscovery) DiscoverModels(*http.Request, string, string) ModelDiscovery {
+func (unavailableModelDiscovery) DiscoverModels(*http.Request, string, string, string) ModelDiscovery {
 	return ModelDiscovery{Status: ModelDiscoveryUnsupported}
 }
 

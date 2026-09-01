@@ -7,25 +7,28 @@ class ProviderConnectionGateway < RunnerClient
     raise MalformedResponse, error.message
   end
 
-  def models(workspace_key:, adapter_key:)
+  def models(workspace_key:, adapter_key:, execution_mode:)
     body = JSON.generate(
-      protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, adapter_key:
+      protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, adapter_key:, execution_mode:
     )
     response = signed_provider_post(
       ProviderConnectionProtocol::MODELS_PATH, body:, read_timeout: 20, timeout_error: Unavailable
     )
-    ProviderConnectionProtocol.parse_models(response.body, workspace_key:, adapter_key:)
+    ProviderConnectionProtocol.parse_models(response.body, workspace_key:, adapter_key:, execution_mode:)
   rescue ProviderConnectionProtocol::MalformedMessage => error
     raise MalformedResponse, error.message
   end
 
-  def configure(workspace_key:, request_id:, adapter_key:, auth_mode:, model:, api_key:)
+  def configure(workspace_key:, request_id:, adapter_key:, auth_mode:, execution_mode:, model:, api_key:)
     body = JSON.generate(
       protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, request_id:, adapter_key:,
-      auth_mode:, model:, api_key:
+      auth_mode:, execution_mode:, model:, api_key:
     )
     response = signed_provider_post(ProviderConnectionProtocol::CONFIGURE_PATH, body:, read_timeout: 55)
-    ProviderConnectionProtocol.parse_provider(response.body, workspace_key:)
+    ProviderConnectionProtocol.parse_provider(
+      response.body, workspace_key:, expected_adapter_key: adapter_key, expected_auth_mode: auth_mode,
+      expected_execution_mode: execution_mode
+    )
   rescue ProviderConnectionProtocol::MalformedMessage => error
     raise MalformedResponse, error.message
   end

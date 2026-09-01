@@ -50,6 +50,9 @@ class RuntimeRegistry
     RuntimeInstallation.transaction do
       record.lock!
       if approve
+        raise InvalidPolicy, "Only a runtime with a known transport and execution mode can run." unless
+          record.transport.in?(RuntimeInstallation::KNOWN_TRANSPORTS) &&
+          record.execution_mode.in?(RuntimeInstallation::KNOWN_EXECUTION_MODES)
         raise InvalidPolicy, "Only an available, compatible provider can run." unless record.health_status == "available" && record.compatibility_status != "incompatible"
         unless record.runtime_test_status == "passed" &&
             record.runtime_tested_configuration_fingerprint == record.configuration_fingerprint
@@ -83,18 +86,21 @@ class RuntimeRegistry
 
   def test!(installation:, client:)
     record = @workspace.runtime_installations.find(installation.id)
-    unless record.health_status == "available" && record.compatibility_status != "incompatible"
+    unless record.transport.in?(RuntimeInstallation::KNOWN_TRANSPORTS) &&
+        record.execution_mode.in?(RuntimeInstallation::KNOWN_EXECUTION_MODES) &&
+        record.health_status == "available" && record.compatibility_status != "incompatible"
       raise InvalidPolicy, "Only an available, compatible provider can be tested."
     end
     request_id = SecureRandom.uuid
     response = client.test_runtime!(
       workspace_key: @workspace.runner_key, request_id:, detection_key: record.detection_key,
-      configuration_fingerprint: record.configuration_fingerprint
+      execution_mode: record.execution_mode, configuration_fingerprint: record.configuration_fingerprint
     )
     RuntimeInstallation.transaction do
       record.lock!
       unless record.health_status == "available" && record.compatibility_status != "incompatible" &&
           response.fetch("configuration_fingerprint") == record.configuration_fingerprint &&
+          response.fetch("execution_mode") == record.execution_mode &&
           response.fetch("effective_model") == record.effective_model
         raise InvalidPolicy, "Provider configuration changed. Find providers again before testing."
       end
@@ -134,9 +140,15 @@ class RuntimeRegistry
   private
     def persist_report!(report)
       installation = @workspace.runtime_installations.find_or_initialize_by(detection_key: report.fetch("detection_key"))
+      execution_mode = report["execution_mode"]
+      unless valid_report_execution_mode?(report, execution_mode)
+        reject_report!(installation)
+        return
+      end
       detected = {
         adapter_key: report.fetch("adapter_key"), protocol_version: report.fetch("protocol_version"),
-        execution_mode: inferred_execution_mode(report),
+        transport: report.fetch("transport"),
+        execution_mode: execution_mode,
         executable_path: report.fetch("executable_path"), executable_version: report.fetch("executable_version"),
         account_metadata: report.fetch("account_metadata"), capabilities: report.fetch("capabilities").sort,
         effective_model: report.fetch("effective_model"),
@@ -159,11 +171,31 @@ class RuntimeRegistry
       installation.save!
     end
 
-    def inferred_execution_mode(report)
-      metadata = report.fetch("account_metadata")
-      bounded = report.fetch("adapter_key") == "scripted" ||
-        (metadata.is_a?(Hash) && metadata["transport"] == "built_in_https")
-      bounded ? "bounded" : "legacy_unknown"
+    def valid_report_execution_mode?(report, execution_mode)
+      return false unless RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(execution_mode) &&
+        RuntimeInstallation::KNOWN_TRANSPORTS.include?(report["transport"])
+
+      transport = report.fetch("transport")
+      if report.fetch("adapter_key") == "scripted"
+        execution_mode == "bounded" && (transport.blank? || transport == "built_in_https")
+      elsif transport == "built_in_https"
+        execution_mode == "bounded"
+      elsif transport == "managed_process"
+        execution_mode.in?(%w[host_trusted strong_isolated])
+      else
+        false
+      end
+    end
+
+    def reject_report!(installation)
+      return unless installation.persisted?
+
+      audit_revoke!(installation) if installation.approved?
+      reset_runtime_test!(installation)
+      installation.update!(
+        health_status: "unhealthy", compatibility_status: "unknown",
+        incompatibility_reason: "The reported execution mode conflicts with the runtime transport."
+      )
     end
 
     def revoke!(installation)

@@ -14,12 +14,14 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
 
       reports
     end
-    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
       raise "wrong workspace" unless workspace_key == runner_key
 
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
-        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "transport" => "built_in_https",
+        "configuration_fingerprint" => configuration_fingerprint,
         "effective_model" => "fixture-model", "status" => "passed", "failure_code" => nil,
         "usage_observed" => true, "input_units" => 12, "output_units" => 3,
         "tested_at" => "2026-08-31T12:00:00Z"
@@ -33,6 +35,7 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     end
     installation = @workspace.runtime_installations.sole
     assert_equal "bounded", installation.execution_mode
+    assert_equal "built_in_https", installation.transport
     assert_equal "/opt/navishai/fixture", installation.executable_path
     assert_equal "fixture-model", installation.effective_model
     assert_equal "c" * 64, installation.configuration_fingerprint
@@ -139,12 +142,14 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     )
 
     runner_key = @workspace.runner_key
-    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, configuration_fingerprint:|
+    @client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
       raise "wrong workspace" unless workspace_key == runner_key
 
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
-        "detection_key" => detection_key, "configuration_fingerprint" => configuration_fingerprint,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "transport" => "built_in_https",
+        "configuration_fingerprint" => configuration_fingerprint,
         "effective_model" => "fixture-model", "status" => "failed",
         "failure_code" => "unexpected_sentinel", "usage_observed" => true,
         "input_units" => 13, "output_units" => 4, "tested_at" => "2026-08-31T12:01:00Z"
@@ -234,28 +239,49 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     assert_not installation.runnable?
   end
 
-  test "refresh infers bounded only from scripted or built-in HTTPS reports" do
+  test "refresh persists explicit modes and rejects transport conflicts" do
+    process_metadata = { "authentication" => "managed_on_runner", "transport" => "managed_process" }
     @reports[0] = runtime_report.merge(
       "adapter_key" => "fixture",
-      "account_metadata" => { "authentication" => "managed_on_runner" }
+      "account_metadata" => process_metadata,
+      "transport" => "built_in_https",
+      "execution_mode" => "bounded"
     )
     RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
     installation = @workspace.runtime_installations.sole
-    assert_equal "legacy_unknown", installation.execution_mode
+    assert_equal "built_in_https", installation.transport
+    assert_equal "bounded", installation.execution_mode
+    assert_equal "available", installation.health_status
     assert_not installation.runnable?
 
     @reports[0] = runtime_report.merge(
-      "adapter_key" => "scripted",
-      "account_metadata" => { "authentication" => "built_in" }
+      "account_metadata" => process_metadata,
+      "transport" => "managed_process",
+      "execution_mode" => "strong_isolated"
     )
     RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
-    assert_equal "bounded", installation.reload.execution_mode
+    installation.reload
+    assert_equal "managed_process", installation.transport
+    assert_equal "strong_isolated", installation.execution_mode
+    assert_equal "available", installation.health_status
+
+    @reports[0] = runtime_report.merge(
+      "account_metadata" => process_metadata, "transport" => "managed_process", "execution_mode" => "bounded"
+    )
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    assert_equal "managed_process", installation.reload.transport
+    assert_equal "strong_isolated", installation.execution_mode
+    assert_equal "unhealthy", installation.health_status
+    assert_equal "unknown", installation.compatibility_status
+    assert_equal "The reported execution mode conflicts with the runtime transport.", installation.incompatibility_reason
+    assert_equal "untested", installation.runtime_test_status
+    assert_not installation.approved?
   end
 
   test "model and database reject secret metadata and incomplete approval attribution" do
     installation = @workspace.runtime_installations.build(runtime_report.slice(
       "detection_key", "adapter_key", "protocol_version", "executable_path", "executable_version",
-      "account_metadata", "capabilities", "minimum_version", "maximum_version", "compatibility_status",
+      "account_metadata", "capabilities", "transport", "execution_mode", "minimum_version", "maximum_version", "compatibility_status",
       "incompatibility_reason", "health_status", "checked_at"
     ).transform_keys(&:to_sym))
     installation.account_metadata = { "access_token" => "must-not-store" }
@@ -279,6 +305,8 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
           "authentication" => "managed_on_runner", "account_label" => "Fixture Team", "transport" => "built_in_https"
         },
         "capabilities" => %w[structured_output tool_calling], "minimum_version" => "2.0.0",
+        "transport" => "built_in_https",
+        "execution_mode" => "bounded",
         "effective_model" => "fixture-model", "configuration_fingerprint" => "c" * 64,
         "maximum_version" => "2.x", "compatibility_status" => "compatible", "incompatibility_reason" => "",
         "health_status" => "available", "checked_at" => "2026-08-24T12:00:00Z"

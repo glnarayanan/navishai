@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 func TestLoadConfigAcceptsExampleAndDecodesEgressNamespaces(t *testing.T) {
@@ -93,13 +95,13 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 		Environment: map[string]string{"HTTPS_PROXY": "http://proxy.internal:8080", "SSL_CERT_FILE": "/etc/ssl/cert.pem"},
 	}}}
 
-	model, fingerprint, err := AdapterConfigurationIdentity("codex_subscription", adapter, supervisor, identityKey)
+	model, fingerprint, err := AdapterConfigurationIdentity("codex_subscription", adapter, supervisor, identityKey, protocol.ExecutionModeStrongIsolated)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reordered := adapter
 	reordered.Profiles = []string{"fast", "thorough"}
-	modelAgain, fingerprintAgain, err := AdapterConfigurationIdentity("codex_subscription", reordered, supervisor, identityKey)
+	modelAgain, fingerprintAgain, err := AdapterConfigurationIdentity("codex_subscription", reordered, supervisor, identityKey, protocol.ExecutionModeStrongIsolated)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +116,7 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 	}
 	reorderedSupervisor.EgressProfiles = []EgressProfileConfig{reorderedProfile}
 	_, reorderedEnvironmentFingerprint, err := AdapterConfigurationIdentity(
-		"codex_subscription", adapter, reorderedSupervisor, identityKey,
+		"codex_subscription", adapter, reorderedSupervisor, identityKey, protocol.ExecutionModeStrongIsolated,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -124,16 +126,25 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 	}
 	changed := adapter
 	changed.Model = "gpt-other"
-	_, changedFingerprint, err := AdapterConfigurationIdentity("codex_subscription", changed, supervisor, identityKey)
+	_, changedFingerprint, err := AdapterConfigurationIdentity("codex_subscription", changed, supervisor, identityKey, protocol.ExecutionModeStrongIsolated)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if changedFingerprint == fingerprint {
 		t.Fatal("model change did not change the configuration fingerprint")
 	}
+	_, changedModeFingerprint, err := AdapterConfigurationIdentity(
+		"codex_subscription", adapter, supervisor, identityKey, protocol.ExecutionModeHostTrusted,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedModeFingerprint == fingerprint {
+		t.Fatal("execution mode change did not change the configuration fingerprint")
+	}
 	withoutModel := adapter
 	withoutModel.Model = ""
-	defaultModel, _, err := AdapterConfigurationIdentity("codex_subscription", withoutModel, supervisor, identityKey)
+	defaultModel, _, err := AdapterConfigurationIdentity("codex_subscription", withoutModel, supervisor, identityKey, protocol.ExecutionModeStrongIsolated)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +159,7 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 	}
 	changedSupervisor.EgressProfiles = []EgressProfileConfig{changedProfile}
 	_, changedEnvironmentFingerprint, err := AdapterConfigurationIdentity(
-		"codex_subscription", adapter, changedSupervisor, identityKey,
+		"codex_subscription", adapter, changedSupervisor, identityKey, protocol.ExecutionModeStrongIsolated,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +169,7 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 	}
 
 	_, alternateKeyFingerprint, err := AdapterConfigurationIdentity(
-		"codex_subscription", adapter, supervisor, []byte("alternate-configuration-key-at-least-32-bytes"),
+		"codex_subscription", adapter, supervisor, []byte("alternate-configuration-key-at-least-32-bytes"), protocol.ExecutionModeStrongIsolated,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -166,8 +177,11 @@ func TestAdapterConfigurationIdentityIsStableAndMaterial(t *testing.T) {
 	if alternateKeyFingerprint == fingerprint {
 		t.Fatal("configuration fingerprint was not keyed")
 	}
-	if _, _, err := AdapterConfigurationIdentity("codex_subscription", adapter, supervisor, []byte("short")); err == nil {
+	if _, _, err := AdapterConfigurationIdentity("codex_subscription", adapter, supervisor, []byte("short"), protocol.ExecutionModeStrongIsolated); err == nil {
 		t.Fatal("short configuration identity key was accepted")
+	}
+	if _, _, err := AdapterConfigurationIdentity("codex_subscription", adapter, supervisor, identityKey, ""); err == nil {
+		t.Fatal("missing execution mode was accepted")
 	}
 }
 
@@ -183,7 +197,7 @@ func TestAdapterConfigurationIdentityBindsResolvedRuntimeEvidence(t *testing.T) 
 	identity := func(current AdapterConfig, authMode, apiKey, path, detection, version string) (string, string, error) {
 		return AdapterConfigurationIdentityForRuntime(
 			"codex_subscription", current, supervisor, authMode, apiKey, identityKey,
-			path, detection, version,
+			path, detection, version, protocol.ExecutionModeStrongIsolated,
 		)
 	}
 	_, baseline, err := identity(adapter, "subscription", "", "/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0")
@@ -218,6 +232,16 @@ func TestAdapterConfigurationIdentityBindsResolvedRuntimeEvidence(t *testing.T) 
 	}
 	if authChanged == baseline {
 		t.Fatal("authentication mode change did not invalidate fingerprint")
+	}
+	_, modeChanged, err := AdapterConfigurationIdentityForRuntime(
+		"codex_subscription", adapter, supervisor, "subscription", "", identityKey,
+		"/opt/navishai/runtimes/codex", strings.Repeat("a", 64), "codex 0.149.0", protocol.ExecutionModeHostTrusted,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modeChanged == baseline {
+		t.Fatal("runtime execution mode change did not invalidate fingerprint")
 	}
 	policyChanged := adapter
 	policyChanged.MaxSteps++

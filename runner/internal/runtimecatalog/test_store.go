@@ -49,7 +49,7 @@ func OpenTestStore(path string) (*TestStore, error) {
 	}
 	for requestID, record := range store.records {
 		if !workspaceKeyPattern.MatchString(requestID) || !configurationIdentityPattern.MatchString(record.RequestDigest) ||
-			!validTestResult(record.Result, record.ConfigurationFingerprint) {
+			!validTestResult(record.Result, record.Result.ExecutionMode, record.ConfigurationFingerprint) {
 			return nil, errors.New("runtime test store contains an invalid record")
 		}
 	}
@@ -60,7 +60,8 @@ func (store *TestStore) Resolve(request TestRequest, digest string, run func() (
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	if record, exists := store.records[request.RequestID]; exists {
-		if record.RequestDigest != digest {
+		if record.RequestDigest != digest || record.ConfigurationFingerprint != request.ConfigurationFingerprint ||
+			record.Result.ExecutionMode != request.ExecutionMode {
 			return TestResult{}, false, ErrTestConflict
 		}
 		return record.Result, true, nil
@@ -72,7 +73,7 @@ func (store *TestStore) Resolve(request TestRequest, digest string, run func() (
 	if err != nil {
 		return TestResult{}, false, err
 	}
-	if !validTestResult(result, request.ConfigurationFingerprint) {
+	if !validTestResult(result, request.ExecutionMode, request.ConfigurationFingerprint) {
 		return TestResult{}, false, ErrInvalidTestResult
 	}
 	store.records[request.RequestID] = testStoreRecord{

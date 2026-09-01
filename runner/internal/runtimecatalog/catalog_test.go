@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 func TestDetectReportsOnlyResolvedRegisteredExecutables(t *testing.T) {
@@ -21,6 +23,8 @@ func TestDetectReportsOnlyResolvedRegisteredExecutables(t *testing.T) {
 	catalog, err := New([]Definition{{
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"missing", "fixture-runtime"},
 		VersionArguments: []string{"--version"}, Capabilities: []string{"tool_calling", "structured_output"},
+		Transport:      TransportBuiltInHTTPS,
+		ExecutionMode:  protocol.ExecutionModeBounded,
 		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 		MinimumVersion: "2.0.0", MaximumVersion: "2.9.99",
 	}}, func() time.Time { return checkedAt })
@@ -95,6 +99,8 @@ func TestDetectBindsConfigurationIdentityToRuntimeEvidence(t *testing.T) {
 	catalog, err := New([]Definition{{
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture-runtime"},
 		VersionArguments: []string{"--version"}, Capabilities: []string{"structured_output"},
+		Transport:      TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
 		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 		MinimumVersion: "2.0.0", MaximumVersion: "2.9.99",
 		ConfigurationIdentity: func(path, key, version string) (string, string, error) {
@@ -122,6 +128,8 @@ func TestDetectOmitsUnregisteredAndMissingExecutables(t *testing.T) {
 	catalog, err := New([]Definition{{
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"not-installed"},
 		VersionArguments: []string{"--version"},
+		Transport:        TransportManagedProcess,
+		ExecutionMode:    protocol.ExecutionModeStrongIsolated,
 		EffectiveModel:   "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 	}}, time.Now)
 	if err != nil {
@@ -144,6 +152,8 @@ func TestDetectReportsOnlyNonSecretAuthenticatedAccountMetadata(t *testing.T) {
 		AdapterKey: "account_fixture", ProtocolVersion: "v1", ExecutableNames: []string{"account-runtime"},
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"login", "status"},
 		AccountMarker: "Logged in using Test Plan", AccountMetadata: map[string]string{"authentication": "test_subscription"},
+		Transport:      TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
 		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 		MinimumVersion: "1.0.0", MaximumVersion: "1.9.99",
 	}}, time.Now)
@@ -170,6 +180,8 @@ func TestDetectUsesAdapterAccountValidatorAndNamedEnvironment(t *testing.T) {
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth", "status"},
 		AccountValidator:   func(output string) bool { return output == `{"authenticated":true}` },
 		AccountEnvironment: []string{"ACCOUNT_HOME"}, AccountMetadata: map[string]string{"authentication": "test_subscription"},
+		Transport:      TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
 		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 		MinimumVersion: "2.1.200", MaximumVersion: "2.1.299",
 	}}, time.Now)
@@ -187,6 +199,8 @@ func TestNewRejectsAmbiguousAccountValidatorsAndUnsafeEnvironmentNames(t *testin
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture"},
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth"},
 		AccountMetadata: map[string]string{"authentication": "fixture"},
+		Transport:       TransportManagedProcess,
+		ExecutionMode:   protocol.ExecutionModeStrongIsolated,
 		EffectiveModel:  "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 	}
 	definitions := []Definition{
@@ -211,6 +225,8 @@ func TestNewRejectsInvalidStaticInstallation(t *testing.T) {
 	installation := Installation{
 		DetectionKey: strings.Repeat("a", 64), AdapterKey: "scripted", ProtocolVersion: "v1",
 		ExecutablePath: "/tmp/fixture.json", ExecutableVersion: "scripted 1.0.0",
+		Transport:       TransportBuiltInHTTPS,
+		ExecutionMode:   protocol.ExecutionModeBounded,
 		AccountMetadata: map[string]string{"authentication": "built_in"}, Capabilities: []string{"tool_calling"},
 		EffectiveModel: "deterministic_fixture", ConfigurationFingerprint: strings.Repeat("b", 64),
 		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
@@ -232,6 +248,8 @@ func TestResolveApprovedRejectsChangedBytesBeforeRunningProbe(t *testing.T) {
 	catalog, err := New([]Definition{{
 		AdapterKey: "fixture", ProtocolVersion: "v1", ExecutableNames: []string{"fixture-runtime"},
 		VersionArguments: []string{"--version"}, Capabilities: []string{"structured_output"},
+		Transport:      TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
 		EffectiveModel: "fixture-model", ConfigurationFingerprint: strings.Repeat("a", 64),
 		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
 	}}, time.Now)
@@ -275,6 +293,8 @@ func TestDetectApprovedDoesNotProbeUnapprovedExecutableOrExposeCredentialHome(t 
 		AccountMarker: "authenticated", AccountEnvironment: []string{"ACCOUNT_HOME"}, AccountHome: credentialHome,
 		AccountMetadata: map[string]string{"authentication": "fixture_subscription"},
 		Capabilities:    []string{"structured_output"}, EffectiveModel: "fixture-model",
+		Transport:                TransportManagedProcess,
+		ExecutionMode:            protocol.ExecutionModeStrongIsolated,
 		ConfigurationFingerprint: strings.Repeat("a", 64), MinimumVersion: "1.0.0", MaximumVersion: "1.0.0",
 	}}, time.Now)
 	if err != nil {

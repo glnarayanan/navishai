@@ -2524,10 +2524,10 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.approved AND NEW.approved AND
      ROW(OLD.adapter_key, OLD.protocol_version, OLD.executable_path, OLD.executable_version,
          OLD.account_metadata, OLD.capabilities, OLD.minimum_version, OLD.maximum_version,
-         OLD.compatibility_status, OLD.execution_mode) IS DISTINCT FROM
+         OLD.compatibility_status, OLD.execution_mode, OLD.transport) IS DISTINCT FROM
      ROW(NEW.adapter_key, NEW.protocol_version, NEW.executable_path, NEW.executable_version,
          NEW.account_metadata, NEW.capabilities, NEW.minimum_version, NEW.maximum_version,
-         NEW.compatibility_status, NEW.execution_mode) THEN
+         NEW.compatibility_status, NEW.execution_mode, NEW.transport) THEN
     RAISE EXCEPTION 'runtime detection changed without revoking approval';
   END IF;
   RETURN NEW;
@@ -6036,6 +6036,7 @@ CREATE TABLE public.runtime_installations (
     runtime_test_output_units bigint DEFAULT 0 NOT NULL,
     runtime_test_usage_observed boolean DEFAULT false NOT NULL,
     execution_mode character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
+    transport character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
     CONSTRAINT runtime_installations_approval_requires_test CHECK (((approved = false) OR (((runtime_test_status)::text = 'passed'::text) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
@@ -6049,6 +6050,7 @@ CREATE TABLE public.runtime_installations (
     CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
     CONSTRAINT runtime_installations_test_evidence CHECK ((((runtime_test_status)::text = ANY (ARRAY[('untested'::character varying)::text, ('passed'::character varying)::text, ('failed'::character varying)::text])) AND ((runtime_test_failure_code IS NULL) OR ((runtime_test_failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)) AND ((runtime_tested_configuration_fingerprint IS NULL) OR ((runtime_tested_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text)) AND (runtime_test_input_units >= 0) AND (runtime_test_output_units >= 0))),
     CONSTRAINT runtime_installations_test_state CHECK (((((runtime_test_status)::text = 'untested'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NULL) AND (runtime_tested_configuration_fingerprint IS NULL) AND (runtime_test_input_units = 0) AND (runtime_test_output_units = 0) AND (runtime_test_usage_observed = false)) OR (((runtime_test_status)::text = 'passed'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)) OR (((runtime_test_status)::text = 'failed'::text) AND (runtime_test_failure_code IS NOT NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
+    CONSTRAINT runtime_installations_transport CHECK ((((transport)::text = ANY ((ARRAY['built_in_https'::character varying, 'managed_process'::character varying, 'legacy_unknown'::character varying])::text[])) AND (((transport)::text = 'legacy_unknown'::text) OR ((execution_mode)::text = 'legacy_unknown'::text) OR (((transport)::text = 'built_in_https'::text) AND ((execution_mode)::text = 'bounded'::text)) OR (((transport)::text = 'managed_process'::text) AND ((execution_mode)::text = ANY ((ARRAY['host_trusted'::character varying, 'strong_isolated'::character varying])::text[])))) AND (((transport)::text <> 'legacy_unknown'::text) OR (approved = false)) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
     CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
@@ -15389,6 +15391,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901020000'),
 ('20260901010000'),
 ('20260831143000'),
 ('20260831121000'),

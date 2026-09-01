@@ -61,7 +61,9 @@ class ProviderConnectionsController < ApplicationController
     end
     return head :not_found unless provider&.fetch("configured")
 
-    discovery = gateway.models(workspace_key: workspace.runner_key, adapter_key:)
+    discovery = gateway.models(
+      workspace_key: workspace.runner_key, adapter_key:, execution_mode: provider.fetch("execution_mode")
+    )
     render json: discovery.slice("status", "checked_at", "models")
   rescue RunnerClient::Unavailable
     render json: { status: "unavailable", models: [] }, status: :service_unavailable
@@ -85,6 +87,7 @@ class ProviderConnectionsController < ApplicationController
       configured = gateway.configure(
         workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key:,
         auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
+        execution_mode: selected_execution_mode(attributes),
         api_key: attributes.fetch(:api_key)
       )
       return unless record_confirmed_provider_change(
@@ -180,13 +183,15 @@ class ProviderConnectionsController < ApplicationController
 
       model = provider.fetch("model").presence
       version = provider.fetch("executable_version").presence
-      return if model.blank? && version.blank?
+      execution_mode = provider.fetch("execution_mode").presence
+      return if model.blank? && version.blank? || execution_mode.blank?
 
       candidates = candidates.select { |installation| installation.effective_model == model } if model
       candidates = candidates.select { |installation| installation.executable_version == version } if version
+      candidates = candidates.select { |installation| installation.execution_mode == execution_mode }
       return if candidates.empty?
 
-      built_in = candidates.select { |installation| installation.account_metadata.to_h["transport"] == "built_in_https" }
+      built_in = candidates.select { |installation| installation.transport == "built_in_https" }
       candidates = if provider.fetch("auth_mode") == "api_key"
         built_in
       else
@@ -230,8 +235,14 @@ class ProviderConnectionsController < ApplicationController
 
     def provider_params
       @provider_params ||= params.expect(
-        provider_connection: %i[ adapter_key auth_mode model api_key ]
-      ).to_h.symbolize_keys.reverse_merge(api_key: "")
+        provider_connection: %i[ adapter_key auth_mode execution_mode model api_key ]
+      ).to_h.symbolize_keys.reverse_merge(api_key: "", execution_mode: "")
+    end
+
+    def selected_execution_mode(attributes)
+      return "bounded" if attributes.fetch(:auth_mode) == "api_key" && attributes[:execution_mode].blank?
+
+      attributes.fetch(:execution_mode)
     end
 
     def require_provider_admin

@@ -165,7 +165,7 @@ func configuredRuntimeCatalog(config execution.Config, configurationIdentityKey 
 	for key, definition := range available {
 		if config.Adapters[key].Enabled {
 			model, fingerprint, err := execution.AdapterConfigurationIdentity(
-				key, config.Adapters[key], config.Supervisor, configurationIdentityKey,
+				key, config.Adapters[key], config.Supervisor, configurationIdentityKey, definition.ExecutionMode,
 			)
 			if err != nil {
 				return nil, err

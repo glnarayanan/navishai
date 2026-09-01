@@ -59,6 +59,8 @@ func Definition() runtimecatalog.Definition {
 		AccountValidator: validSubscriptionStatus, AccountEnvironment: []string{"CLAUDE_CONFIG_DIR"},
 		AccountMetadata: map[string]string{"authentication": "claude_subscription"},
 		Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:       runtimecatalog.TransportManagedProcess,
+		ExecutionMode:   protocol.ExecutionModeStrongIsolated,
 		EffectiveModel:  "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
 		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}

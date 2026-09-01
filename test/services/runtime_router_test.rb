@@ -71,7 +71,7 @@ class RuntimeRouterTest < ActiveSupport::TestCase
   test "does not fall back from a strong-isolation policy to a host-trusted runtime" do
     @installation.update!(
       approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil,
-      execution_mode: "host_trusted"
+      transport: "managed_process", execution_mode: "host_trusted"
     )
     @installation = approve_scripted_runtime(workspace: @workspace, membership: memberships(:owner_support))
 

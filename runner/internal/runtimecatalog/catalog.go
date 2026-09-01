@@ -17,12 +17,21 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 const (
 	RuntimeTestCapability = "runtime_test"
 	maxVersionBytes       = 8 * 1024
 	probeTimeout          = 3 * time.Second
+)
+
+type Transport string
+
+const (
+	TransportBuiltInHTTPS   Transport = "built_in_https"
+	TransportManagedProcess Transport = "managed_process"
 )
 
 var ErrInvalidDefinition = errors.New("invalid runtime definition")
@@ -44,6 +53,8 @@ type Definition struct {
 	AccountHome              string
 	AccountMetadata          map[string]string
 	Capabilities             []string
+	Transport                Transport
+	ExecutionMode            string
 	EffectiveModel           string
 	ConfigurationFingerprint string
 	// ConfigurationIdentity is evaluated after the executable has been
@@ -62,6 +73,8 @@ type Installation struct {
 	ExecutableVersion        string            `json:"executable_version"`
 	AccountMetadata          map[string]string `json:"account_metadata"`
 	Capabilities             []string          `json:"capabilities"`
+	Transport                Transport         `json:"transport"`
+	ExecutionMode            string            `json:"execution_mode"`
 	EffectiveModel           string            `json:"effective_model"`
 	ConfigurationFingerprint string            `json:"configuration_fingerprint"`
 	MinimumVersion           string            `json:"minimum_version"`
@@ -92,6 +105,8 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
 			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] ||
+			!validTransport(definition.Transport) ||
+			!validExecutionMode(definition.ExecutionMode) ||
 			!validConfigurationIdentity(definition.EffectiveModel, definition.ConfigurationFingerprint) ||
 			(len(definition.AccountArguments) > 0 && ((definition.AccountMarker == "") == (definition.AccountValidator == nil) ||
 				len(definition.AccountMetadata) == 0)) ||
@@ -122,6 +137,8 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 func validInstallation(installation Installation) bool {
 	if !lowerHexPattern.MatchString(installation.DetectionKey) || !policyKeyPattern.MatchString(installation.AdapterKey) ||
 		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || installation.ExecutableVersion == "" ||
+		!validTransport(installation.Transport) ||
+		!validExecutionMode(installation.ExecutionMode) ||
 		installation.CompatibilityStatus != "compatible" || installation.IncompatibilityReason != "" ||
 		installation.HealthStatus != "available" || len(installation.Capabilities) == 0 ||
 		!validConfigurationIdentity(installation.EffectiveModel, installation.ConfigurationFingerprint) ||
@@ -145,6 +162,24 @@ func validInstallation(installation Installation) bool {
 		capabilities[capability] = true
 	}
 	return true
+}
+
+func validTransport(value Transport) bool {
+	switch value {
+	case TransportBuiltInHTTPS, TransportManagedProcess:
+		return true
+	default:
+		return false
+	}
+}
+
+func validExecutionMode(value string) bool {
+	switch value {
+	case protocol.ExecutionModeBounded, protocol.ExecutionModeHostTrusted, protocol.ExecutionModeStrongIsolated:
+		return true
+	default:
+		return false
+	}
 }
 
 func validConfigurationIdentity(model, fingerprint string) bool {
@@ -327,7 +362,8 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 		}
 		if accountErr != nil || overflowed || !authenticated {
 			health = "unhealthy"
-			accountMetadata = map[string]string{"authentication": "not_authenticated"}
+			accountMetadata = cloneMetadata(definition.AccountMetadata)
+			accountMetadata["authentication"] = "not_authenticated"
 		} else {
 			accountMetadata = cloneMetadata(definition.AccountMetadata)
 		}
@@ -337,7 +373,8 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	return Installation{
 		DetectionKey: detection, AdapterKey: definition.AdapterKey,
 		ProtocolVersion: definition.ProtocolVersion, ExecutablePath: resolved, ExecutableVersion: version,
-		AccountMetadata: accountMetadata, Capabilities: capabilities,
+		AccountMetadata: accountMetadata, Capabilities: capabilities, Transport: definition.Transport,
+		ExecutionMode:  definition.ExecutionMode,
 		EffectiveModel: effectiveModel, ConfigurationFingerprint: configurationFingerprint,
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,

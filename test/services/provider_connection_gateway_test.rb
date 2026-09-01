@@ -12,7 +12,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     gateway.define_singleton_method(:perform) do |request, read_timeout:|
       captured << [ request, read_timeout ]
       response_provider = if request.path == ProviderConnectionProtocol::REMOVE_PATH
-        provider.merge("configured" => false, "secret_configured" => false, "auth_mode" => "", "model" => "", "health_status" => "not_configured")
+        provider.merge("configured" => false, "secret_configured" => false, "auth_mode" => "", "model" => "", "execution_mode" => "", "health_status" => "not_configured")
       else
         provider
       end
@@ -29,7 +29,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     assert_equal "codex", gateway.catalog(workspace_key:).sole.fetch("adapter_key")
     gateway.configure(
       workspace_key:, request_id:, adapter_key: "codex", auth_mode: "api_key", model: "gpt-5.6",
-      api_key: "one-time-key"
+      execution_mode: "bounded", api_key: "one-time-key"
     )
     gateway.remove(workspace_key:, request_id:, adapter_key: "codex")
     assert gateway.purge_workspace(workspace_key:)
@@ -53,6 +53,34 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     end
   end
 
+  test "rejects a configure response whose provider identity differs from the request" do
+    workspace_key = "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
+    request_id = "3d07f334-88ef-4fe4-a640-421e3ba79921"
+    gateway = ProviderConnectionGateway.new(secret: "s" * 32)
+    provider = provider_payload
+
+    {
+      "adapter_key" => "claude",
+      "auth_mode" => "subscription",
+      "execution_mode" => "strong_isolated"
+    }.each do |field, value|
+      gateway.define_singleton_method(:perform) do |_request, read_timeout:|
+        response_provider = provider.merge(field => value)
+        RunnerClient::Response.new(
+          code: 200,
+          body: JSON.generate(protocol_version: "v1", workspace_key:, provider: response_provider)
+        )
+      end
+
+      assert_raises(RunnerClient::MalformedResponse, field) do
+        gateway.configure(
+          workspace_key:, request_id:, adapter_key: "codex", auth_mode: "api_key", model: "gpt-5.6",
+          execution_mode: "bounded", api_key: "one-time-key"
+        )
+      end
+    end
+  end
+
   test "signs model discovery requests with an exact body and validates the bounded response" do
     secret = "s" * 32
     now = Time.iso8601("2026-08-31T12:00:00Z")
@@ -66,12 +94,13 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
       RunnerClient::Response.new(code: 200, body: response_body)
     end
 
-    result = gateway.models(workspace_key:, adapter_key:)
+    result = gateway.models(workspace_key:, adapter_key:, execution_mode: "bounded")
     request, read_timeout = captured.first
     assert_equal ProviderConnectionProtocol::MODELS_PATH, request.path
     assert_equal 20, read_timeout
     assert_equal(
-      { "protocol_version" => "v1", "workspace_key" => workspace_key, "adapter_key" => adapter_key },
+      { "protocol_version" => "v1", "workspace_key" => workspace_key, "adapter_key" => adapter_key,
+        "execution_mode" => "bounded" },
       JSON.parse(request.body)
     )
     assert_equal RunnerProtocol.signature(
@@ -80,6 +109,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     assert_equal "available", result.fetch("status")
     assert_equal workspace_key, result.fetch("workspace_key")
     assert_equal adapter_key, result.fetch("adapter_key")
+    assert_equal "bounded", result.fetch("execution_mode")
     assert result.fetch("models").all? { |model| model.keys.sort == %w[default id label] }
     refute result.key?("api_key")
   end
@@ -115,7 +145,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
 
     invalid.each do |name, payload|
       assert_raises(ProviderConnectionProtocol::MalformedMessage, name) do
-        ProviderConnectionProtocol.parse_models(JSON.generate(payload), workspace_key:, adapter_key: "codex")
+        ProviderConnectionProtocol.parse_models(JSON.generate(payload), workspace_key:, adapter_key: "codex", execution_mode: "bounded")
       end
     end
   end
@@ -126,7 +156,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     %w[unsupported failed].each do |status|
       payload = model_discovery_payload(workspace_key:, status:, models: [])
       result = ProviderConnectionProtocol.parse_models(
-        JSON.generate(payload), workspace_key:, adapter_key: "codex"
+        JSON.generate(payload), workspace_key:, adapter_key: "codex", execution_mode: "bounded"
       )
       assert_equal status, result.fetch("status")
       assert_equal [], result.fetch("models")
@@ -141,11 +171,11 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     workspace_key = "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
 
     assert_raises(RunnerClient::Unavailable) { gateway.catalog(workspace_key:) }
-    assert_raises(RunnerClient::Unavailable) { gateway.models(workspace_key:, adapter_key: "codex") }
+    assert_raises(RunnerClient::Unavailable) { gateway.models(workspace_key:, adapter_key: "codex", execution_mode: "bounded") }
     assert_raises(RunnerClient::AmbiguousResult) do
       gateway.configure(
         workspace_key:, request_id: SecureRandom.uuid, adapter_key: "codex", auth_mode: "api_key",
-        model: "gpt-5.6", api_key: "one-time-key"
+        model: "gpt-5.6", execution_mode: "bounded", api_key: "one-time-key"
       )
     end
     assert_raises(RunnerClient::AmbiguousResult) do
@@ -175,7 +205,8 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     def model_discovery_payload(workspace_key:, adapter_key: "codex", status: "available", models: nil)
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key, "adapter_key" => adapter_key,
-        "status" => status, "checked_at" => "2026-08-31T12:00:00Z", "models" => models || model_options
+        "execution_mode" => "bounded", "status" => status, "checked_at" => "2026-08-31T12:00:00Z",
+        "models" => models || model_options
       }
     end
 
@@ -191,7 +222,9 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
         "adapter_key" => "codex", "name" => "Codex", "description" => "Use Codex for workspace tasks.",
         "auth_modes" => %w[api_key subscription], "model_required" => true, "configured" => true,
         "secret_configured" => true, "auth_mode" => "api_key", "model" => "gpt-5.6",
-        "health_status" => "available", "available" => true, "executable_version" => "codex 1.2.3"
+        "supported_execution_modes" => %w[bounded host_trusted strong_isolated], "execution_mode" => "bounded",
+        "health_status" => "available", "available" => true, "unavailable_reason" => "",
+        "executable_version" => "codex 1.2.3"
       }
     end
 end

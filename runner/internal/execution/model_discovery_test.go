@@ -81,10 +81,12 @@ func newFakeModelDiscoveryRegistry(t *testing.T, adapterKey, authMode string, ru
 		t.Fatal(err)
 	}
 	model, apiKey := "", ""
+	executionMode := protocol.ExecutionModeStrongIsolated
 	if authMode == "api_key" {
 		model, apiKey = "gpt-test", "sk-model-discovery-test-value"
+		executionMode = protocol.ExecutionModeBounded
 	}
-	if _, err := store.Configure(workspaceOne, adapterKey, authMode, model, apiKey); err != nil {
+	if _, err := store.Configure(workspaceOne, adapterKey, authMode, executionMode, model, apiKey); err != nil {
 		t.Fatal(err)
 	}
 	executableName := "codex"
@@ -116,7 +118,7 @@ func TestDiscoverModelsUsesBoundedFakeRunnerAndCodexAuthHome(t *testing.T) {
 	}}
 	registry, home := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
 	request := httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil)
-	result := registry.DiscoverModels(request, workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(request, workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 1 || result.Models[0].ID != "gpt-5.6-sol" || !result.Models[0].Default {
 		t.Fatalf("unexpected Codex discovery result: %#v", result)
 	}
@@ -141,7 +143,7 @@ func TestDiscoverModelsUsesDirectProviderAPIForAPIKeysWithoutProcessExecution(t 
 			registry, _ := newFakeModelDiscoveryRegistry(t, adapterKey, "api_key", runner)
 			client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "future-model", Label: "Future Model", Default: true}}}
 			registry.providerAPI = client
-			result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, adapterKey)
+			result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, adapterKey, protocol.ExecutionModeBounded)
 			if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 1 || result.Models[0].ID != "future-model" || !result.Models[0].Default {
 				t.Fatalf("unexpected API-key discovery result: %#v", result)
 			}
@@ -165,7 +167,7 @@ func TestDiscoverModelsAPIKeyCanBeSavedBeforeModelSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", "", "sk-model-discovery-test-value"); err != nil {
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", protocol.ExecutionModeBounded, "", "sk-model-discovery-test-value"); err != nil {
 		t.Fatalf("blank-model API-key connection was not saved: %v", err)
 	}
 	client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "claude-future", Label: "Claude Future"}}}
@@ -175,7 +177,7 @@ func TestDiscoverModelsAPIKeyCanBeSavedBeforeModelSelection(t *testing.T) {
 		}},
 		providers: store, providerAPI: client,
 	}
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, claude.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, claude.AdapterKey, protocol.ExecutionModeBounded)
 	if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 1 || client.calls != 1 {
 		t.Fatalf("saved incomplete API-key connection did not discover models: result=%#v calls=%d", result, client.calls)
 	}
@@ -195,7 +197,7 @@ func TestBlankAPIKeyConnectionRemainsCatalogAndExecutionFailClosed(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", "", "sk-awaiting-model-selection"); err != nil {
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "api_key", protocol.ExecutionModeBounded, "", "sk-awaiting-model-selection"); err != nil {
 		t.Fatal(err)
 	}
 	config := Config{
@@ -232,7 +234,8 @@ func TestBlankAPIKeyConnectionRemainsCatalogAndExecutionFailClosed(t *testing.T)
 	}
 	if _, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
 		WorkspaceKey: workspaceOne, RequestID: workspaceTwo,
-		DetectionKey: strings.Repeat("a", 64), ConfigurationFingerprint: strings.Repeat("b", 64),
+		DetectionKey: strings.Repeat("a", 64), ExecutionMode: protocol.ExecutionModeBounded,
+		ConfigurationFingerprint: strings.Repeat("b", 64),
 	}); !errors.Is(err, runtimecatalog.ErrTestConfigurationChanged) {
 		t.Fatalf("incomplete API-key connection did not fail closed for runtime test: %v", err)
 	}
@@ -254,9 +257,21 @@ func TestDiscoverModelsSubscriptionNeverUsesProviderAPI(t *testing.T) {
 	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
 	client := &fakeProviderAPI{models: []providerapi.ModelOption{{ID: "should-not-be-used", Label: "Should not be used"}}}
 	registry.providerAPI = client
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryAvailable || client.calls != 0 || runner.calls != 1 {
 		t.Fatalf("subscription discovery crossed provider API/process boundary: result=%#v api_calls=%d process_calls=%d", result, client.calls, runner.calls)
+	}
+}
+
+func TestDiscoverModelsHostTrustedFailsClosedBeforeProcess(t *testing.T) {
+	runner := &fakeModelDiscoveryProcessRunner{}
+	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
+	if _, err := registry.providers.Configure(workspaceOne, codex.AdapterKey, "subscription", protocol.ExecutionModeHostTrusted, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeHostTrusted)
+	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 0 {
+		t.Fatalf("host-trusted discovery did not fail closed before process execution: result=%#v calls=%d", result, runner.calls)
 	}
 }
 
@@ -264,7 +279,7 @@ func TestDiscoverModelsUnsupportedSupervisorFailsClosedBeforeProcess(t *testing.
 	runner := &fakeModelDiscoveryProcessRunner{}
 	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
 	registry.supported = func() bool { return false }
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 0 {
 		t.Fatalf("unsupported supervisor did not fail closed before process discovery: result=%#v calls=%d", result, runner.calls)
 	}
@@ -273,7 +288,7 @@ func TestDiscoverModelsUnsupportedSupervisorFailsClosedBeforeProcess(t *testing.
 func TestDiscoverModelsReturnsUnsupportedWithoutAdapterSpec(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil)
 	for _, adapterKey := range []string{providerconfig.ClaudeAdapterKey, providerconfig.GrokAdapterKey, "scripted", "unknown"} {
-		result := (&Registry{}).DiscoverModels(request, workspaceOne, adapterKey)
+		result := (&Registry{}).DiscoverModels(request, workspaceOne, adapterKey, protocol.ExecutionModeStrongIsolated)
 		if result.Status != providerconfig.ModelDiscoveryUnsupported || len(result.Models) != 0 {
 			t.Fatalf("adapter %q was not explicitly unsupported: %#v", adapterKey, result)
 		}
@@ -296,7 +311,7 @@ func TestDiscoverModelsFailsClosedForWorkspaceOrProcessFailures(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			runner := &fakeModelDiscoveryProcessRunner{result: test.result, err: test.err}
 			registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
-			result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+			result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 			if result.Status != providerconfig.ModelDiscoveryFailed || len(result.Models) != 0 {
 				t.Fatalf("process failure was not bounded failed: %#v", result)
 			}
@@ -306,14 +321,14 @@ func TestDiscoverModelsFailsClosedForWorkspaceOrProcessFailures(t *testing.T) {
 	runner := &fakeModelDiscoveryProcessRunner{}
 	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
 	registry.config.Supervisor.ApprovedExecutables = nil
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 0 {
 		t.Fatalf("unavailable installation did not fail without execution: result=%#v calls=%d", result, runner.calls)
 	}
 
 	runner = &fakeModelDiscoveryProcessRunner{}
 	registry, _ = newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
-	result = registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceTwo, codex.AdapterKey)
+	result = registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceTwo, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 0 {
 		t.Fatalf("unconfigured workspace was not isolated: result=%#v calls=%d", result, runner.calls)
 	}
@@ -329,7 +344,7 @@ func TestDiscoverModelsRejectsMalformedBoundedOutputAndCanceledContext(t *testin
 	for _, output := range outputs {
 		runner := &fakeModelDiscoveryProcessRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: output}}
 		registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
-		result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+		result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 		if result.Status != providerconfig.ModelDiscoveryFailed {
 			t.Fatalf("malformed output was accepted: output=%s result=%#v", output, result)
 		}
@@ -340,7 +355,7 @@ func TestDiscoverModelsRejectsMalformedBoundedOutputAndCanceledContext(t *testin
 	request := httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil)
 	ctx, cancel := context.WithCancel(request.Context())
 	cancel()
-	result := registry.DiscoverModels(request.WithContext(ctx), workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(request.WithContext(ctx), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryFailed || runner.calls != 1 {
 		t.Fatalf("canceled discovery was not failed closed: result=%#v calls=%d", result, runner.calls)
 	}
@@ -351,7 +366,7 @@ func TestDiscoverModelsRejectsOversizedCodexOutput(t *testing.T) {
 		ExitCode: 0, StandardOutput: strings.Repeat("x", adapters.MaxModelDiscoveryOutputBytes+1),
 	}}
 	registry, _ := newFakeModelDiscoveryRegistry(t, codex.AdapterKey, "subscription", runner)
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, codex.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryFailed {
 		t.Fatalf("oversized discovery output was accepted: %#v", result)
 	}
@@ -360,7 +375,7 @@ func TestDiscoverModelsRejectsOversizedCodexOutput(t *testing.T) {
 func TestDiscoverModelsUsesCursorListModelContract(t *testing.T) {
 	runner := &fakeModelDiscoveryProcessRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: "composer-2.5\ngpt-5.5-medium\n"}}
 	registry, home := newFakeModelDiscoveryRegistry(t, cursor.AdapterKey, "subscription", runner)
-	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, cursor.AdapterKey)
+	result := registry.DiscoverModels(httptest.NewRequest(http.MethodPost, providerconfig.ModelsPath, nil), workspaceOne, cursor.AdapterKey, protocol.ExecutionModeStrongIsolated)
 	if result.Status != providerconfig.ModelDiscoveryAvailable || len(result.Models) != 2 || result.Models[0].ID != "composer-2.5" || result.Models[1].Label != "gpt-5.5-medium" {
 		t.Fatalf("unexpected Cursor discovery result: %#v", result)
 	}

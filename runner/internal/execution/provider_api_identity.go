@@ -29,26 +29,29 @@ const (
 var providerAPIWorkspacePattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type providerAPIIdentity struct {
-	Contract          string   `json:"contract"`
-	WorkspaceKey      string   `json:"workspace_key"`
-	AdapterKey        string   `json:"adapter_key"`
-	AuthMode          string   `json:"auth_mode"`
-	CredentialDigest  string   `json:"credential_digest"`
-	EffectiveModel    string   `json:"effective_model"`
-	Profiles          []string `json:"profiles"`
-	Roles             []string `json:"roles"`
-	Tools             []string `json:"tools"`
-	DataClasses       []string `json:"data_classes"`
-	MaxTimeoutSeconds int      `json:"max_timeout_seconds"`
-	MaxSteps          int      `json:"max_steps"`
-	MaxToolCalls      int      `json:"max_tool_calls"`
-	MaxInputUnits     int      `json:"max_input_units"`
-	MaxOutputUnits    int      `json:"max_output_units"`
+	Contract          string                   `json:"contract"`
+	WorkspaceKey      string                   `json:"workspace_key"`
+	AdapterKey        string                   `json:"adapter_key"`
+	AuthMode          string                   `json:"auth_mode"`
+	Transport         runtimecatalog.Transport `json:"transport"`
+	ExecutionMode     string                   `json:"execution_mode"`
+	CredentialDigest  string                   `json:"credential_digest"`
+	EffectiveModel    string                   `json:"effective_model"`
+	Profiles          []string                 `json:"profiles"`
+	Roles             []string                 `json:"roles"`
+	Tools             []string                 `json:"tools"`
+	DataClasses       []string                 `json:"data_classes"`
+	MaxTimeoutSeconds int                      `json:"max_timeout_seconds"`
+	MaxSteps          int                      `json:"max_steps"`
+	MaxToolCalls      int                      `json:"max_tool_calls"`
+	MaxInputUnits     int                      `json:"max_input_units"`
+	MaxOutputUnits    int                      `json:"max_output_units"`
 }
 
 func providerAPIInstallation(workspaceKey, adapterKey string, adapter AdapterConfig, connection providerconfig.Connection, identityKey []byte, now time.Time) (runtimecatalog.Installation, bool) {
 	if !providerAPIWorkspacePattern.MatchString(workspaceKey) || !isDirectProviderAPIAdapter(adapterKey) ||
 		!providerAPIAdapterPolicyValid(adapterKey, adapter) || connection.AuthMode != "api_key" ||
+		connection.ExecutionMode != protocol.ExecutionModeBounded ||
 		!validProviderAPIText(connection.APIKey, 16*1024) || !validProviderAPIText(connection.Model, 200) ||
 		strings.TrimSpace(connection.APIKey) != connection.APIKey || strings.TrimSpace(connection.Model) != connection.Model ||
 		!providerAPIIdentityKeyValid(identityKey) {
@@ -66,8 +69,9 @@ func providerAPIInstallation(workspaceKey, adapterKey string, adapter AdapterCon
 		DetectionKey: detectionKeyForProviderAPI(adapterKey), AdapterKey: adapterKey,
 		ProtocolVersion: protocol.Version, ExecutablePath: path, ExecutableVersion: providerAPIVersionEvidence,
 		AccountMetadata: map[string]string{"authentication": "api_key", "transport": "built_in_https"},
-		Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output"},
-		EffectiveModel:  model, ConfigurationFingerprint: fingerprint,
+		Transport:       runtimecatalog.TransportBuiltInHTTPS, ExecutionMode: protocol.ExecutionModeBounded,
+		Capabilities:   []string{runtimecatalog.RuntimeTestCapability, "structured_output"},
+		EffectiveModel: model, ConfigurationFingerprint: fingerprint,
 		MinimumVersion: providerAPIMinimumVersion, MaximumVersion: providerAPIMaximumVersion,
 		CompatibilityStatus: "compatible", HealthStatus: "available",
 		CheckedAt: now.UTC().Format(time.RFC3339Nano),
@@ -87,10 +91,11 @@ func providerAPIExecutablePath(adapterKey string) string {
 
 func isDirectProviderAPIInstallation(installation runtimecatalog.Installation, connection providerconfig.Connection) bool {
 	return isDirectProviderAPIAdapter(installation.AdapterKey) && connection.AuthMode == "api_key" &&
+		connection.ExecutionMode == protocol.ExecutionModeBounded && installation.ExecutionMode == protocol.ExecutionModeBounded &&
 		installation.DetectionKey == detectionKeyForProviderAPI(installation.AdapterKey) &&
 		installation.ExecutablePath == providerAPIExecutablePath(installation.AdapterKey) &&
 		installation.ExecutableVersion == providerAPIVersionEvidence &&
-		installation.AccountMetadata["transport"] == "built_in_https"
+		installation.Transport == runtimecatalog.TransportBuiltInHTTPS
 }
 
 func detectionKeyForProviderAPI(adapterKey string) string {
@@ -105,6 +110,7 @@ func detectionKeyForProviderAPI(adapterKey string) string {
 func providerAPIConfigurationIdentity(workspaceKey, adapterKey string, adapter AdapterConfig, connection providerconfig.Connection, identityKey []byte) (string, string, error) {
 	if !providerAPIWorkspacePattern.MatchString(workspaceKey) || !isDirectProviderAPIAdapter(adapterKey) ||
 		!providerAPIAdapterPolicyValid(adapterKey, adapter) || connection.AuthMode != "api_key" ||
+		connection.ExecutionMode != protocol.ExecutionModeBounded ||
 		!validProviderAPIText(connection.APIKey, 16*1024) || !validProviderAPIText(connection.Model, 200) ||
 		strings.TrimSpace(connection.APIKey) != connection.APIKey || strings.TrimSpace(connection.Model) != connection.Model ||
 		!providerAPIIdentityKeyValid(identityKey) {
@@ -115,8 +121,9 @@ func providerAPIConfigurationIdentity(workspaceKey, adapterKey string, adapter A
 	_, _ = credentialDigest.Write([]byte(connection.APIKey))
 	identity := providerAPIIdentity{
 		Contract: providerAPIContractVersion, WorkspaceKey: workspaceKey, AdapterKey: adapterKey,
-		AuthMode: connection.AuthMode, CredentialDigest: hex.EncodeToString(credentialDigest.Sum(nil)),
-		EffectiveModel: connection.Model, Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles),
+		AuthMode: connection.AuthMode, Transport: runtimecatalog.TransportBuiltInHTTPS, ExecutionMode: connection.ExecutionMode,
+		CredentialDigest: hex.EncodeToString(credentialDigest.Sum(nil)),
+		EffectiveModel:   connection.Model, Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles),
 		Tools: sortedCopy(adapter.Tools), DataClasses: sortedCopy(adapter.DataClasses),
 		MaxTimeoutSeconds: adapter.MaxTimeoutSeconds, MaxSteps: adapter.MaxSteps, MaxToolCalls: adapter.MaxToolCalls,
 		MaxInputUnits: adapter.MaxInputUnits, MaxOutputUnits: adapter.MaxOutputUnits,

@@ -20,6 +20,8 @@ func TestHandlerPreservesLegacyV1AndServesConfigurationIdentityInV2(t *testing.T
 		DetectionKey: strings.Repeat("a", 64), AdapterKey: "scripted", ProtocolVersion: protocol.Version,
 		ExecutablePath: "/opt/navishai/fixture", ExecutableVersion: "fixture 1.0.0",
 		AccountMetadata: map[string]string{"authentication": "built_in"}, Capabilities: []string{"structured_output"},
+		Transport:      TransportBuiltInHTTPS,
+		ExecutionMode:  protocol.ExecutionModeBounded,
 		EffectiveModel: "deterministic_fixture", ConfigurationFingerprint: strings.Repeat("b", 64),
 		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 		HealthStatus: "available", CheckedAt: now.Format(time.RFC3339),
@@ -39,7 +41,8 @@ func TestHandlerPreservesLegacyV1AndServesConfigurationIdentityInV2(t *testing.T
 	v2 := performDetection(t, v2Handler, secret, now, DetectionPath, DetectionVersion)
 	v2Installation := v2["installations"].([]any)[0].(map[string]any)
 	if v2["protocol_version"] != DetectionVersion || v2Installation["effective_model"] != "deterministic_fixture" ||
-		v2Installation["configuration_fingerprint"] != strings.Repeat("b", 64) {
+		v2Installation["configuration_fingerprint"] != strings.Repeat("b", 64) ||
+		v2Installation["execution_mode"] != protocol.ExecutionModeBounded {
 		t.Fatalf("v2 response omitted configuration identity: %#v", v2)
 	}
 

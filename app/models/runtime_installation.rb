@@ -1,4 +1,7 @@
 class RuntimeInstallation < ApplicationRecord
+  KNOWN_TRANSPORTS = %w[built_in_https managed_process].freeze
+  LEGACY_TRANSPORT = "legacy_unknown"
+  TRANSPORTS = (KNOWN_TRANSPORTS + [ LEGACY_TRANSPORT ]).freeze
   KNOWN_EXECUTION_MODES = %w[bounded host_trusted strong_isolated].freeze
   LEGACY_EXECUTION_MODE = "legacy_unknown"
   EXECUTION_MODES = (KNOWN_EXECUTION_MODES + [ LEGACY_EXECUTION_MODE ]).freeze
@@ -21,9 +24,12 @@ class RuntimeInstallation < ApplicationRecord
   belongs_to :approved_by_membership, class_name: "Membership", optional: true
   belongs_to :approved_by_user, class_name: "User", optional: true
 
-  before_validation :reset_approval_for_execution_mode_change, if: -> { persisted? && execution_mode_changed? }
+  before_validation :reset_approval_for_execution_boundary_change, if: -> {
+    persisted? && (execution_mode_changed? || transport_changed?)
+  }
 
   validates :detection_key, format: { with: /\A[0-9a-f]{64}\z/ }, uniqueness: { scope: :workspace_id }
+  validates :transport, inclusion: { in: TRANSPORTS }
   validates :execution_mode, inclusion: { in: EXECUTION_MODES }
   validates :adapter_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }
   validates :protocol_version, format: { with: /\Av[1-9][0-9]*\z/ }
@@ -50,17 +56,18 @@ class RuntimeInstallation < ApplicationRecord
   validate :policy_is_bounded
   validate :approval_is_complete
   validate :runtime_test_evidence_is_complete
-  validate :legacy_execution_mode_is_not_approved
+  validate :transport_and_execution_mode_are_compatible
+  validate :legacy_execution_boundary_is_not_approved
 
   scope :ordered, -> { order(:adapter_key, :id) }
 
   def runnable?
-    approved? && execution_mode.in?(KNOWN_EXECUTION_MODES) && health_status == "available" && compatibility_status != "incompatible" &&
+    approved? && transport.in?(KNOWN_TRANSPORTS) && execution_mode.in?(KNOWN_EXECUTION_MODES) && transport_execution_mode_compatible? && health_status == "available" && compatibility_status != "incompatible" &&
       runtime_test_status == "passed" && runtime_tested_configuration_fingerprint == configuration_fingerprint
   end
 
   private
-    def reset_approval_for_execution_mode_change
+    def reset_approval_for_execution_boundary_change
       self.approved = false
       self.approved_by_membership = nil
       self.approved_by_user = nil
@@ -74,9 +81,12 @@ class RuntimeInstallation < ApplicationRecord
       self.runtime_test_usage_observed = false
     end
 
-    def legacy_execution_mode_is_not_approved
-      errors.add(:approved, "cannot be approved until execution mode is known") if
-        execution_mode == LEGACY_EXECUTION_MODE && approved?
+    def legacy_execution_boundary_is_not_approved
+      if execution_mode == LEGACY_EXECUTION_MODE && approved?
+        errors.add(:approved, "cannot be approved until execution mode is known")
+      elsif transport == LEGACY_TRANSPORT && approved?
+        errors.add(:approved, "cannot be approved until runtime transport is known")
+      end
     end
 
     def metadata_is_non_secret
@@ -122,5 +132,23 @@ class RuntimeInstallation < ApplicationRecord
         valid &&= runtime_test_status == "passed" ? runtime_test_failure_code.nil? : runtime_test_failure_code.present?
       end
       errors.add(:runtime_test_status, "does not match its evidence") unless valid
+    end
+
+    def transport_and_execution_mode_are_compatible
+      return unless KNOWN_TRANSPORTS.include?(transport) && KNOWN_EXECUTION_MODES.include?(execution_mode)
+
+      valid = transport_execution_mode_compatible?
+      errors.add(:execution_mode, "is incompatible with runtime transport") unless valid
+    end
+
+    def transport_execution_mode_compatible?
+      case transport
+      when "built_in_https"
+        execution_mode == "bounded"
+      when "managed_process"
+        execution_mode.in?(%w[host_trusted strong_isolated])
+      else
+        false
+      end
     end
 end

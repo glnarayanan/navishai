@@ -96,7 +96,7 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 	if registry.providers != nil {
 		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "api_key" {
 			if isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
-				if !boundedExecutionBoundary(request) {
+				if connection.ExecutionMode != request.Routing.ExecutionMode || !boundedExecutionBoundary(request) {
 					return ErrPolicyDenied
 				}
 				return registry.executeProviderAPIRequest(ctx, request, connection, emit)
@@ -113,6 +113,7 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalog.TestRequest) (runtimecatalog.TestResult, error) {
 	installation, ok := registry.catalog.ResolveApprovedWorkspace(ctx, request.WorkspaceKey, request.DetectionKey, registry.config.Supervisor.ApprovedExecutables)
 	if !ok || !supportsRuntimeTest(installation) ||
+		installation.ExecutionMode != request.ExecutionMode || request.ExecutionMode == "" ||
 		installation.ConfigurationFingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
@@ -132,11 +133,11 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		if authMode == "api_key" && !directProviderAPI {
 			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 		}
-		if authMode != "api_key" && installation.AccountMetadata["transport"] == "built_in_https" {
+		if authMode != "api_key" && installation.Transport == runtimecatalog.TransportBuiltInHTTPS {
 			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 		}
 	}
-	executionMode, isolationPolicy, transportKnown := runtimeTestExecutionBoundary(installation.AdapterKey, directProviderAPI)
+	executionMode, isolationPolicy, transportKnown := runtimeTestExecutionBoundary(installation, directProviderAPI)
 	if !transportKnown {
 		return runtimecatalog.TestResult{}, ErrPolicyDenied
 	}
@@ -153,7 +154,7 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	if !ok || len(adapterConfig.Profiles) == 0 || len(adapterConfig.Roles) == 0 {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
-	model, fingerprint, err := registry.runtimeTestConfiguration(request.WorkspaceKey, installation, adapterConfig, authMode, apiKey)
+	model, fingerprint, err := registry.runtimeTestConfiguration(request.WorkspaceKey, installation, adapterConfig, authMode, apiKey, executionMode)
 	if err != nil || model != installation.EffectiveModel || fingerprint != request.ConfigurationFingerprint {
 		return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 	}
@@ -173,11 +174,14 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 		events = append(events, event)
 		return nil
 	})
-	return evaluateRuntimeTest(events, executeErr, model, fingerprint, registry.now()), nil
+	return evaluateRuntimeTest(events, executeErr, executionMode, model, fingerprint, registry.now()), nil
 }
 
-func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installation runtimecatalog.Installation, adapterConfig AdapterConfig, authMode, apiKey string) (string, string, error) {
+func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installation runtimecatalog.Installation, adapterConfig AdapterConfig, authMode, apiKey, executionMode string) (string, string, error) {
 	if installation.AdapterKey == "scripted" {
+		if executionMode != protocol.ExecutionModeBounded {
+			return "", "", runtimecatalog.ErrTestConfigurationChanged
+		}
 		_, detectionKey, fingerprint, _, err := scriptedRuntimeIdentity(
 			registry.config, registry.configurationIdentityKey, installation.ExecutablePath,
 		)
@@ -187,10 +191,10 @@ func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installa
 		return "deterministic_fixture", fingerprint, err
 	}
 	if authMode == "api_key" && isDirectProviderAPIInstallation(installation, providerconfig.Connection{
-		AuthMode: authMode, Model: adapterConfig.Model, APIKey: apiKey,
+		AuthMode: authMode, ExecutionMode: executionMode, Model: adapterConfig.Model, APIKey: apiKey,
 	}) {
 		return providerAPIConfigurationIdentity(workspaceKey, installation.AdapterKey, adapterConfig, providerconfig.Connection{
-			AuthMode: authMode, Model: adapterConfig.Model, APIKey: apiKey,
+			AuthMode: authMode, ExecutionMode: executionMode, Model: adapterConfig.Model, APIKey: apiKey,
 		}, registry.configurationIdentityKey)
 	}
 	return "", "", ErrPolicyDenied
@@ -221,9 +225,12 @@ func (registry *Registry) effectiveAdapter(workspaceKey, adapterKey string) (Ada
 	return adapter, credentials, true
 }
 
-func runtimeTestExecutionBoundary(adapterKey string, directProviderAPI bool) (string, string, bool) {
-	if adapterKey == "scripted" || directProviderAPI {
-		return protocol.ExecutionModeBounded, protocol.IsolationPolicyStrongRequired, true
+func runtimeTestExecutionBoundary(installation runtimecatalog.Installation, directProviderAPI bool) (string, string, bool) {
+	if installation.AdapterKey == "scripted" || directProviderAPI {
+		if installation.ExecutionMode != protocol.ExecutionModeBounded {
+			return "", "", false
+		}
+		return installation.ExecutionMode, protocol.IsolationPolicyStrongRequired, true
 	}
 	return "", "", false
 }
@@ -270,9 +277,9 @@ func isRuntimeTestAdmission(request protocol.AdmissionRequest) bool {
 		request.Agent.MaxSteps == 1 && request.Agent.MaxToolCalls == 0
 }
 
-func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, model, fingerprint string, testedAt time.Time) runtimecatalog.TestResult {
+func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, executionMode, model, fingerprint string, testedAt time.Time) runtimecatalog.TestResult {
 	result := runtimecatalog.TestResult{
-		Status: "failed", FailureCode: "runtime_test_failed", EffectiveModel: model,
+		Status: "failed", FailureCode: "runtime_test_failed", EffectiveModel: model, ExecutionMode: executionMode,
 		ConfigurationFingerprint: fingerprint, TestedAt: testedAt.UTC(),
 	}
 	output, completed, prohibitedTool := "", false, false
@@ -421,8 +428,9 @@ func ScriptedInstallations(config Config, configurationIdentityKey []byte, check
 			DetectionKey: key, AdapterKey: "scripted", ProtocolVersion: protocol.Version,
 			ExecutablePath: resolved, ExecutableVersion: "scripted 1.0.0",
 			AccountMetadata: map[string]string{"authentication": "built_in"},
-			Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
-			EffectiveModel:  "deterministic_fixture", ConfigurationFingerprint: fingerprint,
+			Transport:       runtimecatalog.TransportBuiltInHTTPS, ExecutionMode: protocol.ExecutionModeBounded,
+			Capabilities:   []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+			EffectiveModel: "deterministic_fixture", ConfigurationFingerprint: fingerprint,
 			MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
 			HealthStatus: "available", CheckedAt: checkedAt.UTC().Format(time.RFC3339Nano),
 		})
@@ -467,7 +475,7 @@ func scriptedRuntimeIdentity(config Config, configurationIdentityKey []byte, pat
 	adapter.Model = "deterministic_fixture"
 	_, fingerprint, err := AdapterConfigurationIdentityForRuntime(
 		"scripted", adapter, config.Supervisor, "", "", configurationIdentityKey,
-		resolved, detectionKey, "scripted 1.0.0",
+		resolved, detectionKey, "scripted 1.0.0", protocol.ExecutionModeBounded,
 	)
 	return resolved, detectionKey, fingerprint, fixture, err
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
@@ -67,35 +68,79 @@ func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, wor
 }
 
 func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, workspaceKey, adapterKey string) providerconfig.Availability {
+	availableModes := catalog.supportedExecutionModes(adapterKey)
 	if catalog != nil && catalog.providers != nil {
+		if _, configured := catalog.providers.Get(workspaceKey, adapterKey); !configured {
+			return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
+		}
 		if connection, configured := catalog.providers.Get(workspaceKey, adapterKey); configured && connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
+			if connection.ExecutionMode != protocol.ExecutionModeBounded {
+				return providerconfig.Availability{
+					SupportedExecutionModes: availableModes,
+					HealthStatus:            "unavailable",
+					UnavailableReason:       "API-key provider connections require the bounded execution mode.",
+				}
+			}
 			adapter, ok := catalog.config.Adapters[adapterKey]
 			installation, available := providerAPIInstallation(workspaceKey, adapterKey, adapter, connection, catalog.identityKey, catalog.now())
 			if !ok || !available {
-				return providerconfig.Availability{HealthStatus: "unavailable"}
+				return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 			}
-			return providerconfig.Availability{HealthStatus: installation.HealthStatus, Available: true, ExecutableVersion: installation.ExecutableVersion}
+			return providerconfig.Availability{
+				SupportedExecutionModes: availableModes, HealthStatus: installation.HealthStatus,
+				Available: true, ExecutableVersion: installation.ExecutableVersion,
+			}
+		}
+		if connection, configured := catalog.providers.Get(workspaceKey, adapterKey); configured {
+			switch connection.ExecutionMode {
+			case protocol.ExecutionModeLegacyUnknown, "":
+				return providerconfig.Availability{
+					SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+					UnavailableReason: "Execution mode must be selected again for this provider.",
+				}
+			case protocol.ExecutionModeHostTrusted:
+				return providerconfig.Availability{
+					SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+					UnavailableReason: "Host-trusted provider execution is not available in this release.",
+				}
+			case protocol.ExecutionModeStrongIsolated:
+				if !catalog.strongIsolationAvailable() {
+					return providerconfig.Availability{
+						SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+						UnavailableReason: "Strong-isolated provider execution is not supported by this runner deployment.",
+					}
+				}
+				return providerconfig.Availability{
+					SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+					UnavailableReason: "Subscription provider execution is not available in this release.",
+				}
+			}
 		}
 	}
-	if catalog == nil || catalog.supported == nil || !catalog.supported() {
-		return providerconfig.Availability{HealthStatus: "unavailable"}
+	if catalog == nil || catalog.providers == nil || catalog.supported == nil || !catalog.supported() {
+		return providerconfig.Availability{
+			SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+			UnavailableReason: "Strong-isolated provider execution is not supported by this runner deployment.",
+		}
 	}
 	definition, ok := catalog.definition(adapterKey, workspaceKey, false)
 	if !ok {
-		return providerconfig.Availability{HealthStatus: "unavailable"}
+		return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 	}
 	probeCatalog, err := runtimecatalog.New([]runtimecatalog.Definition{definition}, catalog.now)
 	if err != nil {
-		return providerconfig.Availability{HealthStatus: "unavailable"}
+		return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 	}
 	installations := catalog.approvedDetections(request.Context(), probeCatalog)
 	if len(installations) != 1 {
-		return providerconfig.Availability{HealthStatus: "unavailable"}
+		return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 	}
 	installation := installations[0]
-	available := installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible"
+	available := installation.ExecutionMode == protocol.ExecutionModeStrongIsolated &&
+		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible"
 	return providerconfig.Availability{
-		HealthStatus: installation.HealthStatus, Available: available, ExecutableVersion: installation.ExecutableVersion,
+		SupportedExecutionModes: availableModes, HealthStatus: installation.HealthStatus, Available: available,
+		ExecutableVersion: installation.ExecutableVersion,
 	}
 }
 
@@ -152,11 +197,18 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		return runtimecatalog.Definition{}, false
 	}
 	authMode, apiKey := "subscription", ""
+	executionMode := protocol.ExecutionModeStrongIsolated
 	if configured {
 		authMode, apiKey = connection.AuthMode, connection.APIKey
+		executionMode = connection.ExecutionMode
 		adapterConfig.Model = connection.Model
+		if !contains(catalog.supportedExecutionModes(adapterKey), executionMode) || executionMode == protocol.ExecutionModeHostTrusted {
+			return runtimecatalog.Definition{}, false
+		}
 	}
-	model, fingerprint, err := adapterConfigurationIdentityFor(adapterKey, adapterConfig, catalog.config.Supervisor, authMode, apiKey, catalog.identityKey)
+	model, fingerprint, err := adapterConfigurationIdentityFor(
+		adapterKey, adapterConfig, catalog.config.Supervisor, authMode, apiKey, catalog.identityKey, executionMode,
+	)
 	if err != nil {
 		return runtimecatalog.Definition{}, false
 	}
@@ -164,10 +216,12 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 	definition.ConfigurationIdentity = func(executablePath, detectionKey, observedVersion string) (string, string, error) {
 		return AdapterConfigurationIdentityForRuntime(
 			adapterKey, adapterConfig, catalog.config.Supervisor, authMode, apiKey, catalog.identityKey,
-			executablePath, detectionKey, observedVersion,
+			executablePath, detectionKey, observedVersion, executionMode,
 		)
 	}
 	definition.AccountHome = adapterConfig.HomeDir
+	definition.Transport = runtimecatalog.TransportManagedProcess
+	definition.ExecutionMode = executionMode
 	definition.AccountEnvironmentValues = make(map[string]string)
 	if !configured || authMode == "api_key" {
 		definition.AccountArguments = nil
@@ -180,6 +234,8 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		}
 		definition.AccountMetadata = map[string]string{"authentication": authentication}
 	} else {
+		definition.AccountMetadata = cloneStringMap(definition.AccountMetadata)
+		definition.AccountMetadata["transport"] = "managed_process"
 		switch adapterKey {
 		case codex.AdapterKey:
 			definition.AccountEnvironment = nil
@@ -190,6 +246,38 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		}
 	}
 	return definition, true
+}
+
+func (catalog *ManagedCatalog) strongIsolationAvailable() bool {
+	return catalog != nil && catalog.supported != nil && catalog.supported()
+}
+
+func (catalog *ManagedCatalog) supportedExecutionModes(adapterKey string) []string {
+	definition, ok := providerconfig.Lookup(adapterKey)
+	if !ok {
+		return nil
+	}
+	hostTrustedEnabled := catalog != nil && catalog.config.HostTrustedEnabled
+	result := make([]string, 0, len(definition.SupportedExecutionModes))
+	for _, mode := range definition.SupportedExecutionModes {
+		if mode == protocol.ExecutionModeHostTrusted && !hostTrustedEnabled {
+			continue
+		}
+		if mode == protocol.ExecutionModeStrongIsolated && !catalog.strongIsolationAvailable() {
+			continue
+		}
+		result = append(result, mode)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	result := make(map[string]string, len(values)+1)
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func managedAdapterTemplateValid(config Config, adapterKey string, adapter AdapterConfig) bool {

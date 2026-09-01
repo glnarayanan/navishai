@@ -7,10 +7,11 @@ module ProviderConnectionProtocol
   PURGE_WORKSPACE_PATH = "/v1/providers/purge-workspace"
   PROVIDER_KEYS = %w[
     adapter_key name description auth_modes model_required configured secret_configured auth_mode model
-    health_status available executable_version
+    supported_execution_modes execution_mode health_status available unavailable_reason executable_version
   ].freeze
+  EXECUTION_MODES = %w[bounded host_trusted strong_isolated legacy_unknown].freeze
   KEY_PATTERN = /\A[a-z][a-z0-9_]{0,63}\z/
-  MODEL_RESPONSE_KEYS = %w[protocol_version workspace_key adapter_key status checked_at models].freeze
+  MODEL_RESPONSE_KEYS = %w[protocol_version workspace_key adapter_key execution_mode status checked_at models].freeze
   MODEL_OPTION_KEYS = %w[id label default].freeze
   MODEL_STATUSES = %w[available unsupported failed].freeze
   MAX_MODEL_OPTIONS = 100
@@ -35,19 +36,33 @@ module ProviderConnectionProtocol
     parsed
   end
 
-  def parse_provider(body, workspace_key:)
+  def parse_provider(
+    body, workspace_key:, expected_adapter_key: nil, expected_auth_mode: nil, expected_execution_mode: nil
+  )
     attributes = parse_json(body)
     object!(attributes, %w[protocol_version workspace_key provider], "response")
     common_response!(attributes, workspace_key:)
-    provider!(attributes.fetch("provider"))
+    provider = provider!(attributes.fetch("provider"))
+    expected = [ expected_adapter_key, expected_auth_mode, expected_execution_mode ]
+    if expected.any?(&:nil?) && expected.any? { |value| !value.nil? }
+      raise MalformedMessage, "provider identity expectations are incomplete"
+    end
+    if expected.all? { |value| !value.nil? }
+      equal!(provider.fetch("adapter_key"), expected_adapter_key, "provider.adapter_key")
+      equal!(provider.fetch("auth_mode"), expected_auth_mode, "provider.auth_mode")
+      equal!(provider.fetch("execution_mode"), expected_execution_mode, "provider.execution_mode")
+    end
+    provider
   end
 
-  def parse_models(body, workspace_key:, adapter_key:)
+  def parse_models(body, workspace_key:, adapter_key:, execution_mode:)
     attributes = parse_json(body)
     object!(attributes, MODEL_RESPONSE_KEYS, "response")
     common_response!(attributes, workspace_key:)
     key!(attributes.fetch("adapter_key"), "adapter_key")
     equal!(attributes.fetch("adapter_key"), adapter_key, "adapter_key")
+    known_execution_mode!(attributes.fetch("execution_mode"), "execution_mode")
+    equal!(attributes.fetch("execution_mode"), execution_mode, "execution_mode")
     status = attributes.fetch("status")
     unless MODEL_STATUSES.include?(status)
       raise MalformedMessage, "status is invalid"
@@ -109,8 +124,11 @@ module ProviderConnectionProtocol
     boolean!(provider.fetch("secret_configured"), "provider.secret_configured")
     optional_key!(provider.fetch("auth_mode"), "provider.auth_mode")
     string!(provider.fetch("model"), 200, "provider.model")
+    execution_modes!(provider.fetch("supported_execution_modes"), "provider.supported_execution_modes")
+    execution_mode!(provider.fetch("execution_mode"), "provider.execution_mode")
     key!(provider.fetch("health_status"), "provider.health_status")
     boolean!(provider.fetch("available"), "provider.available")
+    string!(provider.fetch("unavailable_reason"), 500, "provider.unavailable_reason")
     string!(provider.fetch("executable_version"), 200, "provider.executable_version")
     unless provider.fetch("auth_mode").blank? || provider.fetch("auth_modes").include?(provider.fetch("auth_mode"))
       raise MalformedMessage, "provider.auth_mode is unsupported"
@@ -183,6 +201,25 @@ module ProviderConnectionProtocol
     raise MalformedMessage, "#{name} is invalid" unless valid
   end
   private_class_method :values!
+
+  def execution_modes!(value, name)
+    valid = value.is_a?(Array) && value.size <= 3 && value == value.uniq.sort &&
+      value.all? { |item| item.is_a?(String) && EXECUTION_MODES.first(3).include?(item) }
+    raise MalformedMessage, "#{name} is invalid" unless valid
+  end
+  private_class_method :execution_modes!
+
+  def execution_mode!(value, name)
+    valid = value.is_a?(String) && (value == "" || EXECUTION_MODES.include?(value))
+    raise MalformedMessage, "#{name} is invalid" unless valid
+  end
+  private_class_method :execution_mode!
+
+  def known_execution_mode!(value, name)
+    valid = value.is_a?(String) && RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(value)
+    raise MalformedMessage, "#{name} is invalid" unless valid
+  end
+  private_class_method :known_execution_mode!
 
   def boolean!(value, name)
     raise MalformedMessage, "#{name} is invalid" unless value == true || value == false

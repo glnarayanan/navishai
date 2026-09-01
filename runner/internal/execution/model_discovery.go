@@ -10,6 +10,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
@@ -17,15 +18,22 @@ import (
 
 const modelDiscoveryTimeout = 15 * time.Second
 
-func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, adapterKey string) providerconfig.ModelDiscovery {
-	if registry != nil && registry.providers != nil {
-		if connection, configured := registry.providers.Get(workspaceKey, adapterKey); configured && connection.AuthMode == "api_key" {
-			return registry.discoverAPIModels(request, workspaceKey, adapterKey, connection.APIKey)
-		}
+func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, adapterKey, executionMode string) providerconfig.ModelDiscovery {
+	if !validExecutionMode(executionMode) || executionMode == protocol.ExecutionModeHostTrusted {
+		return failedModelDiscovery()
 	}
 	spec, ok := modelDiscoverySpec(adapterKey)
 	if !ok {
 		return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryUnsupported}
+	}
+	if registry != nil && registry.providers != nil {
+		connection, configured := registry.providers.Get(workspaceKey, adapterKey)
+		if !configured || connection.ExecutionMode != executionMode {
+			return failedModelDiscovery()
+		}
+		if connection.AuthMode == "api_key" {
+			return registry.discoverAPIModels(request, workspaceKey, adapterKey, connection.APIKey)
+		}
 	}
 	if registry == nil || registry.supported == nil || !registry.supported() || request == nil || registry.providers == nil || registry.processRunner == nil || registry.config.WorkRoot == "" {
 		return failedModelDiscovery()

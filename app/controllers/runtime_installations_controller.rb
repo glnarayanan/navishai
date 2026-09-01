@@ -103,13 +103,15 @@ class RuntimeInstallationsController < ApplicationController
 
       model = provider.fetch("model").presence
       version = provider.fetch("executable_version").presence
-      return if model.blank? && version.blank?
+      execution_mode = provider.fetch("execution_mode").presence
+      return if model.blank? && version.blank? || execution_mode.blank?
 
       candidates = candidates.select { |installation| installation.effective_model == model } if model
       candidates = candidates.select { |installation| installation.executable_version == version } if version
+      candidates = candidates.select { |installation| installation.execution_mode == execution_mode }
       return if candidates.empty?
 
-      built_in = candidates.select { |installation| installation.account_metadata.to_h["transport"] == "built_in_https" }
+      built_in = candidates.select { |installation| installation.transport == "built_in_https" }
       candidates = if provider.fetch("auth_mode") == "api_key"
         built_in
       else
