@@ -44,15 +44,11 @@ class RuntimeInstallationsController < ApplicationController
       workspace:, membership: Current.require_membership!, installation:
     )
     installation.reload
-    message = if installation.runtime_test_status == "passed"
-      "Provider connection test passed."
-    else
-      "Provider connection test failed. Check the credentials and model, then try again."
-    end
+    path = workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}")
     if installation.runtime_test_status == "passed"
-      redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), notice: message
+      redirect_to path, notice: "Provider connection test passed."
     else
-      redirect_to workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}"), alert: message
+      redirect_to path, alert: "Provider connection test failed. Check the credentials and model, then try again."
     end
   rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
     @runtime_error = user_facing_runtime_error(error, action: :test)
@@ -98,36 +94,10 @@ class RuntimeInstallationsController < ApplicationController
     end
 
     def current_installation_for(provider)
-      candidates = @installations.select { |installation| installation.adapter_key == provider.fetch("adapter_key") }
-      return if candidates.empty?
-
-      model = provider.fetch("model").presence
-      version = provider.fetch("executable_version").presence
-      execution_mode = provider.fetch("execution_mode").presence
-      return if model.blank? && version.blank? || execution_mode.blank?
-
-      candidates = candidates.select { |installation| installation.effective_model == model } if model
-      candidates = candidates.select { |installation| installation.executable_version == version } if version
-      candidates = candidates.select { |installation| installation.execution_mode == execution_mode }
-      return if candidates.empty?
-
-      built_in = candidates.select { |installation| installation.transport == "built_in_https" }
-      candidates = if provider.fetch("auth_mode") == "api_key"
-        built_in
-      else
-        candidates - built_in
-      end
-      return if candidates.empty?
-
-      candidates = candidates.reject { |installation| installation.health_status == "missing" }
-      return if candidates.empty?
-
-      healthy = candidates.select do |installation|
-        installation.health_status == "available" && installation.compatibility_status != "incompatible"
-      end
-      candidates = healthy if healthy.any?
-
-      candidates.max_by { |installation| [ installation.checked_at.to_i, installation.id ] }
+      RuntimeInstallation.current_for_provider(
+        @installations.select { |installation| installation.adapter_key == provider.fetch("adapter_key") },
+        provider
+      )
     end
 
     def installation_params

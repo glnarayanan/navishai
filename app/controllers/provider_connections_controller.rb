@@ -184,36 +184,10 @@ class ProviderConnectionsController < ApplicationController
     end
 
     def current_installation_for(workspace:, provider:, adapter_key:)
-      candidates = workspace.runtime_installations.where(adapter_key:).to_a
-      return if candidates.empty?
-
-      model = provider.fetch("model").presence
-      version = provider.fetch("executable_version").presence
-      execution_mode = provider.fetch("execution_mode").presence
-      return if model.blank? && version.blank? || execution_mode.blank?
-
-      candidates = candidates.select { |installation| installation.effective_model == model } if model
-      candidates = candidates.select { |installation| installation.executable_version == version } if version
-      candidates = candidates.select { |installation| installation.execution_mode == execution_mode }
-      return if candidates.empty?
-
-      built_in = candidates.select { |installation| installation.transport == "built_in_https" }
-      candidates = if provider.fetch("auth_mode") == "api_key"
-        built_in
-      else
-        candidates - built_in
-      end
-      return if candidates.empty?
-
-      candidates = candidates.reject { |installation| installation.health_status == "missing" }
-      return if candidates.empty?
-
-      healthy = candidates.select do |installation|
-        installation.health_status == "available" && installation.compatibility_status != "incompatible"
-      end
-      candidates = healthy if healthy.any?
-
-      candidates.max_by { |installation| [ installation.checked_at.to_i, installation.id ] }
+      RuntimeInstallation.current_for_provider(
+        workspace.runtime_installations.where(adapter_key:).to_a,
+        provider
+      )
     end
 
     def selected_provider
@@ -260,12 +234,11 @@ class ProviderConnectionsController < ApplicationController
         workspace:, membership: Current.require_membership!, installation:, client: gateway
       )
       installation.reload
+      path = provider_status_path(workspace:, installation:)
       if installation.runtime_test_status == "passed"
-        redirect_to provider_status_path(workspace:, installation:),
-          notice: "#{provider.fetch("name")} settings were saved and the connection test passed."
+        redirect_to path, notice: "#{provider.fetch("name")} settings were saved and the connection test passed."
       else
-        redirect_to provider_status_path(workspace:, installation:),
-          alert: "#{provider.fetch("name")} settings were saved, but the connection test failed. Check the credentials and model, then try again."
+        redirect_to path, alert: "#{provider.fetch("name")} settings were saved, but the connection test failed. Check the credentials and model, then try again."
       end
     rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy
       redirect_to provider_status_path(workspace:, installation:),

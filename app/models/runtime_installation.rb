@@ -61,6 +61,38 @@ class RuntimeInstallation < ApplicationRecord
 
   scope :ordered, -> { order(:adapter_key, :id) }
 
+  def self.current_for_provider(candidates, provider)
+    return if candidates.empty?
+
+    model = provider.fetch("model").presence
+    version = provider.fetch("executable_version").presence
+    execution_mode = provider.fetch("execution_mode").presence
+    return if model.blank? && version.blank? || execution_mode.blank?
+
+    candidates = candidates.select { |installation| installation.effective_model == model } if model
+    candidates = candidates.select { |installation| installation.executable_version == version } if version
+    candidates = candidates.select { |installation| installation.execution_mode == execution_mode }
+    return if candidates.empty?
+
+    built_in = candidates.select { |installation| installation.transport == "built_in_https" }
+    candidates = if provider.fetch("auth_mode") == "api_key"
+      built_in
+    else
+      candidates - built_in
+    end
+    return if candidates.empty?
+
+    candidates = candidates.reject { |installation| installation.health_status == "missing" }
+    return if candidates.empty?
+
+    healthy = candidates.select do |installation|
+      installation.health_status == "available" && installation.compatibility_status != "incompatible"
+    end
+    candidates = healthy if healthy.any?
+
+    candidates.max_by { |installation| [ installation.checked_at.to_i, installation.id ] }
+  end
+
   def runnable?
     approved? && transport.in?(KNOWN_TRANSPORTS) && execution_mode.in?(KNOWN_EXECUTION_MODES) && transport_execution_mode_compatible? && health_status == "available" && compatibility_status != "incompatible" &&
       runtime_test_status == "passed" && runtime_tested_configuration_fingerprint == configuration_fingerprint
