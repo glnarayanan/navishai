@@ -19,8 +19,14 @@ import (
 const modelDiscoveryTimeout = 15 * time.Second
 
 func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, adapterKey, executionMode string) providerconfig.ModelDiscovery {
-	if !validExecutionMode(executionMode) || executionMode == protocol.ExecutionModeHostTrusted {
+	if !validExecutionMode(executionMode) {
 		return failedModelDiscovery()
+	}
+	if executionMode == protocol.ExecutionModeHostTrusted {
+		if adapterKey != cursor.AdapterKey {
+			return failedModelDiscovery()
+		}
+		return registry.discoverCursorHostModels(request, workspaceKey)
 	}
 	spec, ok := modelDiscoverySpec(adapterKey)
 	if !ok {

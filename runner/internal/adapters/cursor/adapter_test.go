@@ -152,6 +152,36 @@ func TestExecuteRejectsBlockingCursorExtension(t *testing.T) {
 	}
 }
 
+func TestExchangeRegistersSessionBeforePrompt(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	go func() { _ = serveACP(server, false, true) }()
+	registered := ""
+	result, err := exchangeWithSession(context.Background(), client, testInvocation(), func(sessionID string) {
+		registered = sessionID
+	})
+	_ = server.Close()
+	if err != nil || result.SessionID == "" || registered != result.SessionID {
+		t.Fatalf("session was not registered before prompt: result=%#v registered=%q err=%v", result, registered, err)
+	}
+}
+
+func TestApplyUpdateRejectsControlCharacters(t *testing.T) {
+	var result Result
+	raw, err := json.Marshal(map[string]any{
+		"update": map[string]any{
+			"sessionUpdate": "agent_message_chunk",
+			"content":       map[string]string{"type": "text", "text": "unsafe\x00output"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyUpdate(raw, &result); err == nil {
+		t.Fatal("Cursor output control character was accepted")
+	}
+}
+
 func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
 	if !compatibleVersion("cursor-agent 2026.08.11") || !compatibleVersion("2026.03.10") || compatibleVersion("2026.04.31") || !compatibleVersion("2027.01.01") || compatibleVersion("cursor development build") {
 		t.Fatal("unexpected observed-version result")

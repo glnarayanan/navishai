@@ -1,0 +1,156 @@
+package execution
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/glnarayanan/navishai/runner/internal/adapters"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
+	"github.com/glnarayanan/navishai/runner/internal/adapters/cursorhost"
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
+)
+
+type cursorHostSource interface {
+	Supported() bool
+	Execute(context.Context, cursor.Invocation, func(protocol.CanonicalEvent) error) (cursor.Result, error)
+	DiscoverModels(context.Context, string, string, string) ([]adapters.ModelOption, error)
+}
+
+func newCursorHostSource(now func() time.Time) cursorHostSource {
+	return cursorhost.New(now)
+}
+
+func (registry *Registry) executeCursorHost(ctx context.Context, request protocol.AdmissionRequest, connection providerconfig.Connection, emit func(protocol.CanonicalEvent) error) error {
+	if registry == nil || registry.providers == nil || registry.catalog == nil || registry.cursorHost == nil ||
+		!registry.cursorHost.Supported() || !registry.config.HostTrustedEnabled || emit == nil ||
+		request.Routing.AdapterKey != cursor.AdapterKey || request.Routing.ExecutionMode != protocol.ExecutionModeHostTrusted ||
+		request.Routing.IsolationPolicy != protocol.IsolationPolicyHostTrustedAllowed || connection.AuthMode != "subscription" ||
+		connection.ExecutionMode != protocol.ExecutionModeHostTrusted {
+		return ErrPolicyDenied
+	}
+	adapterConfig, ok := registry.config.Adapters[cursor.AdapterKey]
+	if !ok || !managedAdapterTemplateValid(registry.config, cursor.AdapterKey, adapterConfig) || !adapterConfig.allows(request) {
+		return ErrPolicyDenied
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	installation, ok := registry.catalog.ResolveApprovedWorkspace(
+		ctx, request.WorkspaceKey, request.Routing.DetectionKey, registry.config.Supervisor.ApprovedExecutables,
+	)
+	if !ok || !validCursorHostInstallation(installation) || installation.EffectiveModel != request.Routing.EffectiveModel ||
+		installation.ConfigurationFingerprint != request.Routing.ConfigurationFingerprint {
+		return ErrPolicyDenied
+	}
+	adapterConfig.Model = connection.Model
+	model, fingerprint, err := AdapterConfigurationIdentityForRuntime(
+		cursor.AdapterKey, adapterConfig, registry.config.Supervisor, connection.AuthMode, "", registry.configurationIdentityKey,
+		installation.ExecutablePath, installation.DetectionKey, installation.ExecutableVersion, protocol.ExecutionModeHostTrusted,
+	)
+	if err != nil || model != installation.EffectiveModel || fingerprint != installation.ConfigurationFingerprint ||
+		model != request.Routing.EffectiveModel || fingerprint != request.Routing.ConfigurationFingerprint {
+		return ErrPolicyDenied
+	}
+	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
+	if _, err := os.Lstat(workingDirectory); !errors.Is(err, os.ErrNotExist) {
+		return ErrPolicyDenied
+	}
+	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
+		return ErrPolicyDenied
+	}
+	defer os.RemoveAll(workingDirectory)
+	prompt, err := executionPrompt(request)
+	if err != nil {
+		return ErrPolicyDenied
+	}
+	runContext, cancel := context.WithTimeout(ctx, time.Duration(request.Agent.TimeoutSeconds)*time.Second)
+	defer cancel()
+	modelArgument := connection.Model
+	if modelArgument == runtimeDefaultModel {
+		modelArgument = ""
+	}
+	_, err = registry.cursorHost.Execute(runContext, cursor.Invocation{
+		Admission: request, Executable: installation.ExecutablePath, WorkingDir: workingDirectory,
+		CursorHome: adapterConfig.HomeDir, Model: modelArgument, Prompt: prompt,
+		EgressProfileKey: adapterConfig.EgressProfileKey,
+	}, emit)
+	return err
+}
+
+func validCursorHostInstallation(installation runtimecatalog.Installation) bool {
+	return installation.AdapterKey == cursor.AdapterKey &&
+		installation.Transport == runtimecatalog.TransportManagedProcess &&
+		installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
+		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible" &&
+		contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
+		contains(installation.Capabilities, "acp") && contains(installation.Capabilities, "structured_output")
+}
+
+func (registry *Registry) discoverCursorHostModels(request *http.Request, workspaceKey string) providerconfig.ModelDiscovery {
+	if registry == nil || request == nil || registry.providers == nil || registry.catalog == nil || registry.cursorHost == nil ||
+		!registry.cursorHost.Supported() || !registry.config.HostTrustedEnabled {
+		return failedModelDiscovery()
+	}
+	connection, configured := registry.providers.Get(workspaceKey, cursor.AdapterKey)
+	if !configured || connection.AuthMode != "subscription" || connection.ExecutionMode != protocol.ExecutionModeHostTrusted {
+		return failedModelDiscovery()
+	}
+	ctx, cancel := context.WithTimeout(request.Context(), modelDiscoveryTimeout)
+	defer cancel()
+	installations := registry.catalog.DetectWorkspace(ctx, workspaceKey)
+	var installation runtimecatalog.Installation
+	for _, candidate := range installations {
+		if !validCursorHostInstallation(candidate) || !approvedCursorExecutable(registry.config.Supervisor.ApprovedExecutables, candidate.ExecutablePath) {
+			continue
+		}
+		if installation.ExecutablePath != "" {
+			return failedModelDiscovery()
+		}
+		installation = candidate
+	}
+	if installation.ExecutablePath == "" {
+		return failedModelDiscovery()
+	}
+	adapterConfig, ok := registry.config.Adapters[cursor.AdapterKey]
+	if !ok || !managedAdapterTemplateValid(registry.config, cursor.AdapterKey, adapterConfig) {
+		return failedModelDiscovery()
+	}
+	adapterConfig.Model = connection.Model
+	model, fingerprint, err := AdapterConfigurationIdentityForRuntime(
+		cursor.AdapterKey, adapterConfig, registry.config.Supervisor, connection.AuthMode, "", registry.configurationIdentityKey,
+		installation.ExecutablePath, installation.DetectionKey, installation.ExecutableVersion, protocol.ExecutionModeHostTrusted,
+	)
+	if err != nil || model != installation.EffectiveModel || fingerprint != installation.ConfigurationFingerprint {
+		return failedModelDiscovery()
+	}
+	workingDirectory, err := os.MkdirTemp(registry.config.WorkRoot, ".cursor-model-discovery-*")
+	if err != nil {
+		return failedModelDiscovery()
+	}
+	defer os.RemoveAll(workingDirectory)
+	models, err := registry.cursorHost.DiscoverModels(ctx, installation.ExecutablePath, workingDirectory, adapterConfig.HomeDir)
+	if err != nil || adapters.ValidateModelOptions(models) != nil {
+		return failedModelDiscovery()
+	}
+	options := make([]providerconfig.ModelOption, 0, len(models))
+	for _, model := range models {
+		options = append(options, providerconfig.ModelOption{ID: model.ID, Label: model.Label, Default: model.Default})
+	}
+	return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryAvailable, Models: options}
+}
+
+func approvedCursorExecutable(approvedPaths []string, executable string) bool {
+	for _, path := range approvedPaths {
+		resolved, err := runtimecatalog.ResolveApprovedExecutable(path)
+		if err == nil && resolved == executable {
+			return true
+		}
+	}
+	return false
+}

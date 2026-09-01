@@ -32,6 +32,7 @@ type Registry struct {
 	providers                *providerconfig.Store
 	configurationIdentityKey []byte
 	processRunner            adapters.ProcessRunner
+	cursorHost               cursorHostSource
 	providerAPI              ProviderAPI
 	supported                func() bool
 	now                      func() time.Time
@@ -77,7 +78,8 @@ func newRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, provide
 	registry := &Registry{
 		config: config, catalog: catalog, providers: providers,
 		configurationIdentityKey: append([]byte(nil), configurationIdentityKey...),
-		processRunner:            processSupervisor, providerAPI: providerapi.New(), supported: supervisor.Supported, now: now,
+		processRunner:            processSupervisor, cursorHost: newCursorHostSource(now), providerAPI: providerapi.New(),
+		supported: supervisor.Supported, now: now,
 	}
 	registry.execute = registry.Execute
 	return registry, nil
@@ -103,8 +105,12 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 			}
 			return ErrPolicyDenied
 		}
+		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "subscription" &&
+			connection.ExecutionMode == protocol.ExecutionModeHostTrusted {
+			return registry.executeCursorHost(ctx, request, connection, emit)
+		}
 	}
-	// Subscription and other process transports remain unclassified. Do not
+	// Subscription and other process transports remain unavailable. Do not
 	// let a signed request select a stronger-looking boundary than the runner
 	// can actually enforce for that process.
 	return ErrPolicyDenied
@@ -147,6 +153,13 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	} else if directProviderAPI {
 		if connection.AuthMode != "api_key" {
 			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
+		adapterConfig.Model = connection.Model
+	} else if installation.AdapterKey == cursorSubscriptionAdapter && executionMode == protocol.ExecutionModeHostTrusted {
+		if connection.AuthMode != "subscription" || connection.ExecutionMode != protocol.ExecutionModeHostTrusted ||
+			registry.cursorHost == nil || !registry.cursorHost.Supported() || !registry.config.HostTrustedEnabled {
+			return runtimecatalog.TestResult{}, ErrPolicyDenied
 		}
 		adapterConfig, ok = registry.config.Adapters[installation.AdapterKey]
 		adapterConfig.Model = connection.Model
@@ -197,6 +210,13 @@ func (registry *Registry) runtimeTestConfiguration(workspaceKey string, installa
 			AuthMode: authMode, ExecutionMode: executionMode, Model: adapterConfig.Model, APIKey: apiKey,
 		}, registry.configurationIdentityKey)
 	}
+	if installation.AdapterKey == cursorSubscriptionAdapter && authMode == "subscription" && executionMode == protocol.ExecutionModeHostTrusted &&
+		installation.Transport == runtimecatalog.TransportManagedProcess && installation.ExecutionMode == protocol.ExecutionModeHostTrusted {
+		return AdapterConfigurationIdentityForRuntime(
+			installation.AdapterKey, adapterConfig, registry.config.Supervisor, authMode, "", registry.configurationIdentityKey,
+			installation.ExecutablePath, installation.DetectionKey, installation.ExecutableVersion, executionMode,
+		)
+	}
 	return "", "", ErrPolicyDenied
 }
 
@@ -231,6 +251,10 @@ func runtimeTestExecutionBoundary(installation runtimecatalog.Installation, dire
 			return "", "", false
 		}
 		return installation.ExecutionMode, protocol.IsolationPolicyStrongRequired, true
+	}
+	if installation.AdapterKey == cursorSubscriptionAdapter && installation.Transport == runtimecatalog.TransportManagedProcess &&
+		installation.ExecutionMode == protocol.ExecutionModeHostTrusted {
+		return installation.ExecutionMode, protocol.IsolationPolicyHostTrustedAllowed, true
 	}
 	return "", "", false
 }
