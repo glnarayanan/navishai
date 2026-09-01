@@ -31,6 +31,8 @@ class AddExecutionBoundaryContractTest < ActiveSupport::TestCase
       "detection_key" => ambiguous_key, "adapter_key" => "fixture",
       "account_metadata" => { "authentication" => "managed_on_runner" }
     ) ])
+    ambiguous = RuntimeInstallation.find_by!(detection_key: ambiguous_key)
+    previous_audit_id = AuditEvent.maximum(:id).to_i
 
     migration.migrate(:up)
     RuntimeInstallation.reset_column_information
@@ -43,7 +45,7 @@ class AddExecutionBoundaryContractTest < ActiveSupport::TestCase
     assert_includes current_validation, "NEW.execution_mode"
 
     bounded = RuntimeInstallation.find(source.id)
-    ambiguous = RuntimeInstallation.find_by!(detection_key: ambiguous_key)
+    ambiguous.reload
     assert_equal "bounded", bounded.execution_mode
     assert bounded.approved?
     assert_equal "passed", bounded.runtime_test_status
@@ -51,6 +53,14 @@ class AddExecutionBoundaryContractTest < ActiveSupport::TestCase
     assert_not ambiguous.approved?
     assert_equal "untested", ambiguous.runtime_test_status
     assert_nil ambiguous.runtime_tested_configuration_fingerprint
+    revocation_audits = AuditEvent.where("id > ?", previous_audit_id).where(
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation"
+    )
+    assert_equal [ ambiguous.id ], revocation_audits.pluck(:subject_id)
+    audit = revocation_audits.sole
+    assert audit.system?
+    assert audit.source_system?
+    assert_nil audit.actor_id
     assert_equal [ "strong_isolation_required" ], AgentProfileVersion.distinct.pluck(:isolation_policy)
     if ExecutionRun.exists?
       assert_equal [ "legacy_unknown" ], ExecutionRun.distinct.pluck(:selected_execution_mode)
