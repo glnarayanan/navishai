@@ -85,4 +85,4 @@ begin
 rescue RunnerClient::Conflict
 end
 
-puts "Rails and Go runner provider and execution contract passed"
+puts "Rails and Go runner scripted execution and provider catalog contract passed"

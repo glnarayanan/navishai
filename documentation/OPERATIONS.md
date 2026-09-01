@@ -133,3 +133,32 @@ Preflight requires a verified backup, valid Compose configuration, a runner cert
 After preflight, stop jobs and web, apply the target release, let web run `db:prepare`, then start jobs. Confirm `/up`, runner `/readyz`, queue processing, attachment download, and Memory health before ending the change window.
 
 Database migrations set the rollback boundary. The pgvector 0.8.6 migration is intentionally irreversible because PostgreSQL extensions do not provide a supported downgrade path. Before migration, roll back by restoring the old image set. After that migration starts, restore the verified backup and old image, secret, and config set to roll back. Never run old application code against a schema or extension version it has not been tested with. Never silently change PostgreSQL, pgvector, Supermemory, a runtime CLI, or its model during an application upgrade.
+
+Migration `20260901020000_add_runtime_transport_contract` is a backup-restore-only data rollback boundary. It derives transport, writes system revocation audit events, clears approval and runtime-test evidence, quarantines incompatible execution modes as `legacy_unknown`, and adds database constraints. Do not run `db:migrate:down`: removing the column and constraint cannot restore revoked approval actors or times, cleared test evidence, or audit state. If this migration has started, restore the verified backup with the matching prior Rails image, runner image, secrets, and configuration set; never serve a mixed-version restore.
+
+After this migration, while the change window is still controlled, run these read-only PostgreSQL checks:
+
+```sql
+SELECT COUNT(*) AS approved_without_current_test
+FROM runtime_installations
+WHERE approved = true
+  AND (
+    runtime_test_status <> 'passed'
+    OR runtime_tested_configuration_fingerprint IS DISTINCT FROM configuration_fingerprint
+  );
+
+SELECT COUNT(*) AS approved_legacy_transport_or_mode
+FROM runtime_installations
+WHERE approved = true
+  AND (transport = 'legacy_unknown' OR execution_mode = 'legacy_unknown');
+
+SELECT transport, execution_mode, COUNT(*) AS installation_count
+FROM runtime_installations
+WHERE (transport = 'built_in_https' AND execution_mode <> 'bounded')
+   OR (transport = 'managed_process'
+       AND execution_mode NOT IN ('host_trusted', 'strong_isolated'))
+GROUP BY transport, execution_mode
+ORDER BY transport, execution_mode;
+```
+
+The first two approved-invalid counts must be zero. Any rows with `legacy_unknown` are quarantine evidence, not permission to run; record them and have a Workspace Owner or Admin rediscover the provider, pass a test of the current fingerprint, and explicitly reapprove the intended access. The pairing query must not show an invalid known-transport pairing; do not claim runner `/readyz` proves source-commit equality, because readiness is only evidence of the advertised protocol and admission versions.
