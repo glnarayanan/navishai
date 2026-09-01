@@ -11,7 +11,10 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
-const retryDelay = time.Second
+const (
+	retryDelay                        = time.Second
+	hostTrustedInterruptedFailureCode = "runner_interrupted_orphaned"
+)
 
 type EventSink interface {
 	Deliver(context.Context, string, protocol.CanonicalEvent) error
@@ -94,7 +97,14 @@ func (dispatcher *Dispatcher) execute(ctx context.Context, runID string) error {
 
 func (dispatcher *Dispatcher) recoverInterrupted() error {
 	for _, request := range dispatcher.store.Running() {
-		if err := dispatcher.appendFailure(request, "runner_interrupted", true); err != nil {
+		code, retryable := "runner_interrupted", true
+		if request.Routing.ExecutionMode == protocol.ExecutionModeHostTrusted {
+			// The exact host-trusted child handle is gone after restart. Do not
+			// create a second attempt while a child or detached descendant may
+			// still hold the runner user's authority.
+			code, retryable = hostTrustedInterruptedFailureCode, false
+		}
+		if err := dispatcher.appendFailure(request, code, retryable); err != nil {
 			return err
 		}
 	}

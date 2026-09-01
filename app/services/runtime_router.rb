@@ -2,7 +2,8 @@ class RuntimeRouter
   class NoCompatibleRuntime < StandardError; end
 
   Selection = Data.define(
-    :installation, :profile_key, :reason, :detail, :data_classes, :max_input_units, :max_output_units
+    :installation, :profile_key, :reason, :detail, :data_classes, :max_input_units, :max_output_units,
+    :execution_mode, :isolation_policy
   )
 
   def self.resolve!(workspace:, profile_version:, additional_data_classes: [])
@@ -41,7 +42,9 @@ class RuntimeRouter
           return Selection.new(
             installation:, profile_key:, reason: fallback ? "fallback" : "primary", detail:,
             data_classes:, max_input_units: installation.max_input_units,
-            max_output_units: installation.max_output_units
+            max_output_units: installation.max_output_units,
+            execution_mode: installation.execution_mode,
+            isolation_policy: version.isolation_policy
           )
         end
         rejections.concat(reasons.map { |reason| "#{installation.adapter_key}: #{reason}" })
@@ -55,6 +58,9 @@ class RuntimeRouter
     def rejection_reasons(installation:, version:, profile_key:, data_classes:, required_capabilities:)
       reasons = []
       reasons << "not runnable" unless installation.runnable?
+      reasons << "execution mode is unknown" unless installation.execution_mode.in?(RuntimeInstallation::KNOWN_EXECUTION_MODES)
+      reasons << "execution boundary is not allowed by the isolation policy" unless
+        AgentPolicy.execution_mode_allowed?(version.isolation_policy, installation.execution_mode)
       reasons << "profile not assigned" unless installation.profile_keys.include?(profile_key)
       reasons << "role not allowed" unless installation.allowed_role_keys.include?(version.agent_profile.role_key)
       reasons << "tools not allowed" unless (version.allowed_tools - installation.allowed_tools).empty?

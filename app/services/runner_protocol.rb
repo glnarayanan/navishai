@@ -3,8 +3,11 @@ require "uri"
 
 module RunnerProtocol
   VERSION = "v1"
-  ADMISSION_PATH = "/v1/runs/admit"
-  RUNTIME_DETECTION_PATH = "/v1/runtimes/detect"
+  ADMISSION_VERSION = "v2"
+  ADMISSION_PATH = "/v2/runs/admit"
+  RUNTIME_DETECTION_VERSION = "v2"
+  RUNTIME_DETECTION_PATH = "/v2/runtimes/detect"
+  RUNTIME_TEST_PATH = "/v1/runtimes/test"
   WEB_SEARCH_PATH = "/v1/tools/web-search"
   MAX_BODY_BYTES = 256.kilobytes
   BIGINT_MAX = 9_223_372_036_854_775_807
@@ -27,14 +30,21 @@ module RunnerProtocol
     KEYS = %w[protocol_version run_id idempotency_key workspace_key task agent routing].freeze
     TASK_KEYS = %w[task_key attempt title input_context expected_output].freeze
     AGENT_KEYS = %w[role_key policy_version instructions allowed_tools runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy].freeze
-    ROUTING_KEYS = %w[detection_key adapter_key profile_key selection_reason selection_detail data_classes max_input_units max_output_units].freeze
+    ROUTING_KEYS = %w[
+      detection_key configuration_fingerprint effective_model adapter_key profile_key selection_reason selection_detail
+      execution_mode isolation_policy data_classes max_input_units max_output_units
+    ].freeze
 
     attr_reader :attributes
+
+    def self.protocol_version
+      ADMISSION_VERSION
+    end
 
     def self.for_task(task:, run:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
       version = task.assigned_agent_profile_version
       new(
-        "protocol_version" => VERSION,
+        "protocol_version" => protocol_version,
         "run_id" => run_id,
         "idempotency_key" => idempotency_key,
         "workspace_key" => task.workspace.runner_key,
@@ -57,17 +67,26 @@ module RunnerProtocol
           "max_tool_calls" => version.max_tool_calls,
           "review_policy" => version.review_policy
         },
-        "routing" => {
-          "detection_key" => run.selected_runtime_detection_key,
-          "adapter_key" => run.selected_adapter_key,
-          "profile_key" => run.selected_runtime_profile_key,
-          "selection_reason" => run.runtime_selection_reason,
-          "selection_detail" => run.runtime_selection_detail,
-          "data_classes" => run.disclosed_data_classes,
-          "max_input_units" => run.max_input_units,
-          "max_output_units" => run.max_output_units
-        }
+        "routing" => routing_for(run)
       )
+    end
+
+    def self.routing_for(run)
+      routing = {
+        "detection_key" => run.selected_runtime_detection_key,
+        "configuration_fingerprint" => run.selected_runtime_configuration_fingerprint,
+        "effective_model" => run.selected_effective_model,
+        "adapter_key" => run.selected_adapter_key,
+        "profile_key" => run.selected_runtime_profile_key,
+        "selection_reason" => run.runtime_selection_reason,
+        "selection_detail" => run.runtime_selection_detail,
+        "execution_mode" => run.selected_execution_mode,
+        "isolation_policy" => run.selected_isolation_policy,
+        "data_classes" => run.disclosed_data_classes,
+        "max_input_units" => run.max_input_units,
+        "max_output_units" => run.max_output_units
+      }
+      routing
     end
 
     def self.parse(body)
@@ -95,7 +114,7 @@ module RunnerProtocol
 
     def validate!(value)
       object!(value, KEYS, "request")
-      equal!(value["protocol_version"], VERSION, "protocol_version")
+      equal!(value["protocol_version"], self.class.protocol_version, "protocol_version")
       uuid!(value["run_id"], "run_id")
       key!(value["idempotency_key"], "idempotency_key")
       uuid!(value["workspace_key"], "workspace_key")
@@ -125,12 +144,24 @@ module RunnerProtocol
       end
 
       routing = value["routing"]
-      object!(routing, ROUTING_KEYS, "routing")
+      object!(routing, self.class::ROUTING_KEYS, "routing")
       unless routing["detection_key"].is_a?(String) && routing["detection_key"].match?(/\A[0-9a-f]{64}\z/)
         raise MalformedMessage, "routing.detection_key is invalid"
       end
+      unless routing["configuration_fingerprint"].is_a?(String) && routing["configuration_fingerprint"].match?(/\A[0-9a-f]{64}\z/)
+        raise MalformedMessage, "routing.configuration_fingerprint is invalid"
+      end
+      string!(routing["effective_model"], 200, "routing.effective_model")
+      if routing["effective_model"].match?(/[\r\n]/)
+        raise MalformedMessage, "routing.effective_model is invalid"
+      end
       policy_key!(routing["adapter_key"], "routing.adapter_key")
       policy_key!(routing["profile_key"], "routing.profile_key")
+      unless RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(routing["execution_mode"]) &&
+          AgentPolicy::ISOLATION_POLICIES.key?(routing["isolation_policy"]) &&
+          AgentPolicy.execution_mode_allowed?(routing["isolation_policy"], routing["execution_mode"])
+        raise MalformedMessage, "routing execution boundary is invalid"
+      end
       unless %w[primary fallback].include?(routing["selection_reason"])
         raise MalformedMessage, "routing.selection_reason is invalid"
       end
@@ -184,6 +215,10 @@ module RunnerProtocol
 
     attr_reader :attributes
 
+    def self.protocol_version
+      ADMISSION_VERSION
+    end
+
     def self.parse(body, expected_run_id:, expected_data: nil)
       raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
 
@@ -194,7 +229,7 @@ module RunnerProtocol
 
     def initialize(attributes, expected_run_id:, expected_data: nil)
       object!(attributes, KEYS, "response")
-      equal!(attributes["protocol_version"], VERSION, "protocol_version")
+      equal!(attributes["protocol_version"], self.class.protocol_version, "protocol_version")
       equal!(attributes["run_id"], expected_run_id, "run_id")
       equal!(attributes["status"], "accepted", "status")
 
@@ -302,7 +337,8 @@ module RunnerProtocol
     KEYS = %w[protocol_version installations].freeze
     INSTALLATION_KEYS = %w[
       detection_key adapter_key protocol_version executable_path executable_version account_metadata
-      capabilities minimum_version maximum_version compatibility_status incompatibility_reason health_status checked_at
+      capabilities transport execution_mode effective_model configuration_fingerprint minimum_version maximum_version compatibility_status
+      incompatibility_reason health_status checked_at
     ].freeze
 
     attr_reader :installations
@@ -317,7 +353,7 @@ module RunnerProtocol
 
     def initialize(attributes)
       object!(attributes, KEYS, "response")
-      equal!(attributes["protocol_version"], VERSION, "protocol_version")
+      equal!(attributes["protocol_version"], RUNTIME_DETECTION_VERSION, "protocol_version")
       values = attributes["installations"]
       raise MalformedMessage, "installations is invalid" unless values.is_a?(Array) && values.size <= 32
 
@@ -343,6 +379,14 @@ module RunnerProtocol
           raise MalformedMessage, "#{name}.account_metadata is invalid"
         end
         values!(installation["capabilities"], 32, "#{name}.capabilities")
+        unless RuntimeInstallation::KNOWN_TRANSPORTS.include?(installation["transport"])
+          raise MalformedMessage, "#{name}.transport is invalid"
+        end
+        unless RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(installation["execution_mode"])
+          raise MalformedMessage, "#{name}.execution_mode is invalid"
+        end
+        string!(installation["effective_model"], 200, "#{name}.effective_model", /\A[^\r\n\x00]+\z/)
+        string!(installation["configuration_fingerprint"], 64, "#{name}.configuration_fingerprint", /\A[0-9a-f]{64}\z/)
         string!(installation["minimum_version"], 100, "#{name}.minimum_version", nil, allow_empty: true)
         string!(installation["maximum_version"], 100, "#{name}.maximum_version", nil, allow_empty: true)
         unless RuntimeInstallation::COMPATIBILITY_STATUSES.include?(installation["compatibility_status"])
@@ -376,6 +420,56 @@ module RunnerProtocol
         valid = value.is_a?(Array) && value.size <= maximum && value == value.uniq.sort &&
           value.all? { |item| item.is_a?(String) && item.match?(POLICY_KEY_PATTERN) }
         raise MalformedMessage, "#{name} is invalid" unless valid
+      end
+  end
+
+  class RuntimeTestResponse
+    KEYS = %w[
+      protocol_version workspace_key request_id detection_key execution_mode configuration_fingerprint effective_model
+      status failure_code usage_observed input_units output_units tested_at
+    ].freeze
+
+    attr_reader :attributes
+
+    def self.parse(body, workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
+      raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body), workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
+    rescue JSON::ParserError
+      raise MalformedMessage, "response body is not valid JSON"
+    end
+
+    def initialize(attributes, workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
+      valid = attributes.is_a?(Hash) && attributes.keys.sort == KEYS.sort &&
+        attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
+        attributes["request_id"] == request_id && attributes["detection_key"] == detection_key &&
+        attributes["execution_mode"] == execution_mode && RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(attributes["execution_mode"]) &&
+        attributes["configuration_fingerprint"] == configuration_fingerprint &&
+        configuration_fingerprint.match?(/\A[0-9a-f]{64}\z/) &&
+        attributes["effective_model"].is_a?(String) && attributes["effective_model"].bytesize.between?(1, 200) &&
+        !attributes["effective_model"].match?(/[\r\n\x00]/) && %w[passed failed].include?(attributes["status"]) &&
+        [ true, false ].include?(attributes["usage_observed"]) && valid_units?(attributes["input_units"]) &&
+        valid_units?(attributes["output_units"]) && valid_time?(attributes["tested_at"])
+      valid &&= attributes["status"] == "passed" ? attributes["failure_code"].nil? : valid_failure_code?(attributes["failure_code"])
+      raise MalformedMessage, "runtime test response is invalid" unless valid
+
+      @attributes = attributes.deep_dup.freeze
+    end
+
+    private
+      def valid_units?(value)
+        value.is_a?(Integer) && value.between?(0, BIGINT_MAX)
+      end
+
+      def valid_time?(value)
+        Time.iso8601(value.to_s)
+        true
+      rescue ArgumentError
+        false
+      end
+
+      def valid_failure_code?(value)
+        value.is_a?(String) && value.match?(/\A[a-z][a-z0-9_]{0,63}\z/)
       end
   end
 

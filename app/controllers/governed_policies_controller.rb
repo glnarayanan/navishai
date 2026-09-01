@@ -21,7 +21,7 @@ class GovernedPoliciesController < ApplicationController
       reason: policy_params.fetch(:reason)
     )
     redirect_to workspace_governed_policy_path(workspace, anchor: "proposal-#{proposal.id}"),
-      notice: "Policy proposal saved. Preview retained facts before publishing."
+      notice: "Policy proposal saved. Preview the affected work before publishing."
   rescue GovernedPolicyChange::InvalidChange, KeyError => error
     render_error(error.message)
   end
@@ -33,7 +33,7 @@ class GovernedPoliciesController < ApplicationController
       workspace:, membership: Current.require_membership!, proposal:
     )
     redirect_to workspace_governed_policy_path(workspace, anchor: "preview-#{preview.id}"),
-      notice: "Preview complete. Review each decision and exact fact."
+      notice: "Preview complete. Review each decision and its supporting evidence."
   rescue GovernedPolicyChange::InvalidChange => error
     render_error(error.message)
   end
@@ -46,7 +46,7 @@ class GovernedPoliciesController < ApplicationController
       workspace:, membership: Current.require_membership!, proposal:, preview:
     )
     redirect_to workspace_governed_policy_path(workspace, anchor: "publication-#{publication.id}"),
-      notice: "Explicit canary published. Work outside its scope keeps current policy."
+      notice: "Limited rollout published. Work outside its selected scope keeps the current policy."
   rescue GovernedPolicyChange::InvalidChange => error
     render_error(error.message, status: :conflict)
   end
@@ -77,7 +77,7 @@ class GovernedPoliciesController < ApplicationController
           contract: [ :execution_budget_units, :missing_items_block,
             { required_claim_categories: [], mandatory_review_checks: [], evidence_freshness_days: {} } ],
           profile: [ :runtime_profile_key, :timeout_seconds, :max_steps, :max_tool_calls,
-            :review_policy, { fallback_profile_keys: [] } ] }
+            :review_policy, :isolation_policy, { fallback_profile_keys: [] } ] }
       ])
     end
 

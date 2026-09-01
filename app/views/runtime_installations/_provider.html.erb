@@ -1,0 +1,235 @@
+<% adapter_key = provider&.fetch("adapter_key") || installation.adapter_key %>
+<% provider_name = provider&.fetch("name") || adapter_key.humanize %>
+<% configured_model = provider&.fetch("model").presence || installation&.effective_model.presence %>
+<% model_required_for_runtime = provider && provider.fetch("configured") && (provider.fetch("model_required") || provider.fetch("auth_mode") == "api_key") %>
+<% incomplete_model_configuration = model_required_for_runtime && provider.fetch("model").blank? %>
+<% model = if incomplete_model_configuration
+             "No model selected"
+           elsif configured_model.present? && configured_model != "runtime_default"
+             configured_model
+           else
+             "Provider default"
+           end %>
+<% live_provider_available = @provider_catalog_error.blank? && (provider.nil? || (provider.fetch("available") && provider.fetch("health_status") == "available")) %>
+<% current_test_passed = installation && installation.runtime_test_status == "passed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
+<% current_test_failed = installation && installation.runtime_test_status == "failed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
+<% runtime_available = installation && installation.health_status == "available" && live_provider_available %>
+<% approval_disabled = incomplete_model_configuration || !runtime_available || (installation && installation.compatibility_status == "incompatible") || (installation && !installation.approved? && !current_test_passed) %>
+<% ready = !incomplete_model_configuration && installation&.runnable? && current_test_passed %>
+<% runtime_status = if incomplete_model_configuration
+                      "Choose model"
+                    elsif installation.nil?
+                      "Unavailable"
+                    elsif installation.compatibility_status == "incompatible"
+                      "Update required"
+                    elsif installation.health_status == "missing"
+                      "Not found"
+                    elsif provider && !live_provider_available
+                      "Unavailable"
+                    elsif installation.health_status == "available"
+                      "Available"
+                    else
+                      "Unavailable"
+                    end %>
+<% status_text = if runtime_status != "Available"
+                   runtime_status
+                 elsif ready
+                   "Ready"
+                 elsif current_test_failed
+                   "Test failed"
+                 elsif current_test_passed && !installation.approved?
+                   "Approval required"
+                 else
+                   "Test required"
+                 end %>
+<% status_tone = case status_text
+                 when "Ready" then "status-success"
+                 when "Approval required", "Test required", "Choose model" then "status-warning"
+                 when "Test failed" then "status-danger"
+                 else "status-neutral"
+                 end %>
+<% test_disabled_reason = if incomplete_model_configuration
+                            "Choose a model in Edit settings before testing this provider."
+                          elsif @provider_catalog_error.present?
+                            "Live provider settings are unavailable. Refresh status before testing this connection."
+                          elsif provider && !live_provider_available
+                            "The runner does not currently report this provider as available. Refresh status before testing this connection."
+                          elsif installation.nil?
+                            "No compatible #{provider_name} runtime is available on this runner. Refresh after it is installed, allowed by the runner, and signed in."
+                          elsif installation.compatibility_status == "incompatible"
+                            "Install a supported #{provider_name} runtime version before testing this connection."
+                          elsif installation.health_status == "missing"
+                            "The #{provider_name} runtime was not found during the latest status refresh."
+                          elsif !live_provider_available
+                            "Live #{provider_name} settings are unavailable. Refresh status before testing this connection."
+                          elsif installation.health_status != "available"
+                            "The #{provider_name} runtime is not healthy enough to run a connection test."
+                          end %>
+<% test_action_primary = test_disabled_reason.nil? && [ "Test required", "Test failed" ].include?(status_text) %>
+<% approval_disabled_reason = if incomplete_model_configuration
+                                "Choose a model in Edit settings before allowing this provider in the workspace."
+                              elsif installation.nil?
+                                nil
+                              elsif !live_provider_available
+                                "Live #{provider_name} settings are unavailable. Refresh status before allowing this provider in the workspace."
+                              elsif installation.compatibility_status == "incompatible"
+                                "Install a supported #{provider_name} runtime before allowing this provider in the workspace."
+                              elsif installation.health_status == "missing"
+                                "The #{provider_name} runtime was not found during the latest status refresh. Refresh status before allowing this provider in the workspace."
+                              elsif installation.health_status != "available"
+                                "The #{provider_name} runtime must be healthy before allowing this provider in the workspace."
+                              elsif !current_test_passed
+                                "Run a successful connection test before allowing this provider in the workspace."
+                              end %>
+
+<section class="runtime-installation" id="runtime-<%= installation&.id || adapter_key %>" aria-labelledby="runtime-<%= installation&.id || adapter_key %>-title">
+  <div class="runtime-installation-heading">
+    <div>
+      <h2 id="runtime-<%= installation&.id || adapter_key %>-title"><%= provider_name %></h2>
+      <p class="provider-settings-status"><%= provider ? "Settings saved" : "Runtime detected" %></p>
+    </div>
+    <span class="status-badge <%= status_tone %>"><%= status_text %></span>
+  </div>
+
+  <dl class="runtime-facts provider-facts">
+    <div>
+      <dt>Sign-in</dt>
+      <dd><%= provider&.fetch("auth_mode").to_s.humanize.presence || installation&.account_metadata&.fetch("authentication", nil).to_s.humanize.presence || "Existing provider account" %></dd>
+    </div>
+    <div><dt>Model</dt><dd><%= model %></dd></div>
+    <div><dt>Connection</dt><dd><%= runtime_status %></dd></div>
+    <div>
+      <dt>Connection test</dt>
+      <dd>
+        <% if installation&.runtime_tested_at %>
+          <%= installation.runtime_test_status.humanize %> <%= time_tag installation.runtime_tested_at, installation.runtime_tested_at.to_fs(:short) %>
+        <% else %>
+          Not tested
+        <% end %>
+      </dd>
+    </div>
+  </dl>
+
+  <% if installation&.incompatibility_reason.present? %>
+    <p class="runtime-status-note">This provider version is not supported by your installation.</p>
+  <% elsif incomplete_model_configuration %>
+    <p class="runtime-status-note">Choose an exact model ID in Edit settings before testing this provider.</p>
+  <% elsif provider && configured_model.blank? && provider.fetch("auth_mode") != "api_key" %>
+    <p class="runtime-status-note"><%= provider_name %> will use its default model for now. You can enter an exact model ID in Edit settings.</p>
+  <% end %>
+
+  <% if current_test_passed %>
+    <%= render "shared/notice", kind: "success", title: "Connection test passed",
+      body: if installation.approved?
+        installation.runtime_test_usage_observed? ? "The selected model answered successfully. Provider usage was reported for this test." : "The selected model answered successfully."
+      else
+        "The selected model answered successfully. Allow this provider in the workspace below to finish setup."
+      end %>
+  <% elsif current_test_failed %>
+    <%= render "shared/notice", kind: "destructive", title: "Connection test failed",
+      body: "The provider could not answer the test. Check its credentials and model, then try again." %>
+  <% end %>
+
+  <% if @can_configure %>
+    <div class="provider-actions" aria-label="Actions for <%= provider_name %>">
+      <% if installation && test_disabled_reason.nil? %>
+        <%= button_to installation.runtime_tested_at ? "Test again" : "Test connection",
+          test_workspace_runtime_installation_path(Current.workspace, installation),
+          class: "button #{test_action_primary ? "button-primary" : "button-secondary"} button-compact" %>
+      <% else %>
+        <button type="button" class="button button-secondary button-compact" disabled aria-describedby="runtime-<%= installation&.id || adapter_key %>-test-requirement">Test connection</button>
+      <% end %>
+      <% if provider %>
+        <%= link_to "Edit settings", edit_workspace_provider_connection_path(Current.workspace, adapter_key), class: "button button-secondary button-compact" %>
+      <% end %>
+      <% if provider %>
+        <%= button_to "Remove provider", workspace_provider_connection_path(Current.workspace, adapter_key),
+          method: :delete, class: "button button-quiet button-compact provider-remove-button",
+          form: { class: "provider-remove-form", data: { turbo_confirm: "Remove #{provider_name} from this workspace? Its saved sign-in settings and workspace access will be removed. You will need to set it up again before using it." } } %>
+      <% end %>
+      <% if test_disabled_reason %>
+        <p class="provider-action-note" id="runtime-<%= installation&.id || adapter_key %>-test-requirement"><%= test_disabled_reason %></p>
+      <% end %>
+    </div>
+
+    <% if installation %>
+      <%= form_with model: installation, url: workspace_runtime_installation_path(Current.workspace, installation),
+        method: :patch, class: "runtime-policy-form" do |form| %>
+        <label class="runtime-approval-toggle">
+          <% approval_aria = approval_disabled_reason ? { describedby: "runtime-#{installation.id}-approval-requirement" } : {} %>
+          <% if approval_disabled %>
+            <%= form.hidden_field :approved, value: installation.approved? ? "1" : "0" %>
+            <%= form.check_box :approved, disabled: true, include_hidden: false, aria: approval_aria %>
+          <% else %>
+            <%= form.check_box :approved, aria: approval_aria %>
+          <% end %>
+          <span>
+            <strong>Allow this provider in the workspace</strong>
+            <small><%= current_test_passed ? (installation.approved? ? "The current connection passed its test." : "The current connection passed its test. Allow it in the workspace below.") : "Run a successful connection test before allowing access." %></small>
+          </span>
+        </label>
+        <% if approval_disabled_reason %>
+          <p class="runtime-status-note runtime-policy-note" id="runtime-<%= installation.id %>-approval-requirement"><%= approval_disabled_reason %></p>
+        <% end %>
+
+        <details class="provider-advanced-settings">
+          <summary>Workspace access</summary>
+          <p>Choose which specialist roles, actions, and customer data this provider may receive.</p>
+          <div class="runtime-policy-groups">
+            <fieldset>
+              <legend>Roles</legend>
+              <% AgentPolicy::ROLE_DEFINITIONS.each do |key, definition| %>
+                <label><%= check_box_tag "runtime_installation[allowed_role_keys][]", key, installation.allowed_role_keys.include?(key), id: "runtime_#{installation.id}_role_#{key}" %><span><%= CrewConfiguration::CREWS.fetch(definition.fetch(:crew_kind)) %> · <%= definition.fetch(:name) %></span></label>
+              <% end %>
+            </fieldset>
+            <fieldset>
+              <legend>Allowed actions</legend>
+              <% AgentPolicy::TOOLS.each do |key, label| %>
+                <label><%= check_box_tag "runtime_installation[allowed_tools][]", key, installation.allowed_tools.include?(key), id: "runtime_#{installation.id}_tool_#{key}" %><span><%= label %></span></label>
+              <% end %>
+            </fieldset>
+            <fieldset>
+              <legend>Customer data</legend>
+              <% RuntimeInstallation::DATA_CLASSES.each do |key, label| %>
+                <label><%= check_box_tag "runtime_installation[allowed_data_classes][]", key, installation.allowed_data_classes.include?(key), id: "runtime_#{installation.id}_data_#{key}" %><span><%= label %></span></label>
+              <% end %>
+            </fieldset>
+          </div>
+
+          <% installation.profile_keys.each do |profile_key| %>
+            <%= hidden_field_tag "runtime_installation[profile_keys][]", profile_key %>
+          <% end %>
+          <%= form.hidden_field :max_timeout_seconds %>
+          <%= form.hidden_field :max_steps %>
+          <%= form.hidden_field :max_tool_calls %>
+          <%= form.hidden_field :max_input_units %>
+          <%= form.hidden_field :max_output_units %>
+        </details>
+        <%= form.submit "Save workspace access",
+          class: "button #{status_text == "Approval required" ? "button-primary" : "button-secondary"} button-compact" %>
+      <% end %>
+    <% end %>
+  <% else %>
+    <p class="runtime-readonly-policy">
+      <strong>Workspace access</strong>
+      <span><%= pluralize(installation&.allowed_role_keys.to_a.size, "role") %> · <%= pluralize(installation&.allowed_tools.to_a.size, "action") %> · <%= pluralize(installation&.allowed_data_classes.to_a.size, "data class") %></span>
+    </p>
+  <% end %>
+
+  <% if installation && @can_configure %>
+    <details class="provider-technical-details">
+      <summary>Technical details</summary>
+      <dl class="runtime-facts">
+        <% built_in_transport = installation.account_metadata.to_h["transport"] == "built_in_https" %>
+        <div>
+          <dt><%= built_in_transport ? "Transport" : "Executable" %></dt>
+          <dd><%= built_in_transport ? "Built-in HTTPS" : content_tag(:code, installation.executable_path) %></dd>
+        </div>
+        <div><dt>Provider version</dt><dd><%= provider&.fetch("executable_version").presence || installation.executable_version %></dd></div>
+        <div><dt>Compatibility</dt><dd><%= installation.compatibility_status.humanize %></dd></div>
+        <div><dt>Last checked</dt><dd><%= time_tag installation.checked_at, installation.checked_at.to_fs(:short) %></dd></div>
+        <div><dt>Capabilities</dt><dd><%= installation.capabilities.map(&:humanize).join(", ").presence || "None reported" %></dd></div>
+      </dl>
+    </details>
+  <% end %>
+</section>

@@ -26,7 +26,6 @@ const (
 
 var (
 	sessionIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	versionPattern   = regexp.MustCompile(`\b2\.1\.(\d+)\b`)
 )
 
 type Invocation struct {
@@ -36,6 +35,7 @@ type Invocation struct {
 	ClaudeConfigDir  string
 	Model            string
 	Prompt           string
+	Credentials      map[string]string
 	EgressProfileKey string
 }
 
@@ -58,8 +58,11 @@ func Definition() runtimecatalog.Definition {
 		VersionArguments: []string{"--version"}, AccountArguments: []string{"auth", "status"},
 		AccountValidator: validSubscriptionStatus, AccountEnvironment: []string{"CLAUDE_CONFIG_DIR"},
 		AccountMetadata: map[string]string{"authentication": "claude_subscription"},
-		Capabilities:    []string{"structured_output", "tool_calling"},
-		MinimumVersion:  minVersion, MaximumVersion: maxVersion,
+		Capabilities:    []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:       runtimecatalog.TransportManagedProcess,
+		ExecutionMode:   protocol.ExecutionModeStrongIsolated,
+		EffectiveModel:  "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
+		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }
 
@@ -110,9 +113,13 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 	}); err != nil {
 		return Result{}, err
 	}
+	credentials := map[string]string{"CLAUDE_CONFIG_DIR": invocation.ClaudeConfigDir}
+	for key, value := range invocation.Credentials {
+		credentials[key] = value
+	}
 	process, processErr := runner.Run(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: arguments(invocation), WorkingDir: invocation.WorkingDir,
-		Input: []byte(invocation.Prompt), Credentials: map[string]string{"CLAUDE_CONFIG_DIR": invocation.ClaudeConfigDir},
+		HomeDir: invocation.ClaudeConfigDir, Input: []byte(invocation.Prompt), Credentials: credentials,
 		EgressProfileKey: invocation.EgressProfileKey,
 	})
 	if process.TimedOut {
@@ -259,12 +266,7 @@ func parseJSONL(output string) (normalizedResult, error) {
 }
 
 func compatibleVersion(value string) bool {
-	match := versionPattern.FindStringSubmatch(value)
-	if len(match) != 2 {
-		return false
-	}
-	patch, err := strconv.Atoi(match[1])
-	return err == nil && patch >= 169 && patch <= 299
+	return runtimecatalog.ValidObservedVersion(value)
 }
 
 func sumUnits(values ...int) (int, bool) {

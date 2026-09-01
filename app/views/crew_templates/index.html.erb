@@ -4,7 +4,7 @@
   <div class="page-heading crew-heading">
     <div>
       <h1>Specialist crews</h1>
-      <p>Set narrow instructions, tools, runtime preferences, and budgets for each accountable role.</p>
+      <p>Choose how each specialist works, what they can access, and when a human must review the result.</p>
     </div>
     <div class="notice notice-info crew-safety-note">
       <span class="notice-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path fill="currentColor" d="M8 1.5A6.5 6.5 0 1 1 1.5 8 6.5 6.5 0 0 1 8 1.5zM7.4 7h1.2v5H7.4zm0-2.8h1.2V5.4H7.4z"/></svg></span>
@@ -18,10 +18,10 @@
   <section class="section-block resolution-contract-section" aria-labelledby="resolution-contracts-title">
     <div class="section-heading-row crew-section-heading">
       <div>
-        <h2 id="resolution-contracts-title">Resolution contracts</h2>
-        <p>Published checks freeze with each proofed crew result. Older results keep the contract they used.</p>
+        <h2 id="resolution-contracts-title">Result requirements</h2>
+        <p>Set the evidence and review checks required before a result is ready. Existing results keep the requirements they used.</p>
       </div>
-      <span class="status-badge status-success">2 published</span>
+      <span class="status-badge status-success">2 active</span>
     </div>
 
     <div class="resolution-contract-list">
@@ -31,16 +31,15 @@
           <summary>
             <span class="agent-profile-title">
               <strong><%= family.name %></strong>
-              <span>Published version <%= version.version_number %> · <%= pluralize(version.required_claim_categories.size, "required claim category") %></span>
+              <span><%= pluralize(version.required_claim_categories.size, "evidence requirement") %></span>
             </span>
-            <span class="agent-profile-budget"><%= number_with_delimiter(version.execution_budget_units) %> units</span>
+            <span class="agent-profile-budget"><%= version.missing_items_block? ? "Blocks when evidence is missing" : "Routes gaps to review" %></span>
           </summary>
 
           <div class="resolution-contract-body">
             <div class="resolution-contract-overview">
               <dl>
                 <div><dt>Missing items</dt><dd><%= version.missing_items_block? ? "Block readiness" : "Needs human review" %></dd></div>
-                <div><dt>Budget threshold</dt><dd><%= number_with_delimiter(version.execution_budget_units) %> units</dd></div>
                 <div><dt>Review checks</dt><dd><%= version.mandatory_review_checks.map { |key| ResolutionContractVersion::REVIEW_CHECKS.fetch(key) }.to_sentence %></dd></div>
               </dl>
               <div>
@@ -63,9 +62,9 @@
 
             <% if @can_configure %>
               <div class="agent-policy-editor resolution-contract-editor">
-                <h3>Publish a bounded contract version</h3>
-                <p>Resolution changes require a retained-fact preview and named canary.</p>
-                <%= link_to "Open Governed policy", workspace_governed_policy_path(Current.workspace), class: "button button-secondary" %>
+                <h3>Update result requirements</h3>
+                <p>Test requirement changes on selected cases or accounts before publishing them.</p>
+                <%= link_to "Review policy changes", workspace_governed_policy_path(Current.workspace), class: "button button-secondary" %>
                 <% if @editing_contract_id == family.id && @contract_error %>
                   <p class="inline-error" role="alert"><%= @contract_error %></p>
                 <% end %>
@@ -82,7 +81,7 @@
       <div class="section-heading-row crew-section-heading">
         <div>
           <h2 id="crew-<%= crew.id %>-title"><%= crew.name %></h2>
-          <p><%= pluralize(crew.agent_profiles.size, "bounded role") %></p>
+          <p><%= pluralize(crew.agent_profiles.size, "specialist") %></p>
         </div>
         <span class="status-badge status-success">Configured</span>
       </div>
@@ -92,14 +91,13 @@
           <% version = profile.current_version %>
           <% submitted = @editing_profile_id == profile.id ? @submitted_profile_attributes : nil %>
           <% form_tools = submitted ? Array(submitted["allowed_tools"]) : version.allowed_tools %>
-          <% form_fallbacks = submitted ? Array(submitted["fallback_profile_keys"]).compact_blank : version.fallback_profile_keys %>
           <details class="agent-profile" id="profile-<%= profile.id %>" <%= "open" if @editing_profile_id == profile.id %>>
             <summary>
               <span class="agent-profile-title">
                 <strong><%= profile.name %></strong>
-                <span>Version <%= version.version_number %> · <%= pluralize(version.allowed_tools.size, "tool") %></span>
+                <span><%= pluralize(version.allowed_tools.size, "permitted action") %></span>
               </span>
-              <span class="agent-profile-budget"><%= version.timeout_seconds %>s · <%= version.max_steps %> steps</span>
+              <span class="agent-profile-budget"><%= AgentPolicy::REVIEW_POLICIES.fetch(version.review_policy) %></span>
             </summary>
 
             <div class="agent-profile-body">
@@ -109,11 +107,8 @@
                   <p><%= version.instructions %></p>
                 </div>
                 <dl>
-                  <div><dt>Runtime</dt><dd><%= AgentPolicy::RUNTIME_PROFILES.fetch(version.runtime_profile_key) %></dd></div>
-                  <div><dt>Fallback</dt><dd><%= version.fallback_profile_keys.map { |key| AgentPolicy::RUNTIME_PROFILES.fetch(key) }.presence&.join(" → ") || "None" %></dd></div>
                   <div><dt>Review</dt><dd><%= AgentPolicy::REVIEW_POLICIES.fetch(version.review_policy) %></dd></div>
-                  <div><dt>Tool calls</dt><dd>Up to <%= version.max_tool_calls %></dd></div>
-                  <div><dt>Memory outage</dt><dd><%= version.memory_required? ? "Block run" : "Continue degraded" %></dd></div>
+                  <div><dt>If saved context is unavailable</dt><dd><%= version.memory_required? ? "Wait for it" : "Continue without it" %></dd></div>
                 </dl>
                 <ul class="agent-tool-list" aria-label="Allowed tools">
                   <% version.allowed_tools.each do |tool| %><li><%= AgentPolicy::TOOLS.fetch(tool) %></li><% end %>
@@ -122,7 +117,7 @@
 
               <% if @can_configure %>
                 <div class="agent-policy-editor">
-                  <h3>Edit within this role’s limits</h3>
+                  <h3>Edit specialist settings</h3>
                   <% if @editing_profile_id == profile.id && @profile_error %>
                     <p class="inline-error" role="alert"><%= @profile_error %></p>
                   <% end %>
@@ -148,46 +143,19 @@
                       </div>
                     </fieldset>
 
-                    <div class="agent-policy-grid">
-                      <div class="field">
-                        <%= form.label :runtime_profile_key, "Primary runtime profile" %>
-                        <%= form.select :runtime_profile_key, AgentPolicy::RUNTIME_PROFILES.map { |key, label| [ label, key ] },
-                          { selected: submitted&.fetch("runtime_profile_key", nil) || version.runtime_profile_key }, required: true %>
-                      </div>
-                      <% 2.times do |index| %>
-                        <div class="field">
-                          <%= label_tag "profile_#{profile.id}_fallback_#{index}", "Fallback #{index + 1}" %>
-                          <%= select_tag "agent_profile[fallback_profile_keys][]",
-                            options_for_select([ [ "None", "" ] ] + AgentPolicy::RUNTIME_PROFILES.map { |key, label| [ label, key ] }, form_fallbacks[index]),
-                            id: "profile_#{profile.id}_fallback_#{index}" %>
-                        </div>
-                      <% end %>
-                      <div class="field">
-                        <%= form.label :timeout_seconds, "Timeout (seconds)" %>
-                        <%= form.number_field :timeout_seconds, value: submitted&.fetch("timeout_seconds", nil) || version.timeout_seconds,
-                          min: AgentProfileVersion::TIMEOUT_RANGE.begin, max: AgentProfileVersion::TIMEOUT_RANGE.end, required: true %>
-                      </div>
-                      <div class="field">
-                        <%= form.label :max_steps, "Maximum steps" %>
-                        <%= form.number_field :max_steps, value: submitted&.fetch("max_steps", nil) || version.max_steps,
-                          min: AgentProfileVersion::STEP_RANGE.begin, max: AgentProfileVersion::STEP_RANGE.end, required: true %>
-                      </div>
-                      <div class="field">
-                        <%= form.label :max_tool_calls, "Maximum tool calls" %>
-                        <%= form.number_field :max_tool_calls, value: submitted&.fetch("max_tool_calls", nil) || version.max_tool_calls,
-                          min: AgentProfileVersion::TOOL_CALL_RANGE.begin, max: AgentProfileVersion::TOOL_CALL_RANGE.end, required: true %>
-                      </div>
-                      <div class="field">
-                        <%= form.label :review_policy, "Review policy" %>
-                        <%= form.select :review_policy, AgentPolicy::REVIEW_POLICIES.map { |key, label| [ label, key ] },
-                          { selected: submitted&.fetch("review_policy", nil) || version.review_policy }, required: true %>
-                      </div>
-                      <div class="field checkbox-field">
-                        <%= form.check_box :memory_required, checked: ActiveModel::Type::Boolean.new.cast(submitted&.fetch("memory_required", version.memory_required?)) %>
-                        <%= form.label :memory_required, "Block runs when memory is unavailable" %>
-                      </div>
+                    <%= form.hidden_field :runtime_profile_key, value: version.runtime_profile_key %>
+                    <% version.fallback_profile_keys.each do |fallback| %>
+                      <%= hidden_field_tag "agent_profile[fallback_profile_keys][]", fallback %>
+                    <% end %>
+                    <%= form.hidden_field :timeout_seconds, value: version.timeout_seconds %>
+                    <%= form.hidden_field :max_steps, value: version.max_steps %>
+                    <%= form.hidden_field :max_tool_calls, value: version.max_tool_calls %>
+                    <%= form.hidden_field :review_policy, value: version.review_policy %>
+                    <div class="field checkbox-field">
+                      <%= form.check_box :memory_required, checked: ActiveModel::Type::Boolean.new.cast(submitted&.fetch("memory_required", version.memory_required?)) %>
+                      <%= form.label :memory_required, "Wait for saved customer context before this specialist starts" %>
                     </div>
-                    <%= form.submit "Save new policy version", class: "button button-primary" %>
+                    <%= form.submit "Save changes", class: "button button-primary" %>
                   <% end %>
                 </div>
               <% end %>

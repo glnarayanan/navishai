@@ -77,8 +77,12 @@ class ExecutionLedger
         runtime_profile_key: task.assigned_agent_profile_version.runtime_profile_key,
         runtime_installation: selection.installation,
         selected_runtime_detection_key: selection.installation.detection_key,
+        selected_runtime_configuration_fingerprint: selection.installation.configuration_fingerprint,
+        selected_effective_model: selection.installation.effective_model,
         selected_adapter_key: selection.installation.adapter_key,
         selected_runtime_profile_key: selection.profile_key,
+        selected_execution_mode: selection.execution_mode,
+        selected_isolation_policy: selection.isolation_policy,
         runtime_selection_reason: selection.reason,
         runtime_selection_detail: selection.detail,
         disclosed_data_classes: selection.data_classes,
@@ -320,7 +324,8 @@ class ExecutionLedger
 
     def updates_for(run, event)
       from, to = TRANSITIONS.fetch(event.event_type)
-      raise OutOfOrder, "Event #{event.event_type} cannot follow #{run.status}." unless run.status == from
+      allowed_from = event.event_type == "run.policy_denied" ? [ "admitted", "running" ] : [ from ]
+      raise OutOfOrder, "Event #{event.event_type} cannot follow #{run.status}." unless allowed_from.include?(run.status)
 
       data = event.data
       updates = { status: to }

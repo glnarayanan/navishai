@@ -58,7 +58,9 @@ class IntercomBackfillLifecycleTest < ActiveSupport::TestCase
       workspace: @workspace, membership: @owner, confirmation: @workspace.slug
     )
 
-    WorkspaceDeletion.perform!(request:, object_purger: ->(*) { })
+    WorkspaceDeletion.perform!(
+      request:, object_purger: ->(*) { }, provider_gateway: provider_purge_gateway
+    )
 
     refute Workspace.exists?(workspace_id)
     assert_empty IntercomBackfillManifest.where(id: record_ids[0])

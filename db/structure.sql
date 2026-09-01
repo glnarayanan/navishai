@@ -1196,11 +1196,17 @@ CREATE FUNCTION public.protect_execution_routing_snapshot() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF ROW(OLD.runtime_installation_id, OLD.selected_runtime_detection_key, OLD.selected_adapter_key, OLD.selected_runtime_profile_key,
-         OLD.runtime_selection_reason, OLD.runtime_selection_detail, OLD.disclosed_data_classes, OLD.max_input_units, OLD.max_output_units)
+  IF ROW(OLD.runtime_installation_id, OLD.selected_runtime_detection_key, OLD.selected_adapter_key,
+         OLD.selected_runtime_profile_key, OLD.selected_runtime_configuration_fingerprint,
+         OLD.selected_effective_model, OLD.selected_execution_mode, OLD.selected_isolation_policy,
+         OLD.runtime_selection_reason, OLD.runtime_selection_detail, OLD.disclosed_data_classes,
+         OLD.max_input_units, OLD.max_output_units)
      IS DISTINCT FROM
-     ROW(NEW.runtime_installation_id, NEW.selected_runtime_detection_key, NEW.selected_adapter_key, NEW.selected_runtime_profile_key,
-         NEW.runtime_selection_reason, NEW.runtime_selection_detail, NEW.disclosed_data_classes, NEW.max_input_units, NEW.max_output_units) THEN
+     ROW(NEW.runtime_installation_id, NEW.selected_runtime_detection_key, NEW.selected_adapter_key,
+         NEW.selected_runtime_profile_key, NEW.selected_runtime_configuration_fingerprint,
+         NEW.selected_effective_model, NEW.selected_execution_mode, NEW.selected_isolation_policy,
+         NEW.runtime_selection_reason, NEW.runtime_selection_detail, NEW.disclosed_data_classes,
+         NEW.max_input_units, NEW.max_output_units) THEN
     RAISE EXCEPTION 'execution routing snapshot is durable';
   END IF;
   RETURN NEW;
@@ -1325,7 +1331,7 @@ BEGIN
       AND octet_length(event_row.data->>'reason') BETWEEN 1 AND 500
       AND ROW(NEW.input_units, NEW.output_units, NEW.output, NEW.admitted_at, NEW.started_at)
         IS NOT DISTINCT FROM ROW(OLD.input_units, OLD.output_units, OLD.output, OLD.admitted_at, OLD.started_at)
-    WHEN 'run.policy_denied' THEN OLD.status = 'running' AND NEW.status = 'policy_denied'
+    WHEN 'run.policy_denied' THEN OLD.status IN ('admitted', 'running') AND NEW.status = 'policy_denied'
       AND NEW.failure_code = event_row.data->>'code' AND NEW.retryable = false AND NEW.finished_at = event_row.occurred_at
       AND octet_length(event_row.data->>'code') BETWEEN 1 AND 100
       AND octet_length(event_row.data->>'tool') BETWEEN 1 AND 64
@@ -2518,10 +2524,10 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.approved AND NEW.approved AND
      ROW(OLD.adapter_key, OLD.protocol_version, OLD.executable_path, OLD.executable_version,
          OLD.account_metadata, OLD.capabilities, OLD.minimum_version, OLD.maximum_version,
-         OLD.compatibility_status) IS DISTINCT FROM
+         OLD.compatibility_status, OLD.execution_mode, OLD.transport) IS DISTINCT FROM
      ROW(NEW.adapter_key, NEW.protocol_version, NEW.executable_path, NEW.executable_version,
          NEW.account_metadata, NEW.capabilities, NEW.minimum_version, NEW.maximum_version,
-         NEW.compatibility_status) THEN
+         NEW.compatibility_status, NEW.execution_mode, NEW.transport) THEN
     RAISE EXCEPTION 'runtime detection changed without revoking approval';
   END IF;
   RETURN NEW;
@@ -2931,9 +2937,11 @@ CREATE TABLE public.agent_profile_versions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     memory_required boolean DEFAULT false NOT NULL,
+    isolation_policy character varying DEFAULT 'strong_isolation_required'::character varying NOT NULL,
     CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT agent_profile_versions_budget CHECK (((timeout_seconds >= 30) AND (timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
+    CONSTRAINT agent_profile_versions_isolation_policy CHECK (((isolation_policy)::text = ANY ((ARRAY['strong_isolation_required'::character varying, 'host_trusted_allowed'::character varying])::text[]))),
     CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
     CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY (ARRAY[('required'::character varying)::text, ('on_policy_flag'::character varying)::text]))),
     CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
@@ -3936,6 +3944,10 @@ CREATE TABLE public.execution_runs (
     input_artifact_id bigint,
     runtime_installation_id bigint,
     selected_runtime_detection_key character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    selected_runtime_configuration_fingerprint character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    selected_effective_model character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
+    selected_execution_mode character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
+    selected_isolation_policy character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
     selected_adapter_key character varying DEFAULT 'scripted'::character varying NOT NULL,
     selected_runtime_profile_key character varying DEFAULT 'workspace_default'::character varying NOT NULL,
     runtime_selection_reason character varying DEFAULT 'primary'::character varying NOT NULL,
@@ -3951,12 +3963,14 @@ CREATE TABLE public.execution_runs (
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
+    CONSTRAINT execution_runs_execution_boundary CHECK ((((selected_execution_mode)::text = ANY (ARRAY[('bounded'::character varying)::text, ('host_trusted'::character varying)::text, ('strong_isolated'::character varying)::text, ('legacy_unknown'::character varying)::text])) AND ((selected_isolation_policy)::text = ANY (ARRAY[('strong_isolation_required'::character varying)::text, ('host_trusted_allowed'::character varying)::text, ('legacy_unknown'::character varying)::text])) AND ((((selected_execution_mode)::text = 'legacy_unknown'::text) AND ((selected_isolation_policy)::text = 'legacy_unknown'::text)) OR (((selected_execution_mode)::text = ANY (ARRAY[('bounded'::character varying)::text, ('strong_isolated'::character varying)::text])) AND ((selected_isolation_policy)::text = ANY (ARRAY[('strong_isolation_required'::character varying)::text, ('host_trusted_allowed'::character varying)::text]))) OR (((selected_execution_mode)::text = 'host_trusted'::text) AND ((selected_isolation_policy)::text = 'host_trusted_allowed'::text))))),
     CONSTRAINT execution_runs_failure_code CHECK (((failure_code IS NULL) OR ((octet_length((failure_code)::text) >= 1) AND (octet_length((failure_code)::text) <= 100)))),
     CONSTRAINT execution_runs_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
     CONSTRAINT execution_runs_input_context CHECK (((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 131072))),
     CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
+    CONSTRAINT execution_runs_runtime_configuration_snapshot CHECK ((((selected_runtime_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text) AND ((octet_length((selected_effective_model)::text) >= 1) AND (octet_length((selected_effective_model)::text) <= 200)) AND ((selected_effective_model)::text !~ '[\r\n]'::text))),
     CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND ((runtime_selection_reason)::text = ANY (ARRAY[('primary'::character varying)::text, ('fallback'::character varying)::text])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
     CONSTRAINT execution_runs_status CHECK (((status)::text = ANY (ARRAY[('admitting'::character varying)::text, ('admitted'::character varying)::text, ('running'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('timed_out'::character varying)::text, ('canceled'::character varying)::text, ('policy_denied'::character varying)::text])))
@@ -6012,14 +6026,31 @@ CREATE TABLE public.runtime_installations (
     profile_keys jsonb DEFAULT '["workspace_default"]'::jsonb NOT NULL,
     max_input_units bigint DEFAULT 100000 NOT NULL,
     max_output_units bigint DEFAULT 25000 NOT NULL,
+    effective_model character varying DEFAULT 'runtime_default'::character varying NOT NULL,
+    configuration_fingerprint character varying DEFAULT '0000000000000000000000000000000000000000000000000000000000000000'::character varying NOT NULL,
+    runtime_test_status character varying DEFAULT 'untested'::character varying NOT NULL,
+    runtime_test_failure_code character varying,
+    runtime_tested_at timestamp(6) without time zone,
+    runtime_tested_configuration_fingerprint character varying,
+    runtime_test_input_units bigint DEFAULT 0 NOT NULL,
+    runtime_test_output_units bigint DEFAULT 0 NOT NULL,
+    runtime_test_usage_observed boolean DEFAULT false NOT NULL,
+    execution_mode character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
+    transport character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
+    CONSTRAINT runtime_installations_approval_requires_test CHECK (((approved = false) OR (((runtime_test_status)::text = 'passed'::text) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
+    CONSTRAINT runtime_installations_configuration_identity CHECK ((((octet_length((effective_model)::text) >= 1) AND (octet_length((effective_model)::text) <= 200)) AND ((effective_model)::text !~ '[\r\n]'::text) AND ((configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
+    CONSTRAINT runtime_installations_execution_boundary CHECK ((((execution_mode)::text = ANY (ARRAY[('bounded'::character varying)::text, ('host_trusted'::character varying)::text, ('strong_isolated'::character varying)::text, ('legacy_unknown'::character varying)::text])) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
     CONSTRAINT runtime_installations_identity CHECK ((((detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((protocol_version)::text ~ '^v[1-9][0-9]*$'::text))),
     CONSTRAINT runtime_installations_policy_arrays CHECK (((jsonb_typeof(allowed_role_keys) = 'array'::text) AND (jsonb_array_length(allowed_role_keys) <= 8) AND (jsonb_typeof(allowed_tools) = 'array'::text) AND (jsonb_array_length(allowed_tools) <= 9) AND (jsonb_typeof(allowed_data_classes) = 'array'::text) AND (jsonb_array_length(allowed_data_classes) <= 8))),
     CONSTRAINT runtime_installations_profiles CHECK (((jsonb_typeof(profile_keys) = 'array'::text) AND ((jsonb_array_length(profile_keys) >= 1) AND (jsonb_array_length(profile_keys) <= 3)) AND (profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
     CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
+    CONSTRAINT runtime_installations_test_evidence CHECK ((((runtime_test_status)::text = ANY (ARRAY[('untested'::character varying)::text, ('passed'::character varying)::text, ('failed'::character varying)::text])) AND ((runtime_test_failure_code IS NULL) OR ((runtime_test_failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)) AND ((runtime_tested_configuration_fingerprint IS NULL) OR ((runtime_tested_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text)) AND (runtime_test_input_units >= 0) AND (runtime_test_output_units >= 0))),
+    CONSTRAINT runtime_installations_test_state CHECK (((((runtime_test_status)::text = 'untested'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NULL) AND (runtime_tested_configuration_fingerprint IS NULL) AND (runtime_test_input_units = 0) AND (runtime_test_output_units = 0) AND (runtime_test_usage_observed = false)) OR (((runtime_test_status)::text = 'passed'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)) OR (((runtime_test_status)::text = 'failed'::text) AND (runtime_test_failure_code IS NOT NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
+    CONSTRAINT runtime_installations_transport CHECK ((((transport)::text = ANY ((ARRAY['built_in_https'::character varying, 'managed_process'::character varying, 'legacy_unknown'::character varying])::text[])) AND (((transport)::text = 'legacy_unknown'::text) OR ((execution_mode)::text = 'legacy_unknown'::text) OR (((transport)::text = 'built_in_https'::text) AND ((execution_mode)::text = 'bounded'::text)) OR (((transport)::text = 'managed_process'::text) AND ((execution_mode)::text = ANY ((ARRAY['host_trusted'::character varying, 'strong_isolated'::character varying])::text[])))) AND (((transport)::text <> 'legacy_unknown'::text) OR (approved = false)) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
     CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
@@ -15360,6 +15391,11 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260901020000'),
+('20260901010000'),
+('20260831143000'),
+('20260831121000'),
+('20260831120000'),
 ('20260829000000'),
 ('20260828233000'),
 ('20260828230000'),

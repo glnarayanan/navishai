@@ -5,7 +5,7 @@ Rails.application.routes.draw do
     post "runner-events", to: "runner_events#create", as: :runner_events
   end
   root "pages#show"
-  resources :workspaces, only: %i[ index show ] do
+  resources :workspaces, only: %i[ index show new create edit update ] do
     resource :deletion, only: %i[ create update ], controller: "workspace_deletions"
     resource :data_controls, only: %i[ show update ], controller: "workspace_data_controls" do
       post :expire
@@ -53,6 +53,11 @@ Rails.application.routes.draw do
     end
     resources :runtime_installations, path: "runtimes", only: %i[ index update ] do
       post :detect, on: :collection
+      post :test, on: :member
+    end
+    resources :provider_connections, path: "provider-connections", param: :adapter_key,
+      only: %i[ new create edit update destroy ] do
+      post :models, on: :collection
     end
     resource :usage_rates, path: "usage-rates", only: %i[ show create ], controller: "usage_rates" do
       post :rollback

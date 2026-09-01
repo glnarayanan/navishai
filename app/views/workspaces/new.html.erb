@@ -1,0 +1,13 @@
+<% content_for :title, "Create workspace — NavishAI" %>
+
+<main class="page-shell workspace-settings-shell">
+  <%= link_to "Back to workspaces", workspaces_path, class: "back-link" %>
+  <div class="page-heading">
+    <h1>Create a workspace</h1>
+    <p>Give another team its own cases, customer data, AI providers, policies, and access.</p>
+  </div>
+
+  <section class="config-panel workspace-settings-panel" aria-label="New workspace details">
+    <%= render "form", workspace: @workspace, organizations: @organizations %>
+  </section>
+</main>

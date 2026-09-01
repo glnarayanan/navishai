@@ -20,18 +20,17 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
 
     case_proposal = submit_proposal(
       scope_kind: "support_case", subject_id: @support_case.id,
-      reason: "Browser case canary", review_policy: "Review when policy flags risk"
+      reason: "Browser case policy test", remove_requirement: "Promised actions or dates"
     )
     case_preview = preview(case_proposal)
     within "#preview-#{case_preview.id}" do
       assert_text "Current"
       assert_text "Proposed"
       assert_text "Quality review"
-      assert_text "Exact typed facts"
+      assert_text "Evidence used"
       find(".policy-facts summary").click
-      assert_text "subject.id"
-      assert_text "integer"
-      assert_text "On policy flag"
+      assert_text "Subject"
+      assert_no_text "integer"
     end
     case_publication = publish(case_proposal)
 
@@ -51,7 +50,7 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     profile_preview = preview(profile_proposal)
     within "#preview-#{profile_preview.id}" do
       assert_text "No change"
-      assert_text "Exact typed facts"
+      assert_text "Evidence used"
     end
     profile_publication = publish(profile_proposal)
 
@@ -121,6 +120,8 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     end
     scroll_to case_preview_card, align: :top
     assert_no_horizontal_overflow
+    verification = case_preview_card.find(".policy-technical-verification")
+    verification.find("summary").click unless page.evaluate_script("arguments[0].open", verification)
     digest = case_preview_card.find(".policy-digests code", match: :first)
     assert_operator digest.rect.x + digest.rect.width, :<=, page.evaluate_script("window.innerWidth")
     assert_operator find_button("Roll back future decisions", match: :first).rect.height, :>=, 44
@@ -155,7 +156,7 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
       approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil
     )
     within "#proposal-#{proposal.id}" do
-      click_button "Publish to this explicit canary"
+      click_button "Publish to selected scope"
     end
     assert_text "Policy was not changed"
     assert_text "stale"
@@ -168,21 +169,24 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     Capybara.reset_session!
     sign_in(manager)
     visit workspace_governed_policy_path(@workspace)
-    assert_no_text "Governed policy change"
+    assert_no_text "Review policy changes"
     assert_no_text proposal.reason
   end
 
   private
-    def submit_proposal(scope_kind:, subject_id:, reason:, review_policy: "Review every result")
+    def submit_proposal(scope_kind:, subject_id:, reason:, remove_requirement: nil)
       visit workspace_governed_policy_path(@workspace)
       card = find(".policy-profile", text: @profile.name, match: :first)
       card.find("summary").click unless page.evaluate_script("arguments[0].open", card)
       within card do
         find("input[type='radio'][value='#{scope_kind}']").choose
         find("input[name='governed_policy[#{scope_kind}_ids][]'][value='#{subject_id}']").check
-        select review_policy, from: "Quality review requirement"
+        uncheck remove_requirement if remove_requirement
+        assert_no_field "Quality review requirement"
+        assert_no_field "Max steps"
+        assert_no_field "Max tool calls"
         fill_in "Reason", with: reason
-        click_button "Save immutable proposal"
+        click_button "Save proposal"
       end
       assert_text "Policy proposal saved"
       @workspace.governed_policy_proposals.order(:id).last
@@ -190,7 +194,7 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
 
     def preview(proposal)
       within "#proposal-#{proposal.id}" do
-        click_button "Preview retained facts"
+        click_button "Preview changes"
       end
       assert_text "Preview complete", wait: 12
       proposal.previews.reload.first
@@ -198,9 +202,9 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
 
     def publish(proposal)
       within "#proposal-#{proposal.id}" do
-        click_button "Publish to this explicit canary"
+        click_button "Publish to selected scope"
       end
-      assert_text "Explicit canary published"
+      assert_text "Limited rollout published"
       proposal.publications.reload.first
     end
 

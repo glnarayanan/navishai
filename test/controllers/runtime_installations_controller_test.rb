@@ -11,10 +11,17 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     @workspace.memberships.create!(user: user, role: :member)
     sign_in_as user
 
-    get workspace_runtime_installations_path(@workspace)
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { raise "member runtime index called the provider gateway" }
+    begin
+      get workspace_runtime_installations_path(@workspace)
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original)
+    end
     assert_response :success
-    assert_select "h1", "Runtime approvals"
-    assert_select "code", "/opt/navishai/fixture"
+    assert_select "h1", "AI providers"
+    assert_select "#runtime-#{@installation.id}", count: 1
+    assert_select "code", { text: "/opt/navishai/fixture", count: 0 }
     assert_select ".runtime-policy-form", count: 0
     assert_select "form[action='#{detect_workspace_runtime_installations_path(@workspace)}']", count: 0
 
@@ -24,6 +31,26 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
     post detect_workspace_runtime_installations_path(@workspace)
     assert_response :forbidden
+    post test_workspace_runtime_installation_path(@workspace, @installation)
+    assert_response :forbidden
+  end
+
+  test "viewers render persisted runtime facts without the provider gateway" do
+    user = User.create!(email_address: "runtime-viewer@example.com", password: "password12345", verified_at: Time.current)
+    @workspace.memberships.create!(user: user, role: :viewer)
+    sign_in_as user
+
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { raise "viewer runtime index called the provider gateway" }
+    begin
+      get workspace_runtime_installations_path(@workspace)
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 1
+    assert_select ".runtime-policy-form", count: 0
   end
 
   test "an Owner detects and approves a bounded runtime policy" do
@@ -42,6 +69,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "missing", @installation.reload.health_status
 
     @installation.update!(health_status: "available")
+    mark_test_passed!(@installation)
     patch workspace_runtime_installation_path(@workspace, @installation), params: {
       runtime_installation: approval_attributes
     }
@@ -61,14 +89,471 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "a removed provider does not linger as a standalone connection" do
+    sign_in_as users(:owner)
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [
+        {
+          "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
+          "auth_modes" => [ "api_key" ], "model_required" => true, "configured" => false,
+          "secret_configured" => false, "auth_mode" => "", "model" => "", "health_status" => "not_configured",
+          "available" => true, "executable_version" => "fixture 2.4.1"
+        }
+      ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 0
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "saved provider settings stay distinct from runtime and connection test state" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [
+        {
+          "adapter_key" => "codex_subscription", "name" => "Codex",
+          "description" => "Run OpenAI Codex with a ChatGPT subscription or OpenAI API key.",
+          "auth_modes" => %w[api_key subscription], "model_required" => false, "configured" => true,
+          "secret_configured" => false, "auth_mode" => "subscription", "model" => "",
+          "health_status" => "unavailable", "available" => false, "executable_version" => ""
+        }
+      ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-codex_subscription" do
+      assert_select ".provider-settings-status", text: "Settings saved"
+      assert_select ".status-badge", text: "Unavailable"
+      assert_select "dt", text: "Model"
+      assert_select "dd", text: "Provider default"
+      assert_select "button[disabled]", text: "Test connection"
+      assert_select ".provider-action-note", text: /runner does not currently report this provider as available/
+      assert_select "a", text: "Edit settings"
+      assert_select "form.provider-remove-form[data-turbo-confirm=?]",
+        "Remove Codex from this workspace? Its saved sign-in settings and workspace access will be removed. You will need to set it up again before using it."
+    end
+    assert_not_includes response.body, "Not selected"
+    assert_includes response.body, "will use its default model for now"
+    assert_not_includes response.body, "does not expose a model list"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a configured model-required provider without a model asks for model selection" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    catalog_provider = live_provider
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [ catalog_provider.merge(
+        "model" => "", "health_status" => "unavailable", "available" => false, "executable_version" => ""
+      ) ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-fixture .status-badge", text: "Choose model"
+    assert_select "#runtime-fixture dd", text: "No model selected"
+    assert_select "#runtime-fixture .provider-actions button[disabled]", text: "Test connection"
+    assert_select "#runtime-fixture .provider-action-note", text: /Choose a model in Edit settings/
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a configured Codex API-key provider without a model asks for model selection" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    provider = live_provider.merge(
+      "adapter_key" => "codex_subscription", "name" => "Codex", "model_required" => false,
+      "auth_mode" => "api_key", "model" => "", "execution_mode" => "bounded",
+      "health_status" => "unavailable", "available" => false, "executable_version" => ""
+    )
+
+    with_provider_catalog([ provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-codex_subscription .status-badge", text: "Choose model"
+    assert_select "#runtime-codex_subscription dd", text: "No model selected"
+    assert_select "#runtime-codex_subscription .provider-actions button[disabled]", text: "Test connection"
+    assert_select "#runtime-codex_subscription .provider-action-note", text: /Choose an exact model ID/
+    assert_not_includes response.body, "will use its default model for now"
+  end
+
+  test "a live available provider requires a current test before approval" do
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-warning", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-primary", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions a.button-secondary", text: "Edit settings", count: 1
+    actions_html = css_select("#runtime-#{@installation.id} .provider-actions").sole.to_html
+    assert_operator actions_html.index("Test connection"), :<, actions_html.index("Edit settings")
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='submit'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[aria-describedby='runtime-#{@installation.id}-approval-requirement']", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", text: /Run a successful connection test before allowing this provider in the workspace/
+  end
+
+  test "a current passing test without approval requires approval" do
+    mark_test_passed!(@installation)
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Approval required"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-warning", text: "Approval required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-secondary", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input.button-primary[value='Save workspace access'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", count: 0
+  end
+
+  test "an approved provider with a current passing test is ready" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Ready"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-success", text: "Ready"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-secondary", text: "Test again", count: 1
+  end
+
+  test "the provider page selects the current built-in transport over a stale same-adapter runtime" do
+    @installation.update!(effective_model: "fixture-model")
+    current = create_installation(@workspace, key: "c" * 64)
+    current.update!(
+      executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", effective_model: "fixture-model"
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge(
+      "auth_mode" => "api_key", "execution_mode" => "bounded", "model" => "fixture-model",
+      "executable_version" => "NavishAI provider API 1.0.0"
+    ) ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{current.id}", count: 1 do
+      assert_select "dt", text: "Transport"
+      assert_select "dd", text: "Built-in HTTPS"
+      assert_select ".status-badge", text: "Test required"
+    end
+    assert_select "#runtime-#{@installation.id}", count: 0
+    assert_not_includes response.body, "/navishai/provider-api/fixture"
+  end
+
+  test "the provider page switches between current subscription and built-in transports" do
+    @installation.update!(effective_model: "fixture-model", executable_version: "NavishAI provider API 1.0.0")
+    current = create_installation(@workspace, key: "d" * 64)
+    current.update!(
+      executable_path: "/navishai/provider-api/fixture", executable_version: "NavishAI provider API 1.0.0",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", effective_model: "fixture-model"
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge(
+      "auth_mode" => "api_key", "execution_mode" => "bounded", "model" => "fixture-model",
+      "executable_version" => "NavishAI provider API 1.0.0"
+    ) ]) do
+      get workspace_runtime_installations_path(@workspace)
+      assert_select "#runtime-#{current.id}", count: 1
+      assert_select "#runtime-#{@installation.id}", count: 0
+    end
+
+    with_provider_catalog([ live_provider.merge("auth_mode" => "subscription", "model" => "fixture-model", "executable_version" => "NavishAI provider API 1.0.0") ]) do
+      get workspace_runtime_installations_path(@workspace)
+      assert_select "#runtime-#{@installation.id}", count: 1
+      assert_select "#runtime-#{current.id}", count: 0
+    end
+  end
+
+  test "the provider page prefers an available exact runtime over a newer missing runtime" do
+    @installation.update!(
+      effective_model: "fixture-model", executable_version: "fixture 2.4.1", checked_at: 1.hour.ago,
+      account_metadata: { "authentication" => "managed_on_runner", "transport" => "managed_runner" }
+    )
+    missing = create_installation(@workspace, key: "e" * 64)
+    missing.update!(
+      effective_model: "fixture-model", executable_version: "fixture 2.4.1", health_status: "missing",
+      checked_at: 1.minute.from_now,
+      account_metadata: { "authentication" => "managed_on_runner", "transport" => "managed_runner" }
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 1
+    assert_select "#runtime-#{missing.id}", count: 0
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+  end
+
+  test "a catalog version mismatch does not reuse a stale same-adapter runtime" do
+    @installation.update!(effective_model: "fixture-model", executable_version: "fixture 1.0.0")
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("executable_version" => "fixture 2.4.1") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-fixture .status-badge", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id}", count: 0
+  end
+
+  test "a failed current test is labeled test failed" do
+    @installation.update!(
+      runtime_test_status: "failed", runtime_test_failure_code: "provider_error", runtime_tested_at: Time.current,
+      runtime_tested_configuration_fingerprint: @installation.configuration_fingerprint
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test failed"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-danger", text: "Test failed"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions form:first-of-type button.button-primary", text: "Test again", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+  end
+
+  test "live provider unavailability blocks stale runtime access" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("available" => false, "health_status" => "unavailable") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge.status-neutral", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][name='runtime_installation[approved]'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='1']", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='0']", count: 0
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /runner does not currently report this provider as available/
+    assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='submit'][disabled]", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-policy-note", text: /Live Fixture settings are unavailable.*allowing this provider in the workspace/
+  end
+
+  test "approved policy changes preserve approval when the disabled value is posted" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    patch workspace_runtime_installation_path(@workspace, @installation), params: {
+      runtime_installation: approval_attributes.merge(
+        approved: "1", allowed_tools: %w[case_read knowledge_search],
+        allowed_data_classes: %w[case_content customer_identity], max_steps: "12"
+      )
+    }
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    installation = @installation.reload
+    assert installation.approved?
+    assert_equal %w[case_read knowledge_search], installation.allowed_tools
+    assert_equal %w[case_content customer_identity], installation.allowed_data_classes
+    assert_equal 12, installation.max_steps
+  end
+
+  test "catalog failure blocks stale standalone runtime access" do
+    mark_test_passed!(@installation)
+    @installation.update!(
+      approved: true, approved_by_membership: memberships(:owner_support), approved_by_user: users(:owner),
+      approved_at: Time.current
+    )
+    sign_in_as users(:owner)
+
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      raise RunnerClient::Unavailable, "runner catalog endpoint timed out"
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Ready"
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live provider settings are unavailable/
+    assert_not_includes response.body, "runner catalog endpoint timed out"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a successful catalog omission preserves standalone runtime behavior" do
+    sign_in_as users(:owner)
+
+    with_provider_catalog([ live_provider.merge("adapter_key" => "other", "name" => "Other") ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id} h2", text: "Fixture"
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Test required"
+    assert_select "#runtime-#{@installation.id} .provider-actions button", text: "Test connection", count: 1
+    assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 0
+    assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
+  end
+
+  test "the provider page identifies missing runner configuration" do
+    sign_in_as users(:owner)
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) do
+      raise RunnerClient::ClientConfigurationError, "runner shared secret must contain at least 32 bytes"
+    end
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "[role='alert']", text: "The provider service is not configured. Start the runner to manage provider connections."
+    assert_not_includes response.body, "runner shared secret"
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "an Owner explicitly tests an installation and persists only safe evidence" do
+    sign_in_as users(:owner)
+    client = Object.new
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => "fixture-model", "status" => "passed", "failure_code" => nil,
+        "usage_observed" => true, "input_units" => 8, "output_units" => 2,
+        "tested_at" => "2026-08-31T12:00:00Z"
+      }
+    end
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+    begin
+      post test_workspace_runtime_installation_path(@workspace, @installation)
+    ensure
+      RunnerClient.define_singleton_method(:new, original)
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    assert_equal "Provider connection test passed.", flash[:notice]
+    assert_equal "passed", @installation.reload.runtime_test_status
+    assert_equal({ "status" => "passed" }, AuditEvent.order(:id).last.metadata)
+  end
+
+  test "a completed failed connection test redirects with an alert" do
+    sign_in_as users(:owner)
+    client = Object.new
+    installation = @installation
+    client.define_singleton_method(:test_runtime!) do |workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:|
+      {
+        "protocol_version" => "v1", "workspace_key" => workspace_key, "request_id" => request_id,
+        "detection_key" => detection_key, "execution_mode" => execution_mode,
+        "configuration_fingerprint" => configuration_fingerprint,
+        "effective_model" => installation.effective_model, "status" => "failed", "failure_code" => "provider_error",
+        "usage_observed" => false, "input_units" => 0, "output_units" => 0,
+        "tested_at" => "2026-08-31T12:00:00Z"
+      }
+    end
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+    begin
+      post test_workspace_runtime_installation_path(@workspace, @installation)
+    ensure
+      RunnerClient.define_singleton_method(:new, original)
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{@installation.id}")
+    assert_equal "Provider connection test failed. Check the credentials and model, then try again.", flash[:alert]
+    assert_nil flash[:notice]
+    assert_equal "failed", @installation.reload.runtime_test_status
+  end
+
+  test "runner failures render customer-facing copy without internal details" do
+    sign_in_as users(:owner)
+    client = Object.new
+    client.define_singleton_method(:detect_runtimes!) do |workspace_key:|
+      raise RunnerClient::Unavailable, "dial tcp 10.0.0.4:8081: connection refused"
+    end
+    client.define_singleton_method(:catalog) { |workspace_key:| [] }
+    original = RunnerClient.method(:new)
+    RunnerClient.define_singleton_method(:new) { client }
+
+    post detect_workspace_runtime_installations_path(@workspace)
+
+    assert_response :service_unavailable
+    assert_select "[role='alert']", text: "The provider service is unavailable. Existing connections were not changed."
+    assert_not_includes response.body, "10.0.0.4"
+  ensure
+    RunnerClient.define_singleton_method(:new, original) if original
+  end
+
   private
     def create_installation(workspace, key: "a" * 64)
       workspace.runtime_installations.create!(
-        detection_key: key, adapter_key: "fixture", protocol_version: "v1",
-        executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
-        account_metadata: { "authentication" => "managed_on_runner" },
-        capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",
+      detection_key: key, adapter_key: "fixture", protocol_version: "v1", execution_mode: "strong_isolated",
+      executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
+      account_metadata: { "authentication" => "managed_on_runner" },
+      transport: "managed_process",
+      capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",
         compatibility_status: "compatible", incompatibility_reason: "", health_status: "available",
+        effective_model: "fixture-model",
         checked_at: Time.current
       )
     end
@@ -80,5 +565,33 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
         max_timeout_seconds: "300", max_steps: "10", max_tool_calls: "20",
         max_input_units: "100000", max_output_units: "25000"
       }
+    end
+
+    def mark_test_passed!(installation)
+      installation.update!(
+        runtime_test_status: "passed", runtime_tested_at: Time.current,
+        runtime_tested_configuration_fingerprint: installation.configuration_fingerprint
+      )
+    end
+
+    def live_provider
+      {
+        "adapter_key" => "fixture", "name" => "Fixture", "description" => "Fixture provider",
+        "auth_modes" => %w[api_key subscription], "model_required" => true, "configured" => true,
+        "secret_configured" => true, "auth_mode" => "subscription", "model" => "fixture-model",
+        "supported_execution_modes" => %w[bounded host_trusted strong_isolated], "execution_mode" => "strong_isolated",
+        "health_status" => "available", "available" => true, "unavailable_reason" => "",
+        "executable_version" => "fixture 2.4.1"
+      }
+    end
+
+    def with_provider_catalog(catalog)
+      gateway = Object.new
+      gateway.define_singleton_method(:catalog) { |workspace_key:| catalog }
+      original = ProviderConnectionGateway.method(:new)
+      ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+      yield
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original) if original
     end
 end

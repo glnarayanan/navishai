@@ -86,7 +86,7 @@ func TestDispatcherExecutesDurableAdmissionAndReplaysExactEvent(t *testing.T) {
 
 func TestDispatcherMarksInterruptedRunFailedWithoutRelaunch(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.json")
-	store, request, response := admittedStore(t, path)
+	store, request, response := admittedStoreWithBoundary(t, path, protocol.ExecutionModeBounded, protocol.IsolationPolicyStrongRequired)
 	pending, _ := store.NextEvent()
 	if err := store.MarkDelivered(request.RunID, pending.Event.EventID); err != nil {
 		t.Fatal(err)
@@ -119,8 +119,44 @@ func TestDispatcherMarksInterruptedRunFailedWithoutRelaunch(t *testing.T) {
 	}
 	events := sink.snapshot()
 	if events[0].EventID != started.EventID || events[1].EventType != "run.failed" ||
-		events[1].Data["code"] != "runner_interrupted" {
+		events[1].Data["code"] != "runner_interrupted" || events[1].Data["retryable"] != true {
 		t.Fatalf("unexpected recovery events: %#v", events)
+	}
+}
+
+func TestDispatcherMarksInterruptedHostTrustedRunOrphanedAndNonRetryable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.json")
+	store, request, response := admittedStoreWithBoundary(t, path, protocol.ExecutionModeHostTrusted, protocol.IsolationPolicyHostTrustedAllowed)
+	pending, _ := store.NextEvent()
+	if err := store.MarkDelivered(request.RunID, pending.Event.EventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Claim(request.RunID); err != nil {
+		t.Fatal(err)
+	}
+	started, _ := protocol.NewCanonicalEvent(request.RunID, 2, "run.started", response.Event.OccurredAt.Add(time.Second), map[string]any{
+		"adapter": "scripted", "scenario": "before-crash", "attempt": 1,
+	})
+	if err := store.AppendEvent(request.RunID, started); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := (&Dispatcher{store: store, now: func() time.Time { return response.Event.OccurredAt.Add(2 * time.Second) }}).recoverInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	pending, ok := store.NextEvent()
+	if !ok || pending.Event.EventType != "run.started" {
+		t.Fatalf("unexpected started event after recovery: %#v %t", pending, ok)
+	}
+	if err := store.MarkDelivered(request.RunID, pending.Event.EventID); err != nil {
+		t.Fatal(err)
+	}
+	pending, ok = store.NextEvent()
+	if !ok || pending.Event.EventType != "run.failed" || pending.Event.Data["code"] != hostTrustedInterruptedFailureCode || pending.Event.Data["retryable"] != false {
+		t.Fatalf("host-trusted interruption was not orphaned and non-retryable: %#v %t", pending, ok)
+	}
+	if store.IsRunning(request.RunID) {
+		t.Fatal("host-trusted interruption remained runnable after recovery")
 	}
 }
 
@@ -132,8 +168,12 @@ func (executor *countingExecutor) Execute(context.Context, protocol.AdmissionReq
 }
 
 func admittedStore(t *testing.T, path string) (*admission.Store, protocol.AdmissionRequest, protocol.AdmissionResponse) {
+	return admittedStoreWithBoundary(t, path, protocol.ExecutionModeBounded, protocol.IsolationPolicyStrongRequired)
+}
+
+func admittedStoreWithBoundary(t *testing.T, path, executionMode, isolationPolicy string) (*admission.Store, protocol.AdmissionRequest, protocol.AdmissionResponse) {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,11 +181,13 @@ func admittedStore(t *testing.T, path string) (*admission.Store, protocol.Admiss
 	if err != nil {
 		t.Fatal(err)
 	}
+	request.Routing.ExecutionMode = executionMode
+	request.Routing.IsolationPolicy = isolationPolicy
 	at := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
 	event, _ := protocol.NewCanonicalEvent(request.RunID, 1, "run.admitted", at, map[string]any{
 		"workspace_key": request.WorkspaceKey, "task_key": request.Task.TaskKey, "attempt": request.Task.Attempt,
 	})
-	response := protocol.AdmissionResponse{ProtocolVersion: protocol.Version, RunID: request.RunID, Status: "accepted", Event: event}
+	response := protocol.AdmissionResponse{ProtocolVersion: protocol.AdmissionVersion, RunID: request.RunID, Status: "accepted", Event: event}
 	store, err := admission.OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

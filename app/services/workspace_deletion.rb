@@ -47,7 +47,7 @@ class WorkspaceDeletion
     request
   end
 
-  def self.perform!(request:, engine: nil, object_purger: nil, completed_at: nil)
+  def self.perform!(request:, engine: nil, object_purger: nil, provider_gateway: nil, completed_at: nil)
     workspace_id = request.workspace_id
     connection = ActiveRecord::Base.connection
     connection.execute("SELECT pg_advisory_lock(50, #{connection.quote(workspace_id)})")
@@ -61,6 +61,7 @@ class WorkspaceDeletion
       )
     end
     workspace = request.workspace
+    purge_provider_connections!(workspace, gateway: provider_gateway)
 
     CLEANUP_ATTEMPTS.times do
       attachments = purge_attachment_objects!(workspace, object_purger:)
@@ -103,6 +104,11 @@ class WorkspaceDeletion
       end
   end
   private_class_method :purge_memory_index!
+
+  def self.purge_provider_connections!(workspace, gateway:)
+    (gateway || ProviderConnectionGateway.new).purge_workspace(workspace_key: workspace.runner_key)
+  end
+  private_class_method :purge_provider_connections!
 
   def self.finalize_if_stable!(workspace, request, attachments:, memories:, completed_at:)
     Workspace.transaction do

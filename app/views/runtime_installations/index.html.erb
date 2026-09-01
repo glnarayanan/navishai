@@ -1,128 +1,51 @@
-<% content_for :title, "Runtimes · #{Current.workspace.name} — NavishAI" %>
+<% content_for :title, "AI providers · #{Current.workspace.name} — NavishAI" %>
 
 <main class="page-shell runtime-shell page-family-config">
   <div class="page-heading runtime-heading">
     <div>
-      <h1>Runtime approvals</h1>
-      <p>Review runner-detected installations and set the workspace boundary for each one.</p>
+      <h1>AI providers</h1>
+      <p>Connect, test, and control the AI services this workspace can use.</p>
     </div>
     <% if @can_configure %>
-      <%= button_to "Check runner", detect_workspace_runtime_installations_path(Current.workspace),
-        class: "button button-primary" %>
+      <div class="runtime-heading-actions">
+        <% if @configured_providers.any? || @standalone_installations.any? %>
+          <%= button_to "Refresh status", detect_workspace_runtime_installations_path(Current.workspace),
+            class: "button button-secondary button-compact" %>
+        <% end %>
+        <%= link_to "Add provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-primary button-compact" %>
+      </div>
     <% end %>
   </div>
 
-  <%= render "shared/notice", kind: "info", css: "runtime-safety-note", title: "Credentials stay on the runner",
-    body: "NavishAI stores the resolved executable, reported version, capabilities, and non-secret account details. Approval never copies a login token." %>
+  <aside class="provider-key-note" role="note">
+    <strong>API keys stay private.</strong>
+    <span>Keys are encrypted in your self-hosted provider vault and are never shown again.</span>
+  </aside>
 
-  <section class="route-status" aria-label="Runtime boundary">
-    <dl>
-      <div><dt>Installations</dt><dd><%= @installations.size %></dd></div>
-      <div><dt>Approved</dt><dd><%= @installations.count(&:runnable?) %></dd></div>
-      <div><dt>Last checked</dt><dd><%= @installations.filter_map(&:checked_at).max&.then { |at| time_tag at, at.to_fs(:short) } || "Not checked yet" %></dd></div>
-      <div><dt>Your access</dt><dd><%= @can_configure ? "Can detect and set policy" : "Read-only" %></dd></div>
-    </dl>
-  </section>
-
+  <% if @provider_catalog_error %>
+    <p class="inline-error" role="alert"><%= @provider_catalog_error %></p>
+  <% end %>
   <% if @runtime_error %>
     <p class="inline-error" role="alert"><%= @runtime_error %></p>
   <% end %>
 
-  <% if @installations.empty? %>
-    <section class="empty-state runtime-empty">
-      <h2>No runtime installations detected</h2>
-      <p>Ask an Owner or Admin to check the connected runner after an adapter is installed.</p>
+  <% if @configured_providers.empty? && @standalone_installations.empty? %>
+    <section class="empty-state provider-empty">
+      <h2>Connect your first provider</h2>
+      <p>Choose a sign-in method, select an execution boundary, and pick a model when required. A successful test comes before workspace access.</p>
+      <% if @can_configure %>
+        <%= link_to "Add your first provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-secondary button-compact" %>
+      <% end %>
     </section>
   <% else %>
-    <div class="runtime-list">
-      <% @installations.each do |installation| %>
-        <section class="runtime-installation" id="runtime-<%= installation.id %>" aria-labelledby="runtime-<%= installation.id %>-title">
-          <div class="runtime-installation-heading">
-            <div>
-              <span class="eyebrow"><%= installation.protocol_version %> adapter</span>
-              <h2 id="runtime-<%= installation.id %>-title"><%= installation.adapter_key.humanize %></h2>
-              <code><%= installation.executable_path %></code>
-            </div>
-            <span class="status-badge <%= installation.runnable? ? "status-success" : "status-neutral" %>">
-              <%= installation.runnable? ? "Approved" : installation.health_status.humanize %>
-            </span>
-          </div>
-
-          <dl class="runtime-facts">
-            <div><dt>Version</dt><dd><%= installation.executable_version %></dd></div>
-            <div><dt>Compatibility</dt><dd><%= installation.compatibility_status.humanize %></dd></div>
-            <div><dt>Maintained range</dt><dd><%= [installation.minimum_version.presence, installation.maximum_version.presence].compact.join(" – ").presence || "Not reported" %></dd></div>
-            <div><dt>Last checked</dt><dd><%= time_tag installation.checked_at, installation.checked_at.to_fs(:short) %></dd></div>
-          </dl>
-
-          <% if installation.incompatibility_reason.present? %>
-            <p class="runtime-status-note"><%= installation.incompatibility_reason %></p>
-          <% end %>
-          <div class="runtime-metadata">
-            <div>
-              <h3>Runner account</h3>
-              <% installation.account_metadata.each do |key, value| %>
-                <span><%= key.humanize %>: <strong><%= value.humanize %></strong></span>
-              <% end %>
-            </div>
-            <div>
-              <h3>Capabilities</h3>
-              <span><%= installation.capabilities.map(&:humanize).join(", ").presence || "None reported" %></span>
-            </div>
-          </div>
-
-          <% if @can_configure %>
-            <%= form_with model: installation, url: workspace_runtime_installation_path(Current.workspace, installation),
-              method: :patch, class: "runtime-policy-form" do |form| %>
-              <label class="runtime-approval-toggle">
-                <%= form.check_box :approved, disabled: installation.health_status != "available" || installation.compatibility_status == "incompatible" %>
-                <span><strong>Allow this runtime</strong><small>Unchecked installations cannot run workspace tasks.</small></span>
-              </label>
-
-              <div class="runtime-policy-groups">
-                <fieldset>
-                  <legend>Routing profiles</legend>
-                  <% AgentPolicy::RUNTIME_PROFILES.each do |key, label| %>
-                    <label><%= check_box_tag "runtime_installation[profile_keys][]", key, installation.profile_keys.include?(key), id: "runtime_#{installation.id}_profile_#{key}" %><span><%= label %></span></label>
-                  <% end %>
-                </fieldset>
-                <fieldset>
-                  <legend>Roles</legend>
-                  <% AgentPolicy::ROLE_DEFINITIONS.each do |key, definition| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_role_keys][]", key, installation.allowed_role_keys.include?(key), id: "runtime_#{installation.id}_role_#{key}" %><span><%= CrewConfiguration::CREWS.fetch(definition.fetch(:crew_kind)) %> · <%= definition.fetch(:name) %></span></label>
-                  <% end %>
-                </fieldset>
-                <fieldset>
-                  <legend>Tools</legend>
-                  <% AgentPolicy::TOOLS.each do |key, label| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_tools][]", key, installation.allowed_tools.include?(key), id: "runtime_#{installation.id}_tool_#{key}" %><span><%= label %></span></label>
-                  <% end %>
-                </fieldset>
-                <fieldset>
-                  <legend>Data</legend>
-                  <% RuntimeInstallation::DATA_CLASSES.each do |key, label| %>
-                    <label><%= check_box_tag "runtime_installation[allowed_data_classes][]", key, installation.allowed_data_classes.include?(key), id: "runtime_#{installation.id}_data_#{key}" %><span><%= label %></span></label>
-                  <% end %>
-                </fieldset>
-              </div>
-
-              <div class="runtime-budget-grid">
-                <div class="field"><%= form.label :max_timeout_seconds, "Timeout cap (seconds)" %><%= form.number_field :max_timeout_seconds, min: 30, max: 900, required: true %></div>
-                <div class="field"><%= form.label :max_steps, "Step cap" %><%= form.number_field :max_steps, min: 1, max: 20, required: true %></div>
-                <div class="field"><%= form.label :max_tool_calls, "Tool-call cap" %><%= form.number_field :max_tool_calls, min: 0, max: 50, required: true %></div>
-                <div class="field"><%= form.label :max_input_units, "Input-unit cap" %><%= form.number_field :max_input_units, min: 1, max: 10_000_000, required: true %></div>
-                <div class="field"><%= form.label :max_output_units, "Output-unit cap" %><%= form.number_field :max_output_units, min: 1, max: 10_000_000, required: true %></div>
-              </div>
-              <%= form.submit "Save runtime policy", class: "button button-primary" %>
-            <% end %>
-          <% else %>
-            <p class="runtime-readonly-policy">
-              <strong>Workspace policy</strong>
-              <span><%= pluralize(installation.allowed_role_keys.size, "role") %> · <%= pluralize(installation.allowed_tools.size, "tool") %> · <%= pluralize(installation.allowed_data_classes.size, "data class") %></span>
-            </p>
-          <% end %>
-        </section>
+    <div class="runtime-list" aria-label="AI providers">
+      <% @configured_providers.each do |provider| %>
+        <%= render "provider", provider:, installation: @current_installations[provider.fetch("adapter_key")] %>
+      <% end %>
+      <% @standalone_installations.each do |installation| %>
+        <%= render "provider", provider: nil, installation: %>
       <% end %>
     </div>
   <% end %>
+
 </main>

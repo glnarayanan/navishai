@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
@@ -26,7 +28,7 @@ const (
 
 var (
 	sessionIDPattern       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	versionPattern         = regexp.MustCompile(`\b(2026)\.(\d{1,2})\.(\d{1,2})\b`)
+	versionPattern         = regexp.MustCompile(`\b(\d{4})\.(\d{1,2})\.(\d{1,2})\b`)
 	errProhibitedOperation = errors.New("Cursor requested a prohibited operation")
 )
 
@@ -35,6 +37,7 @@ type Invocation struct {
 	Executable       string
 	WorkingDir       string
 	CursorHome       string
+	Model            string
 	Prompt           string
 	EgressProfileKey string
 }
@@ -54,7 +57,10 @@ type Adapter struct{ now func() time.Time }
 func Definition() runtimecatalog.Definition {
 	return runtimecatalog.Definition{
 		AdapterKey: AdapterKey, ProtocolVersion: protocol.Version, ExecutableNames: []string{"cursor-agent", "agent"},
-		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", "structured_output", "tool_calling"},
+		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:      runtimecatalog.TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
+		EffectiveModel: "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
 		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }
@@ -67,7 +73,8 @@ func New(now func() time.Time) *Adapter {
 }
 
 func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runner adapters.InteractiveProcessRunner, emit func(protocol.CanonicalEvent) error) (Result, error) {
-	if runner == nil || emit == nil || strings.TrimSpace(invocation.Prompt) == "" || invocation.CursorHome == "" || invocation.EgressProfileKey == "" {
+	if runner == nil || emit == nil || strings.TrimSpace(invocation.Prompt) == "" || invocation.CursorHome == "" || invocation.EgressProfileKey == "" ||
+		(invocation.Model != "" && !validCursorText(invocation.Model, 200, false)) || !validCursorText(invocation.Prompt, 128*1024, true) {
 		return Result{}, errors.New("invalid Cursor invocation")
 	}
 	sequence := 2
@@ -86,12 +93,17 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		return Result{}, err
 	}
 	normalized := Result{}
-	process, processErr := runner.Interact(ctx, supervisor.Request{
-		Executable: invocation.Executable, Arguments: []string{"acp"}, WorkingDir: invocation.WorkingDir, HomeDir: invocation.CursorHome,
+	arguments := []string{"acp"}
+	if invocation.Model != "" {
+		arguments = []string{"--model", invocation.Model, "acp"}
+	}
+	processRequest := supervisor.Request{
+		Executable: invocation.Executable, Arguments: arguments, WorkingDir: invocation.WorkingDir, HomeDir: invocation.CursorHome,
 		EgressProfileKey: invocation.EgressProfileKey,
-	}, func(exchangeContext context.Context, stream io.ReadWriter) error {
+	}
+	exchangeCallback := func(exchangeContext context.Context, stream io.ReadWriter, register adapters.SessionRegistrar) error {
 		var err error
-		normalized, err = exchange(exchangeContext, stream, invocation)
+		normalized, err = exchangeWithSession(exchangeContext, stream, invocation, register)
 		if err != nil {
 			if errors.Is(err, errProhibitedOperation) {
 				normalized.FailureCode = "cursor_policy_denied"
@@ -100,7 +112,16 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 			}
 		}
 		return err
-	})
+	}
+	var process supervisor.Result
+	var processErr error
+	if sessionRunner, ok := runner.(adapters.InteractiveProcessSessionRunner); ok {
+		process, processErr = sessionRunner.InteractSession(ctx, processRequest, exchangeCallback)
+	} else {
+		process, processErr = runner.Interact(ctx, processRequest, func(exchangeContext context.Context, stream io.ReadWriter) error {
+			return exchangeCallback(exchangeContext, stream, nil)
+		})
+	}
 	if process.TimedOut {
 		return Result{Status: "timed_out", FailureCode: "cursor_timed_out"}, emitEvent("run.timed_out", map[string]any{"reason": "Cursor exceeded the run deadline."})
 	}
@@ -109,7 +130,9 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 	}
 	if processErr != nil || process.ExitCode != 0 || normalized.FailureCode != "" {
 		code := normalized.FailureCode
-		if code == "" {
+		if process.OutputExceeded {
+			code = "cursor_output_limit"
+		} else if code == "" {
 			code = "cursor_process_failed"
 		}
 		return Result{Status: "failed", FailureCode: code}, emitEvent("run.failed", map[string]any{"code": code, "retryable": false})
@@ -142,6 +165,10 @@ type rpcEnvelope struct {
 }
 
 func exchange(ctx context.Context, stream io.ReadWriter, invocation Invocation) (Result, error) {
+	return exchangeWithSession(ctx, stream, invocation, nil)
+}
+
+func exchangeWithSession(ctx context.Context, stream io.ReadWriter, invocation Invocation, register adapters.SessionRegistrar) (Result, error) {
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 64*1024), maxLineSize)
 	write := func(id int, method string, params any) error {
@@ -194,6 +221,9 @@ func exchange(ctx context.Context, stream io.ReadWriter, invocation Invocation) 
 	}
 	if json.Unmarshal(newResponse, &session) != nil || !sessionIDPattern.MatchString(session.SessionID) {
 		return Result{}, errors.New("invalid Cursor session")
+	}
+	if register != nil {
+		register(session.SessionID)
 	}
 	if err := write(4, "session/prompt", map[string]any{"sessionId": session.SessionID, "prompt": []map[string]string{{"type": "text", "text": invocation.Prompt}}}); err != nil {
 		return Result{}, err
@@ -265,6 +295,9 @@ func response(ctx context.Context, scanner *bufio.Scanner, stream io.Writer, wan
 		if strings.HasPrefix(message.Method, "cursor/") {
 			continue
 		}
+		if message.Method != "" {
+			return nil, errProhibitedOperation
+		}
 		if len(message.ID) == 0 {
 			continue
 		}
@@ -298,7 +331,7 @@ func applyUpdate(raw json.RawMessage, result *Result) error {
 	}
 	switch update.Update.SessionUpdate {
 	case "agent_message_chunk":
-		if update.Update.Content.Type != "text" {
+		if update.Update.Content.Type != "text" || (update.Update.Content.Text != "" && !validCursorText(update.Update.Content.Text, 100*1024, true)) {
 			return errors.New("invalid Cursor output chunk")
 		}
 		result.Output += update.Update.Content.Text
@@ -309,6 +342,18 @@ func applyUpdate(raw json.RawMessage, result *Result) error {
 		return errProhibitedOperation
 	}
 	return nil
+}
+
+func validCursorText(value string, maximum int, allowWhitespaceControls bool) bool {
+	if value == "" || len(value) > maximum || !utf8.ValidString(value) {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) && (!allowWhitespaceControls || (character != '\n' && character != '\r' && character != '\t')) {
+			return false
+		}
+	}
+	return true
 }
 
 func hasAuthMethod(methods []struct {
@@ -323,14 +368,15 @@ func hasAuthMethod(methods []struct {
 }
 
 func compatibleVersion(value string) bool {
+	if !runtimecatalog.ValidObservedVersion(value) {
+		return false
+	}
 	match := versionPattern.FindStringSubmatch(value)
 	if len(match) != 4 {
 		return false
 	}
-	parsed, err := time.Parse("2006.1.2", strings.Join(match[1:], "."))
-	minimum := time.Date(2026, 3, 11, 0, 0, 0, 0, time.UTC)
-	maximum := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
-	return err == nil && !parsed.Before(minimum) && !parsed.After(maximum)
+	_, err := time.Parse("2006.1.2", strings.Join(match[1:], "."))
+	return err == nil && len(value) <= 8*1024
 }
 
 func terminalFailureCode(stopReason string) string {

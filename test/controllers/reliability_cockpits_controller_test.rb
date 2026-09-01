@@ -22,7 +22,7 @@ class ReliabilityCockpitsControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select ".reliability-key dt", count: 5
     assert_select "a", text: "Inspect email", count: 0
-    assert_select ".nav-label", "Reliability"
+    assert_select ".nav-label", "System health"
 
     sign_out
     member = @workspace.memberships.create!(
@@ -31,7 +31,7 @@ class ReliabilityCockpitsControllerTest < ActionDispatch::IntegrationTest
     )
     sign_in_as member.user
     get workspace_support_cases_path(@workspace)
-    assert_select ".nav-label", text: "Reliability", count: 0
+    assert_select ".nav-label", text: "System health", count: 0
     get workspace_reliability_cockpit_path(@workspace)
     assert_response :forbidden
   end

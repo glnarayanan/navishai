@@ -15,10 +15,21 @@ import (
 )
 
 const (
-	Version       = "v1"
-	MaxBodyBytes  = 256 * 1024
-	MaximumSkew   = 5 * time.Minute
-	minimumSecret = 32
+	Version          = "v1"
+	AdmissionVersion = "v2"
+	AdmissionPath    = "/v2/runs/admit"
+	MaxBodyBytes     = 256 * 1024
+	MaximumSkew      = 5 * time.Minute
+	minimumSecret    = 32
+
+	ExecutionModeBounded        = "bounded"
+	ExecutionModeHostTrusted    = "host_trusted"
+	ExecutionModeStrongIsolated = "strong_isolated"
+	ExecutionModeLegacyUnknown  = "legacy_unknown"
+
+	IsolationPolicyStrongRequired     = "strong_isolation_required"
+	IsolationPolicyHostTrustedAllowed = "host_trusted_allowed"
+	IsolationPolicyLegacyUnknown      = "legacy_unknown"
 )
 
 var (
@@ -63,14 +74,18 @@ type AgentPolicy struct {
 }
 
 type RuntimeRouting struct {
-	DetectionKey    string   `json:"detection_key"`
-	AdapterKey      string   `json:"adapter_key"`
-	ProfileKey      string   `json:"profile_key"`
-	SelectionReason string   `json:"selection_reason"`
-	SelectionDetail string   `json:"selection_detail"`
-	DataClasses     []string `json:"data_classes"`
-	MaxInputUnits   int      `json:"max_input_units"`
-	MaxOutputUnits  int      `json:"max_output_units"`
+	DetectionKey             string   `json:"detection_key"`
+	AdapterKey               string   `json:"adapter_key"`
+	ProfileKey               string   `json:"profile_key"`
+	ConfigurationFingerprint string   `json:"configuration_fingerprint"`
+	EffectiveModel           string   `json:"effective_model"`
+	SelectionReason          string   `json:"selection_reason"`
+	SelectionDetail          string   `json:"selection_detail"`
+	ExecutionMode            string   `json:"execution_mode"`
+	IsolationPolicy          string   `json:"isolation_policy"`
+	DataClasses              []string `json:"data_classes"`
+	MaxInputUnits            int      `json:"max_input_units"`
+	MaxOutputUnits           int      `json:"max_output_units"`
 }
 
 type AdmissionResponse struct {
@@ -131,7 +146,18 @@ func DecodeAdmissionBytes(body []byte) (AdmissionRequest, error) {
 }
 
 func (request AdmissionRequest) Validate() error {
-	if request.ProtocolVersion != Version || !uuidPattern.MatchString(request.RunID) ||
+	return request.validate(AdmissionVersion, true)
+}
+
+// ValidateRetainedV1 validates the v1 request shape that can still be present
+// inside an existing durable admission record. It is intentionally not used
+// by the live decoder or admission store write path.
+func (request AdmissionRequest) ValidateRetainedV1() error {
+	return request.validate(Version, false)
+}
+
+func (request AdmissionRequest) validate(expectedVersion string, requireExecutionBoundary bool) error {
+	if request.ProtocolVersion != expectedVersion || !uuidPattern.MatchString(request.RunID) ||
 		!keyPattern.MatchString(request.IdempotencyKey) || !uuidPattern.MatchString(request.WorkspaceKey) {
 		return ErrInvalidRequest
 	}
@@ -155,7 +181,10 @@ func (request AdmissionRequest) Validate() error {
 	}
 	routing := request.Routing
 	if len(routing.DetectionKey) != 64 || !isLowerHex(routing.DetectionKey) ||
+		len(routing.ConfigurationFingerprint) != 64 || !isLowerHex(routing.ConfigurationFingerprint) ||
+		!byteLength(routing.EffectiveModel, 1, 200) || strings.ContainsAny(routing.EffectiveModel, "\r\n\x00") ||
 		!runtimePattern.MatchString(routing.AdapterKey) || !runtimePattern.MatchString(routing.ProfileKey) ||
+		(requireExecutionBoundary && !validExecutionBoundary(routing.ExecutionMode, routing.IsolationPolicy)) ||
 		(routing.SelectionReason != "primary" && routing.SelectionReason != "fallback") ||
 		!byteLength(routing.SelectionDetail, 1, 500) ||
 		!validDistinctValues(routing.DataClasses, 8, runtimePattern) ||
@@ -164,6 +193,17 @@ func (request AdmissionRequest) Validate() error {
 		return ErrInvalidRequest
 	}
 	return nil
+}
+
+func validExecutionBoundary(executionMode, isolationPolicy string) bool {
+	switch isolationPolicy {
+	case IsolationPolicyStrongRequired:
+		return executionMode == ExecutionModeBounded || executionMode == ExecutionModeStrongIsolated
+	case IsolationPolicyHostTrustedAllowed:
+		return executionMode == ExecutionModeBounded || executionMode == ExecutionModeHostTrusted || executionMode == ExecutionModeStrongIsolated
+	default:
+		return false
+	}
 }
 
 func isLowerHex(value string) bool {

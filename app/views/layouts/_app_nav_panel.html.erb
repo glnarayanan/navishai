@@ -16,7 +16,8 @@
         <p class="sidebar-workspace-name">Choose a workspace</p>
       </div>
     <% end %>
-    <%= nav_link "Workspaces", workspaces_path, "workspaces", "workspace_invitations" %>
+    <%= nav_link "Workspaces", workspaces_path, "workspaces", "workspace_invitations",
+      current: nav_current?("workspace_invitations") || (nav_current?("workspaces") && action_name.in?(%w[index show])) %>
   </div>
 
   <% if Current.workspace %>
@@ -35,15 +36,18 @@
         <%= nav_link "Scorecard", workspace_health_scorecard_path(Current.workspace), "health_scorecards" %>
       </div>
       <div class="sidebar-group">
-        <p class="sidebar-group-label">Agent operations</p>
-        <%= nav_link "Crews", workspace_crew_templates_path(Current.workspace), "crew_templates", "agent_profiles", "crew_tasks" %>
+        <p class="sidebar-group-label">AI team</p>
+        <%= nav_link "Crew setup", workspace_crew_templates_path(Current.workspace), "crew_templates", "agent_profiles", "crew_tasks" %>
         <% if membership.can_configure_agents? %>
-          <%= nav_link "Policies", workspace_governed_policy_path(Current.workspace), "governed_policies" %>
+          <%= nav_link "Policy changes", workspace_governed_policy_path(Current.workspace), "governed_policies" %>
         <% end %>
-        <%= nav_link "Runtimes", workspace_runtime_installations_path(Current.workspace), "runtime_installations" %>
-        <%= nav_link "Usage", workspace_usage_rates_path(Current.workspace), "usage_rates", "outcome_explanations" %>
+      </div>
+      <div class="sidebar-group">
+        <p class="sidebar-group-label">Operations</p>
+        <%= nav_link "AI providers", workspace_runtime_installations_path(Current.workspace), "runtime_installations" %>
+        <%= nav_link "Usage & rates", workspace_usage_rates_path(Current.workspace), "usage_rates", "outcome_explanations" %>
         <% if membership.can_manage_work? %>
-          <%= nav_link "Reliability", workspace_reliability_cockpit_path(Current.workspace), "reliability_cockpits" %>
+          <%= nav_link "System health", workspace_reliability_cockpit_path(Current.workspace), "reliability_cockpits" %>
         <% end %>
       </div>
       <% if membership.can_configure_integrations? %>
@@ -55,12 +59,16 @@
       <% end %>
       <% if membership.can_configure_integrations? || membership.owner? %>
         <div class="sidebar-group">
-          <p class="sidebar-group-label">Admin</p>
+          <p class="sidebar-group-label">Workspace</p>
+          <% if membership.owner? %>
+            <%= nav_link "Workspace settings", edit_workspace_path(Current.workspace), "workspaces",
+              current: nav_current?("workspaces") && action_name.in?(%w[edit update]) %>
+          <% end %>
           <% if membership.can_configure_integrations? %>
             <%= nav_link "Webhooks", workspace_outbound_webhook_endpoints_path(Current.workspace), "outbound_webhook_endpoints" %>
           <% end %>
           <% if membership.owner? %>
-            <%= nav_link "Data", workspace_data_controls_path(Current.workspace), "workspace_data_controls" %>
+            <%= nav_link "Data & retention", workspace_data_controls_path(Current.workspace), "workspace_data_controls" %>
           <% end %>
         </div>
       <% end %>
@@ -79,7 +87,7 @@
         <% end %>
       <% end %>
       <% if workspace_runtime_needs_review? %>
-        <%= link_to "Runtime needs review", workspace_runtime_installations_path(Current.workspace), class: "nav-item nav-health" %>
+        <%= link_to "AI runtime needs attention", workspace_runtime_installations_path(Current.workspace), class: "nav-item nav-health" %>
       <% end %>
     <% end %>
     <%= render "layouts/theme_control" %>

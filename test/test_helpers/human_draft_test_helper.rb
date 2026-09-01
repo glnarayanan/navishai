@@ -73,6 +73,8 @@ module HumanDraftTestHelper
         )
       end
       installation.assign_attributes(
+        runtime_test_status: "passed", runtime_tested_at: Time.current,
+        runtime_tested_configuration_fingerprint: installation.configuration_fingerprint,
         approved: true, approved_by_membership: membership, approved_by_user: membership.user,
         approved_at: Time.current
       )

@@ -1,0 +1,172 @@
+<% editing = provider.fetch("configured") %>
+<% selected_auth_mode = @submitted_auth_mode.presence || provider.fetch("auth_mode").presence || provider.fetch("auth_modes").first %>
+<% selected_model = @submitted_model.nil? ? provider.fetch("model") : @submitted_model %>
+<% model_required_for_runtime = provider.fetch("model_required") || selected_auth_mode == "api_key" %>
+<% supported_execution_modes = Array(provider["supported_execution_modes"]) %>
+<% runnable_execution_modes = if selected_auth_mode == "api_key"
+  supported_execution_modes.select { |mode| mode == "bounded" }
+else
+  supported_execution_modes.select { |mode| %w[host_trusted strong_isolated].include?(mode) }
+end %>
+<% selected_execution_mode = @submitted_execution_mode.nil? ? provider.fetch("execution_mode").presence : @submitted_execution_mode %>
+<% selected_execution_mode = if selected_auth_mode == "api_key"
+  supported_execution_modes.include?("bounded") ? "bounded" : ""
+elsif runnable_execution_modes.include?(selected_execution_mode)
+  selected_execution_mode
+elsif runnable_execution_modes.one?
+  runnable_execution_modes.first
+else
+  ""
+end %>
+<% execution_mode_options = supported_execution_modes.filter_map do |mode|
+  next if selected_auth_mode == "api_key" && mode != "bounded"
+  next if selected_auth_mode == "subscription" && mode == "bounded"
+
+  label = case mode
+  when "bounded" then "Bounded HTTPS"
+  when "host_trusted" then "Host-trusted"
+  when "strong_isolated" then "Strong-isolated"
+  else mode.humanize
+  end
+  [ label, mode ]
+end %>
+<% execution_select_options = { selected: selected_execution_mode } %>
+<% execution_select_options[:include_blank] = if execution_mode_options.empty?
+  "No runnable boundary reported; reconfigure the runner"
+elsif selected_execution_mode.blank?
+  "Choose an execution boundary"
+end %>
+<% form_url = editing ? workspace_provider_connection_path(Current.workspace, provider.fetch("adapter_key")) : workspace_provider_connections_path(Current.workspace) %>
+<% form_method = editing ? :patch : :post %>
+
+<%= form_with url: form_url, method: form_method, scope: :provider_connection,
+  class: "provider-connection-form", data: { controller: "provider-form" } do |form| %>
+  <% if @provider_form_error %>
+    <p class="inline-error" role="alert"><%= @provider_form_error %></p>
+  <% end %>
+
+  <div class="provider-form-fields">
+    <div class="provider-form-section-heading field-wide">
+      <h2>Connection</h2>
+      <p>Choose where this workspace connects and how the runner may use it.</p>
+    </div>
+
+    <div class="field-wide">
+      <%= form.label :adapter_key, "Provider" %>
+      <% if editing %>
+        <%= form.hidden_field :adapter_key, value: provider.fetch("adapter_key"), data: {
+          provider_form_target: "provider", auth_modes: provider.fetch("auth_modes").join(","),
+          model_required: provider.fetch("model_required").to_s, secret_configured: provider.fetch("secret_configured").to_s,
+          supported_execution_modes: supported_execution_modes.join(","), description: provider.fetch("description")
+        } %>
+        <input type="text" value="<%= provider.fetch("name") %>" disabled aria-describedby="provider-description">
+      <% else %>
+        <%= form.select :adapter_key,
+          options_for_select(@provider_catalog.map { |item| [ item.fetch("name"), item.fetch("adapter_key"), {
+            "data-auth-modes" => item.fetch("auth_modes").join(","),
+            "data-model-required" => item.fetch("model_required").to_s,
+            "data-secret-configured" => item.fetch("secret_configured").to_s,
+            "data-supported-execution-modes" => Array(item["supported_execution_modes"]).join(","),
+            "data-description" => item.fetch("description")
+          } ] }, provider.fetch("adapter_key")), {},
+          data: { provider_form_target: "provider", action: "change->provider-form#providerChanged" },
+          aria: { describedby: "provider-description" } %>
+      <% end %>
+      <p class="field-hint" id="provider-description" data-provider-form-target="description"><%= provider.fetch("description") %></p>
+    </div>
+
+    <div>
+      <%= form.label :auth_mode, "Sign-in method" %>
+      <%= form.select :auth_mode,
+        options_for_select(provider.fetch("auth_modes").map { |mode| [ mode.humanize, mode ] }, selected_auth_mode), {},
+        data: { provider_form_target: "authMode", action: "change->provider-form#authChanged" } %>
+    </div>
+
+    <div class="field-wide" data-provider-form-target="executionField" <%= "hidden" if selected_auth_mode == "api_key" %>>
+      <%= form.label :execution_mode, "Execution boundary" %>
+      <%= form.select :execution_mode, execution_mode_options, execution_select_options,
+        required: execution_mode_options.present?, disabled: execution_mode_options.empty?,
+        data: { provider_form_target: "executionMode", action: "change->provider-form#executionChanged" },
+        aria: { describedby: "provider-execution-hint" } %>
+      <p class="field-hint" id="provider-execution-hint" data-provider-form-target="executionHint">
+        <% if execution_mode_options.empty? %>
+          No runnable execution boundary was reported for this sign-in method. Reconfigure the runner before saving.
+        <% elsif selected_auth_mode == "api_key" %>
+          API-key connections use the runner's bounded HTTPS path.
+        <% elsif selected_execution_mode == "host_trusted" %>
+          Uses the runner user's existing provider session. This process is not isolated from that account.
+        <% elsif selected_execution_mode == "strong_isolated" %>
+          Uses the runner's strong-isolated provider boundary. This choice appears only when the runner reports it.
+        <% else %>
+          Choose an execution boundary reported by this runner.
+        <% end %>
+      </p>
+    </div>
+
+    <div class="field-wide" data-provider-form-target="apiKeyField">
+      <%= form.label :api_key, "API key" %>
+      <%= form.password_field :api_key, value: "", autocomplete: "new-password",
+        required: selected_auth_mode == "api_key" && !provider.fetch("secret_configured"),
+        data: { provider_form_target: "apiKey", secret_configured: provider.fetch("secret_configured").to_s },
+        aria: { describedby: "provider-api-key-hint" } %>
+      <p class="field-hint" id="provider-api-key-hint" data-provider-form-target="apiKeyHint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "Stored encrypted on this self-hosted deployment and never shown again." %></p>
+    </div>
+
+    <div class="provider-form-section-heading provider-form-section-heading-model field-wide">
+      <h2>Model</h2>
+      <p>Select an exact model when required. Suggestions are optional and never save by themselves.</p>
+    </div>
+
+    <% if editing %>
+      <section class="provider-model-discovery" data-provider-form-target="modelDiscovery"
+        data-models-url="<%= models_workspace_provider_connections_path(Current.workspace) %>"
+        data-saved-auth-mode="<%= provider.fetch("auth_mode") %>"
+        data-saved-execution-mode="<%= provider.fetch("execution_mode") %>"
+        aria-labelledby="provider-model-discovery-heading">
+        <div class="provider-model-discovery-heading">
+          <div>
+            <h3 id="provider-model-discovery-heading">Choose from discovered models</h3>
+            <p class="field-hint">Loaded from the connected provider. Your current choice stays selected.</p>
+          </div>
+          <button type="button" class="button button-secondary button-compact" data-provider-form-target="modelRefresh"
+            data-action="click->provider-form#refreshModels">Refresh models</button>
+        </div>
+        <p class="provider-model-discovery-state" data-provider-form-target="modelState" aria-live="polite" aria-atomic="true">
+          Model suggestions load here when available.
+        </p>
+        <div hidden data-provider-form-target="modelSelectField">
+          <label for="provider-discovered-model">Available models</label>
+          <select id="provider-discovered-model" name="provider_connection[model]" disabled
+            data-provider-form-target="discoveredModels"
+            data-action="change->provider-form#modelDiscovered">
+            <option value="">Choose a discovered model</option>
+          </select>
+          <p class="field-hint">Select manual entry when the model is not listed.</p>
+        </div>
+      </section>
+    <% end %>
+
+    <div data-provider-form-target="manualModelField">
+      <%= form.label :model, model_required_for_runtime ? "Model ID" : "Model override (optional)",
+        data: { provider_form_target: "modelLabel" } %>
+      <%= form.text_field :model, value: selected_model, autocomplete: "off",
+        required: false,
+        data: { provider_form_target: "model", model_required: model_required_for_runtime.to_s },
+        aria: { describedby: "provider-model-hint" } %>
+      <p class="field-hint" id="provider-model-hint" data-provider-form-target="modelHint">
+        <% if model_required_for_runtime %>
+          Save without a model to load live choices, or choose an exact model ID before testing or running.
+        <% else %>
+          Leave blank to use the provider default. Enter an exact model ID only to override it.
+        <% end %>
+      </p>
+    </div>
+  </div>
+
+  <div class="provider-form-actions">
+    <p>Save settings to return to provider status. Save and test runs a connection check only when the current runtime is ready.</p>
+    <%= link_to "Cancel", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary" %>
+    <%= form.submit "Save settings", name: "commit", class: "button button-secondary" %>
+    <%= form.submit "Save and test", name: "commit", class: "button button-primary" %>
+  </div>
+<% end %>

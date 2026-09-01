@@ -11,17 +11,31 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
-const DetectionPath = "/v1/runtimes/detect"
+const (
+	LegacyDetectionPath = "/v1/runtimes/detect"
+	DetectionPath       = "/v2/runtimes/detect"
+	DetectionVersion    = "v2"
+)
 
 var workspaceKeyPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type Handler struct {
-	secret  []byte
-	catalog *Catalog
-	now     func() time.Time
+	secret                       []byte
+	catalog                      WorkspaceCatalog
+	now                          func() time.Time
+	version                      string
+	includeConfigurationIdentity bool
 }
 
-func NewHandler(secret []byte, catalog *Catalog, now func() time.Time) (*Handler, error) {
+func NewHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time) (*Handler, error) {
+	return newHandler(secret, catalog, now, DetectionVersion, true)
+}
+
+func NewLegacyHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time) (*Handler, error) {
+	return newHandler(secret, catalog, now, protocol.Version, false)
+}
+
+func newHandler(secret []byte, catalog WorkspaceCatalog, now func() time.Time, version string, includeConfigurationIdentity bool) (*Handler, error) {
 	if err := protocol.ValidateSecret(secret); err != nil {
 		return nil, err
 	}
@@ -31,7 +45,10 @@ func NewHandler(secret []byte, catalog *Catalog, now func() time.Time) (*Handler
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{secret: secret, catalog: catalog, now: now}, nil
+	return &Handler{
+		secret: secret, catalog: catalog, now: now, version: version,
+		includeConfigurationIdentity: includeConfigurationIdentity,
+	}, nil
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -59,15 +76,53 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	var input map[string]any
-	if json.Unmarshal(body, &input) != nil || len(input) != 2 || input["protocol_version"] != protocol.Version ||
+	if json.Unmarshal(body, &input) != nil || len(input) != 2 || input["protocol_version"] != handler.version ||
 		!workspaceKeyPattern.MatchString(stringValue(input["workspace_key"])) {
-		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Runtime detection request does not match protocol v1.")
+		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Runtime detection request does not match the endpoint protocol.")
 		return
 	}
+	workspaceKey := stringValue(input["workspace_key"])
+	installations := handler.catalog.DetectWorkspace(request.Context(), workspaceKey)
+	var responseInstallations any = installations
+	if !handler.includeConfigurationIdentity {
+		responseInstallations = legacyInstallations(installations)
+	}
 	_ = json.NewEncoder(response).Encode(map[string]any{
-		"protocol_version": protocol.Version,
-		"installations":    handler.catalog.Detect(request.Context()),
+		"protocol_version": handler.version,
+		"installations":    responseInstallations,
 	})
+}
+
+type legacyInstallation struct {
+	DetectionKey          string            `json:"detection_key"`
+	AdapterKey            string            `json:"adapter_key"`
+	ProtocolVersion       string            `json:"protocol_version"`
+	ExecutablePath        string            `json:"executable_path"`
+	ExecutableVersion     string            `json:"executable_version"`
+	AccountMetadata       map[string]string `json:"account_metadata"`
+	Capabilities          []string          `json:"capabilities"`
+	MinimumVersion        string            `json:"minimum_version"`
+	MaximumVersion        string            `json:"maximum_version"`
+	CompatibilityStatus   string            `json:"compatibility_status"`
+	IncompatibilityReason string            `json:"incompatibility_reason"`
+	HealthStatus          string            `json:"health_status"`
+	CheckedAt             string            `json:"checked_at"`
+}
+
+func legacyInstallations(installations []Installation) []legacyInstallation {
+	result := make([]legacyInstallation, len(installations))
+	for index, installation := range installations {
+		result[index] = legacyInstallation{
+			DetectionKey: installation.DetectionKey, AdapterKey: installation.AdapterKey,
+			ProtocolVersion: installation.ProtocolVersion, ExecutablePath: installation.ExecutablePath,
+			ExecutableVersion: installation.ExecutableVersion, AccountMetadata: installation.AccountMetadata,
+			Capabilities: installation.Capabilities, MinimumVersion: installation.MinimumVersion,
+			MaximumVersion: installation.MaximumVersion, CompatibilityStatus: installation.CompatibilityStatus,
+			IncompatibilityReason: installation.IncompatibilityReason, HealthStatus: installation.HealthStatus,
+			CheckedAt: installation.CheckedAt,
+		}
+	}
+	return result
 }
 
 func stringValue(value any) string {
@@ -78,7 +133,7 @@ func stringValue(value any) string {
 func (handler *Handler) writeError(response http.ResponseWriter, status int, code, message string) {
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(protocol.ErrorResponse{
-		ProtocolVersion: protocol.Version,
+		ProtocolVersion: handler.version,
 		Error:           protocol.ProtocolError{Code: code, Message: message},
 	})
 }

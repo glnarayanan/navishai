@@ -1,13 +1,13 @@
-<% content_for :title, "Governed policy · #{Current.workspace.name} — NavishAI" %>
+<% content_for :title, "Policy changes · #{Current.workspace.name} — NavishAI" %>
 
 <main class="page-shell policy-page">
   <header class="page-heading policy-heading">
     <div>
-      <h1>Governed policy change</h1>
-      <p>Compare retained facts, then apply one bounded version to named work.</p>
+      <h1>Review policy changes</h1>
+      <p>Preview how a change affects selected cases, accounts, or one specialist before publishing it.</p>
     </div>
     <div class="policy-guardrail" role="note">
-      <strong>Preview has strict limits</strong>
+      <strong>What the preview cannot tell you</strong>
       <p>It cannot predict response quality, customer behavior, resolution rate, or any causal outcome.</p>
     </div>
   </header>
@@ -21,8 +21,8 @@
   <section class="policy-compose" aria-labelledby="policy-compose-title">
     <div class="section-heading-row">
       <div>
-        <h2 id="policy-compose-title">Propose one immutable version</h2>
-        <p>Choose named current cases, Accounts, or this one crew profile. There is no percentage rollout.</p>
+        <h2 id="policy-compose-title">Create a policy proposal</h2>
+        <p>Choose the cases, accounts, or specialist this proposal applies to.</p>
       </div>
     </div>
 
@@ -34,8 +34,8 @@
         <% contract = family.current_version %>
         <details class="policy-profile">
           <summary>
-            <span><strong><%= profile.name %></strong><small><%= family.name %> · profile v<%= profile_version.version_number %> · contract v<%= contract.version_number %></small></span>
-            <span><%= number_with_delimiter(contract.execution_budget_units) %> units</span>
+            <span><strong><%= profile.name %></strong><small><%= family.name %></small></span>
+            <span>Choose scope and requirements</span>
           </summary>
           <%= form_with url: propose_workspace_governed_policy_path(Current.workspace),
             scope: :governed_policy, class: "policy-proposal-form" do |form| %>
@@ -43,7 +43,7 @@
             <%= form.hidden_field :agent_profile_id, value: profile.id %>
 
             <fieldset>
-              <legend>Explicit canary scope</legend>
+              <legend>Test scope</legend>
               <div class="policy-scope-choice">
                 <%= form.label :scope_kind_support_case do %>
                   <%= form.radio_button :scope_kind, "support_case", checked: profile.crew_template.support? %>
@@ -86,7 +86,7 @@
               </div>
             </fieldset>
 
-            <div class="policy-field-grid">
+            <div class="policy-field-grid policy-field-grid-single">
               <fieldset>
                 <legend>Resolution and review</legend>
                 <%= hidden_field_tag "governed_policy[contract][required_claim_categories][]", "", id: nil %>
@@ -105,27 +105,21 @@
                 </label>
               </fieldset>
 
-              <fieldset>
-                <legend>Routing, fallback, and budget</legend>
-                <div class="field">
-                  <%= label_tag "profile_#{profile.id}_runtime", "Primary runtime profile" %>
-                  <%= select_tag "governed_policy[profile][runtime_profile_key]",
-                    options_for_select(AgentPolicy::RUNTIME_PROFILES.map { |key, label| [ label, key ] }, profile_version.runtime_profile_key),
-                    id: "profile_#{profile.id}_runtime" %>
-                </div>
-                <%= hidden_field_tag "governed_policy[profile][fallback_profile_keys][]", "", id: nil %>
-                <% AgentPolicy::RUNTIME_PROFILES.except(profile_version.runtime_profile_key).each do |key, label| %>
-                  <label><%= check_box_tag "governed_policy[profile][fallback_profile_keys][]", key,
-                    profile_version.fallback_profile_keys.include?(key), id: "profile_#{profile.id}_fallback_#{key}" %><span>Fallback: <%= label %></span></label>
-                <% end %>
-                <div class="policy-number-grid">
-                  <div class="field"><%= label_tag "profile_#{profile.id}_budget", "Execution units" %><%= number_field_tag "governed_policy[contract][execution_budget_units]", contract.execution_budget_units, id: "profile_#{profile.id}_budget", min: 2, max: 20_000_000, required: true %></div>
-                  <div class="field"><%= label_tag "profile_#{profile.id}_timeout", "Timeout seconds" %><%= number_field_tag "governed_policy[profile][timeout_seconds]", profile_version.timeout_seconds, id: "profile_#{profile.id}_timeout", min: 30, max: 900, required: true %></div>
-                  <div class="field"><%= label_tag "profile_#{profile.id}_steps", "Max steps" %><%= number_field_tag "governed_policy[profile][max_steps]", profile_version.max_steps, id: "profile_#{profile.id}_steps", min: 1, max: 20, required: true %></div>
-                  <div class="field"><%= label_tag "profile_#{profile.id}_tools", "Max tool calls" %><%= number_field_tag "governed_policy[profile][max_tool_calls]", profile_version.max_tool_calls, id: "profile_#{profile.id}_tools", min: 0, max: 50, required: true %></div>
-                </div>
-                <div class="field"><%= label_tag "profile_#{profile.id}_review", "Quality review requirement" %><%= select_tag "governed_policy[profile][review_policy]", options_for_select(AgentPolicy::REVIEW_POLICIES.map { |key, label| [ label, key ] }, profile_version.review_policy), id: "profile_#{profile.id}_review" %></div>
-              </fieldset>
+              <%= hidden_field_tag "governed_policy[contract][execution_budget_units]", contract.execution_budget_units %>
+              <%= hidden_field_tag "governed_policy[profile][runtime_profile_key]", profile_version.runtime_profile_key %>
+              <% profile_version.fallback_profile_keys.each do |fallback| %>
+                <%= hidden_field_tag "governed_policy[profile][fallback_profile_keys][]", fallback %>
+              <% end %>
+              <%= hidden_field_tag "governed_policy[profile][timeout_seconds]", profile_version.timeout_seconds %>
+              <%= hidden_field_tag "governed_policy[profile][max_steps]", profile_version.max_steps %>
+              <%= hidden_field_tag "governed_policy[profile][max_tool_calls]", profile_version.max_tool_calls %>
+              <%= hidden_field_tag "governed_policy[profile][review_policy]", profile_version.review_policy %>
+              <div class="field">
+                <%= label_tag "profile_#{profile.id}_isolation_policy", "Execution isolation" %>
+                <%= select_tag "governed_policy[profile][isolation_policy]",
+                  options_for_select(AgentPolicy::ISOLATION_POLICIES.map { |key, label| [ label, key ] }, profile_version.isolation_policy),
+                  id: "profile_#{profile.id}_isolation_policy" %>
+              </div>
             </div>
 
             <details class="policy-freshness">
@@ -136,8 +130,8 @@
                 <% end %>
               </div>
             </details>
-            <div class="field"><%= form.label :reason, "Reason" %><%= form.text_area :reason, rows: 2, maxlength: 500, required: true, placeholder: "Why this named canary is needed" %></div>
-            <%= form.submit "Save immutable proposal", class: "button button-primary" %>
+            <div class="field"><%= form.label :reason, "Reason" %><%= form.text_area :reason, rows: 2, maxlength: 500, required: true, placeholder: "Why this test is needed" %></div>
+            <%= form.submit "Save proposal", class: "button button-primary" %>
           <% end %>
         </details>
       <% end %>
@@ -146,10 +140,10 @@
 
   <section class="policy-history" aria-labelledby="policy-history-title">
     <div class="section-heading-row">
-      <div><h2 id="policy-history-title">Preview and publication record</h2><p>Evidence, decisions, actors, and digests stay append-only.</p></div>
+      <div><h2 id="policy-history-title">Preview and publication history</h2><p>Previews and published changes keep their evidence, decisions, and approver history.</p></div>
     </div>
     <% if @proposals.empty? %>
-      <div class="empty-state"><h3>No policy proposal yet</h3><p>Choose one bounded profile and an explicit scope above.</p></div>
+      <div class="empty-state"><h3>No policy proposals yet</h3><p>Choose a specialist and where you want to test the change.</p></div>
     <% end %>
     <% @proposals.each do |proposal| %>
       <% preview = proposal.previews.first %>
@@ -160,12 +154,12 @@
         </header>
         <p><%= proposal.reason %></p>
         <% if preview.nil? %>
-          <%= button_to "Preview retained facts", preview_workspace_governed_policy_path(Current.workspace, proposal_id: proposal.id), class: "button button-primary" %>
+          <%= button_to "Preview changes", preview_workspace_governed_policy_path(Current.workspace, proposal_id: proposal.id), class: "button button-primary" %>
         <% elsif preview.expired_at? %>
-          <div class="notice notice-info"><div class="notice-body"><strong>Preview content expired</strong><p>The immutable digests, version links, actor, and audit record remain.</p></div></div>
+          <div class="notice notice-info"><div class="notice-body"><strong>Preview details expired</strong><p>The change record, reviewer, and publication history remain.</p></div></div>
         <% else %>
           <section class="policy-preview" id="preview-<%= preview.id %>" aria-label="Deterministic policy preview">
-            <div class="policy-digests"><span>Evidence <code><%= preview.evidence_digest %></code></span><span>Results <code><%= preview.results_digest %></code></span></div>
+            <details class="policy-technical-verification"><summary>Technical verification</summary><div class="policy-digests"><span>Evidence <code><%= preview.evidence_digest %></code></span><span>Results <code><%= preview.results_digest %></code></span></div></details>
             <% preview.results.each do |result| %>
               <details class="policy-diff" open>
                 <summary><span><strong><%= result.fetch("subject_kind").humanize %> <%= result.fetch("subject_id") %></strong><small><%= result.fetch("result").humanize %></small></span><span><%= result.fetch("changes").presence&.to_sentence || "No policy decision changes" %></span></summary>
@@ -174,11 +168,11 @@
                     <div><h4><%= label %></h4><dl><div><dt>Grounding</dt><dd><%= decision.fetch("grounding").humanize %></dd></div><div><dt>Quality review</dt><dd><%= decision.dig("quality_review", "requirement").humanize %></dd></div><div><dt>Routing</dt><dd><%= decision.fetch("routing").humanize %></dd></div><div><dt>Fallback</dt><dd><%= decision.fetch("fallback").humanize %></dd></div><div><dt>Budget</dt><dd><%= decision.dig("budget", "result").humanize %> · <%= number_with_delimiter(decision.dig("budget", "used_units")) %> / <%= number_with_delimiter(decision.dig("budget", "limit_units")) %></dd></div></dl></div>
                   <% end %>
                 </div>
-                <details class="policy-facts"><summary>Exact typed facts</summary><dl><% result.fetch("facts").each do |fact| %><div><dt><%= fact.fetch("key") %> <small><%= fact.fetch("type") %></small></dt><dd><code><%= JSON.generate(fact.fetch("value")) %></code></dd></div><% end %></dl></details>
+                <details class="policy-facts"><summary>Evidence used</summary><dl><% result.fetch("facts").each do |fact| %><div><dt><%= fact.fetch("key").humanize %></dt><dd><%= fact.fetch("value").is_a?(Array) ? fact.fetch("value").to_sentence : fact.fetch("value") %></dd></div><% end %></dl></details>
               </details>
             <% end %>
             <% unless preview.publication %>
-              <%= button_to "Publish to this explicit canary", publish_workspace_governed_policy_path(Current.workspace, proposal_id: proposal.id), params: { preview_id: preview.id }, class: "button button-primary" %>
+              <%= button_to "Publish to selected scope", publish_workspace_governed_policy_path(Current.workspace, proposal_id: proposal.id), params: { preview_id: preview.id }, class: "button button-primary" %>
             <% end %>
           </section>
         <% end %>
@@ -188,7 +182,7 @@
 
   <% active = @publications.select { |publication| publication.successor.nil? } %>
   <section class="policy-active" aria-labelledby="policy-active-title">
-    <div class="section-heading-row"><div><h2 id="policy-active-title">Active explicit selections</h2><p>New work outside these named scopes keeps each family and profile’s current published version.</p></div><span class="status-badge"><%= active.size %> active</span></div>
+    <div class="section-heading-row"><div><h2 id="policy-active-title">Active policy changes</h2><p>Other work continues using the current policy.</p></div><span class="status-badge"><%= active.size %> active</span></div>
     <% active.each do |publication| %>
       <article class="policy-publication" id="publication-<%= publication.id %>">
         <div><strong><%= publication.action.humanize %> · <%= publication.scope_kind.humanize %></strong><p>Contract v<%= publication.resolution_contract_version.version_number %> · profile v<%= publication.agent_profile_version.version_number %> · <%= publication.created_by_user.email_address %></p></div>

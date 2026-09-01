@@ -117,7 +117,8 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     )
 
     tombstone = WorkspaceDeletion.perform!(
-      request:, engine: Object.new, object_purger: ->(blob) { purged << blob.key }
+      request:, engine: Object.new, object_purger: ->(blob) { purged << blob.key },
+      provider_gateway: provider_purge_gateway(calls: purged_providers = [])
     )
 
     assert_not_nil tombstone
@@ -131,6 +132,7 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     refute GovernedPolicyPreview.exists?(policy_ids.fetch(:preview))
     refute GovernedPolicyPublication.exists?(policy_ids.fetch(:publication))
     assert_empty purged
+    assert_equal [ workspace.runner_key ], purged_providers
     assert User.exists?(user.id)
     assert_equal workspace_id, tombstone.former_workspace_id
     assert_equal user, tombstone.deleted_by
@@ -158,7 +160,9 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
       workspace:, membership: memberships(:owner_support), confirmation: workspace.slug
     )
 
-    assert_nil WorkspaceDeletion.perform!(request:, object_purger: ->(*) { raise Timeout::Error })
+    assert_nil WorkspaceDeletion.perform!(
+      request:, object_purger: ->(*) { raise Timeout::Error }, provider_gateway: provider_purge_gateway
+    )
 
     assert request.reload.failed?
     assert_equal "timeout_error", request.failure_code
@@ -171,7 +175,33 @@ class WorkspaceDeletionTest < ActiveSupport::TestCase
     assert request.reload.pending?
 
     request.update!(status: :failed, failure_code: "timeout_error", completed_at: Time.current)
-    assert_nil WorkspaceDeletion.perform!(request:, object_purger: ->(*) { flunk "retried without an owner" })
+    assert_nil WorkspaceDeletion.perform!(
+      request:, object_purger: ->(*) { flunk "retried without an owner" },
+      provider_gateway: provider_purge_gateway
+    )
     assert_equal 1, request.reload.attempt_count
+  end
+
+  test "keeps deletion retryable when provider credential purge fails" do
+    workspace = workspaces(:acme_support)
+    request = WorkspaceDeletion.request!(
+      workspace:, membership: memberships(:owner_support), confirmation: workspace.slug
+    )
+    failing_gateway = Object.new
+    failing_gateway.define_singleton_method(:purge_workspace) do |workspace_key:|
+      raise RunnerClient::Unavailable, "provider vault is unavailable"
+    end
+
+    assert_nil WorkspaceDeletion.perform!(request:, provider_gateway: failing_gateway)
+
+    assert request.reload.failed?
+    assert_equal "unavailable", request.failure_code
+    assert Workspace.exists?(workspace.id)
+
+    WorkspaceDeletion.retry!(workspace:, membership: memberships(:owner_support))
+    tombstone = WorkspaceDeletion.perform!(request:, provider_gateway: provider_purge_gateway)
+
+    assert_not_nil tombstone
+    refute Workspace.exists?(workspace.id)
   end
 end

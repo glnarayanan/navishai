@@ -13,6 +13,124 @@
   transition: background 180ms ease, color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
+/* Workspace lifecycle and settings surfaces. */
+.button.button-compact,
+.is-app .button.button-compact {
+  width: auto;
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+  justify-self: start;
+}
+
+.workspace-index-heading,
+.workspace-settings-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.workspace-index-heading > div,
+.workspace-settings-heading > div {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.workspace-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.workspace-settings-shell {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.workspace-settings-panel {
+  display: grid;
+  gap: 1rem;
+  max-width: 52rem;
+  padding: 1.25rem;
+}
+
+.workspace-settings-form > .button-primary {
+  width: auto;
+}
+
+.workspace-settings-links {
+  display: grid;
+  gap: 1rem;
+  max-width: 52rem;
+}
+
+.settings-link-list {
+  overflow: visible;
+  border-block: 1px solid var(--border);
+  border-inline: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.settings-link {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 0.25rem;
+  border-radius: 0;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.settings-link + .settings-link {
+  border-top: 1px solid var(--border);
+}
+
+.settings-link:hover {
+  color: var(--foreground);
+  background: var(--muted-surface);
+}
+
+.settings-link > span:first-child {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.settings-link small {
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 42rem) {
+  .workspace-index-heading,
+  .workspace-settings-heading,
+  .workspace-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .workspace-index-heading .button,
+  .workspace-settings-heading .button,
+  .workspace-card > .button {
+    width: auto;
+    justify-self: start;
+  }
+
+  .is-app .provider-actions .button.button-compact,
+  .is-app .runtime-heading-actions .button.button-compact {
+    min-height: 3rem;
+  }
+
+  .workspace-settings-form > .button-primary {
+    width: 100%;
+  }
+}
+
 .is-app .button:active,
 .is-app .nav-item:active {
   transform: scale(0.98);
@@ -294,30 +412,36 @@
 
 .workspace-list {
   display: grid;
-  gap: 0.65rem;
-  margin: 1.25rem 0 0;
+  gap: 0;
+  margin: 1.5rem 0 0;
   padding: 0;
+  border-top: 1px solid var(--border);
   list-style: none;
+}
+
+.workspace-list > li {
+  border-bottom: 1px solid var(--border);
 }
 
 .workspace-link {
   display: flex;
-  min-height: 4.25rem;
+  min-width: 0;
+  min-height: 4rem;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.15rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  padding: 1rem 0.25rem;
+  border: 0;
+  border-radius: 0;
   color: var(--foreground);
   text-decoration: none;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: transparent;
+  box-shadow: none;
 }
 
 .workspace-link:hover {
   color: var(--foreground);
-  border-color: color-mix(in oklch, var(--secondary) 35%, var(--border));
+  background: var(--muted-surface);
 }
 
 .workspace-link small,
@@ -328,6 +452,7 @@
 .workspace-link span:first-child {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .empty-state {
@@ -340,12 +465,14 @@
   background: color-mix(in oklch, var(--muted-surface) 60%, var(--card));
 }
 
-.page-family-integration .empty-state,
-.page-family-collection .empty-state,
-.webhook-page .empty-state,
-.data-controls-shell .empty-state {
-  min-height: 12rem;
-  place-content: center;
+.empty-state.provider-empty,
+.empty-state.workspace-empty {
+  padding: 1.25rem 0;
+  border: 0;
+  border-block: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .route-status {
@@ -665,6 +792,10 @@
 .policy-field-grid,
 .policy-decision-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.policy-field-grid-single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .policy-number-grid {

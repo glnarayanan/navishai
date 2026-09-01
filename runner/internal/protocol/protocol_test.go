@@ -18,7 +18,7 @@ func TestAdmissionContractFixture(t *testing.T) {
 	if string(decodedBody) != string(body) {
 		t.Fatal("decoder did not retain the exact signed bytes")
 	}
-	if request.ProtocolVersion != Version || request.Task.Attempt != 1 || request.Agent.RoleKey != "support_investigator" {
+	if request.ProtocolVersion != AdmissionVersion || request.Task.Attempt != 1 || request.Agent.RoleKey != "support_investigator" {
 		t.Fatalf("unexpected fixture decode: %#v", request)
 	}
 	if request.Agent.AllowedTools[2] != "knowledge_search" || request.Agent.MaxToolCalls != 20 {
@@ -28,7 +28,7 @@ func TestAdmissionContractFixture(t *testing.T) {
 
 func TestAdmissionRejectsUnknownAndOutOfBoundsFields(t *testing.T) {
 	body := readFixture(t, "admission_request.json")
-	unknown := strings.Replace(string(body), `"protocol_version": "v1"`, `"protocol_version": "v1", "provider": "arbitrary"`, 1)
+	unknown := strings.Replace(string(body), `"protocol_version": "v2"`, `"protocol_version": "v2", "provider": "arbitrary"`, 1)
 	if _, _, err := DecodeAdmission(strings.NewReader(unknown)); err == nil {
 		t.Fatal("expected an unknown field to fail")
 	}
@@ -59,6 +59,27 @@ func TestAdmissionRejectsUnknownAndOutOfBoundsFields(t *testing.T) {
 	}
 	if _, _, err := DecodeAdmission(strings.NewReader(string(tooLarge))); err == nil {
 		t.Fatal("expected context over 128 KiB to fail")
+	}
+}
+
+func TestRetainedV1AdmissionIsRejectedByLiveDecoder(t *testing.T) {
+	var payload map[string]any
+	if err := json.Unmarshal(readFixture(t, "admission_request.json"), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["protocol_version"] = Version
+	routing, ok := payload["routing"].(map[string]any)
+	if !ok {
+		t.Fatal("fixture routing is not an object")
+	}
+	delete(routing, "execution_mode")
+	delete(routing, "isolation_policy")
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := DecodeAdmission(strings.NewReader(string(body))); err == nil {
+		t.Fatal("retained v1 admission was accepted by the live decoder")
 	}
 }
 
@@ -105,7 +126,7 @@ func TestCanonicalEventValidationIsStrict(t *testing.T) {
 
 func readFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", name)
+	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", name)
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", path, err)

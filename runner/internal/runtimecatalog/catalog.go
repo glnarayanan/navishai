@@ -15,11 +15,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
 )
 
 const (
-	maxVersionBytes = 8 * 1024
-	probeTimeout    = 3 * time.Second
+	RuntimeTestCapability        = "runtime_test"
+	ProviderGenerationCapability = "provider_generation"
+	maxVersionBytes              = 8 * 1024
+	probeTimeout                 = 3 * time.Second
+)
+
+type Transport string
+
+const (
+	TransportBuiltInHTTPS   Transport = "built_in_https"
+	TransportManagedProcess Transport = "managed_process"
 )
 
 var ErrInvalidDefinition = errors.New("invalid runtime definition")
@@ -29,40 +42,66 @@ var policyKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 var lowerHexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type Definition struct {
-	AdapterKey         string
-	ProtocolVersion    string
-	ExecutableNames    []string
-	VersionArguments   []string
-	AccountArguments   []string
-	AccountMarker      string
-	AccountValidator   func(string) bool
-	AccountEnvironment []string
-	AccountMetadata    map[string]string
-	Capabilities       []string
-	MinimumVersion     string
-	MaximumVersion     string
+	AdapterKey               string
+	ProtocolVersion          string
+	ExecutableNames          []string
+	VersionArguments         []string
+	AccountArguments         []string
+	AccountMarker            string
+	AccountValidator         func(string) bool
+	AccountEnvironment       []string
+	AccountEnvironmentValues map[string]string
+	AccountHome              string
+	AccountMetadata          map[string]string
+	Capabilities             []string
+	Transport                Transport
+	ExecutionMode            string
+	EffectiveModel           string
+	ConfigurationFingerprint string
+	// ConfigurationIdentity is evaluated after the executable has been
+	// resolved and its version probe has completed. It lets managed adapters
+	// bind the identity to the exact runtime evidence used for this report.
+	ConfigurationIdentity func(executablePath, detectionKey, observedVersion string) (string, string, error)
+	MinimumVersion        string
+	MaximumVersion        string
 }
 
 type Installation struct {
-	DetectionKey          string            `json:"detection_key"`
-	AdapterKey            string            `json:"adapter_key"`
-	ProtocolVersion       string            `json:"protocol_version"`
-	ExecutablePath        string            `json:"executable_path"`
-	ExecutableVersion     string            `json:"executable_version"`
-	AccountMetadata       map[string]string `json:"account_metadata"`
-	Capabilities          []string          `json:"capabilities"`
-	MinimumVersion        string            `json:"minimum_version"`
-	MaximumVersion        string            `json:"maximum_version"`
-	CompatibilityStatus   string            `json:"compatibility_status"`
-	IncompatibilityReason string            `json:"incompatibility_reason"`
-	HealthStatus          string            `json:"health_status"`
-	CheckedAt             string            `json:"checked_at"`
+	DetectionKey             string            `json:"detection_key"`
+	AdapterKey               string            `json:"adapter_key"`
+	ProtocolVersion          string            `json:"protocol_version"`
+	ExecutablePath           string            `json:"executable_path"`
+	ExecutableVersion        string            `json:"executable_version"`
+	AccountMetadata          map[string]string `json:"account_metadata"`
+	Capabilities             []string          `json:"capabilities"`
+	Transport                Transport         `json:"transport"`
+	ExecutionMode            string            `json:"execution_mode"`
+	EffectiveModel           string            `json:"effective_model"`
+	ConfigurationFingerprint string            `json:"configuration_fingerprint"`
+	MinimumVersion           string            `json:"minimum_version"`
+	MaximumVersion           string            `json:"maximum_version"`
+	CompatibilityStatus      string            `json:"compatibility_status"`
+	IncompatibilityReason    string            `json:"incompatibility_reason"`
+	HealthStatus             string            `json:"health_status"`
+	CheckedAt                string            `json:"checked_at"`
 }
 
 type Catalog struct {
 	definitions []Definition
 	static      []Installation
 	now         func() time.Time
+}
+
+type WorkspaceCatalog interface {
+	DetectWorkspace(context.Context, string) []Installation
+	ResolveApprovedWorkspace(context.Context, string, string, []string) (Installation, bool)
+}
+
+// WorkspaceAdapterCatalog is an optional narrower detection capability for
+// callers that already know the one adapter they need. Implementations must
+// not broaden the detection to other adapters.
+type WorkspaceAdapterCatalog interface {
+	DetectWorkspaceAdapter(context.Context, string, string) []Installation
 }
 
 func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
@@ -74,10 +113,15 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 	for _, definition := range definitions {
 		if definition.AdapterKey == "" || definition.ProtocolVersion == "" || len(definition.ExecutableNames) == 0 ||
 			len(definition.VersionArguments) == 0 || seen[definition.AdapterKey] ||
+			!validTransport(definition.Transport) ||
+			!validExecutionMode(definition.ExecutionMode) ||
+			!validConfigurationIdentity(definition.EffectiveModel, definition.ConfigurationFingerprint) ||
 			(len(definition.AccountArguments) > 0 && ((definition.AccountMarker == "") == (definition.AccountValidator == nil) ||
 				len(definition.AccountMetadata) == 0)) ||
 			(len(definition.AccountEnvironment) > 0 && len(definition.AccountArguments) == 0) ||
-			!validEnvironmentNames(definition.AccountEnvironment) {
+			(len(definition.AccountEnvironmentValues) > 0 && len(definition.AccountArguments) == 0) ||
+			!validEnvironmentNames(definition.AccountEnvironment) || !validEnvironmentValues(definition.AccountEnvironmentValues) ||
+			(definition.AccountHome != "" && !filepath.IsAbs(definition.AccountHome)) {
 			return nil, ErrInvalidDefinition
 		}
 		seen[definition.AdapterKey] = true
@@ -100,17 +144,22 @@ func NewWithInstallations(definitions []Definition, installations []Installation
 
 func validInstallation(installation Installation) bool {
 	if !lowerHexPattern.MatchString(installation.DetectionKey) || !policyKeyPattern.MatchString(installation.AdapterKey) ||
-		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || installation.ExecutableVersion == "" ||
+		installation.ProtocolVersion == "" || !filepath.IsAbs(installation.ExecutablePath) || !ValidObservedVersion(installation.ExecutableVersion) ||
+		!validTransport(installation.Transport) ||
+		!validExecutionMode(installation.ExecutionMode) ||
 		installation.CompatibilityStatus != "compatible" || installation.IncompatibilityReason != "" ||
 		installation.HealthStatus != "available" || len(installation.Capabilities) == 0 ||
+		!validConfigurationIdentity(installation.EffectiveModel, installation.ConfigurationFingerprint) ||
 		installation.AccountMetadata == nil || len(installation.AccountMetadata) == 0 {
 		return false
 	}
 	if _, ok := semanticVersion(installation.MinimumVersion); !ok {
 		return false
 	}
-	if _, ok := semanticVersion(installation.MaximumVersion); !ok {
-		return false
+	if installation.MaximumVersion != "" {
+		if _, ok := semanticVersion(installation.MaximumVersion); !ok {
+			return false
+		}
 	}
 	if _, err := time.Parse(time.RFC3339Nano, installation.CheckedAt); err != nil {
 		return false
@@ -125,6 +174,45 @@ func validInstallation(installation Installation) bool {
 	return true
 }
 
+func validTransport(value Transport) bool {
+	switch value {
+	case TransportBuiltInHTTPS, TransportManagedProcess:
+		return true
+	default:
+		return false
+	}
+}
+
+func validExecutionMode(value string) bool {
+	switch value {
+	case protocol.ExecutionModeBounded, protocol.ExecutionModeHostTrusted, protocol.ExecutionModeStrongIsolated:
+		return true
+	default:
+		return false
+	}
+}
+
+func validConfigurationIdentity(model, fingerprint string) bool {
+	return len(model) > 0 && len(model) <= 200 && !strings.ContainsAny(model, "\r\n\x00") && lowerHexPattern.MatchString(fingerprint)
+}
+
+// ValidObservedVersion accepts bounded version evidence without imposing a
+// numeric compatibility ceiling. Maintained version fields remain part of a
+// detection report, while future releases are evaluated by the behavioral
+// connection test rather than rejected by a stale range.
+func ValidObservedVersion(value string) bool {
+	if len(value) == 0 || len(value) > maxVersionBytes || !utf8.ValidString(value) {
+		return false
+	}
+	for _, runeValue := range value {
+		if unicode.IsControl(runeValue) {
+			return false
+		}
+	}
+	_, ok := semanticVersion(value)
+	return ok
+}
+
 func validEnvironmentNames(values []string) bool {
 	seen := make(map[string]bool, len(values))
 	for _, value := range values {
@@ -132,6 +220,15 @@ func validEnvironmentNames(values []string) bool {
 			return false
 		}
 		seen[value] = true
+	}
+	return true
+}
+
+func validEnvironmentValues(values map[string]string) bool {
+	for key, value := range values {
+		if !environmentNamePattern.MatchString(key) || strings.HasPrefix(key, "NAVISHAI_") || len(value) > 16*1024 || strings.ContainsRune(value, 0) {
+			return false
+		}
 	}
 	return true
 }
@@ -150,6 +247,58 @@ func (catalog *Catalog) Detect(ctx context.Context) []Installation {
 		}
 	}
 	sort.Slice(installations, func(i, j int) bool { return installations[i].AdapterKey < installations[j].AdapterKey })
+	return installations
+}
+
+// DetectApproved reports only installations whose resolved executable path is
+// present in the deployment policy. No runtime probe is started until the path
+// has passed that check.
+func (catalog *Catalog) DetectApproved(ctx context.Context, approvedPaths []string) []Installation {
+	approved := make(map[string]bool, len(approvedPaths))
+	for _, path := range approvedPaths {
+		resolved, err := approvedExecutable(path)
+		if err != nil {
+			return nil
+		}
+		approved[resolved] = true
+	}
+	installations := make([]Installation, 0, len(catalog.static)+len(catalog.definitions))
+	for _, installation := range catalog.static {
+		if approved[installation.ExecutablePath] {
+			installations = append(installations, installation)
+		}
+	}
+	for _, definition := range catalog.definitions {
+		resolved, ok := resolveExecutable(definition)
+		if !ok || !approved[resolved] {
+			continue
+		}
+		installations = append(installations, catalog.detectResolved(ctx, definition, resolved))
+	}
+	sort.Slice(installations, func(i, j int) bool { return installations[i].AdapterKey < installations[j].AdapterKey })
+	return installations
+}
+
+func (catalog *Catalog) DetectWorkspace(ctx context.Context, _ string) []Installation {
+	return catalog.Detect(ctx)
+}
+
+func (catalog *Catalog) DetectWorkspaceAdapter(ctx context.Context, _ string, adapterKey string) []Installation {
+	installations := make([]Installation, 0, 1)
+	for _, installation := range catalog.static {
+		if installation.AdapterKey == adapterKey {
+			installations = append(installations, installation)
+		}
+	}
+	for _, definition := range catalog.definitions {
+		if definition.AdapterKey != adapterKey {
+			continue
+		}
+		if installation, ok := catalog.detect(ctx, definition); ok {
+			installations = append(installations, installation)
+		}
+	}
+	sort.Slice(installations, func(i, j int) bool { return installations[i].DetectionKey < installations[j].DetectionKey })
 	return installations
 }
 
@@ -182,6 +331,10 @@ func (catalog *Catalog) ResolveApproved(ctx context.Context, wantedKey string, a
 	return Installation{}, false
 }
 
+func (catalog *Catalog) ResolveApprovedWorkspace(ctx context.Context, _ string, wantedKey string, approvedPaths []string) (Installation, bool) {
+	return catalog.ResolveApproved(ctx, wantedKey, approvedPaths)
+}
+
 func (catalog *Catalog) detect(ctx context.Context, definition Definition) (Installation, bool) {
 	resolved, ok := resolveExecutable(definition)
 	if !ok {
@@ -207,22 +360,41 @@ func resolveExecutable(definition Definition) (string, bool) {
 }
 
 func (catalog *Catalog) detectResolved(ctx context.Context, definition Definition, resolved string) Installation {
-	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil)
+	version, probeErr, versionOverflowed := probe(ctx, resolved, definition.VersionArguments, nil, "")
 	health := "available"
 	compatibility, reason := compatibilityFor(version, definition.MinimumVersion, definition.MaximumVersion)
 	if probeErr != nil || version == "" || versionOverflowed {
 		health, compatibility, reason = "unhealthy", "unknown", "The runtime version probe failed."
+	} else if compatibility != "compatible" {
+		health = "unhealthy"
+	}
+	detection := detectionKey(definition.AdapterKey, resolved)
+	effectiveModel, configurationFingerprint := definition.EffectiveModel, definition.ConfigurationFingerprint
+	if definition.ConfigurationIdentity != nil && compatibility == "compatible" {
+		model, fingerprint, identityErr := definition.ConfigurationIdentity(resolved, detection, version)
+		if identityErr != nil || !validConfigurationIdentity(model, fingerprint) {
+			health, compatibility, reason = "unhealthy", "unknown", "The runtime configuration identity could not be computed."
+		} else {
+			effectiveModel, configurationFingerprint = model, fingerprint
+		}
 	}
 	accountMetadata := map[string]string{"authentication": "managed_on_runner"}
 	if len(definition.AccountArguments) > 0 {
-		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, definition.AccountEnvironment)
+		environment := cloneEnvironment(definition.AccountEnvironmentValues)
+		for _, key := range definition.AccountEnvironment {
+			if value := os.Getenv(key); value != "" {
+				environment[key] = value
+			}
+		}
+		accountOutput, accountErr, overflowed := probe(ctx, resolved, definition.AccountArguments, environment, definition.AccountHome)
 		authenticated := strings.Contains(accountOutput, definition.AccountMarker)
 		if definition.AccountValidator != nil {
 			authenticated = definition.AccountValidator(accountOutput)
 		}
 		if accountErr != nil || overflowed || !authenticated {
 			health = "unhealthy"
-			accountMetadata = map[string]string{"authentication": "not_authenticated"}
+			accountMetadata = cloneMetadata(definition.AccountMetadata)
+			accountMetadata["authentication"] = "not_authenticated"
 		} else {
 			accountMetadata = cloneMetadata(definition.AccountMetadata)
 		}
@@ -230,33 +402,48 @@ func (catalog *Catalog) detectResolved(ctx context.Context, definition Definitio
 	capabilities := append([]string(nil), definition.Capabilities...)
 	sort.Strings(capabilities)
 	return Installation{
-		DetectionKey: detectionKey(definition.AdapterKey, resolved), AdapterKey: definition.AdapterKey,
+		DetectionKey: detection, AdapterKey: definition.AdapterKey,
 		ProtocolVersion: definition.ProtocolVersion, ExecutablePath: resolved, ExecutableVersion: version,
-		AccountMetadata: accountMetadata, Capabilities: capabilities,
+		AccountMetadata: accountMetadata, Capabilities: capabilities, Transport: definition.Transport,
+		ExecutionMode:  definition.ExecutionMode,
+		EffectiveModel: effectiveModel, ConfigurationFingerprint: configurationFingerprint,
 		MinimumVersion: definition.MinimumVersion, MaximumVersion: definition.MaximumVersion,
 		CompatibilityStatus: compatibility, IncompatibilityReason: reason, HealthStatus: health,
 		CheckedAt: catalog.now().UTC().Format(time.RFC3339Nano),
 	}
 }
 
-func probe(ctx context.Context, executable string, arguments, accountEnvironment []string) (string, error, bool) {
+func probe(ctx context.Context, executable string, arguments []string, accountEnvironment map[string]string, configuredHome string) (string, error, bool) {
 	probeContext, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 	command := exec.CommandContext(probeContext, executable, arguments...)
 	home := os.TempDir()
-	if len(accountEnvironment) > 0 && os.Getenv("HOME") != "" {
+	if configuredHome != "" {
+		home = configuredHome
+	} else if len(accountEnvironment) > 0 && os.Getenv("HOME") != "" {
 		home = os.Getenv("HOME")
 	}
 	command.Env = []string{"HOME=" + home, "LANG=C.UTF-8", "PATH=" + os.Getenv("PATH")}
-	for _, key := range accountEnvironment {
-		if value := os.Getenv(key); value != "" {
-			command.Env = append(command.Env, key+"="+value)
-		}
+	keys := make([]string, 0, len(accountEnvironment))
+	for key := range accountEnvironment {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		command.Env = append(command.Env, key+"="+accountEnvironment[key])
 	}
 	output := &boundedBuffer{maximum: maxVersionBytes}
 	command.Stdout, command.Stderr = output, output
 	err := command.Run()
 	return strings.TrimSpace(output.String()), err, output.overflowed
+}
+
+func cloneEnvironment(values map[string]string) map[string]string {
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func cloneMetadata(metadata map[string]string) map[string]string {
@@ -267,15 +454,25 @@ func cloneMetadata(metadata map[string]string) map[string]string {
 	return result
 }
 
-func compatibilityFor(output, minimum, maximum string) (string, string) {
-	version, versionOK := semanticVersion(output)
-	minimumVersion, minimumOK := semanticVersion(minimum)
-	maximumVersion, maximumOK := semanticVersion(maximum)
-	if !versionOK || !minimumOK || !maximumOK {
+func compatibilityFor(output, minimum, _ string) (string, string) {
+	observed, ok := semanticVersion(output)
+	if !ValidObservedVersion(output) || !ok {
 		return "unknown", "Version compatibility has not been reported."
 	}
-	if compareVersions(version, minimumVersion) < 0 || compareVersions(version, maximumVersion) > 0 {
-		return "incompatible", "The detected version is outside the maintained compatibility range."
+	if minimum != "" {
+		minimumVersion, minimumOK := semanticVersion(minimum)
+		if !minimumOK {
+			return "unknown", "Version compatibility has not been reported."
+		}
+		for index := range observed {
+			if observed[index] == minimumVersion[index] {
+				continue
+			}
+			if observed[index] < minimumVersion[index] {
+				return "incompatible", "The runtime version is below the minimum supported version."
+			}
+			break
+		}
 	}
 	return "compatible", ""
 }
@@ -296,18 +493,6 @@ func semanticVersion(value string) ([3]int, bool) {
 	return version, true
 }
 
-func compareVersions(left, right [3]int) int {
-	for index := range left {
-		if left[index] < right[index] {
-			return -1
-		}
-		if left[index] > right[index] {
-			return 1
-		}
-	}
-	return 0
-}
-
 func approvedExecutable(path string) (string, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil || !filepath.IsAbs(resolved) {
@@ -318,6 +503,12 @@ func approvedExecutable(path string) (string, error) {
 		return "", ErrInvalidDefinition
 	}
 	return filepath.Clean(resolved), nil
+}
+
+// ResolveApprovedExecutable validates an explicitly approved executable path
+// without probing or launching the runtime.
+func ResolveApprovedExecutable(path string) (string, error) {
+	return approvedExecutable(path)
 }
 
 func detectionKey(adapterKey, path string) string {

@@ -84,6 +84,39 @@ func TestRunUsesOnlyExplicitlyApprovedHome(t *testing.T) {
 	}
 }
 
+func TestRunAllowsWorkingDirectoryAsEphemeralHome(t *testing.T) {
+	working := t.TempDir()
+	value := testSupervisor(t, working)
+	result, err := value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"home"}, WorkingDir: working, HomeDir: working,
+	})
+	if err != nil || result.StandardOutput != working {
+		t.Fatalf("ephemeral home result=%#v err=%v", result, err)
+	}
+}
+
+func TestApprovedCredentialHomeIsReadableButNotWritable(t *testing.T) {
+	working := t.TempDir()
+	home := t.TempDir()
+	credential := filepath.Join(home, "credentials.json")
+	if err := os.WriteFile(credential, []byte(`{"token":"fixture"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value := testSupervisorWithHome(t, working, home)
+	read, err := value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"read", credential}, WorkingDir: working, HomeDir: home,
+	})
+	if err != nil || read.StandardOutput != "" {
+		t.Fatalf("credential home read result=%#v err=%v", read, err)
+	}
+	write, err := value.Run(context.Background(), Request{
+		Executable: targetPath(), Arguments: []string{"write", filepath.Join(home, "changed")}, WorkingDir: working, HomeDir: home,
+	})
+	if err != nil || write.ExitCode == 0 || write.StandardOutput == "" {
+		t.Fatalf("credential home write was not denied: result=%#v err=%v", write, err)
+	}
+}
+
 func TestInteractUsesBoundedBidirectionalStdio(t *testing.T) {
 	working := t.TempDir()
 	result, err := testSupervisor(t, working).Interact(context.Background(), Request{

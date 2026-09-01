@@ -10,6 +10,12 @@ address = ENV.fetch("NAVISHAI_RUNNER_ADDRESS")
 client = RunnerClient.new(address:, secret:)
 abort "runner is not ready for protocol v1" unless client.ready?
 
+providers = ProviderConnectionGateway.new(address:, secret:).catalog(workspace_key: SecureRandom.uuid)
+expected_provider_keys = %w[claude_subscription codex_subscription cursor_acp_subscription grok_acp_subscription]
+actual_provider_keys = providers.map { |provider| provider.fetch("adapter_key") }.sort
+abort "provider catalog was incomplete: #{actual_provider_keys.inspect}" unless actual_provider_keys == expected_provider_keys
+abort "provider catalog exposed a configured secret" if providers.any? { |provider| provider.fetch("configured") || provider.fetch("secret_configured") }
+
 suffix = SecureRandom.hex(6)
 organization = Organization.create!(name: "Runner Contract #{suffix}", slug: "runner-contract-#{suffix}")
 workspace = organization.workspaces.create!(name: "Contract", slug: "contract-#{suffix}")
@@ -19,9 +25,14 @@ CrewConfiguration.install_defaults!(workspace:)
 
 reports = client.detect_runtimes!(workspace_key: workspace.runner_key)
 report = reports.find { |candidate| candidate.fetch("detection_key") == ENV.fetch("NAVISHAI_RUNNER_CONTRACT_DETECTION_KEY") }
-abort "scripted runtime was not detected" unless report
+unless report
+  detected = reports.map { |candidate| [ candidate.fetch("adapter_key"), candidate.fetch("detection_key") ] }
+  abort "scripted runtime was not detected: #{detected.inspect}"
+end
 RuntimeRegistry.refresh!(workspace:, membership:, client:)
 installation = workspace.runtime_installations.find_by!(detection_key: report.fetch("detection_key"))
+RuntimeRegistry.test!(workspace:, membership:, installation:, client:)
+abort "scripted runtime connection test did not pass" unless installation.reload.runtime_test_status == "passed"
 RuntimeRegistry.update_approval!(
   workspace:, membership:, installation:,
   attributes: {
@@ -54,9 +65,9 @@ until !run.reload.active? || Time.current >= deadline
   sleep 0.05
 end
 abort "scripted run did not complete: #{run.status} #{run.failure_code}" unless run.completed?
-expected_events = %w[run.admitted run.started tool.completed tool.completed output.produced usage.observed run.completed]
+expected_events = %w[run.admitted run.started output.produced usage.observed run.completed]
 abort "scripted lifecycle was incomplete: #{run.events.pluck(:event_type).inspect}" unless run.events.pluck(:event_type) == expected_events
-abort "scripted output was not retained" unless run.output == "The scripted runner completed this task."
+abort "scripted output was not retained" unless run.output == "NAVISHAI_RUNTIME_TEST_OK"
 
 first = client.admit!(task:, run:, run_id: run.run_key, idempotency_key: "admit:#{run.run_key}", attempt: run.attempt_number)
 abort "runner changed its durable replay" unless first.event.fetch("event_id") == run.events.first.event_key
@@ -74,4 +85,4 @@ begin
 rescue RunnerClient::Conflict
 end
 
-puts "Rails and Go runner protocol v1 execution contract passed"
+puts "Rails and Go runner scripted execution and provider catalog contract passed"

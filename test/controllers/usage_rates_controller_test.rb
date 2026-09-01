@@ -11,7 +11,7 @@ class UsageRatesControllerTest < ActionDispatch::IntegrationTest
     get workspace_usage_rates_path(@workspace)
 
     assert_response :success
-    assert_select "h1", "Usage and cost rates"
+    assert_select "h1", "Usage and rates"
     assert_select ".usage-rate-editor"
     assert_select ".usage-rate-current", text: /unavailable rather than zero/
 
@@ -85,7 +85,7 @@ class UsageRatesControllerTest < ActionDispatch::IntegrationTest
     }
 
     assert_response :unprocessable_content
-    assert_select "h1", "Usage and cost rates"
+    assert_select "h1", "Usage and rates"
     assert_select "[role=alert]", text: /Currency must be a three-letter code/
     assert_select "input[name='usage_rate[currency]'][value='US']"
     assert_nil @workspace.reload.usage_rate_setting

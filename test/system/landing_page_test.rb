@@ -2,32 +2,70 @@ require "application_system_test_case"
 require "timeout"
 
 class LandingPageTest < ApplicationSystemTestCase
-  test "public landing explains the self-hosted product without invented claims" do
+  setup do
+    emulate_prefers_reduced_motion("no-preference")
+  end
+
+  test "public landing explains the customer workflow without invented claims" do
     visit root_path
 
-    assert_title(/NavishAI/)
-    assert_selector "h1", text: /Specialist AI crews/
-    assert_text "Open source and self-hosted"
-    assert_text "A signed-in human still reviews every customer message"
-    assert_link "Sign in"
-    assert_link "See how it works"
+    assert_title(/Evidence-backed customer operations/)
+    assert_selector "h1", text: /Resolve support cases with proof/
+    assert_text "Self-hosted customer operations"
+    assert_text "Bring shared email and Intercom into one workspace"
+    assert_link "Sign in to your workspace"
+    assert_link "See the support workflow"
+    assert_text "The customer context behind every answer"
+    assert_text "Support history becomes customer context"
+    assert_text "Know why an outcome happened"
+    assert_text "Run customer operations on infrastructure you control"
     assert_no_text(/SOC 2 certified/i)
     assert_no_text(/trusted by/i)
-    assert_text "does not claim SOC 2, HIPAA, ISO 27001, or any other certification."
+    assert_selector ".faq-item", text: "does not claim SOC 2, HIPAA, ISO 27001, or any other certification.", visible: :all
     refute_selector "img[alt*='logo' i]"
 
-    click_link "See how it works", href: "#how-it-works", match: :first
+    assert_selector ".proof-cell", count: 4
+    assert_selector ".proof-cell", text: "Conversations become linked cases with Account and Contact context."
+    proof_copy = page.evaluate_script(<<~JAVASCRIPT)
+      (() => {
+        const node = document.querySelector('.proof-more')
+        const style = getComputedStyle(node)
+        return {
+          visible: node.getBoundingClientRect().height > 0,
+          opacity: style.opacity,
+          position: style.position
+        }
+      })()
+    JAVASCRIPT
+    assert proof_copy["visible"]
+    assert_equal "1", proof_copy["opacity"]
+    assert_equal "static", proof_copy["position"]
+
+    prominent_copy = page.evaluate_script(<<~JAVASCRIPT)
+      [...document.querySelectorAll('.landing-hero, #proof, #how-it-works, #features')]
+        .map((node) => node.textContent)
+        .join(' ')
+    JAVASCRIPT
+    refute_match(/control plane|rails\s*\+\s*hotwire|postgresql|runner protocol|scripted adapter|runtime registry|deterministic score|signal weights|tool calls|execution budget/i, prominent_copy)
+
+    section_tops = page.evaluate_script(<<~JAVASCRIPT)
+      ['hero', 'proof', 'how-it-works', 'features', 'quote', 'self-host', 'faq', 'get-started']
+        .map((id) => document.getElementById(id).offsetTop)
+    JAVASCRIPT
+    assert_equal section_tops.sort, section_tops
+
+    click_link "See the support workflow", href: "#how-it-works", match: :first
     assert_selector "#how-it-works"
 
-    review_draft = first(:button, "Review the draft")
-    page.scroll_to(review_draft, align: :center)
-    review_draft.click
-    assert_selector ".feature-panel:not([hidden])", text: /Policy review/
+    attention_step = first(:button, "See what needs attention")
+    page.scroll_to(attention_step, align: :center)
+    attention_step.click
+    assert_selector ".feature-panel:not([hidden])", text: /Evidence check/
 
-    intercom_faq = find("summary", text: "Does this replace Intercom on day one?")
+    intercom_faq = find("summary", text: "Does NavishAI replace Intercom?")
     page.scroll_to(intercom_faq, align: :center)
     intercom_faq.click
-    assert_text "Intercom remains authoritative"
+    assert_text "NavishAI can work beside Intercom and shared email"
 
     page.current_window.resize_to(390, 844)
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
@@ -40,19 +78,15 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_includes page.evaluate_script("getComputedStyle(document.body).fontFamily"), "Geist"
   end
 
-  test "workflow tabs, pause control, and named navigation follow ARIA patterns" do
+  test "workflow controls follow ARIA patterns and internal showcase sections are absent" do
     visit root_path
     page.current_window.resize_to(1440, 1000)
 
     assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']", visible: :all
-    assert_no_selector "#readiness [role='tablist']"
-    assert_selector "#readiness [role='group'][aria-label='Product path'] button[aria-pressed='true']", text: "Support"
-
-    customer_success = find("#readiness button[data-readiness-tab='success']")
-    page.scroll_to(customer_success, align: :center)
-    customer_success.click
-    assert_selector "#readiness button[aria-pressed='true']", text: "Customer Success"
-    assert_text "Deterministic account-health signals"
+    assert_no_selector ".readiness-section"
+    assert_no_selector ".principles-section"
+    assert_no_selector ".principle-stage"
+    assert_no_selector ".orbit-stage"
 
     assert_button "Pause slideshow"
     pause_slideshow = find("button.feature-pause", text: "Pause slideshow")
@@ -70,17 +104,9 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_equal "workflow-tab-3", page.evaluate_script("document.activeElement.id")
     find("#workflow-tab-3").send_keys(:home)
     assert_equal "workflow-tab-0", page.evaluate_script("document.activeElement.id")
-
-    inner = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-inner')).width)")
-    outer = page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.orbit-ring-outer')).width)")
-    dot_left = page.evaluate_script("getComputedStyle(document.querySelector('.globe-dot-1')).left")
-    assert_operator inner, :>=, 180
-    assert_operator outer, :>=, 400
-    refute_equal "auto", dot_left
-    refute_equal "0px", dot_left
   end
 
-  test "reduced motion keeps the slideshow paused until Play is pressed" do
+  test "reduced motion keeps the workflow slideshow paused until Play is pressed" do
     emulate_prefers_reduced_motion("reduce")
     visit root_path
     page.current_window.resize_to(1440, 1000)
@@ -97,80 +123,6 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_selector "#workflow-tab-1[aria-selected='true']", wait: 6
     assert_selector "#workflow-panel-1:not([hidden])"
     assert_no_selector "#workflow-tab-0[aria-selected='true']"
-  end
-
-  test "principles use a 750px vertical column stage and a readable reduced-motion grid" do
-    emulate_prefers_reduced_motion("no-preference")
-    visit root_path
-    page.current_window.resize_to(1440, 1000)
-
-    geometry = page.evaluate_script(<<~JAVASCRIPT)
-      (() => {
-        const stage = document.querySelector('.principle-stage')
-        const columns = [...document.querySelectorAll('.principle-column')]
-        const visible = columns.filter((column) => getComputedStyle(column).display !== 'none')
-        const tracks = [...document.querySelectorAll('.principle-column-track')]
-        const staticCopy = document.querySelector('.principle-static')
-        const horizontal = tracks.some((track) => {
-          const transform = getComputedStyle(track).animationName || ''
-          return transform.includes('marquee') && !transform.includes('vertical')
-        })
-        return {
-          height: Math.round(stage.getBoundingClientRect().height),
-          overflow: getComputedStyle(stage).overflow,
-          overflowX: getComputedStyle(stage).overflowX,
-          overflowY: getComputedStyle(stage).overflowY,
-          columns: visible.length,
-          stageHidden: stage.getAttribute('aria-hidden'),
-          staticHidden: staticCopy.getAttribute('aria-hidden'),
-          staticClip: getComputedStyle(staticCopy).clip,
-          staticPosition: getComputedStyle(staticCopy).position,
-          horizontal
-        }
-      })()
-    JAVASCRIPT
-    assert_in_delta 750, geometry["height"], 1
-    assert_equal "hidden", geometry["overflow"]
-    assert_equal 3, geometry["columns"]
-    assert_equal "true", geometry["stageHidden"]
-    assert_nil geometry["staticHidden"]
-    assert geometry["staticPosition"] == "absolute"
-    refute geometry["horizontal"]
-
-    emulate_prefers_reduced_motion("reduce")
-    visit root_path
-    page.current_window.resize_to(1440, 1000)
-
-    reduced = page.evaluate_script(<<~JAVASCRIPT)
-      (() => {
-        const stage = document.querySelector('.principle-stage')
-        const staticCopy = document.querySelector('.principle-static')
-        const first = staticCopy.querySelector('.principle-card')
-        return {
-          stageDisplay: getComputedStyle(stage).display,
-          staticDisplay: getComputedStyle(staticCopy).display,
-          staticPosition: getComputedStyle(staticCopy).position,
-          staticClip: getComputedStyle(staticCopy).clip,
-          staticHidden: staticCopy.getAttribute('aria-hidden'),
-          staticWidth: Math.round(staticCopy.getBoundingClientRect().width),
-          cardVisible: first.getBoundingClientRect().height > 0,
-          cardAriaHidden: first.closest('[aria-hidden="true"]') !== null,
-          columns: [...new Set([...staticCopy.querySelectorAll('.principle-card')].map((card) => Math.round(card.getBoundingClientRect().left)))].length,
-          overflow: Math.max(0, staticCopy.scrollWidth - staticCopy.clientWidth)
-        }
-      })()
-    JAVASCRIPT
-    assert_equal "none", reduced["stageDisplay"]
-    assert_equal "grid", reduced["staticDisplay"]
-    assert_equal "static", reduced["staticPosition"]
-    refute_match(/rect\(0/, reduced["staticClip"].to_s)
-    assert_nil reduced["staticHidden"]
-    assert reduced["cardVisible"]
-    refute reduced["cardAriaHidden"]
-    assert_equal 3, reduced["columns"]
-    assert_operator reduced["staticWidth"], :>=, 1000
-    assert_operator reduced["overflow"], :<=, 0
-    assert_text "A human reviews the current draft and presses Send"
   end
 
   test "the desktop nav pill sits behind the active link at rest and after a jump" do
@@ -192,7 +144,7 @@ class LandingPageTest < ApplicationSystemTestCase
 
     box = page.evaluate_script(<<~JAVASCRIPT)
       (() => {
-        const link = [...document.querySelectorAll('.landing-actions a')].find((node) => node.textContent.includes('See how it works'))
+        const link = [...document.querySelectorAll('.landing-actions a')].find((node) => node.textContent.includes('See the support workflow'))
         return { client: link.clientWidth, scroll: link.scrollWidth, width: getComputedStyle(link).width }
       })()
     JAVASCRIPT

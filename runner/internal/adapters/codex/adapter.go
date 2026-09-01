@@ -19,7 +19,6 @@ import (
 const (
 	AdapterKey  = "codex_subscription"
 	minVersion  = "0.149.0"
-	maxVersion  = "0.149.99"
 	maxLineSize = 128 * 1024
 )
 
@@ -32,6 +31,8 @@ type Invocation struct {
 	CodexHome        string
 	Model            string
 	Prompt           string
+	DisableTools     bool
+	Credentials      map[string]string
 	EgressProfileKey string
 }
 
@@ -55,8 +56,11 @@ func Definition() runtimecatalog.Definition {
 		AccountMarker:      "Logged in using ChatGPT",
 		AccountEnvironment: []string{"CODEX_HOME"},
 		AccountMetadata:    map[string]string{"authentication": "chatgpt_subscription"},
-		Capabilities:       []string{"structured_output", "tool_calling"},
-		MinimumVersion:     minVersion, MaximumVersion: maxVersion,
+		Capabilities:       []string{runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:          runtimecatalog.TransportManagedProcess,
+		ExecutionMode:      protocol.ExecutionModeStrongIsolated,
+		EffectiveModel:     "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
+		MinimumVersion: minVersion,
 	}
 }
 
@@ -89,9 +93,13 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 	}); err != nil {
 		return Result{}, err
 	}
+	credentials := map[string]string{"CODEX_HOME": invocation.CodexHome}
+	for key, value := range invocation.Credentials {
+		credentials[key] = value
+	}
 	process, processErr := runner.Run(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: arguments(invocation), WorkingDir: invocation.WorkingDir,
-		Input: []byte(invocation.Prompt), Credentials: map[string]string{"CODEX_HOME": invocation.CodexHome},
+		HomeDir: invocation.CodexHome, Input: []byte(invocation.Prompt), Credentials: credentials,
 		EgressProfileKey: invocation.EgressProfileKey,
 	})
 	if process.TimedOut {
@@ -110,6 +118,11 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 			code = "codex_malformed_output"
 		}
 		return Result{Status: "failed", FailureCode: code}, emitEvent("run.failed", map[string]any{"code": code, "retryable": false})
+	}
+	if invocation.DisableTools && normalized.DisallowedItems {
+		return Result{Status: "failed", FailureCode: "codex_policy_denied"}, emitEvent("run.failed", map[string]any{
+			"code": "codex_policy_denied", "retryable": false,
+		})
 	}
 	if !adapters.WithinUnitBudget(invocation.Admission, normalized.InputUnits, normalized.OutputUnits) {
 		return Result{Status: "failed", FailureCode: "runtime_unit_budget_exceeded"}, emitEvent("run.failed", map[string]any{"code": "runtime_unit_budget_exceeded", "retryable": false})
@@ -139,8 +152,11 @@ func arguments(invocation Invocation) []string {
 		"exec", "--json", "--color", "never", "--sandbox", "read-only", "--ephemeral",
 		"--ignore-user-config", "--ignore-rules", "-c", `approval_policy="never"`,
 		"-c", `web_search="disabled"`,
-		"-C", invocation.WorkingDir,
 	}
+	if invocation.DisableTools {
+		values = append(values, "--disable", "shell_tool", "--disable", "unified_exec")
+	}
+	values = append(values, "-C", invocation.WorkingDir)
 	if invocation.Model != "" {
 		values = append(values, "-m", invocation.Model)
 	}
@@ -153,11 +169,12 @@ type toolResult struct {
 }
 
 type normalizedResult struct {
-	Output      string
-	ThreadID    string
-	InputUnits  int
-	OutputUnits int
-	Tools       []toolResult
+	Output          string
+	ThreadID        string
+	InputUnits      int
+	OutputUnits     int
+	Tools           []toolResult
+	DisallowedItems bool
 }
 
 func parseJSONL(output string) (normalizedResult, error) {
@@ -191,16 +208,23 @@ func parseJSONL(output string) (normalizedResult, error) {
 				return normalizedResult{}, errors.New("Codex thread ID changed")
 			}
 			result.ThreadID = event.ThreadID
-		case "item.completed":
+		case "item.completed", "item.started":
 			switch event.Item.Type {
-			case "agent_message":
-				result.Output = event.Item.Text
-			case "command_execution", "file_change", "mcp_tool_call", "web_search", "collab_tool_call":
-				status := event.Item.Status
-				if status == "" {
-					status = "completed"
+			case "agent_message", "reasoning":
+				if event.Type == "item.completed" && event.Item.Type == "agent_message" {
+					result.Output = event.Item.Text
 				}
-				result.Tools = append(result.Tools, toolResult{Name: event.Item.Type, Result: status})
+			case "command_execution", "file_change", "mcp_tool_call", "web_search", "collab_tool_call":
+				result.DisallowedItems = true
+				if event.Type == "item.completed" {
+					status := event.Item.Status
+					if status == "" {
+						status = "completed"
+					}
+					result.Tools = append(result.Tools, toolResult{Name: event.Item.Type, Result: status})
+				}
+			default:
+				result.DisallowedItems = true
 			}
 		case "turn.completed":
 			completed = true

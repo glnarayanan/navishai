@@ -30,7 +30,10 @@ class ViewportOverflowTest < ApplicationSystemTestCase
       [ "memory detail", workspace_memory_record_path(workspace, memory) ],
       [ "scorecard", workspace_health_scorecard_path(workspace) ],
       [ "crews", workspace_crew_templates_path(workspace) ],
+      [ "policy changes", workspace_governed_policy_path(workspace) ],
       [ "runtimes", workspace_runtime_installations_path(workspace) ],
+      [ "usage and rates", workspace_usage_rates_path(workspace) ],
+      [ "system health", workspace_reliability_cockpit_path(workspace) ],
       [ "email", workspace_shared_email_inboxes_path(workspace) ],
       [ "intercom", workspace_intercom_connections_path(workspace) ],
       [ "webhooks", workspace_outbound_webhook_endpoints_path(workspace) ],
@@ -56,6 +59,11 @@ class ViewportOverflowTest < ApplicationSystemTestCase
     visit workspace_account_path(workspace, accounts(:acme))
     assert_equal 0, page.evaluate_script("window.scrollX")
     assert_no_horizontal_overflow
+
+    page.current_window.resize_to(1440, 1000)
+    visit edit_workspace_path(workspace)
+    assert_selector ".app-sidebar a[aria-current='page']", count: 1
+    assert_selector ".app-sidebar a[aria-current='page']", text: "Workspace settings"
   end
 
   private

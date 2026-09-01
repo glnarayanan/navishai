@@ -3,7 +3,7 @@ require "application_system_test_case"
 class ContentSecurityPolicyTest < ApplicationSystemTestCase
   test "landing and authenticated pages emit no CSP style violations" do
     visit root_path
-    assert_selector "h1", text: /Specialist AI crews/
+    assert_selector "h1", text: /Resolve support cases with proof/
     assert_no_csp_violations
 
     visit new_session_path

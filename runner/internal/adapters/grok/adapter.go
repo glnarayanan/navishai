@@ -35,6 +35,7 @@ type Invocation struct {
 	GrokHome         string
 	Model            string
 	Prompt           string
+	Credentials      map[string]string
 	EgressProfileKey string
 }
 
@@ -52,7 +53,10 @@ type Adapter struct{ now func() time.Time }
 func Definition() runtimecatalog.Definition {
 	return runtimecatalog.Definition{
 		AdapterKey: AdapterKey, ProtocolVersion: protocol.Version, ExecutableNames: []string{"grok"},
-		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", "structured_output", "tool_calling"},
+		VersionArguments: []string{"--version"}, Capabilities: []string{"acp", runtimecatalog.RuntimeTestCapability, "structured_output", "tool_calling"},
+		Transport:      runtimecatalog.TransportManagedProcess,
+		ExecutionMode:  protocol.ExecutionModeStrongIsolated,
+		EffectiveModel: "runtime_default", ConfigurationFingerprint: strings.Repeat("0", 64),
 		MinimumVersion: minVersion, MaximumVersion: maxVersion,
 	}
 }
@@ -85,9 +89,13 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		return Result{}, err
 	}
 	normalized := Result{}
+	credentials := map[string]string{"GROK_HOME": invocation.GrokHome, "GROK_SUBAGENTS": "0", "GROK_MEMORY": "0", "GROK_WEB_FETCH": "0"}
+	for key, value := range invocation.Credentials {
+		credentials[key] = value
+	}
 	process, processErr := runner.Interact(ctx, supervisor.Request{
 		Executable: invocation.Executable, Arguments: []string{"agent", "--no-leader", "stdio"}, WorkingDir: invocation.WorkingDir,
-		Credentials:      map[string]string{"GROK_HOME": invocation.GrokHome, "GROK_SUBAGENTS": "0", "GROK_MEMORY": "0", "GROK_WEB_FETCH": "0"},
+		HomeDir: invocation.GrokHome, Credentials: credentials,
 		EgressProfileKey: invocation.EgressProfileKey,
 	}, func(exchangeContext context.Context, stream io.ReadWriter) error {
 		var err error
@@ -345,11 +353,5 @@ func containsProhibitedUpdate(value any) bool {
 }
 
 func compatibleVersion(value string) bool {
-	match := regexp.MustCompile(`\b1\.0\.(\d+)\b`).FindStringSubmatch(value)
-	if len(match) != 2 {
-		return false
-	}
-	var patch int
-	_, err := fmt.Sscanf(match[1], "%d", &patch)
-	return err == nil && patch >= 4 && patch <= 99
+	return runtimecatalog.ValidObservedVersion(value)
 }

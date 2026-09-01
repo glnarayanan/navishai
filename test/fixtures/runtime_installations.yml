@@ -3,6 +3,8 @@ acme_scripted:
   detection_key: <%= "b" * 64 %>
   adapter_key: scripted
   protocol_version: v1
+  transport: built_in_https
+  execution_mode: bounded
   executable_path: /opt/navishai/scripted
   executable_version: scripted 1.0.0
   account_metadata:

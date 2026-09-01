@@ -46,8 +46,10 @@ func TestDefinitionAcceptsOnlyVerifiedClaudeSubscriptions(t *testing.T) {
 func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T) {
 	runner := &fakeRunner{result: supervisor.Result{ExitCode: 0, StandardOutput: successfulJSONL}}
 	events := make([]protocol.CanonicalEvent, 0)
+	invocation := testInvocation()
+	invocation.Credentials = map[string]string{"ANTHROPIC_API_KEY": "sk-ant-test-value"}
 	result, err := New(func() time.Time { return testNow }).Execute(
-		context.Background(), testInvocation(), runner,
+		context.Background(), invocation, runner,
 		func(event protocol.CanonicalEvent) error {
 			if err := event.Validate(); err != nil {
 				t.Fatalf("invalid canonical event %#v: %v", event, err)
@@ -72,7 +74,7 @@ func TestExecuteBuildsConstrainedInvocationAndEmitsCanonicalOutput(t *testing.T)
 	if !reflect.DeepEqual(runner.request.Arguments, expectedArguments) || string(runner.request.Input) != "Investigate the case." {
 		t.Fatalf("unexpected process request %#v", runner.request)
 	}
-	if !reflect.DeepEqual(runner.request.Credentials, map[string]string{"CLAUDE_CONFIG_DIR": "/runtime/claude"}) ||
+	if !reflect.DeepEqual(runner.request.Credentials, map[string]string{"ANTHROPIC_API_KEY": "sk-ant-test-value", "CLAUDE_CONFIG_DIR": "/runtime/claude"}) ||
 		runner.request.EgressProfileKey != "model_api" {
 		t.Fatalf("unexpected execution boundary %#v", runner.request)
 	}
@@ -137,7 +139,7 @@ func TestParserIgnoresUnknownEventsButRejectsBoundaryChanges(t *testing.T) {
 		t.Fatalf("unexpected tolerant parse result=%#v err=%v", result, err)
 	}
 	for _, output := range []string{
-		strings.Replace(successfulJSONL, `"claude_code_version":"2.1.241"`, `"claude_code_version":"2.1.168"`, 1),
+		strings.Replace(successfulJSONL, `"claude_code_version":"2.1.241"`, `"claude_code_version":"2.1"`, 1),
 		strings.Replace(successfulJSONL, `"output_tokens":24`, `"output_tokens":-1`, 1),
 		strings.Replace(successfulJSONL, `"usage":{"input_tokens":20,"cache_read_input_tokens":120,"cache_creation_input_tokens":5,"output_tokens":24},`, "", 1),
 		strings.Replace(successfulJSONL, `"session_id":"3d07f334-88ef-4fe4-a640-421e3ba79921","is_error"`, `"session_id":"4d07f334-88ef-4fe4-a640-421e3ba79921","is_error"`, 1),
@@ -161,17 +163,26 @@ func TestParserIgnoresUnknownEventsButRejectsBoundaryChanges(t *testing.T) {
 func testInvocation() Invocation {
 	return Invocation{
 		Admission: protocol.AdmissionRequest{
-			ProtocolVersion: protocol.Version, RunID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
+			ProtocolVersion: protocol.AdmissionVersion, RunID: "3d07f334-88ef-4fe4-a640-421e3ba79921",
 			IdempotencyKey: "claude-test", WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
 			Task: protocol.Task{TaskKey: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", Attempt: 1,
 				Title: "Investigate", InputContext: "Case facts", ExpectedOutput: "Cited answer"},
 			Agent: protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1,
 				Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default",
 				TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
-			Routing: protocol.RuntimeRouting{MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000},
+			Routing: protocol.RuntimeRouting{
+				ExecutionMode: protocol.ExecutionModeHostTrusted, IsolationPolicy: protocol.IsolationPolicyHostTrustedAllowed,
+				MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000,
+			},
 		},
 		Executable: "/opt/claude", WorkingDir: "/work/run", ClaudeConfigDir: "/runtime/claude",
 		Model: "sonnet", Prompt: "Investigate the case.", EgressProfileKey: "model_api",
+	}
+}
+
+func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
+	if !compatibleVersion("Claude Code 2.1.168") || !compatibleVersion("Claude Code 3.0.0") || compatibleVersion("Claude Code development build") {
+		t.Fatal("unexpected observed-version result")
 	}
 }
 

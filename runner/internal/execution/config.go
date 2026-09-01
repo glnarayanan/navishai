@@ -2,22 +2,37 @@ package execution
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/protocol"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
 )
 
+const (
+	runtimeDefaultModel       = "runtime_default"
+	configurationIdentityV1   = "navishai-runtime-configuration-v1"
+	codexSubscriptionAdapter  = "codex_subscription"
+	cursorSubscriptionAdapter = "cursor_acp_subscription"
+)
+
 type Config struct {
-	WorkRoot   string                   `json:"work_root"`
-	Scripted   map[string]string        `json:"scripted_fixtures"`
-	Adapters   map[string]AdapterConfig `json:"adapters"`
-	Supervisor SupervisorConfig         `json:"supervisor"`
+	WorkRoot           string                   `json:"work_root"`
+	Scripted           map[string]string        `json:"scripted_fixtures"`
+	Adapters           map[string]AdapterConfig `json:"adapters"`
+	Supervisor         SupervisorConfig         `json:"supervisor"`
+	HostTrustedEnabled bool                     `json:"host_trusted_enabled"`
 }
 
 type AdapterConfig struct {
@@ -66,6 +81,155 @@ type SupervisorLimits struct {
 	KillGraceMillis int    `json:"kill_grace_millis"`
 }
 
+type adapterConfigurationIdentity struct {
+	Version           string                     `json:"version"`
+	AdapterKey        string                     `json:"adapter_key"`
+	Transport         runtimecatalog.Transport   `json:"transport"`
+	ExecutionMode     string                     `json:"execution_mode"`
+	Enabled           bool                       `json:"enabled"`
+	HomeDir           string                     `json:"home_dir"`
+	EffectiveModel    string                     `json:"effective_model"`
+	ExecutablePath    string                     `json:"executable_path"`
+	DetectionKey      string                     `json:"detection_key"`
+	ObservedVersion   string                     `json:"observed_version"`
+	AuthMode          string                     `json:"auth_mode,omitempty"`
+	CredentialDigest  string                     `json:"credential_digest,omitempty"`
+	EgressProfileKey  string                     `json:"egress_profile_key"`
+	EgressExecutable  string                     `json:"egress_executable"`
+	UserNamespace     string                     `json:"user_namespace"`
+	NetworkNamespace  string                     `json:"network_namespace"`
+	EgressEnvironment []configurationEnvironment `json:"egress_environment"`
+	Profiles          []string                   `json:"profiles"`
+	Roles             []string                   `json:"roles"`
+	Tools             []string                   `json:"tools"`
+	DataClasses       []string                   `json:"data_classes"`
+	MaxTimeoutSeconds int                        `json:"max_timeout_seconds"`
+	MaxSteps          int                        `json:"max_steps"`
+	MaxToolCalls      int                        `json:"max_tool_calls"`
+	MaxInputUnits     int                        `json:"max_input_units"`
+	MaxOutputUnits    int                        `json:"max_output_units"`
+}
+
+type configurationEnvironment struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func AdapterConfigurationIdentity(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, key []byte, executionMode string) (string, string, error) {
+	return adapterConfigurationIdentityFor(adapterKey, adapter, supervisor, "", "", key, executionMode)
+}
+
+// AdapterConfigurationIdentityForRuntime adds the immutable runtime evidence
+// that was actually detected to the provider configuration identity. The
+// ordinary identity helper remains available for configuration validation
+// before a runtime has been resolved.
+func AdapterConfigurationIdentityForRuntime(
+	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
+	executablePath, detectionKey, observedVersion, executionMode string,
+) (string, string, error) {
+	if err := validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion); err != nil {
+		return "", "", err
+	}
+	return adapterConfigurationIdentityForRuntime(
+		adapterKey, adapter, supervisor, authMode, apiKey, key, executablePath, detectionKey, observedVersion,
+		executionMode,
+	)
+}
+
+func adapterConfigurationIdentityFor(adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte, executionMode string) (string, string, error) {
+	return adapterConfigurationIdentityForRuntime(adapterKey, adapter, supervisor, authMode, apiKey, key, "", "", "", executionMode)
+}
+
+func adapterConfigurationIdentityForRuntime(
+	adapterKey string, adapter AdapterConfig, supervisor SupervisorConfig, authMode, apiKey string, key []byte,
+	executablePath, detectionKey, observedVersion, executionMode string,
+) (string, string, error) {
+	if err := protocol.ValidateSecret(key); err != nil {
+		return "", "", err
+	}
+	if !validExecutionMode(executionMode) {
+		return "", "", errors.New("invalid execution mode")
+	}
+	transport := runtimecatalog.TransportManagedProcess
+	if executionMode == protocol.ExecutionModeBounded {
+		transport = runtimecatalog.TransportBuiltInHTTPS
+	}
+	model := adapter.Model
+	if model == "" {
+		model = runtimeDefaultModel
+	}
+	enabled := adapter.Enabled
+	if authMode != "" {
+		enabled = true
+	}
+	identity := adapterConfigurationIdentity{
+		Version: "v1", AdapterKey: adapterKey, Transport: transport, ExecutionMode: executionMode, Enabled: enabled, HomeDir: adapter.HomeDir,
+		EffectiveModel: model, ExecutablePath: executablePath, DetectionKey: detectionKey,
+		ObservedVersion: observedVersion, AuthMode: authMode, EgressProfileKey: adapter.EgressProfileKey,
+		Profiles: sortedCopy(adapter.Profiles), Roles: sortedCopy(adapter.Roles), Tools: sortedCopy(adapter.Tools),
+		DataClasses: sortedCopy(adapter.DataClasses), MaxTimeoutSeconds: adapter.MaxTimeoutSeconds,
+		MaxSteps: adapter.MaxSteps, MaxToolCalls: adapter.MaxToolCalls,
+		MaxInputUnits: adapter.MaxInputUnits, MaxOutputUnits: adapter.MaxOutputUnits,
+	}
+	if apiKey != "" {
+		credentialDigest := hmac.New(sha256.New, key)
+		_, _ = credentialDigest.Write([]byte("navishai-provider-credential-v1\x00"))
+		_, _ = credentialDigest.Write([]byte(apiKey))
+		identity.CredentialDigest = hex.EncodeToString(credentialDigest.Sum(nil))
+	}
+	for _, profile := range supervisor.EgressProfiles {
+		if profile.Key != adapter.EgressProfileKey {
+			continue
+		}
+		identity.EgressExecutable = profile.Executable
+		identity.UserNamespace = profile.UserNamespacePath
+		identity.NetworkNamespace = profile.NetworkNamespacePath
+		for key, value := range profile.Environment {
+			identity.EgressEnvironment = append(identity.EgressEnvironment, configurationEnvironment{Key: key, Value: value})
+		}
+		sort.Slice(identity.EgressEnvironment, func(left, right int) bool {
+			return identity.EgressEnvironment[left].Key < identity.EgressEnvironment[right].Key
+		})
+		break
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return "", "", err
+	}
+	digest := hmac.New(sha256.New, key)
+	_, _ = digest.Write([]byte(configurationIdentityV1 + "\x00"))
+	_, _ = digest.Write(encoded)
+	return model, hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func validExecutionMode(mode string) bool {
+	switch mode {
+	case protocol.ExecutionModeBounded, protocol.ExecutionModeHostTrusted, protocol.ExecutionModeStrongIsolated:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateRuntimeIdentityEvidence(executablePath, detectionKey, observedVersion string) error {
+	if executablePath == "" || len(executablePath) > 4096 || strings.ContainsAny(executablePath, "\r\n\x00") {
+		return errors.New("invalid runtime executable path")
+	}
+	if !runtimeDetectionKeyPattern.MatchString(detectionKey) {
+		return errors.New("invalid runtime detection key")
+	}
+	if !runtimecatalog.ValidObservedVersion(observedVersion) {
+		return errors.New("invalid runtime observed version")
+	}
+	return nil
+}
+
+func sortedCopy(values []string) []string {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	return result
+}
+
 func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -90,7 +254,10 @@ func LoadConfig(path string) (Config, error) {
 	return config, nil
 }
 
-var policyKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+var (
+	policyKeyPattern           = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+	runtimeDetectionKeyPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
 
 var knownAdapters = map[string]bool{
 	"scripted": true, "codex_subscription": true, "claude_subscription": true,

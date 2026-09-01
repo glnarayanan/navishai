@@ -36,6 +36,24 @@ class GovernedPolicyChangeTest < ActiveSupport::TestCase
     assert_empty no_change.results.sole.fetch("changes")
   end
 
+  test "governed profile changes preserve or explicitly change isolation and show boundary evidence" do
+    prior_isolation_policy = @profile.current_version.isolation_policy
+    preserved = propose(scope_kind: "support_case", scope_ids: [ @support_case.id ])
+    assert_equal prior_isolation_policy, preserved.agent_profile_version.isolation_policy
+
+    changed = propose(
+      scope_kind: "account", scope_ids: [ @account.id ],
+      profile: profile_attributes.merge(isolation_policy: "host_trusted_allowed")
+    )
+    assert_equal "host_trusted_allowed", changed.agent_profile_version.isolation_policy
+
+    preview = GovernedPolicyChange.preview!(workspace: @workspace, membership: @owner, proposal: changed)
+    assert_equal "host_trusted_allowed",
+      preview.source_snapshot.dig("proposal", "candidate_profile", "isolation_policy")
+    runtime = preview.source_snapshot.fetch("runtime_installations").find { |item| item.fetch("id") == @runtime.id }
+    assert_equal @runtime.execution_mode, runtime.fetch("execution_mode")
+  end
+
   test "preview explains grounding review routing fallback denial and budget decisions" do
     grounding = preview_for(
       contract: changed_contract_attributes.merge(missing_items_block: false),

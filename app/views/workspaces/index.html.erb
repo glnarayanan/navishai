@@ -1,29 +1,38 @@
 <% content_for :title, "Workspaces — NavishAI" %>
 
 <main class="page-shell page-family-collection">
-  <div class="page-heading">
-    <h1>Choose a workspace</h1>
-    <p>Your work and access stay within the workspace you choose.</p>
+  <div class="page-heading workspace-index-heading">
+    <div>
+      <h1>Choose a workspace</h1>
+      <p>Choose where you want to work, or create another workspace for a separate team.</p>
+    </div>
+    <% if @owned_workspace_ids.any? %>
+      <%= link_to "Create workspace", new_workspace_path, class: "button button-primary button-compact" %>
+    <% end %>
   </div>
 
   <% if @workspaces.any? %>
     <ul class="workspace-list" role="list">
       <% @workspaces.each do |workspace| %>
-        <li>
+        <li class="workspace-card">
           <%= link_to workspace_path(workspace), class: "workspace-link" do %>
             <span>
               <strong><%= workspace.name %></strong>
               <small><%= workspace.organization.name %></small>
             </span>
-            <span>Open</span>
+            <span>Open workspace</span>
+          <% end %>
+          <% if @owned_workspace_ids.include?(workspace.id) %>
+            <%= link_to "Manage", edit_workspace_path(workspace), class: "button button-secondary button-compact" %>
           <% end %>
         </li>
       <% end %>
     </ul>
   <% else %>
-    <%= render "shared/empty_state",
-      title: "No workspace access",
-      description: "Ask an Owner or Admin to invite you to a workspace." %>
+    <section class="empty-state workspace-empty" aria-labelledby="workspace-empty-title">
+      <h2 id="workspace-empty-title">No workspace access</h2>
+      <p>Ask a workspace Owner or Admin to invite you.</p>
+    </section>
   <% end %>
 
   <% if @deleting_workspaces.any? %>

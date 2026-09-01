@@ -37,6 +37,8 @@ spec:
             - { name: NAVISHAI_RUNNER_TLS_KEY_FILE, value: /run/navishai/tls.key }
             - name: NAVISHAI_RUNNER_SHARED_SECRET
               valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_RUNNER_SHARED_SECRET } }
+            - name: NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET } }
           ports:
             - { name: https, containerPort: 8081 }
           volumeMounts:

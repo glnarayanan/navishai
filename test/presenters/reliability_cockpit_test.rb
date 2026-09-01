@@ -222,10 +222,13 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
     def create_runtime(key, approved: false, health_status: "available")
       @workspace.runtime_installations.create!(
         detection_key: Digest::SHA256.hexdigest(key), adapter_key: key,
-        protocol_version: "v1", executable_path: "/opt/navishai/#{key}",
+        protocol_version: "v1", transport: "built_in_https", execution_mode: "bounded", executable_path: "/opt/navishai/#{key}",
         executable_version: key, account_metadata: {}, capabilities: [],
         minimum_version: "1", maximum_version: "1", compatibility_status: "compatible",
         incompatibility_reason: "", health_status:, checked_at: @now,
+        runtime_test_status: approved ? "passed" : "untested",
+        runtime_tested_at: approved ? @now : nil,
+        runtime_tested_configuration_fingerprint: approved ? "0" * 64 : nil,
         approved:, approved_by_membership: approved ? @owner : nil,
         approved_by_user: approved ? @owner.user : nil, approved_at: approved ? @now : nil
       )

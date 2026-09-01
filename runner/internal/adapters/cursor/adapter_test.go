@@ -107,6 +107,21 @@ func TestExecuteNegotiatesCursorLoginAndEmitsCanonicalOutput(t *testing.T) {
 	}
 }
 
+func TestExecuteSendsExplicitModelAsCursorGlobalFlag(t *testing.T) {
+	runner := &fakeInteractiveRunner{}
+	invocation := testInvocation()
+	invocation.Model = "gpt-5.5-medium"
+	result, err := New(func() time.Time { return testNow }).Execute(context.Background(), invocation, runner, func(event protocol.CanonicalEvent) error {
+		return event.Validate()
+	})
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if !reflect.DeepEqual(runner.request.Arguments, []string{"--model", invocation.Model, "acp"}) {
+		t.Fatalf("explicit Cursor model was not sent as a global flag: %#v", runner.request.Arguments)
+	}
+}
+
 func TestExecuteFailsBeforeOutputWhenObservedUsageExceedsBudget(t *testing.T) {
 	invocation := testInvocation()
 	invocation.Admission.Routing.MaxOutputUnits = 19
@@ -137,19 +152,52 @@ func TestExecuteRejectsBlockingCursorExtension(t *testing.T) {
 	}
 }
 
-func TestCompatibleVersionUsesMaintainedDateRange(t *testing.T) {
-	if !compatibleVersion("cursor-agent 2026.08.11") || compatibleVersion("2026.03.10") || compatibleVersion("2026.04.31") || compatibleVersion("2027.01.01") {
-		t.Fatal("unexpected version result")
+func TestExchangeRegistersSessionBeforePrompt(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	go func() { _ = serveACP(server, false, true) }()
+	registered := ""
+	result, err := exchangeWithSession(context.Background(), client, testInvocation(), func(sessionID string) {
+		registered = sessionID
+	})
+	_ = server.Close()
+	if err != nil || result.SessionID == "" || registered != result.SessionID {
+		t.Fatalf("session was not registered before prompt: result=%#v registered=%q err=%v", result, registered, err)
+	}
+}
+
+func TestApplyUpdateRejectsControlCharacters(t *testing.T) {
+	var result Result
+	raw, err := json.Marshal(map[string]any{
+		"update": map[string]any{
+			"sessionUpdate": "agent_message_chunk",
+			"content":       map[string]string{"type": "text", "text": "unsafe\x00output"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyUpdate(raw, &result); err == nil {
+		t.Fatal("Cursor output control character was accepted")
+	}
+}
+
+func TestCompatibleVersionAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
+	if !compatibleVersion("cursor-agent 2026.08.11") || !compatibleVersion("2026.03.10") || compatibleVersion("2026.04.31") || !compatibleVersion("2027.01.01") || compatibleVersion("cursor development build") {
+		t.Fatal("unexpected observed-version result")
 	}
 }
 
 func testInvocation() Invocation {
 	return Invocation{
 		Admission: protocol.AdmissionRequest{
-			ProtocolVersion: protocol.Version, RunID: "3d07f334-88ef-4fe4-a640-421e3ba79921", IdempotencyKey: "cursor-test", WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
-			Task:    protocol.Task{TaskKey: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", Attempt: 1, Title: "Investigate", InputContext: "Case facts", ExpectedOutput: "Cited answer"},
-			Agent:   protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1, Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default", TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
-			Routing: protocol.RuntimeRouting{MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000},
+			ProtocolVersion: protocol.AdmissionVersion, RunID: "3d07f334-88ef-4fe4-a640-421e3ba79921", IdempotencyKey: "cursor-test", WorkspaceKey: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+			Task:  protocol.Task{TaskKey: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", Attempt: 1, Title: "Investigate", InputContext: "Case facts", ExpectedOutput: "Cited answer"},
+			Agent: protocol.AgentPolicy{RoleKey: "support_investigator", PolicyVersion: 1, Instructions: "Investigate.", AllowedTools: []string{"case_read"}, RuntimeProfileKey: "workspace_default", TimeoutSeconds: 300, MaxSteps: 10, MaxToolCalls: 20, ReviewPolicy: "required"},
+			Routing: protocol.RuntimeRouting{
+				ExecutionMode: protocol.ExecutionModeHostTrusted, IsolationPolicy: protocol.IsolationPolicyHostTrustedAllowed,
+				MaxInputUnits: 1_000_000, MaxOutputUnits: 1_000_000,
+			},
 		},
 		Executable: "/opt/cursor-agent", WorkingDir: "/work/run", CursorHome: "/runtime/cursor-home", Prompt: "Investigate the case.", EgressProfileKey: "model_api",
 	}

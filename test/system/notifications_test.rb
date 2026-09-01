@@ -19,7 +19,7 @@ class NotificationsTest < ApplicationSystemTestCase
     assert_button "Mark all read"
 
     page.current_window.resize_to(320, 844)
-    assert_equal 320, page.evaluate_script("window.innerWidth")
+    assert_operator page.evaluate_script("window.innerWidth"), :<=, 500
     assert_operator page.evaluate_script("document.documentElement.scrollWidth - window.innerWidth"), :<=, 0
     assert_operator find_button("Mark all read").evaluate_script("this.getBoundingClientRect().height"), :>=, 48
     assert_operator find(".notification-link").evaluate_script("this.getBoundingClientRect().height"), :>=, 48

@@ -1,0 +1,46 @@
+<% content_for :title, "Workspace settings · #{@workspace.name} — NavishAI" %>
+
+<main class="page-shell workspace-settings-shell">
+  <%= link_to "Back to workspaces", workspaces_path, class: "back-link" %>
+  <div class="page-heading workspace-settings-heading">
+    <div>
+      <h1>Workspace settings</h1>
+      <p>Manage <%= @workspace.name %> and the services this team can use.</p>
+    </div>
+    <%= link_to "Open workspace", workspace_path(@workspace), class: "button button-secondary button-compact" %>
+  </div>
+
+  <section class="config-panel workspace-settings-panel" aria-labelledby="workspace-identity-title">
+    <h2 id="workspace-identity-title">Name and URL</h2>
+    <%= render "form", workspace: @workspace, organizations: nil %>
+  </section>
+
+  <section class="workspace-settings-links" aria-labelledby="workspace-management-title">
+    <div class="section-heading-row">
+      <div>
+        <h2 id="workspace-management-title">Workspace management</h2>
+        <p>Invite people, connect services, and set the workspace boundaries.</p>
+      </div>
+    </div>
+    <div class="settings-link-list">
+      <%= link_to workspace_workspace_invitations_path(@workspace), class: "settings-link" do %>
+        <span><strong>People and access</strong><small>Invite teammates and choose their roles.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+      <%= link_to workspace_runtime_installations_path(@workspace), class: "settings-link" do %>
+        <span><strong>AI providers</strong><small>Connect, test, and choose the AI services this workspace can use.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+      <%= link_to workspace_shared_email_inboxes_path(@workspace), class: "settings-link" do %>
+        <span><strong>Shared email</strong><small>Bring customer email into the case queue.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+      <%= link_to workspace_intercom_connections_path(@workspace), class: "settings-link" do %>
+        <span><strong>Intercom</strong><small>Connect conversations and review sync health.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+      <%= link_to workspace_outbound_webhook_endpoints_path(@workspace), class: "settings-link" do %>
+        <span><strong>Webhooks</strong><small>Send attributable workspace events to other systems.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+      <%= link_to workspace_data_controls_path(@workspace), class: "settings-link" do %>
+        <span><strong>Data and retention</strong><small>Export, import, retain, or delete workspace data.</small></span><span aria-hidden="true">→</span>
+      <% end %>
+    </div>
+  </section>
+</main>

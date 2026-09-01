@@ -1,0 +1,25 @@
+<%= render "shared/form_errors", record: workspace %>
+
+<%= form_with model: workspace, class: "form-stack workspace-settings-form" do |form| %>
+  <% if workspace.new_record? %>
+    <div class="field">
+      <%= form.label :organization_id, "Organisation" %>
+      <%= form.collection_select :organization_id, organizations, :id, :name,
+        { selected: workspace.organization_id.presence || organizations.first&.id }, required: true %>
+      <span class="field-hint">The new workspace will be isolated inside this organisation.</span>
+    </div>
+  <% end %>
+  <div class="field-grid">
+    <div class="field">
+      <%= form.label :name, "Workspace name" %>
+      <%= form.text_field :name, required: true, maxlength: 100, autocomplete: "off" %>
+    </div>
+    <div class="field">
+      <%= form.label :slug, "Workspace URL name" %>
+      <%= form.text_field :slug, required: true, maxlength: 63, pattern: "[a-z0-9]+(?:-[a-z0-9]+)*",
+        autocapitalize: "none", spellcheck: false, aria: { describedby: "workspace-slug-hint" } %>
+      <span class="field-hint" id="workspace-slug-hint">Use lowercase letters, numbers, and hyphens.</span>
+    </div>
+  </div>
+  <%= form.submit workspace.new_record? ? "Create workspace" : "Save workspace", class: "button button-primary button-compact" %>
+<% end %>

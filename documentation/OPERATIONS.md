@@ -4,6 +4,12 @@ PostgreSQL is authoritative for tenant, business, audit, policy, memory, and exe
 
 Do not copy a live local file or Supermemory store. Stop every writer before taking those archives. Keep backup encryption, access control, expiry, and off-site copies in the operator's backup system. NavishAI archives contain customer content even when the files have opaque names.
 
+## Provider connections
+
+The deployment owner supplies immutable execution-policy ceilings for every provider. Subscription modes additionally need approved adapter binaries, runner-readable credential homes, and deny-by-default egress profiles. Direct OpenAI and Anthropic API-key connections need no provider CLI or terminal sign-in. A Workspace Owner or Admin uses **Providers** to save the key, load and select an available model or enter an exact ID, test the exact configuration, and approve access. Subscription setup selects an existing runner login; NavishAI does not open a provider browser or terminal or create that login. Configure and remove apply immediately and do not require an edit to `/etc/navishai/execution.json` or a runner restart.
+
+An API key crosses Rails only in the synchronous signed configure request and is stored only in the encrypted Workspace-scoped vault at `<NAVISHAI_RUNNER_STATE_PATH>.providers`. Preserve that file with runner state and preserve `NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET` separately in the host secret manager. Losing or changing the vault secret makes the saved provider state unreadable. A provider connection change alters its configuration fingerprint and invalidates stale test and approval evidence; run admission also checks the exact frozen fingerprint and effective model. Workspace deletion first purges that Workspace's provider connections and request history from the vault. If the provider service cannot confirm the purge, deletion fails visibly and remains available for an Owner retry instead of leaving unreachable credentials behind.
+
 ## Reliability cockpit
 
 Managers, Admins, and Owners use **Reliability** to read one bounded view of connector intake, Workspace-scoped runner admission and failure, unknown customer sends, Memory indexing, retention, archives, backup and restore checks, and upgrade preflight. Each section shows `healthy`, `attention`, `blocked`, `unknown`, or `not configured`. Missing or stale evidence never appears as healthy. Shared Solid Queue rows and process heartbeats are not Workspace evidence and are excluded from this view. This view aids diagnosis; it does not replace host alerts or an external monitor.
@@ -65,13 +71,13 @@ The backup command starts PostgreSQL if needed, stops jobs, web, and the runner,
 The `navishai-backup-v1` directory contains:
 
 - custom-format dumps for primary, cache, queue, and cable PostgreSQL databases;
-- tar archives for Rails local storage, runner state, and Supermemory state;
+- tar archives for Rails local storage, runner state including the encrypted provider vault, and Supermemory state;
 - the exact container image references;
 - the source Git revision and SHA-256 digests for `compose.yaml` and `.env`;
 - environment key names, but no environment values;
 - SHA-256 checksums for every archive member.
 
-Back up `.env`, runner TLS keys, SMTP and integration secrets, runtime subscription credentials, and any external object-store credentials in the host's secret manager. The archive records the `.env` digest so an operator can match the separately protected copy without exposing it.
+Back up `.env`, the provider-vault secret, runner TLS keys, SMTP and integration secrets, runtime subscription credential homes, and any external object-store credentials in the host's secret manager. The archive records the `.env` digest so an operator can match the separately protected copy without exposing it. A restore must pair the provider vault with the same vault secret; do not treat an unreadable or newly empty vault as a successful restore.
 
 `verify_backup` checks every checksum, uses the PostgreSQL image pinned by the current Compose configuration to parse each database dump, and reads every tar directory. It never runs an image reference supplied by the archive. It does not need a running database, but Docker may need to pull the configured image. Verification does not prove restore. Run a restore test on a schedule and before an upgrade.
 
@@ -124,6 +130,35 @@ ops/compose/upgrade_preflight /secure/backups/navishai-2026-08-24
 
 Preflight requires a verified backup, valid Compose configuration, a runner certificate valid for at least seven more days with the `runner` DNS SAN, PostgreSQL 15, and either the previously supported pgvector 0.8.1 extension or pgvector 0.8.6. It also proves that the target PostgreSQL image makes pgvector 0.8.6 available. It prints the target image's migration status against the current database so the operator can review the exact pending set. It does not migrate data or restart the application. Run it while the current Compose application is healthy; the target Rails check shares the live Supermemory network namespace.
 
-After preflight, stop jobs and web, apply the target release, let web run `db:prepare`, then start jobs. Confirm `/up`, runner `/readyz`, queue processing, attachment download, and Memory health before ending the change window.
+After preflight, stop jobs and web. For a release containing migration `20260831121000` or any later runtime migration, also stop the old runner, install and start the target runner, then query that newly started target runner's `/readyz` and verify that it advertises the expected protocol version and v2 admission version; do not use the old runner's readiness result. For an ordinary release, no runner replacement or readiness step is required. For both release types, apply and start the target Rails image, allow web to run `db:prepare`, start jobs, and confirm `/up`, runner `/readyz`, queue processing, attachment download, and Memory health before ending the change window.
 
-Database migrations set the rollback boundary. The pgvector 0.8.6 migration is intentionally irreversible because PostgreSQL extensions do not provide a supported downgrade path. Before migration, roll back by restoring the old image set. After that migration starts, restore the verified backup and old image, secret, and config set to roll back. Never run old application code against a schema or extension version it has not been tested with. Never silently change PostgreSQL, pgvector, Supermemory, a runtime CLI, or its model during an application upgrade.
+Database migrations set the rollback boundary. The pgvector 0.8.6 migration is intentionally irreversible because PostgreSQL extensions do not provide a supported downgrade path. Before migration `20260831121000` starts, roll back by restoring the old image set. Once `20260831121000` starts, it irreversibly clears approval state, approval actors, and approval times; restore the verified backup and matching old image, secret, and config set to roll back. Never run old application code against a schema or extension version it has not been tested with. Never silently change PostgreSQL, pgvector, Supermemory, a runtime CLI, or its model during an application upgrade.
+
+Migration `20260901020000_add_runtime_transport_contract` is a later backup-restore-only data rollback boundary within the same runtime migration sequence. It derives transport, writes system revocation audit events, clears runtime-test evidence and approval state, quarantines incompatible execution modes as `legacy_unknown`, and adds database constraints. Do not run `db:migrate:down`: removing the column and constraint cannot restore revoked approval actors or times, cleared test evidence, or audit state. If this migration has started, restore the verified backup with the matching prior Rails image, runner image, secrets, and configuration set; never serve a mixed-version restore.
+
+After this migration, while the change window is still controlled, run these read-only PostgreSQL checks:
+
+```sql
+SELECT COUNT(*) AS approved_without_current_test
+FROM runtime_installations
+WHERE approved = true
+  AND (
+    runtime_test_status <> 'passed'
+    OR runtime_tested_configuration_fingerprint IS DISTINCT FROM configuration_fingerprint
+  );
+
+SELECT COUNT(*) AS approved_legacy_transport_or_mode
+FROM runtime_installations
+WHERE approved = true
+  AND (transport = 'legacy_unknown' OR execution_mode = 'legacy_unknown');
+
+SELECT transport, execution_mode, COUNT(*) AS installation_count
+FROM runtime_installations
+WHERE (transport = 'built_in_https' AND execution_mode <> 'bounded')
+   OR (transport = 'managed_process'
+       AND execution_mode NOT IN ('host_trusted', 'strong_isolated'))
+GROUP BY transport, execution_mode
+ORDER BY transport, execution_mode;
+```
+
+The first two approved-invalid counts must be zero. Any rows with `legacy_unknown` are quarantine evidence, not permission to run; record them and have a Workspace Owner or Admin rediscover the provider, pass a test of the current fingerprint, and explicitly reapprove the intended access. The pairing query must not show an invalid known-transport pairing; do not claim runner `/readyz` proves source-commit equality, because readiness is only evidence of the advertised protocol and admission versions.

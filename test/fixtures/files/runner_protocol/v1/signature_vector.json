@@ -1,8 +1,0 @@
-{
-  "secret": "0123456789abcdef0123456789abcdef01234567",
-  "timestamp": "1787558400",
-  "method": "POST",
-  "path": "/v1/runs/admit",
-  "body": "{\"protocol_version\":\"v1\"}",
-  "signature": "01832f7b6c9ebd15b334a9402d8fdd06474969b2a1e7b0856310c37c07c9067e"
-}

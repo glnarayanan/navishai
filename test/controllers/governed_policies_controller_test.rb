@@ -17,7 +17,7 @@ class GovernedPoliciesControllerTest < ActionDispatch::IntegrationTest
 
     get workspace_governed_policy_path(@workspace)
     assert_response :success
-    assert_select "h1", "Governed policy change"
+    assert_select "h1", "Review policy changes"
     assert_select "[role='note']", text: /cannot predict response quality, customer behavior, resolution rate, or any causal outcome/
     assert_select "#proposal-#{proposal.id}", text: /Needs preview/
 
@@ -53,6 +53,58 @@ class GovernedPoliciesControllerTest < ActionDispatch::IntegrationTest
       get workspace_governed_policy_path(@workspace)
       assert_response :forbidden
     end
+  end
+
+  test "proposal forms expose the current isolation policy and allowed choices" do
+    sign_in_as @owner.user
+
+    get workspace_governed_policy_path(@workspace)
+
+    assert_response :success
+    select_id = "profile_#{@profile.id}_isolation_policy"
+    assert_select "label[for='#{select_id}']", "Execution isolation"
+    assert_select "select##{select_id}[name='governed_policy[profile][isolation_policy]']" do
+      assert_select "option[value='strong_isolation_required'][selected]", "Strong isolation required"
+      assert_select "option[value='host_trusted_allowed']", "Host-trusted execution allowed"
+    end
+  end
+
+  test "an Owner can propose host-trusted isolation through the controller" do
+    sign_in_as @owner.user
+    contract = @family.current_version
+    profile = @profile.current_version
+
+    assert_difference "@workspace.governed_policy_proposals.count", 1 do
+      post propose_workspace_governed_policy_path(@workspace), params: {
+        governed_policy: {
+          resolution_contract_family_id: @family.id,
+          agent_profile_id: @profile.id,
+          scope_kind: "support_case",
+          support_case_ids: [ @support_case.id ],
+          contract: {
+            required_claim_categories: contract.required_claim_categories,
+            evidence_freshness_days: contract.evidence_freshness_days,
+            mandatory_review_checks: contract.mandatory_review_checks,
+            execution_budget_units: contract.execution_budget_units,
+            missing_items_block: contract.missing_items_block
+          },
+          profile: {
+            runtime_profile_key: profile.runtime_profile_key,
+            fallback_profile_keys: profile.fallback_profile_keys,
+            timeout_seconds: profile.timeout_seconds,
+            max_steps: profile.max_steps,
+            max_tool_calls: profile.max_tool_calls,
+            review_policy: profile.review_policy,
+            isolation_policy: "host_trusted_allowed"
+          },
+          reason: "Allow an approved host-trusted runtime"
+        }
+      }
+    end
+
+    proposal = @workspace.governed_policy_proposals.order(:id).last
+    assert_equal "host_trusted_allowed", proposal.agent_profile_version.isolation_policy
+    assert_redirected_to workspace_governed_policy_path(@workspace, anchor: "proposal-#{proposal.id}")
   end
 
   test "same and foreign Organization Workspace policy records fail closed without disclosure" do

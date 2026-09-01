@@ -28,10 +28,21 @@ module ActiveSupport
     def approve_scripted_runtime(workspace:, membership:)
       installation = runtime_installations(:acme_scripted)
       installation.update!(
+        runtime_test_status: "passed", runtime_tested_at: Time.current,
+        runtime_tested_configuration_fingerprint: installation.configuration_fingerprint,
         approved: true, approved_by_membership: membership, approved_by_user: membership.user,
         approved_at: Time.current
       )
       installation
+    end
+
+    def provider_purge_gateway(calls: nil)
+      Object.new.tap do |gateway|
+        gateway.define_singleton_method(:purge_workspace) do |workspace_key:|
+          calls << workspace_key if calls
+          true
+        end
+      end
     end
 
     def create_governed_policy_canary(workspace:, membership:, support_case: nil)
