@@ -709,6 +709,32 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[runtime.installation_revoked runtime.provider_configured], actions
   end
 
+  test "an ambiguous configuration revokes stale approval and test evidence without confirming the change" do
+    installation = approved_codex_installation
+    @gateway.configure_error = RunnerClient::AmbiguousResult.new("outcome unknown")
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      patch workspace_provider_connection_path(@workspace, "codex"), params: {
+        provider_connection: {
+          adapter_key: "codex", auth_mode: "api_key", model: "gpt-5.6", api_key: ""
+        }
+      }
+    end
+
+    assert_response :unprocessable_content
+    assert_select "[role='alert']", text: "The provider service did not confirm the change. Check connection status before trying again."
+    installation.reload
+    refute installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_tested_configuration_fingerprint
+    revoked = @workspace.audit_events.find_by!(
+      action: "runtime.installation_revoked", subject: installation
+    )
+    assert_equal users(:owner), revoked.actor
+    refute @workspace.audit_events.exists?(action: "runtime.provider_configured")
+  end
+
   test "a confirmed removal revokes stale approval and is audited before a failed refresh" do
     installation = approved_codex_installation
     @gateway.detect_error = RunnerClient::Unavailable.new("offline")
@@ -776,7 +802,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     class FakeProviderGateway
-      attr_accessor :detect_error, :models_error, :models_result, :test_error, :test_result
+      attr_accessor :configure_error, :detect_error, :models_error, :models_result, :test_error, :test_result
       attr_reader :configure_calls, :remove_calls, :models_calls, :test_calls
 
       def initialize(catalog)
@@ -794,6 +820,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
       def configure(**attributes)
         @configure_calls << attributes
+        raise configure_error if configure_error
+
         provider = @catalog.find { |item| item.fetch("adapter_key") == attributes.fetch(:adapter_key) }
         provider.merge!(
           "configured" => true, "secret_configured" => attributes.fetch(:api_key).present? || provider.fetch("secret_configured"),

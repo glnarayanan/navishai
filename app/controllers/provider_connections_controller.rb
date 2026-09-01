@@ -91,12 +91,19 @@ class ProviderConnectionsController < ApplicationController
 
       attributes = attributes.merge(execution_mode: selected_execution_mode(attributes, provider:))
       validate_selection!(provider, attributes:)
-      configured = gateway.configure(
-        workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key:,
-        auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
-        execution_mode: attributes.fetch(:execution_mode),
-        api_key: attributes.fetch(:api_key)
-      )
+      configured = begin
+        gateway.configure(
+          workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key:,
+          auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
+          execution_mode: attributes.fetch(:execution_mode),
+          api_key: attributes.fetch(:api_key)
+        )
+      rescue RunnerClient::AmbiguousResult
+        RuntimeRegistry.invalidate_adapter!(
+          workspace:, membership: Current.require_membership!, adapter_key:
+        )
+        raise
+      end
       return unless record_confirmed_provider_change(
         workspace:, adapter_key:, action: "runtime.provider_configured"
       )
