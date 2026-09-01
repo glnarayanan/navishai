@@ -115,7 +115,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
       assert_select "dt", text: "Model"
       assert_select "dd", text: "Provider default"
       assert_select "button[disabled]", text: "Test connection"
-      assert_select ".provider-action-note", text: /No compatible Codex runtime is available/
+      assert_select ".provider-action-note", text: /runner does not currently report this provider as available/
       assert_select "a", text: "Edit settings"
       assert_select "form.provider-remove-form[data-turbo-confirm=?]",
         "Remove Codex from this workspace? Its saved sign-in settings and workspace access will be removed. You will need to set it up again before using it."
@@ -125,6 +125,51 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body, "does not expose a model list"
   ensure
     ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a configured model-required provider without a model asks for model selection" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    catalog_provider = live_provider
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) do |workspace_key:|
+      [ catalog_provider.merge(
+        "model" => "", "health_status" => "unavailable", "available" => false, "executable_version" => ""
+      ) ]
+    end
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
+    get workspace_runtime_installations_path(@workspace)
+
+    assert_response :success
+    assert_select "#runtime-fixture .status-badge", text: "Choose model"
+    assert_select "#runtime-fixture dd", text: "No model selected"
+    assert_select "#runtime-fixture .provider-actions button[disabled]", text: "Test connection"
+    assert_select "#runtime-fixture .provider-action-note", text: /Choose a model in Edit settings/
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
+  end
+
+  test "a configured Codex API-key provider without a model asks for model selection" do
+    @installation.destroy!
+    sign_in_as users(:owner)
+    provider = live_provider.merge(
+      "adapter_key" => "codex_subscription", "name" => "Codex", "model_required" => false,
+      "auth_mode" => "api_key", "model" => "", "execution_mode" => "bounded",
+      "health_status" => "unavailable", "available" => false, "executable_version" => ""
+    )
+
+    with_provider_catalog([ provider ]) do
+      get workspace_runtime_installations_path(@workspace)
+    end
+
+    assert_response :success
+    assert_select "#runtime-codex_subscription .status-badge", text: "Choose model"
+    assert_select "#runtime-codex_subscription dd", text: "No model selected"
+    assert_select "#runtime-codex_subscription .provider-actions button[disabled]", text: "Test connection"
+    assert_select "#runtime-codex_subscription .provider-action-note", text: /Choose an exact model ID/
+    assert_not_includes response.body, "will use its default model for now"
   end
 
   test "a live available provider requires a current test before approval" do
@@ -314,7 +359,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][name='runtime_installation[approved]'][disabled]", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='1']", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='hidden'][name='runtime_installation[approved]'][value='0']", count: 0
-    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /runner does not currently report this provider as available/
     assert_select "#runtime-#{@installation.id} .runtime-policy-form input[type='submit'][disabled]", count: 0
     assert_select "#runtime-#{@installation.id} .runtime-policy-note", text: /Live Fixture settings are unavailable.*allowing this provider in the workspace/
   end
@@ -360,10 +405,10 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     get workspace_runtime_installations_path(@workspace)
 
     assert_response :success
-    assert_select "#runtime-#{@installation.id} .status-badge", text: "Unavailable"
+    assert_select "#runtime-#{@installation.id} .status-badge", text: "Ready"
     assert_select "#runtime-#{@installation.id} .provider-actions button[disabled]", text: "Test connection", count: 1
     assert_select "#runtime-#{@installation.id} .runtime-approval-toggle input[type='checkbox'][disabled]", count: 1
-    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live Fixture settings are unavailable/
+    assert_select "#runtime-#{@installation.id} .provider-action-note", text: /Live provider settings are unavailable/
     assert_not_includes response.body, "runner catalog endpoint timed out"
   ensure
     ProviderConnectionGateway.define_singleton_method(:new, original) if original

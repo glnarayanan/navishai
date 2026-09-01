@@ -146,6 +146,56 @@ func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	}
 }
 
+func TestHandlerReportsIncompleteSubscriptionAndStillAllowsModelDiscovery(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	store, err := OpenStore("", testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, ClaudeAdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+		t.Fatalf("incomplete subscription configuration was not saved: %v", err)
+	}
+	source := &recordingModelDiscovery{results: map[string]ModelDiscovery{
+		workspaceOne: {Status: ModelDiscoveryAvailable, Models: []ModelOption{{ID: "claude-sonnet", Label: "Claude Sonnet", Default: true}}},
+	}}
+	handler, err := NewHandlerWithDiscovery(testSecret, store, fixedStatus{}, source, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	catalogResponse := serve(t, handler, CatalogPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne,
+	}, now, testSecret)
+	if catalogResponse.Code != http.StatusOK {
+		t.Fatalf("catalog status=%d body=%s", catalogResponse.Code, catalogResponse.Body.String())
+	}
+	var catalogPayload struct {
+		Providers []Provider `json:"providers"`
+	}
+	if err := json.Unmarshal(catalogResponse.Body.Bytes(), &catalogPayload); err != nil {
+		t.Fatal(err)
+	}
+	var provider Provider
+	for _, candidate := range catalogPayload.Providers {
+		if candidate.AdapterKey == ClaudeAdapterKey {
+			provider = candidate
+			break
+		}
+	}
+	if !provider.Configured || provider.Model != "" || provider.Available || provider.HealthStatus != "unavailable" ||
+		provider.UnavailableReason != "Choose a model before testing or running this provider." {
+		t.Fatalf("incomplete subscription was not reported truthfully: %#v", provider)
+	}
+
+	modelsResponse := serve(t, handler, ModelsPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne,
+		"adapter_key": ClaudeAdapterKey, "execution_mode": protocol.ExecutionModeStrongIsolated,
+	}, now, testSecret)
+	if modelsResponse.Code != http.StatusOK || !strings.Contains(modelsResponse.Body.String(), "claude-sonnet") {
+		t.Fatalf("incomplete subscription could not reach model discovery: status=%d body=%s", modelsResponse.Code, modelsResponse.Body.String())
+	}
+}
+
 func TestHandlerRejectsConfigureModeUnavailableFromThisDeployment(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	store, _ := OpenStore("", testSecret)

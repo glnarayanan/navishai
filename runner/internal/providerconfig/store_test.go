@@ -181,6 +181,20 @@ func TestStoreAllowsBlankModelForNewAPIKeyConnection(t *testing.T) {
 	}
 }
 
+func TestStoreAllowsBlankModelForSubscriptionConnection(t *testing.T) {
+	store, err := OpenStore("", testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := store.Configure(workspaceOne, ClaudeAdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", "")
+	if err != nil {
+		t.Fatalf("subscription credentials could not be saved before model discovery: %v", err)
+	}
+	if connection.AuthMode != "subscription" || connection.ExecutionMode != protocol.ExecutionModeStrongIsolated || connection.Model != "" || connection.APIKey != "" {
+		t.Fatalf("unexpected saved incomplete subscription connection: %#v", connection)
+	}
+}
+
 func TestStorePersistsExactCursorModelOverride(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "providers")
 	store, err := OpenStore(path, testSecret)

@@ -76,10 +76,17 @@ func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, wor
 func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, workspaceKey, adapterKey string) providerconfig.Availability {
 	availableModes := catalog.supportedExecutionModes(adapterKey)
 	if catalog != nil && catalog.providers != nil {
-		if _, configured := catalog.providers.Get(workspaceKey, adapterKey); !configured {
+		connection, configured := catalog.providers.Get(workspaceKey, adapterKey)
+		if !configured {
 			return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable"}
 		}
-		if connection, configured := catalog.providers.Get(workspaceKey, adapterKey); configured && connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
+		if definition, ok := providerconfig.Lookup(adapterKey); ok && definition.RequiresModel(connection.AuthMode) && connection.Model == "" {
+			return providerconfig.Availability{
+				SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
+				UnavailableReason: "Choose a model before testing or running this provider.",
+			}
+		}
+		if connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
 			if connection.ExecutionMode != protocol.ExecutionModeBounded {
 				return providerconfig.Availability{
 					SupportedExecutionModes: availableModes,
@@ -224,6 +231,13 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		return runtimecatalog.Definition{}, false
 	}
 	if configured && connection.AuthMode == "api_key" && isDirectProviderAPIAdapter(adapterKey) {
+		return runtimecatalog.Definition{}, false
+	}
+	providerDefinition, ok := providerconfig.Lookup(adapterKey)
+	if !ok {
+		return runtimecatalog.Definition{}, false
+	}
+	if configured && providerDefinition.RequiresModel(connection.AuthMode) && connection.Model == "" {
 		return runtimecatalog.Definition{}, false
 	}
 	definition, ok := baseDefinition(adapterKey)

@@ -3,7 +3,8 @@ import { Controller } from "@hotwired/stimulus"
 export default class extends Controller {
   static targets = [
     "provider", "authMode", "apiKeyField", "apiKey", "model", "modelLabel", "modelHint", "apiKeyHint", "description",
-    "modelDiscovery", "modelRefresh", "modelState", "modelSelectField", "discoveredModels", "manualModelField"
+    "executionField", "executionMode", "executionHint", "modelDiscovery", "modelRefresh", "modelState", "modelSelectField",
+    "discoveredModels", "manualModelField"
   ]
 
   connect() {
@@ -15,7 +16,8 @@ export default class extends Controller {
     this.sync()
     if (this.hasModelDiscoveryTarget) {
       this.discoveryBlocked = this.modelStateTarget.dataset.state === "blocked" ||
-        this.authModeTarget.value !== this.modelDiscoveryTarget.dataset.savedAuthMode
+        this.authModeTarget.value !== this.modelDiscoveryTarget.dataset.savedAuthMode ||
+        this.executionModeTarget.value !== this.modelDiscoveryTarget.dataset.savedExecutionMode
       if (this.discoveryBlocked) {
         this.blockModelDiscovery()
       } else {
@@ -35,12 +37,12 @@ export default class extends Controller {
   }
 
   providerChanged() {
-    const option = this.providerTarget.selectedOptions[0]
+    const option = this.providerMetadata()
     if (!option) return
 
     this.modelTarget.value = ""
     this.apiKeyTarget.value = ""
-    const modes = (option.dataset.authModes || "").split(",").filter(Boolean)
+    const modes = this.dataList(option, "authModes")
     const current = this.authModeTarget.value
     this.authModeTarget.replaceChildren(...modes.map((mode) => {
       const item = document.createElement("option")
@@ -68,6 +70,15 @@ export default class extends Controller {
     this.blockModelDiscovery()
   }
 
+  executionChanged() {
+    this.sync()
+    if (!this.hasModelDiscoveryTarget) return
+
+    if (this.executionModeTarget.value !== this.modelDiscoveryTarget.dataset.savedExecutionMode) {
+      this.blockModelDiscovery()
+    }
+  }
+
   async refreshModels(event) {
     event?.preventDefault()
     if (!this.hasModelDiscoveryTarget || this.discoveryBlocked) return
@@ -92,13 +103,13 @@ export default class extends Controller {
           "X-CSRF-Token": this.csrfToken(),
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
         },
-        body: new URLSearchParams({ adapter_key: this.adapterKey() }),
+        body: new URLSearchParams({ adapter_key: this.adapterKey(), execution_mode: this.executionModeTarget.value }),
         signal: controller.signal
       })
 
       if (!response.ok) {
         if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
-        this.showModelState(response.status === 503 ? "unavailable" : "failed")
+        this.showModelState(response.status === 503 ? "unavailable" : response.status === 409 ? "conflict" : "failed")
         return
       }
 
@@ -160,6 +171,16 @@ export default class extends Controller {
     return this.element.querySelector("[name='provider_connection[adapter_key]']")?.value || ""
   }
 
+  providerMetadata() {
+    if (!this.hasProviderTarget) return null
+
+    return this.providerTarget.selectedOptions?.[0] || this.providerTarget
+  }
+
+  dataList(element, name) {
+    return (element?.dataset?.[name] || "").split(",").filter(Boolean)
+  }
+
   csrfToken() {
     return document.querySelector("meta[name='csrf-token']")?.content || ""
   }
@@ -204,7 +225,7 @@ export default class extends Controller {
     this.manualModelFieldTarget.hidden = true
     this.discoveredModelsTarget.disabled = false
     this.discoveredModelsTarget.name = "provider_connection[model]"
-    this.discoveredModelsTarget.required = this.modelTarget.dataset.modelRequired === "true"
+    this.discoveredModelsTarget.required = false
     this.setModelState("Models found. Choose one, or enter an exact ID manually.", "available")
   }
 
@@ -218,7 +239,8 @@ export default class extends Controller {
     const messages = {
       unsupported: "Model suggestions are not available for this provider. Enter the exact model ID manually.",
       failed: "Models could not be loaded. Enter the exact model ID manually or refresh.",
-      unavailable: "Model discovery is unavailable. Enter the exact model ID manually or refresh."
+      unavailable: "Model discovery is unavailable. Enter the exact model ID manually or refresh.",
+      conflict: "Provider settings changed. Save the current sign-in method and execution boundary before refreshing models."
     }
     this.modelSelectFieldTarget.hidden = true
     this.resetDiscoveredModels()
@@ -242,7 +264,7 @@ export default class extends Controller {
     this.modelRefreshTarget.disabled = true
     this.modelRefreshTarget.textContent = "Refresh after saving"
     this.modelDiscoveryTarget.removeAttribute("aria-busy")
-    this.setModelState("Save sign-in changes before refreshing models.", "blocked")
+    this.setModelState("Save sign-in or execution-boundary changes before refreshing models.", "blocked")
   }
 
   resetDiscoveredModels() {
@@ -270,19 +292,15 @@ export default class extends Controller {
     if (shouldFocus) this.modelTarget.focus()
   }
 
-  modelLabel(required, usesKey) {
+  modelLabel(required) {
     if (required && this.hasModelDiscoveryTarget) return "Exact model ID (manual)"
-    if (required && usesKey && this.modelTarget.dataset.allowBlankApiKey === "true") return "Model ID (optional for now)"
     return required ? "Model ID" : "Model override (optional)"
   }
 
-  modelHint(required, usesKey) {
+  modelHint(required) {
     if (required && this.hasModelDiscoveryTarget) return "Use this only when the model is not listed above."
-    if (required && usesKey && this.modelTarget.dataset.allowBlankApiKey === "true") {
-      return "Leave blank to save the key and load available models next, or enter an exact model ID now."
-    }
     return required
-      ? "Enter the exact model ID enabled for this account."
+      ? "Save without a model to load live choices, or enter an exact model ID now."
       : "Leave blank to use the provider default. Enter an exact model ID only to override it."
   }
 
@@ -293,22 +311,76 @@ export default class extends Controller {
   }
 
   sync() {
+    this.syncExecutionMode()
     const usesKey = this.authModeTarget.value === "api_key"
-    const modelRequired = this.modelTarget.dataset.modelRequired === "true"
+    const modelRequired = this.modelTarget.dataset.modelRequired === "true" || usesKey
     this.apiKeyFieldTarget.hidden = !usesKey
     this.apiKeyTarget.disabled = !usesKey
     this.apiKeyTarget.required = usesKey && this.secretConfigured() !== "true"
-    this.modelTarget.required = modelRequired &&
-      !(usesKey && this.modelTarget.dataset.allowBlankApiKey === "true")
-    this.modelLabelTarget.textContent = this.modelLabel(modelRequired, usesKey)
-    this.modelHintTarget.textContent = this.modelHint(modelRequired, usesKey)
+    this.modelTarget.required = false
+    this.modelLabelTarget.textContent = this.modelLabel(modelRequired)
+    this.modelHintTarget.textContent = this.modelHint(modelRequired)
   }
 
   secretConfigured() {
-    if (this.hasProviderTarget) {
-      return this.providerTarget.selectedOptions[0]?.dataset.secretConfigured || "false"
+    return this.providerMetadata()?.dataset.secretConfigured || this.apiKeyTarget.dataset.secretConfigured || "false"
+  }
+
+  syncExecutionMode() {
+    if (!this.hasExecutionModeTarget) return
+
+    const metadata = this.providerMetadata()
+    const supported = this.dataList(metadata, "supportedExecutionModes")
+    const usesKey = this.authModeTarget.value === "api_key"
+    if (this.hasExecutionFieldTarget) this.executionFieldTarget.hidden = usesKey
+    const modes = supported.filter((mode) => usesKey ? mode === "bounded" : mode !== "bounded")
+    const current = this.executionModeTarget.value
+    const selected = modes.includes(current)
+      ? current
+      : usesKey
+        ? modes[0] || ""
+        : modes.includes("strong_isolated")
+          ? "strong_isolated"
+          : modes[0] || ""
+
+    const options = modes.map((mode) => {
+      const option = document.createElement("option")
+      option.value = mode
+      option.textContent = this.executionModeLabel(mode)
+      option.selected = mode === selected
+      return option
+    })
+    if (options.length === 0) {
+      const option = document.createElement("option")
+      option.value = ""
+      option.textContent = "No supported boundary reported"
+      option.selected = true
+      options.push(option)
     }
-    return this.apiKeyTarget.dataset.secretConfigured || "false"
+    this.executionModeTarget.replaceChildren(...options)
+    this.executionModeTarget.value = selected
+    this.executionModeTarget.disabled = modes.length === 0
+    this.executionModeTarget.required = true
+    this.executionHintTarget.textContent = this.executionModeHint(selected, usesKey)
+  }
+
+  executionModeLabel(mode) {
+    return {
+      bounded: "Bounded HTTPS",
+      host_trusted: "Host-trusted",
+      strong_isolated: "Strong-isolated"
+    }[mode] || this.label(mode)
+  }
+
+  executionModeHint(mode, usesKey) {
+    if (usesKey) return "API-key connections use the runner's bounded HTTPS path."
+    if (mode === "host_trusted") {
+      return "Uses the runner user's existing provider session. This process is not isolated from that account."
+    }
+    if (mode === "strong_isolated") {
+      return "Uses the runner's strong-isolated provider boundary. This choice appears only when the runner reports it."
+    }
+    return "Choose an execution boundary reported by this runner."
   }
 
   label(value) {

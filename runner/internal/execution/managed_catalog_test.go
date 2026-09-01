@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
@@ -51,6 +52,84 @@ func TestManagedCatalogProvidesBuiltInAPIForAPIKeyConnection(t *testing.T) {
 	}
 	if other := catalog.DetectWorkspace(context.Background(), "3d07f334-88ef-4fe4-a640-421e3ba79921"); len(other) != 0 {
 		t.Fatalf("managed connection leaked across workspaces: %#v", other)
+	}
+}
+
+func TestManagedCatalogKeepsBlankCodexAPIKeyIncompleteDespiteOptionalDefinition(t *testing.T) {
+	definition, ok := providerconfig.Lookup(codex.AdapterKey)
+	if !ok || definition.ModelRequired || definition.RequiresModel("subscription") || !definition.RequiresModel("api_key") {
+		t.Fatalf("Codex test no longer covers the optional base definition: %#v", definition)
+	}
+	store, err := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, codex.AdapterKey, "api_key", protocol.ExecutionModeBounded, "", "sk-awaiting-model"); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := NewManagedCatalog(managedCatalogTestConfig("/runtime/codex", "/usr/bin/codex"), store,
+		[]byte("managed-catalog-identity-secret-at-least-32-bytes"), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.supported = func() bool { return true }
+
+	if installations := catalog.DetectWorkspace(context.Background(), workspaceOne); len(installations) != 0 {
+		t.Fatalf("blank Codex API-key connection produced a catalog installation: %#v", installations)
+	}
+	availability := catalog.ProviderAvailability(httptest.NewRequest("GET", providerconfig.CatalogPath, nil), workspaceOne, codex.AdapterKey)
+	if availability.Available || availability.HealthStatus != "unavailable" ||
+		availability.UnavailableReason != "Choose a model before testing or running this provider." {
+		t.Fatalf("blank Codex API-key connection was not kept incomplete: %#v", availability)
+	}
+}
+
+func TestManagedCatalogSkipsBlankModelSubscriptionBeforeProbe(t *testing.T) {
+	directory := t.TempDir()
+	home := filepath.Join(directory, "claude-home")
+	if err := os.Mkdir(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(directory, "subscription-probe")
+	executable := filepath.Join(directory, "claude")
+	script := "#!/bin/sh\nprintf 'probe-called' > " + marker + "\nprintf 'claude 1.0.0\\n'\n"
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	store, err := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	config := managedCatalogTestConfig(home, executable)
+	config.Adapters = map[string]AdapterConfig{claude.AdapterKey: {
+		Enabled: false, HomeDir: home, Model: "legacy-model", EgressProfileKey: "model_api",
+		Profiles: []string{"workspace_default"}, Roles: []string{"support_investigator"},
+		DataClasses: []string{"case_content"}, MaxTimeoutSeconds: 300, MaxSteps: 10,
+		MaxToolCalls: 20, MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
+	}}
+	config.Supervisor.ApprovedExecutables = []string{executable}
+	config.Supervisor.EgressProfiles = []EgressProfileConfig{{Key: "model_api", Executable: executable, Environment: map[string]string{}}}
+	catalog, err := NewManagedCatalog(config, store,
+		[]byte("managed-catalog-identity-secret-at-least-32-bytes"), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog.supported = func() bool { return true }
+
+	if installations := catalog.DetectWorkspace(context.Background(), workspaceOne); len(installations) != 0 {
+		t.Fatalf("blank required subscription connection produced a catalog installation: %#v", installations)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("blank required subscription connection was probed: err=%v", err)
+	}
+	availability := catalog.ProviderAvailability(httptest.NewRequest("GET", providerconfig.CatalogPath, nil), workspaceOne, claude.AdapterKey)
+	if availability.Available || availability.HealthStatus != "unavailable" ||
+		availability.UnavailableReason != "Choose a model before testing or running this provider." {
+		t.Fatalf("blank required subscription connection was not kept unavailable: %#v", availability)
 	}
 }
 

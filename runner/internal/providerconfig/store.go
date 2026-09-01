@@ -440,8 +440,7 @@ func validateConnection(adapterKey string, connection Connection, requireInput b
 		(connection.ExecutionMode != protocol.ExecutionModeHostTrusted && connection.ExecutionMode != protocol.ExecutionModeStrongIsolated) {
 		return ErrInvalidConnection
 	}
-	if definition, ok := definitions[adapterKey]; !ok ||
-		definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" {
+	if _, ok := definitions[adapterKey]; !ok {
 		return ErrInvalidConnection
 	}
 	if requireInput && connection.AuthMode == "api_key" && len(connection.APIKey) < 8 {
@@ -454,10 +453,6 @@ func validateStoredConnection(adapterKey string, connection Connection) error {
 	definition, ok := definitions[adapterKey]
 	if !ok || !contains(definition.AuthModes, connection.AuthMode) || len(connection.Model) > 200 ||
 		containsControl(connection.Model) || len(connection.APIKey) > maximumKeyBytes || containsNUL(connection.APIKey) {
-		return ErrInvalidConnection
-	}
-	if definition.ModelRequired && connection.Model == "" && connection.AuthMode != "api_key" &&
-		connection.ExecutionMode != protocol.ExecutionModeLegacyUnknown {
 		return ErrInvalidConnection
 	}
 	if connection.AuthMode == "api_key" {

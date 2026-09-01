@@ -1,6 +1,33 @@
 <% editing = provider.fetch("configured") %>
 <% selected_auth_mode = @submitted_auth_mode.presence || provider.fetch("auth_mode").presence || provider.fetch("auth_modes").first %>
 <% selected_model = @submitted_model.nil? ? provider.fetch("model") : @submitted_model %>
+<% model_required_for_runtime = provider.fetch("model_required") || selected_auth_mode == "api_key" %>
+<% supported_execution_modes = Array(provider["supported_execution_modes"]) %>
+<% subscription_execution_modes = supported_execution_modes.select { |mode| %w[host_trusted strong_isolated].include?(mode) } %>
+<% selected_execution_mode = @submitted_execution_mode.nil? ? provider.fetch("execution_mode").presence : @submitted_execution_mode %>
+<% selected_execution_mode = if selected_auth_mode == "api_key"
+  supported_execution_modes.include?("bounded") ? "bounded" : ""
+elsif subscription_execution_modes.include?(selected_execution_mode)
+  selected_execution_mode
+elsif subscription_execution_modes.include?("strong_isolated")
+  "strong_isolated"
+else
+  subscription_execution_modes.first.to_s
+end %>
+<% execution_mode_options = supported_execution_modes.filter_map do |mode|
+  next if selected_auth_mode == "api_key" && mode != "bounded"
+  next if selected_auth_mode == "subscription" && mode == "bounded"
+
+  label = case mode
+  when "bounded" then "Bounded HTTPS"
+  when "host_trusted" then "Host-trusted"
+  when "strong_isolated" then "Strong-isolated"
+  else mode.humanize
+  end
+  [ label, mode ]
+end %>
+<% execution_select_options = { selected: selected_execution_mode } %>
+<% execution_select_options[:include_blank] = "No supported boundary reported" if execution_mode_options.empty? %>
 <% form_url = editing ? workspace_provider_connection_path(Current.workspace, provider.fetch("adapter_key")) : workspace_provider_connections_path(Current.workspace) %>
 <% form_method = editing ? :patch : :post %>
 
@@ -14,7 +41,11 @@
     <div class="field-wide">
       <%= form.label :adapter_key, "Provider" %>
       <% if editing %>
-        <%= form.hidden_field :adapter_key, value: provider.fetch("adapter_key") %>
+        <%= form.hidden_field :adapter_key, value: provider.fetch("adapter_key"), data: {
+          provider_form_target: "provider", auth_modes: provider.fetch("auth_modes").join(","),
+          model_required: provider.fetch("model_required").to_s, secret_configured: provider.fetch("secret_configured").to_s,
+          supported_execution_modes: supported_execution_modes.join(","), description: provider.fetch("description")
+        } %>
         <input type="text" value="<%= provider.fetch("name") %>" disabled aria-describedby="provider-description">
       <% else %>
         <%= form.select :adapter_key,
@@ -22,6 +53,7 @@
             "data-auth-modes" => item.fetch("auth_modes").join(","),
             "data-model-required" => item.fetch("model_required").to_s,
             "data-secret-configured" => item.fetch("secret_configured").to_s,
+            "data-supported-execution-modes" => Array(item["supported_execution_modes"]).join(","),
             "data-description" => item.fetch("description")
           } ] }, provider.fetch("adapter_key")), {},
           data: { provider_form_target: "provider", action: "change->provider-form#providerChanged" },
@@ -37,6 +69,24 @@
         data: { provider_form_target: "authMode", action: "change->provider-form#authChanged" } %>
     </div>
 
+    <div class="field-wide" data-provider-form-target="executionField" <%= "hidden" if selected_auth_mode == "api_key" %>>
+      <%= form.label :execution_mode, "Execution boundary" %>
+      <%= form.select :execution_mode, execution_mode_options, execution_select_options,
+        required: true, data: { provider_form_target: "executionMode", action: "change->provider-form#executionChanged" },
+        aria: { describedby: "provider-execution-hint" } %>
+      <p class="field-hint" id="provider-execution-hint" data-provider-form-target="executionHint">
+        <% if selected_auth_mode == "api_key" %>
+          API-key connections use the runner's bounded HTTPS path.
+        <% elsif selected_execution_mode == "host_trusted" %>
+          Uses the runner user's existing provider session. This process is not isolated from that account.
+        <% elsif selected_execution_mode == "strong_isolated" %>
+          Uses the runner's strong-isolated provider boundary. This choice appears only when the runner reports it.
+        <% else %>
+          Choose an execution boundary reported by this runner.
+        <% end %>
+      </p>
+    </div>
+
     <div class="field-wide" data-provider-form-target="apiKeyField">
       <%= form.label :api_key, "API key" %>
       <%= form.password_field :api_key, value: "", autocomplete: "new-password",
@@ -50,6 +100,7 @@
       <section class="provider-model-discovery" data-provider-form-target="modelDiscovery"
         data-models-url="<%= models_workspace_provider_connections_path(Current.workspace) %>"
         data-saved-auth-mode="<%= provider.fetch("auth_mode") %>"
+        data-saved-execution-mode="<%= provider.fetch("execution_mode") %>"
         aria-labelledby="provider-model-discovery-heading">
         <div class="provider-model-discovery-heading">
           <div>
@@ -75,20 +126,15 @@
     <% end %>
 
     <div data-provider-form-target="manualModelField">
-      <%= form.label :model, editing ? "Exact model ID (manual)" : (provider.fetch("model_required") ? "Model ID (optional for now)" : "Model override (optional)"),
+      <%= form.label :model, model_required_for_runtime ? "Model ID" : "Model override (optional)",
         data: { provider_form_target: "modelLabel" } %>
       <%= form.text_field :model, value: selected_model, autocomplete: "off",
-        required: provider.fetch("model_required") && (editing || selected_auth_mode != "api_key"),
-        data: { provider_form_target: "model", model_required: provider.fetch("model_required").to_s,
-                allow_blank_api_key: (!editing).to_s },
+        required: false,
+        data: { provider_form_target: "model", model_required: model_required_for_runtime.to_s },
         aria: { describedby: "provider-model-hint" } %>
       <p class="field-hint" id="provider-model-hint" data-provider-form-target="modelHint">
-        <% if editing && provider.fetch("model_required") %>
-          Use this only when the model is not listed above.
-        <% elsif provider.fetch("model_required") && selected_auth_mode == "api_key" %>
-          Leave blank to save the key and load available models next, or enter an exact model ID now.
-        <% elsif provider.fetch("model_required") %>
-          Enter the exact model ID enabled for this account.
+        <% if model_required_for_runtime %>
+          Save without a model to load live choices, or choose an exact model ID before testing or running.
         <% else %>
           Leave blank to use the provider default. Enter an exact model ID only to override it.
         <% end %>
@@ -97,8 +143,9 @@
   </div>
 
   <div class="provider-form-actions">
-    <p>Save these settings, then test the provider before allowing workspace access.</p>
+    <p>Save settings to return to provider status. Save and test runs a connection check only when the current runtime is ready.</p>
     <%= link_to "Cancel", workspace_runtime_installations_path(Current.workspace), class: "button button-secondary" %>
-    <%= form.submit "Save and continue to test", class: "button button-primary" %>
+    <%= form.submit "Save settings", name: "commit", class: "button button-secondary" %>
+    <%= form.submit "Save and test", name: "commit", class: "button button-primary" %>
   </div>
 <% end %>

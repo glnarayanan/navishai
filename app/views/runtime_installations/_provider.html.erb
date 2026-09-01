@@ -1,20 +1,30 @@
 <% adapter_key = provider&.fetch("adapter_key") || installation.adapter_key %>
 <% provider_name = provider&.fetch("name") || adapter_key.humanize %>
 <% configured_model = provider&.fetch("model").presence || installation&.effective_model.presence %>
-<% model = configured_model.present? && configured_model != "runtime_default" ? configured_model : "Provider default" %>
+<% model_required_for_runtime = provider && provider.fetch("configured") && (provider.fetch("model_required") || provider.fetch("auth_mode") == "api_key") %>
+<% incomplete_model_configuration = model_required_for_runtime && provider.fetch("model").blank? %>
+<% model = if incomplete_model_configuration
+             "No model selected"
+           elsif configured_model.present? && configured_model != "runtime_default"
+             configured_model
+           else
+             "Provider default"
+           end %>
 <% live_provider_available = @provider_catalog_error.blank? && (provider.nil? || (provider.fetch("available") && provider.fetch("health_status") == "available")) %>
 <% current_test_passed = installation && installation.runtime_test_status == "passed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
 <% current_test_failed = installation && installation.runtime_test_status == "failed" && installation.runtime_tested_configuration_fingerprint == installation.configuration_fingerprint %>
 <% runtime_available = installation && installation.health_status == "available" && live_provider_available %>
-<% approval_disabled = !runtime_available || installation.compatibility_status == "incompatible" || (!installation.approved? && !current_test_passed) %>
-<% ready = installation&.runnable? && current_test_passed && live_provider_available %>
-<% runtime_status = if installation.nil?
+<% approval_disabled = incomplete_model_configuration || !runtime_available || (installation && installation.compatibility_status == "incompatible") || (installation && !installation.approved? && !current_test_passed) %>
+<% ready = !incomplete_model_configuration && installation&.runnable? && current_test_passed %>
+<% runtime_status = if incomplete_model_configuration
+                      "Choose model"
+                    elsif installation.nil?
                       "Unavailable"
                     elsif installation.compatibility_status == "incompatible"
                       "Update required"
                     elsif installation.health_status == "missing"
                       "Not found"
-                    elsif !live_provider_available
+                    elsif provider && !live_provider_available
                       "Unavailable"
                     elsif installation.health_status == "available"
                       "Available"
@@ -34,11 +44,17 @@
                  end %>
 <% status_tone = case status_text
                  when "Ready" then "status-success"
-                 when "Approval required", "Test required" then "status-warning"
+                 when "Approval required", "Test required", "Choose model" then "status-warning"
                  when "Test failed" then "status-danger"
                  else "status-neutral"
                  end %>
-<% test_disabled_reason = if installation.nil?
+<% test_disabled_reason = if incomplete_model_configuration
+                            "Choose a model in Edit settings before testing this provider."
+                          elsif @provider_catalog_error.present?
+                            "Live provider settings are unavailable. Refresh status before testing this connection."
+                          elsif provider && !live_provider_available
+                            "The runner does not currently report this provider as available. Refresh status before testing this connection."
+                          elsif installation.nil?
                             "No compatible #{provider_name} runtime is available on this runner. Refresh after it is installed, allowed by the runner, and signed in."
                           elsif installation.compatibility_status == "incompatible"
                             "Install a supported #{provider_name} runtime version before testing this connection."
@@ -50,7 +66,9 @@
                             "The #{provider_name} runtime is not healthy enough to run a connection test."
                           end %>
 <% test_action_primary = test_disabled_reason.nil? && [ "Test required", "Test failed" ].include?(status_text) %>
-<% approval_disabled_reason = if installation.nil?
+<% approval_disabled_reason = if incomplete_model_configuration
+                                "Choose a model in Edit settings before allowing this provider in the workspace."
+                              elsif installation.nil?
                                 nil
                               elsif !live_provider_available
                                 "Live #{provider_name} settings are unavailable. Refresh status before allowing this provider in the workspace."
@@ -95,8 +113,10 @@
 
   <% if installation&.incompatibility_reason.present? %>
     <p class="runtime-status-note">This provider version is not supported by your installation.</p>
-  <% elsif provider && configured_model.blank? %>
-    <p class="runtime-status-note"><%= provider.fetch("model_required") ? "Choose an exact model ID in Edit settings before testing this provider." : "#{provider_name} will use its default model for now. You can enter an exact model ID in Edit settings." %></p>
+  <% elsif incomplete_model_configuration %>
+    <p class="runtime-status-note">Choose an exact model ID in Edit settings before testing this provider.</p>
+  <% elsif provider && configured_model.blank? && provider.fetch("auth_mode") != "api_key" %>
+    <p class="runtime-status-note"><%= provider_name %> will use its default model for now. You can enter an exact model ID in Edit settings.</p>
   <% end %>
 
   <% if current_test_passed %>

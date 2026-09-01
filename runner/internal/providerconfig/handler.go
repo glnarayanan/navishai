@@ -276,6 +276,7 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 	definition, _ := Lookup(adapterKey)
 	connection, configured := handler.store.Get(workspaceKey, adapterKey)
 	availability := handler.status.ProviderAvailability(request, workspaceKey, adapterKey)
+	incompleteModel := configured && definition.RequiresModel(connection.AuthMode) && connection.Model == ""
 	supportedModes := append([]string(nil), definition.SupportedExecutionModes...)
 	if availability.SupportedExecutionModes != nil {
 		supportedModes = append([]string(nil), availability.SupportedExecutionModes...)
@@ -292,12 +293,16 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 		health = "unavailable"
 	} else if !contains(supportedModes, selectedMode) {
 		health = "unavailable"
+	} else if incompleteModel {
+		health = "unavailable"
 	} else if health == "" {
 		health = "unavailable"
 	}
-	available := configured && availability.Available && health == "available" && contains(supportedModes, selectedMode)
+	available := configured && !incompleteModel && availability.Available && health == "available" && contains(supportedModes, selectedMode)
 	reason := availability.UnavailableReason
-	if configured && selectedMode == protocol.ExecutionModeLegacyUnknown {
+	if incompleteModel {
+		reason = "Choose a model before testing or running this provider."
+	} else if configured && selectedMode == protocol.ExecutionModeLegacyUnknown {
 		reason = "Execution mode must be selected again for this provider."
 	} else if configured && selectedMode == "" {
 		reason = "Execution mode is missing; configure this provider again."

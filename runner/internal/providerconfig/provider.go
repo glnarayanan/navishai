@@ -27,6 +27,10 @@ type Definition struct {
 	CredentialEnv           string
 }
 
+func (definition Definition) RequiresModel(authMode string) bool {
+	return definition.ModelRequired || authMode == "api_key"
+}
+
 var definitions = map[string]Definition{
 	CodexAdapterKey: {
 		AdapterKey: CodexAdapterKey, Name: "Codex", Description: "Run OpenAI Codex with a ChatGPT subscription or OpenAI API key.",

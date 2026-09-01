@@ -20,7 +20,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       }
       assert_response :forbidden
 
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
       assert_response :forbidden
     end
   end
@@ -35,7 +35,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     }
 
     with_gateway(@gateway) do
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
     end
 
     assert_response :success
@@ -59,12 +59,26 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         "status" => status, "checked_at" => "2026-08-31T12:00:00Z", "models" => []
       }
       with_gateway(@gateway) do
-        post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+        post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
       end
 
       assert_response :success
       assert_equal({ "status" => status, "checked_at" => "2026-08-31T12:00:00Z", "models" => [] }, JSON.parse(response.body))
     end
+  end
+
+  test "model discovery rejects a stale execution boundary before calling the runner" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: {
+        adapter_key: "codex", execution_mode: "host_trusted"
+      }
+    end
+
+    assert_response :conflict
+    assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
+    assert_empty @gateway.models_calls
   end
 
   test "unknown, unconfigured, and invalid adapters return not found without discovery" do
@@ -87,7 +101,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     @gateway.models_error = RunnerClient::Unavailable.new("secret transport detail")
     with_gateway(@gateway) do
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
     end
     assert_response :service_unavailable
     assert_equal({ "status" => "unavailable", "models" => [] }, JSON.parse(response.body))
@@ -95,7 +109,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     @gateway.models_error = RunnerClient::MalformedResponse.new("raw provider output")
     with_gateway(@gateway) do
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
     end
     assert_response :bad_gateway
     assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
@@ -103,7 +117,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     @gateway.models_error = RunnerClient::AuthenticationError.new("provider token detail")
     with_gateway(@gateway) do
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
     end
     assert_response :bad_gateway
     assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
@@ -123,21 +137,27 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", "Edit Codex"
     assert_select "input[name='provider_connection[api_key]'][value='']"
     assert_select "input[name='provider_connection[model]'][value=?]", "gpt-5.6"
-    assert_select "[data-provider-form-target='modelLabel']", text: "Exact model ID (manual)"
-    assert_select "[data-provider-form-target='modelHint']", text: /only when the model is not listed above/
+    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
+    assert_select "[data-provider-form-target='modelHint']", text: /Save without a model to load live choices/
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Leave this blank to keep it/
+    assert_select "[data-provider-form-target='executionField'][hidden]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option", text: "Bounded HTTPS"
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded']"
+    assert_select "select[name='provider_connection[execution_mode]'][disabled]", count: 0
     assert_select "[data-provider-form-target='modelRefresh'].button-compact", text: "Refresh models"
     assert_select "[data-provider-form-target='modelState'][aria-live='polite']"
     assert_select "select[data-provider-form-target='discoveredModels'][name='provider_connection[model]'][disabled]", count: 1
     discovery = css_select("[data-provider-form-target='modelDiscovery']").sole
     assert_equal models_workspace_provider_connections_path(@workspace), discovery["data-models-url"]
     assert_equal "api_key", discovery["data-saved-auth-mode"]
+    assert_equal "bounded", discovery["data-saved-execution-mode"]
     assert_not_includes discovery.attributes.keys, "data-api-key"
     assert_operator response.body.index('id="provider_connection_api_key"'), :<, response.body.index('id="provider_connection_model"')
     assert_includes response.body, "Leave this blank to keep it"
     assert_not_includes response.body, "field is the authority"
     assert_not_includes response.body, "Live guidance"
-    assert_includes response.body, "Save and continue to test"
+    assert_includes response.body, "Save settings"
+    assert_includes response.body, "Save and test"
     assert_not_includes response.body, "saved-provider-secret"
   end
 
@@ -153,15 +173,41 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='provider_connection[adapter_key]'] option", text: "Claude"
     assert_select "select[name='provider_connection[adapter_key]'] option[data-model-required='true'][data-secret-configured='false'][data-description=?]", "Connect Claude to this workspace."
     assert_select "h1", "Add a provider"
-    assert_select "input[type='submit'][value='Save and continue to test']"
-    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID (optional for now)"
-    assert_select "[data-provider-form-target='modelHint']", text: /load available models next/
+    assert_select "input[type='submit'][value='Save settings']"
+    assert_select "input[type='submit'][value='Save and test']"
+    assert_select "[data-provider-form-target='modelLabel']", text: "Model ID"
+    assert_select "[data-provider-form-target='modelHint']", text: /Save without a model to load live choices/
     assert_select "input[name='provider_connection[model]'][required]", count: 0
-    assert_select "input[name='provider_connection[model]'][data-model-required='true'][data-allow-blank-api-key='true']", count: 1
+    assert_select "input[name='provider_connection[model]'][data-model-required='true']", count: 1
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Stored encrypted on this self-hosted deployment and never shown again/
+    assert_select "[data-provider-form-target='executionField'][hidden]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'][disabled]", count: 0
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']"
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded']", count: 0
     assert_select ".field-hint", text: /model ID/
-    assert_includes response.body, "Leave blank to save the key"
+    assert_includes response.body, "Save without a model to load live choices"
     assert_not_includes response.body, "data-models-url"
+  end
+
+  test "a subscription form shows its required execution boundary selector" do
+    sign_in_as users(:owner)
+    gateway = FakeProviderGateway.new([
+      provider(
+        adapter_key: "codex", name: "Codex", configured: true, secret_configured: true,
+        auth_mode: "subscription", model: "gpt-5.6"
+      ).merge("model_required" => false, "execution_mode" => "strong_isolated")
+    ])
+
+    with_gateway(gateway) do
+      get edit_workspace_provider_connection_path(@workspace, "codex")
+    end
+
+    assert_response :success
+    execution_field = css_select("[data-provider-form-target='executionField']").sole
+    assert_not_includes execution_field.attributes.keys, "hidden"
+    assert_select "select[name='provider_connection[execution_mode]'][required]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated'][selected]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded']", count: 0
   end
 
   test "the add page explains when every supported provider is already connected" do
@@ -205,8 +251,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
-    assert_equal "Claude settings were saved. No compatible runtime is available to test yet.", flash[:notice]
+    assert_equal "Claude settings were saved. The connection test is not ready: the runner does not currently report a compatible runtime for this provider.", flash[:notice]
     assert_equal "provider-secret-value", @gateway.configure_calls.sole.fetch(:api_key)
+    assert_equal "bounded", @gateway.configure_calls.sole.fetch(:execution_mode)
     event = @workspace.audit_events.find_by!(action: "runtime.provider_configured")
     assert_equal "runtime.provider_configured", event.action
     assert_equal({}, event.metadata)
@@ -223,7 +270,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         }
       }
       assert_redirected_to edit_workspace_provider_connection_path(@workspace, "claude")
-      assert_equal "Claude key saved. Choose a model to continue.", flash[:notice]
+      assert_equal "Claude settings were saved. Choose a model to continue.", flash[:notice]
       get edit_workspace_provider_connection_path(@workspace, "claude")
     end
 
@@ -231,6 +278,24 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "provider-secret-value", @gateway.configure_calls.sole.fetch(:api_key)
     assert_select "input[name='provider_connection[model]'][value='']"
     assert_select "[data-provider-form-target='modelDiscovery'][data-models-url]", count: 1
+  end
+
+  test "Save and test with a blank required model saves without running a test" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        commit: "Save and test",
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", execution_mode: "bounded", model: "",
+          api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to edit_workspace_provider_connection_path(@workspace, "claude")
+    assert_equal "Claude settings were saved. The connection test was not run: choose a model in Edit settings first.", flash[:notice]
+    assert_empty @gateway.test_calls
   end
 
   test "a key-only setup can save an exact model on the next edit" do
@@ -293,6 +358,100 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     RuntimeRegistry.define_singleton_method(:refresh!, original) if original
   end
 
+  test "Save and test records a passing result only for the current installation" do
+    installation = runtime_installations(:acme_scripted)
+    installation.update!(
+      adapter_key: "codex", executable_path: "/navishai/provider-api/codex",
+      executable_version: "codex 1.0.0", effective_model: "gpt-5.6",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", health_status: "available",
+      compatibility_status: "compatible", checked_at: 1.hour.ago
+    )
+    @gateway.test_result = {
+      "status" => "passed", "failure_code" => nil, "tested_at" => "2026-08-31T12:00:00Z",
+      "configuration_fingerprint" => installation.configuration_fingerprint,
+      "execution_mode" => "bounded", "effective_model" => "gpt-5.6",
+      "usage_observed" => false, "input_units" => 0, "output_units" => 0
+    }
+    original = RuntimeRegistry.method(:refresh!)
+    RuntimeRegistry.define_singleton_method(:refresh!) { |**| [] }
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        commit: "Save and test",
+        provider_connection: {
+          adapter_key: "codex", auth_mode: "api_key", execution_mode: "bounded",
+          model: "gpt-5.6", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{installation.id}")
+    assert_equal "Codex settings were saved and the connection test passed.", flash[:notice]
+    assert_equal 1, @gateway.test_calls.size
+    assert_equal "passed", installation.reload.runtime_test_status
+  ensure
+    RuntimeRegistry.define_singleton_method(:refresh!, original) if original
+  end
+
+  test "Save and test saves settings without claiming a test when no runtime is current" do
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        commit: "Save and test",
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", execution_mode: "bounded",
+          model: "claude-sonnet-4-5", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "Claude settings were saved. The connection test was not run: the runner does not currently report a compatible runtime for this provider.", flash[:notice]
+    assert_empty @gateway.test_calls
+  end
+
+  test "Save and test reports cleared evidence when the new test errors" do
+    installation = runtime_installations(:acme_scripted)
+    installation.update!(
+      adapter_key: "codex", executable_path: "/navishai/provider-api/codex",
+      executable_version: "codex 1.0.0", effective_model: "gpt-5.6",
+      account_metadata: { "authentication" => "api_key", "transport" => "built_in_https" },
+      transport: "built_in_https", execution_mode: "bounded", health_status: "available",
+      compatibility_status: "compatible", checked_at: 1.hour.ago,
+      approved: true, approved_by_membership: memberships(:owner_support),
+      approved_by_user: users(:owner), approved_at: Time.current,
+      runtime_test_status: "passed", runtime_tested_at: Time.current,
+      runtime_tested_configuration_fingerprint: installation.configuration_fingerprint
+    )
+    @gateway.test_error = RunnerClient::Unavailable.new("offline")
+    original = RuntimeRegistry.method(:refresh!)
+    RuntimeRegistry.define_singleton_method(:refresh!) { |**| [] }
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        commit: "Save and test",
+        provider_connection: {
+          adapter_key: "codex", auth_mode: "api_key", execution_mode: "bounded",
+          model: "gpt-5.6", api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace, anchor: "runtime-#{installation.id}")
+    assert_equal "Codex settings were saved. Prior approval and test evidence were cleared; the new connection test failed. Workspace access remains disabled until a successful test is recorded.", flash[:alert]
+    installation.reload
+    assert_not installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_tested_configuration_fingerprint
+    assert_equal 1, @gateway.test_calls.size
+  ensure
+    RuntimeRegistry.define_singleton_method(:refresh!, original) if original
+  end
+
   test "saving a model does not anchor a stale runtime with mismatched version" do
     installation = runtime_installations(:acme_scripted)
     installation.update!(
@@ -313,7 +472,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
-    assert_equal "Codex settings were saved. No compatible runtime is available to test yet.", flash[:notice]
+    assert_equal "Codex settings were saved. The connection test is not ready: the runner does not currently report a compatible runtime for this provider.", flash[:notice]
   ensure
     RuntimeRegistry.define_singleton_method(:refresh!, original) if original
   end
@@ -331,9 +490,10 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_redirected_to workspace_runtime_installations_path(@workspace)
     assert_equal "", @gateway.configure_calls.sole.fetch(:api_key)
+    assert_equal "strong_isolated", @gateway.configure_calls.sole.fetch(:execution_mode)
   end
 
-  test "subscription configuration still requires a model" do
+  test "subscription configuration can save credentials before model discovery" do
     sign_in_as users(:owner)
 
     with_gateway(@gateway) do
@@ -344,12 +504,14 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :unprocessable_content
-    assert_select "[role='alert']", text: "Enter the model this provider should use."
-    assert_empty @gateway.configure_calls
+    assert_redirected_to edit_workspace_provider_connection_path(@workspace, "claude")
+    assert_equal "Claude settings were saved. Choose a model to continue.", flash[:notice]
+    assert_equal "", @gateway.configure_calls.sole.fetch(:api_key)
+    assert_equal "", @gateway.configure_calls.sole.fetch(:model)
+    assert_equal "strong_isolated", @gateway.configure_calls.sole.fetch(:execution_mode)
   end
 
-  test "editing a configured provider still requires a model" do
+  test "editing a configured provider can clear its model for rediscovery" do
     sign_in_as users(:owner)
 
     with_gateway(@gateway) do
@@ -358,9 +520,10 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    assert_response :unprocessable_content
-    assert_select "[role='alert']", text: "Enter the model this provider should use."
-    assert_empty @gateway.configure_calls
+    assert_redirected_to edit_workspace_provider_connection_path(@workspace, "codex")
+    assert_equal "Codex settings were saved. Choose a model to continue.", flash[:notice]
+    assert_equal "", @gateway.configure_calls.sole.fetch(:model)
+    assert_equal "bounded", @gateway.configure_calls.sole.fetch(:execution_mode)
   end
 
   test "blank API key on edit means keep the runner secret" do
@@ -535,14 +698,15 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     class FakeProviderGateway
-      attr_accessor :detect_error, :models_error, :models_result
-      attr_reader :configure_calls, :remove_calls, :models_calls
+      attr_accessor :detect_error, :models_error, :models_result, :test_error, :test_result
+      attr_reader :configure_calls, :remove_calls, :models_calls, :test_calls
 
       def initialize(catalog)
         @catalog = catalog
         @configure_calls = []
         @remove_calls = []
         @models_calls = []
+        @test_calls = []
         @models_result = { "status" => "unsupported", "checked_at" => "2026-08-31T12:00:00Z", "models" => [] }
       end
 
@@ -581,6 +745,13 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
         raise detect_error if detect_error
 
         []
+      end
+
+      def test_runtime!(workspace_key:, request_id:, detection_key:, execution_mode:, configuration_fingerprint:)
+        @test_calls << [ workspace_key, request_id, detection_key, execution_mode, configuration_fingerprint ]
+        raise test_error if test_error
+
+        test_result || raise("test result was not configured")
       end
     end
 end

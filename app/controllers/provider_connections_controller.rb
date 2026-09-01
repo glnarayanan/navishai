@@ -3,7 +3,7 @@ class ProviderConnectionsController < ApplicationController
 
   SAFE_FORM_ERRORS = [
     "Choose a supported sign-in method.",
-    "Enter the model this provider should use.",
+    "Choose a supported execution boundary.",
     "Enter an API key."
   ].freeze
 
@@ -53,16 +53,20 @@ class ProviderConnectionsController < ApplicationController
   def models
     workspace = Current.require_workspace!
     adapter_key = params[:adapter_key]
-    return head :not_found unless adapter_key.is_a?(String) && adapter_key.match?(ProviderConnectionProtocol::KEY_PATTERN)
+    execution_mode = params[:execution_mode]
+    return head :not_found unless adapter_key.is_a?(String) && adapter_key.match?(ProviderConnectionProtocol::KEY_PATTERN) &&
+      execution_mode.is_a?(String) && RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(execution_mode)
 
     gateway = ProviderConnectionGateway.new
     provider = gateway.catalog(workspace_key: workspace.runner_key).find do |candidate|
       candidate.fetch("adapter_key") == adapter_key
     end
     return head :not_found unless provider&.fetch("configured")
+    return render json: { status: "failed", models: [] }, status: :conflict unless
+      provider.fetch("execution_mode") == execution_mode
 
     discovery = gateway.models(
-      workspace_key: workspace.runner_key, adapter_key:, execution_mode: provider.fetch("execution_mode")
+      workspace_key: workspace.runner_key, adapter_key:, execution_mode:
     )
     render json: discovery.slice("status", "checked_at", "models")
   rescue RunnerClient::Unavailable
@@ -83,11 +87,12 @@ class ProviderConnectionsController < ApplicationController
       provider = catalog.find { |candidate| candidate.fetch("adapter_key") == adapter_key }
       raise ActiveRecord::RecordNotFound unless provider
 
+      attributes = attributes.merge(execution_mode: selected_execution_mode(attributes, provider:))
       validate_selection!(provider, attributes:)
       configured = gateway.configure(
         workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key:,
         auth_mode: attributes.fetch(:auth_mode), model: attributes.fetch(:model),
-        execution_mode: selected_execution_mode(attributes),
+        execution_mode: attributes.fetch(:execution_mode),
         api_key: attributes.fetch(:api_key)
       )
       return unless record_confirmed_provider_change(
@@ -95,25 +100,23 @@ class ProviderConnectionsController < ApplicationController
       )
       return unless refresh_after_provider_change(workspace:, gateway:)
 
-      if action_name == "create" && attributes.fetch(:auth_mode) == "api_key" &&
-          attributes.fetch(:model).blank? && provider.fetch("model_required")
+      if incomplete_model_configuration?(configured)
+        notice = if provider_test_requested?
+          "#{configured.fetch("name")} settings were saved. The connection test was not run: #{test_block_reason(provider: configured, installation: nil)}."
+        else
+          "#{configured.fetch("name")} settings were saved. Choose a model to continue."
+        end
         redirect_to edit_workspace_provider_connection_path(workspace, adapter_key),
-          notice: "#{configured.fetch("name")} key saved. Choose a model to continue."
+          notice: notice
         return
       end
 
       installation = current_installation_for(workspace:, provider: configured, adapter_key:)
-      notice = if installation&.health_status == "available" && installation.compatibility_status != "incompatible"
-        "#{configured.fetch("name")} settings were saved. Test the connection before allowing workspace access."
-      else
-        "#{configured.fetch("name")} settings were saved. No compatible runtime is available to test yet."
+      if provider_test_requested?
+        return save_and_test_provider(workspace:, gateway:, provider: configured, installation:)
       end
-      redirect_path = if installation
-        workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}")
-      else
-        workspace_runtime_installations_path(workspace)
-      end
-      redirect_to redirect_path, notice:
+
+      redirect_to provider_status_path(workspace:, installation:), notice: saved_provider_notice(configured, installation:)
     rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
       render_configuration_error(error, adapter_key:)
     rescue ProviderConnectionProtocol::MalformedMessage => error
@@ -126,6 +129,7 @@ class ProviderConnectionsController < ApplicationController
       @provider = @provider_catalog.find { |candidate| candidate.fetch("adapter_key") == adapter_key } || selected_provider || @provider_catalog.first
       @submitted_auth_mode = provider_params[:auth_mode]
       @submitted_model = provider_params[:model]
+      @submitted_execution_mode = provider_params[:execution_mode]
       render action_name == "update" ? :edit : :new, status: :unprocessable_content
     rescue RunnerClient::Error
       redirect_to workspace_runtime_installations_path(Current.workspace), alert: @provider_form_error
@@ -217,20 +221,99 @@ class ProviderConnectionsController < ApplicationController
 
     def validate_selection!(provider, attributes:)
       auth_mode = attributes.fetch(:auth_mode)
-      model = attributes.fetch(:model)
+      execution_mode = attributes.fetch(:execution_mode)
       unless provider.fetch("auth_modes").include?(auth_mode)
         raise RunnerClient::ConfigurationError, "Choose a supported sign-in method."
       end
-      if provider.fetch("model_required") && model.blank? && !blank_model_allowed_for_initial_api_key?(provider, attributes)
-        raise RunnerClient::ConfigurationError, "Enter the model this provider should use."
+      unless provider.fetch("supported_execution_modes").include?(execution_mode)
+        raise RunnerClient::ConfigurationError, "Choose a supported execution boundary."
+      end
+      if auth_mode == "api_key" && execution_mode != "bounded"
+        raise RunnerClient::ConfigurationError, "Choose a supported execution boundary."
+      end
+      if auth_mode == "subscription" && !execution_mode.in?(%w[host_trusted strong_isolated])
+        raise RunnerClient::ConfigurationError, "Choose a supported execution boundary."
       end
       if auth_mode == "api_key" && attributes.fetch(:api_key).blank? && !provider.fetch("secret_configured")
         raise RunnerClient::ConfigurationError, "Enter an API key."
       end
     end
 
-    def blank_model_allowed_for_initial_api_key?(provider, attributes)
-      action_name == "create" && !provider.fetch("configured") && attributes.fetch(:auth_mode) == "api_key"
+    def incomplete_model_configuration?(provider)
+      provider.fetch("configured") && model_required_for_runtime?(provider) && provider.fetch("model").blank?
+    end
+
+    def provider_test_requested?
+      params[:commit].to_s == "Save and test"
+    end
+
+    def save_and_test_provider(workspace:, gateway:, provider:, installation:)
+      unless testable_installation?(provider:, installation:)
+        redirect_to provider_status_path(workspace:, installation:),
+          notice: "#{provider.fetch("name")} settings were saved. The connection test was not run: #{test_block_reason(provider:, installation:)}."
+        return
+      end
+
+      RuntimeRegistry.test!(
+        workspace:, membership: Current.require_membership!, installation:, client: gateway
+      )
+      installation.reload
+      if installation.runtime_test_status == "passed"
+        redirect_to provider_status_path(workspace:, installation:),
+          notice: "#{provider.fetch("name")} settings were saved and the connection test passed."
+      else
+        redirect_to provider_status_path(workspace:, installation:),
+          alert: "#{provider.fetch("name")} settings were saved, but the connection test failed. Check the credentials and model, then try again."
+      end
+    rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy
+      redirect_to provider_status_path(workspace:, installation:),
+        alert: "#{provider.fetch("name")} settings were saved. Prior approval and test evidence were cleared; the new connection test failed. Workspace access remains disabled until a successful test is recorded."
+    end
+
+    def saved_provider_notice(provider, installation:)
+      if testable_installation?(provider:, installation:)
+        "#{provider.fetch("name")} settings were saved. Test the connection before allowing workspace access."
+      else
+        "#{provider.fetch("name")} settings were saved. The connection test is not ready: #{test_block_reason(provider:, installation:)}."
+      end
+    end
+
+    def testable_installation?(provider:, installation:)
+      return false unless installation
+      return false unless provider.fetch("available") && provider.fetch("health_status") == "available"
+      return false unless installation.health_status == "available" && installation.compatibility_status != "incompatible"
+      return false unless installation.transport.in?(RuntimeInstallation::KNOWN_TRANSPORTS) &&
+        installation.execution_mode.in?(RuntimeInstallation::KNOWN_EXECUTION_MODES)
+      return false unless installation.effective_model.present? &&
+        installation.configuration_fingerprint.match?(RuntimeInstallation::FINGERPRINT_FORMAT)
+      return false if provider.fetch("model").present? && installation.effective_model != provider.fetch("model")
+      return false if provider.fetch("executable_version").present? &&
+        installation.executable_version != provider.fetch("executable_version")
+
+      installation.execution_mode == provider.fetch("execution_mode") &&
+        (provider.fetch("auth_mode") == "api_key" ? installation.transport == "built_in_https" : installation.transport != "built_in_https")
+    end
+
+    def test_block_reason(provider:, installation:)
+      return "choose a model in Edit settings first" if model_required_for_runtime?(provider) && provider.fetch("model").blank?
+      return "the runner does not currently report a compatible runtime for this provider" unless installation
+      return "the runner does not currently report this provider as available" unless provider.fetch("available") && provider.fetch("health_status") == "available"
+      return "the detected runtime is not healthy or compatible" unless installation.health_status == "available" && installation.compatibility_status != "incompatible"
+      return "the detected runtime identity is not current" unless installation.execution_mode == provider.fetch("execution_mode")
+      return "the selected model is not current on the detected runtime" if provider.fetch("model").present? && installation.effective_model != provider.fetch("model")
+      return "the detected runtime version is not current" if provider.fetch("executable_version").present? && installation.executable_version != provider.fetch("executable_version")
+
+      "the current runtime is not ready for a connection test"
+    end
+
+    def model_required_for_runtime?(provider)
+      provider.fetch("model_required") || provider.fetch("auth_mode") == "api_key"
+    end
+
+    def provider_status_path(workspace:, installation:)
+      return workspace_runtime_installations_path(workspace) unless installation
+
+      workspace_runtime_installations_path(workspace, anchor: "runtime-#{installation.id}")
     end
 
     def provider_params
@@ -239,10 +322,14 @@ class ProviderConnectionsController < ApplicationController
       ).to_h.symbolize_keys.reverse_merge(api_key: "", execution_mode: "")
     end
 
-    def selected_execution_mode(attributes)
-      return "bounded" if attributes.fetch(:auth_mode) == "api_key" && attributes[:execution_mode].blank?
+    def selected_execution_mode(attributes, provider:)
+      if attributes.fetch(:auth_mode) == "api_key"
+        return "bounded" if provider.fetch("supported_execution_modes").include?("bounded")
 
-      attributes.fetch(:execution_mode)
+        return ""
+      end
+
+      attributes.fetch(:execution_mode).to_s
     end
 
     def require_provider_admin

@@ -96,18 +96,22 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 		return registry.executeScripted(ctx, request, emit)
 	}
 	if registry.providers != nil {
-		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "api_key" {
-			if isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
-				if connection.ExecutionMode != request.Routing.ExecutionMode || !boundedExecutionBoundary(request) {
-					return ErrPolicyDenied
-				}
-				return registry.executeProviderAPIRequest(ctx, request, connection, emit)
+		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured {
+			if definition, ok := providerconfig.Lookup(request.Routing.AdapterKey); ok && definition.RequiresModel(connection.AuthMode) && connection.Model == "" {
+				return ErrPolicyDenied
 			}
-			return ErrPolicyDenied
-		}
-		if connection, configured := registry.providers.Get(request.WorkspaceKey, request.Routing.AdapterKey); configured && connection.AuthMode == "subscription" &&
-			connection.ExecutionMode == protocol.ExecutionModeHostTrusted {
-			return registry.executeCursorHost(ctx, request, connection, emit)
+			if connection.AuthMode == "api_key" {
+				if isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
+					if connection.ExecutionMode != request.Routing.ExecutionMode || !boundedExecutionBoundary(request) {
+						return ErrPolicyDenied
+					}
+					return registry.executeProviderAPIRequest(ctx, request, connection, emit)
+				}
+				return ErrPolicyDenied
+			}
+			if connection.AuthMode == "subscription" && connection.ExecutionMode == protocol.ExecutionModeHostTrusted {
+				return registry.executeCursorHost(ctx, request, connection, emit)
+			}
 		}
 	}
 	// Subscription and other process transports remain unavailable. Do not
@@ -130,6 +134,9 @@ func (registry *Registry) TestRuntime(ctx context.Context, request runtimecatalo
 	if registry.providers != nil && installation.AdapterKey != "scripted" {
 		connection, ok = registry.providers.Get(request.WorkspaceKey, installation.AdapterKey)
 		if !ok {
+			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
+		}
+		if definition, found := providerconfig.Lookup(installation.AdapterKey); found && definition.RequiresModel(connection.AuthMode) && connection.Model == "" {
 			return runtimecatalog.TestResult{}, runtimecatalog.ErrTestConfigurationChanged
 		}
 		authMode, apiKey = connection.AuthMode, connection.APIKey

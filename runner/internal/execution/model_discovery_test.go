@@ -50,6 +50,18 @@ type fakeProviderAPI struct {
 	outputTokens    int
 }
 
+type fixedWorkspaceCatalog struct {
+	installation runtimecatalog.Installation
+}
+
+func (catalog fixedWorkspaceCatalog) DetectWorkspace(context.Context, string) []runtimecatalog.Installation {
+	return []runtimecatalog.Installation{catalog.installation}
+}
+
+func (catalog fixedWorkspaceCatalog) ResolveApprovedWorkspace(context.Context, string, string, []string) (runtimecatalog.Installation, bool) {
+	return catalog.installation, true
+}
+
 func (client *fakeProviderAPI) DiscoverModels(ctx context.Context, adapterKey, apiKey string) ([]providerapi.ModelOption, error) {
 	client.calls++
 	client.ctx, client.adapter, client.apiKey = ctx, adapterKey, apiKey
@@ -249,6 +261,59 @@ func TestBlankAPIKeyConnectionRemainsCatalogAndExecutionFailClosed(t *testing.T)
 	}
 	if runner.calls != 0 || client.calls != 0 {
 		t.Fatalf("fail-closed catalog/runtime paths invoked an external seam: process_calls=%d api_calls=%d", runner.calls, client.calls)
+	}
+}
+
+func TestBlankSubscriptionConnectionIsDeniedBeforeExecution(t *testing.T) {
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+		t.Fatalf("incomplete subscription connection was not saved: %v", err)
+	}
+	registry := &Registry{providers: store}
+	request := executionRequest(t)
+	request.WorkspaceKey = workspaceOne
+	request.Routing.AdapterKey = claude.AdapterKey
+	request.Routing.ExecutionMode = protocol.ExecutionModeStrongIsolated
+	request.Routing.IsolationPolicy = protocol.IsolationPolicyStrongRequired
+	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
+		t.Fatalf("incomplete subscription connection was not denied before execution: %v", err)
+	}
+}
+
+func TestBlankSubscriptionConnectionIsDeniedBeforeRuntimeTest(t *testing.T) {
+	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Configure(workspaceOne, claude.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+		t.Fatalf("incomplete subscription connection was not saved: %v", err)
+	}
+	detectionKey := strings.Repeat("a", 64)
+	fingerprint := strings.Repeat("b", 64)
+	installation := runtimecatalog.Installation{
+		DetectionKey: detectionKey, AdapterKey: claude.AdapterKey, ProtocolVersion: protocol.Version,
+		ExecutablePath: "/runtime/claude", ExecutableVersion: "claude 1.0.0",
+		AccountMetadata: map[string]string{"authentication": "managed_on_runner"},
+		Capabilities:    []string{runtimecatalog.RuntimeTestCapability},
+		Transport:       runtimecatalog.TransportManagedProcess, ExecutionMode: protocol.ExecutionModeStrongIsolated,
+		EffectiveModel: "claude-model", ConfigurationFingerprint: fingerprint,
+		MinimumVersion: "1.0.0", MaximumVersion: "1.0.0", CompatibilityStatus: "compatible",
+		HealthStatus: "available", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	registry := &Registry{
+		catalog: fixedWorkspaceCatalog{installation: installation}, providers: store,
+		config: Config{Supervisor: SupervisorConfig{ApprovedExecutables: []string{installation.ExecutablePath}}},
+	}
+
+	_, err = registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
+		WorkspaceKey: workspaceOne, RequestID: workspaceTwo, DetectionKey: detectionKey,
+		ExecutionMode: protocol.ExecutionModeStrongIsolated, ConfigurationFingerprint: fingerprint,
+	})
+	if !errors.Is(err, runtimecatalog.ErrTestConfigurationChanged) {
+		t.Fatalf("incomplete subscription connection did not fail closed for runtime test: %v", err)
 	}
 }
 
