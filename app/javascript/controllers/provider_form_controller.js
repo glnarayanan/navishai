@@ -225,7 +225,7 @@ export default class extends Controller {
     }
 
     const currentModel = this.modelTarget.value
-    const preserveManualModel = currentModel !== "" && document.activeElement === this.modelTarget
+    const preserveManualModel = document.activeElement === this.modelTarget
     this.resetDiscoveredModels()
     const discoveredIds = new Set(models.map((model) => model.id))
     if (currentModel && !discoveredIds.has(currentModel)) {
