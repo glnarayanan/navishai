@@ -50,6 +50,44 @@ func TestDetectReportsOnlyResolvedRegisteredExecutables(t *testing.T) {
 	}
 }
 
+func TestDetectWorkspaceAdapterOnlyProbesRequestedAdapter(t *testing.T) {
+	directory := t.TempDir()
+	target := filepath.Join(directory, "target-runtime")
+	other := filepath.Join(directory, "other-runtime")
+	marker := filepath.Join(directory, "other-probed")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\nprintf 'target 1.0.0\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("#!/bin/sh\nprintf 'other-probed' > "+marker+"\nprintf 'other 1.0.0\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory)
+	catalog, err := New([]Definition{
+		{
+			AdapterKey: "target", ProtocolVersion: "v1", ExecutableNames: []string{"target-runtime"},
+			VersionArguments: []string{"--version"}, Transport: TransportManagedProcess,
+			ExecutionMode: protocol.ExecutionModeStrongIsolated, EffectiveModel: "target-model",
+			ConfigurationFingerprint: strings.Repeat("a", 64),
+		},
+		{
+			AdapterKey: "other", ProtocolVersion: "v1", ExecutableNames: []string{"other-runtime"},
+			VersionArguments: []string{"--version"}, Transport: TransportManagedProcess,
+			ExecutionMode: protocol.ExecutionModeStrongIsolated, EffectiveModel: "other-model",
+			ConfigurationFingerprint: strings.Repeat("b", 64),
+		},
+	}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installations := catalog.DetectWorkspaceAdapter(context.Background(), "workspace", "target")
+	if len(installations) != 1 || installations[0].AdapterKey != "target" {
+		t.Fatalf("targeted detection returned unexpected installations: %#v", installations)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("targeted detection probed another adapter: err=%v", err)
+	}
+}
+
 func TestCompatibilityAcceptsFutureVersionsWithBoundedEvidence(t *testing.T) {
 	status, reason := compatibilityFor("fixture 3.0.0", "2.0.0", "2.9.99")
 	if status != "compatible" || reason != "" {

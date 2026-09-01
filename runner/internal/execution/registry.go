@@ -325,7 +325,7 @@ func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, exe
 		Status: "failed", FailureCode: "runtime_test_failed", EffectiveModel: model, ExecutionMode: executionMode,
 		ConfigurationFingerprint: fingerprint, TestedAt: testedAt.UTC(),
 	}
-	output, completed, prohibitedTool := "", false, false
+	output, completed, prohibitedTool, terminalFailure := "", false, false, false
 	for _, event := range events {
 		switch event.EventType {
 		case "tool.completed":
@@ -342,14 +342,23 @@ func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, exe
 			result.InputUnits, _ = event.Data["input_units"].(int)
 			result.OutputUnits, _ = event.Data["output_units"].(int)
 		case "run.completed":
-			completed = true
+			if !terminalFailure {
+				completed = true
+			}
 		case "run.timed_out":
-			result.FailureCode = "runtime_test_timed_out"
+			if !terminalFailure {
+				result.FailureCode, terminalFailure = "runtime_test_timed_out", true
+			}
 		case "run.canceled":
-			result.FailureCode = "runtime_test_canceled"
+			if !terminalFailure {
+				result.FailureCode, terminalFailure = "runtime_test_canceled", true
+			}
 		case "run.failed":
-			if code, ok := event.Data["code"].(string); ok && len(code) <= 64 {
-				result.FailureCode = code
+			if !terminalFailure {
+				if code, ok := event.Data["code"].(string); ok && len(code) <= 64 {
+					result.FailureCode = code
+				}
+				terminalFailure = true
 			}
 		}
 	}
@@ -358,6 +367,9 @@ func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, exe
 		return result
 	}
 	if executeErr != nil {
+		return result
+	}
+	if terminalFailure {
 		return result
 	}
 	if !completed || output != runtimeTestSentinel {

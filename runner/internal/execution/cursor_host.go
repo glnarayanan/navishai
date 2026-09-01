@@ -184,7 +184,11 @@ func (registry *Registry) discoverCursorHostModels(request *http.Request, worksp
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), modelDiscoveryTimeout)
 	defer cancel()
-	installations := registry.catalog.DetectWorkspace(ctx, workspaceKey)
+	targetedCatalog, ok := registry.catalog.(runtimecatalog.WorkspaceAdapterCatalog)
+	if !ok {
+		return failedModelDiscovery()
+	}
+	installations := targetedCatalog.DetectWorkspaceAdapter(ctx, workspaceKey, cursor.AdapterKey)
 	var installation runtimecatalog.Installation
 	for _, candidate := range installations {
 		if !validCursorHostInstallation(candidate) || !approvedHostExecutable(registry.config.Supervisor.ApprovedExecutables, candidate.ExecutablePath) {
@@ -242,7 +246,11 @@ func (registry *Registry) discoverCodexHostModels(request *http.Request, workspa
 	}
 	ctx, cancel := context.WithTimeout(request.Context(), modelDiscoveryTimeout)
 	defer cancel()
-	installations := registry.catalog.DetectWorkspace(ctx, workspaceKey)
+	targetedCatalog, ok := registry.catalog.(runtimecatalog.WorkspaceAdapterCatalog)
+	if !ok {
+		return failedModelDiscovery()
+	}
+	installations := targetedCatalog.DetectWorkspaceAdapter(ctx, workspaceKey, codex.AdapterKey)
 	var installation runtimecatalog.Installation
 	for _, candidate := range installations {
 		if !validCodexHostInstallation(candidate) || !approvedHostExecutable(registry.config.Supervisor.ApprovedExecutables, candidate.ExecutablePath) {

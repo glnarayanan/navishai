@@ -416,6 +416,49 @@ func TestEvaluateRuntimeTestRequiresExactSentinelAndRejectsToolUse(t *testing.T)
 	}
 }
 
+func TestEvaluateRuntimeTestPreservesFirstTerminalFailure(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		events []protocol.CanonicalEvent
+		code   string
+	}{
+		{
+			name: "timed out before completed",
+			events: []protocol.CanonicalEvent{
+				{EventType: "run.timed_out"},
+				{EventType: "output.produced", Data: map[string]any{"text": runtimeTestSentinel}},
+				{EventType: "run.completed"},
+			},
+			code: "runtime_test_timed_out",
+		},
+		{
+			name: "canceled before completed",
+			events: []protocol.CanonicalEvent{
+				{EventType: "run.canceled"},
+				{EventType: "run.completed"},
+			},
+			code: "runtime_test_canceled",
+		},
+		{
+			name: "failed before completed",
+			events: []protocol.CanonicalEvent{
+				{EventType: "run.failed", Data: map[string]any{"code": "provider_unavailable"}},
+				{EventType: "run.completed"},
+			},
+			code: "provider_unavailable",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result := evaluateRuntimeTest(test.events, nil, protocol.ExecutionModeBounded, "fixture-model", strings.Repeat("a", 64), now)
+			if result.Status != "failed" || result.FailureCode != test.code {
+				t.Fatalf("terminal failure was overwritten: %#v", result)
+			}
+		})
+	}
+}
+
 func TestDirectProviderAPIExecutionUsesCanonicalEventsAndLeavesWorkRootUntouched(t *testing.T) {
 	registry, request, client, workRoot := directProviderAPIRegistry(t, providerapi.GenerationResult{
 		Text: runtimeTestSentinel, InputTokens: 8, OutputTokens: 3,
@@ -535,6 +578,26 @@ func TestDirectProviderAPIMapsTypedFailureWithoutProviderDetails(t *testing.T) {
 	encoded, _ := json.Marshal(events)
 	if bytes.Contains(encoded, []byte("sk-direct-provider-value")) || bytes.Contains(encoded, []byte("401")) {
 		t.Fatalf("provider failure event exposed secret/provider detail: %s", encoded)
+	}
+}
+
+func TestProviderAPIUnavailableFailuresAreRetryableOnlyForTransientErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		code      providerapi.ErrorCode
+		retryable bool
+	}{
+		{name: "provider unavailable", code: providerapi.CodeUnavailable, retryable: true},
+		{name: "authentication failure", code: providerapi.CodeAuthentication, retryable: false},
+		{name: "invalid request", code: providerapi.CodeInvalidInput, retryable: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			eventType, data := providerAPIErrorEvent(&providerapi.Error{Code: test.code, StatusCode: 503}, context.Background())
+			if eventType != "run.failed" || data["code"] != "provider_api_failed" || data["retryable"] != test.retryable {
+				t.Fatalf("unexpected provider error event: type=%q data=%#v", eventType, data)
+			}
+		})
 	}
 }
 

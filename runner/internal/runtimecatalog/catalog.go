@@ -96,6 +96,13 @@ type WorkspaceCatalog interface {
 	ResolveApprovedWorkspace(context.Context, string, string, []string) (Installation, bool)
 }
 
+// WorkspaceAdapterCatalog is an optional narrower detection capability for
+// callers that already know the one adapter they need. Implementations must
+// not broaden the detection to other adapters.
+type WorkspaceAdapterCatalog interface {
+	DetectWorkspaceAdapter(context.Context, string, string) []Installation
+}
+
 func New(definitions []Definition, now func() time.Time) (*Catalog, error) {
 	return NewWithInstallations(definitions, nil, now)
 }
@@ -273,6 +280,25 @@ func (catalog *Catalog) DetectApproved(ctx context.Context, approvedPaths []stri
 
 func (catalog *Catalog) DetectWorkspace(ctx context.Context, _ string) []Installation {
 	return catalog.Detect(ctx)
+}
+
+func (catalog *Catalog) DetectWorkspaceAdapter(ctx context.Context, _ string, adapterKey string) []Installation {
+	installations := make([]Installation, 0, 1)
+	for _, installation := range catalog.static {
+		if installation.AdapterKey == adapterKey {
+			installations = append(installations, installation)
+		}
+	}
+	for _, definition := range catalog.definitions {
+		if definition.AdapterKey != adapterKey {
+			continue
+		}
+		if installation, ok := catalog.detect(ctx, definition); ok {
+			installations = append(installations, installation)
+		}
+	}
+	sort.Slice(installations, func(i, j int) bool { return installations[i].DetectionKey < installations[j].DetectionKey })
+	return installations
 }
 
 func (catalog *Catalog) ResolveApproved(ctx context.Context, wantedKey string, approvedPaths []string) (Installation, bool) {

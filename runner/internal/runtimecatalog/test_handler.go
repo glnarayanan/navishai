@@ -117,7 +117,7 @@ func (handler *TestHandler) ServeHTTP(response http.ResponseWriter, request *htt
 		return
 	}
 	digest := sha256.Sum256(body)
-	result, _, err := handler.store.Resolve(testRequest, fmt.Sprintf("%x", digest[:]), func() (TestResult, error) {
+	result, _, err := handler.store.Resolve(request.Context(), testRequest, fmt.Sprintf("%x", digest[:]), func() (TestResult, error) {
 		return handler.tester.TestRuntime(request.Context(), testRequest)
 	})
 	if errors.Is(err, ErrTestConflict) {

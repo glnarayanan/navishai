@@ -84,6 +84,19 @@ func TestManagedCatalogKeepsBlankCodexAPIKeyIncompleteDespiteOptionalDefinition(
 	}
 }
 
+func TestManagedCatalogDoesNotExposeUnimplementedStrongIsolation(t *testing.T) {
+	catalog := &ManagedCatalog{
+		config:               Config{HostTrustedEnabled: false},
+		supported:            func() bool { return true },
+		hostTrustedSupported: func() bool { return false },
+	}
+	for _, definition := range providerconfig.Definitions() {
+		if contains(catalog.supportedExecutionModes(definition.AdapterKey), protocol.ExecutionModeStrongIsolated) {
+			t.Fatalf("unimplemented strong isolation was advertised for %q", definition.AdapterKey)
+		}
+	}
+}
+
 func TestManagedCatalogSkipsBlankModelSubscriptionBeforeProbe(t *testing.T) {
 	directory := t.TempDir()
 	home := filepath.Join(directory, "claude-home")

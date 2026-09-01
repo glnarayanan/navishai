@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeDoer struct {
@@ -57,14 +58,14 @@ func requireErrorCode(t *testing.T, err error, expected ErrorCode) {
 	}
 }
 
-func TestNewUsesBoundedHTTPClient(t *testing.T) {
+func TestNewUsesCallerBoundedHTTPClient(t *testing.T) {
 	client := New()
 	httpClient, ok := client.doer.(*http.Client)
 	if !ok {
 		t.Fatalf("default doer type = %T, want *http.Client", client.doer)
 	}
-	if httpClient.Timeout != clientTimeout {
-		t.Fatalf("client timeout = %s, want %s", httpClient.Timeout, clientTimeout)
+	if httpClient.Timeout != 0 {
+		t.Fatalf("client timeout = %s, want caller-owned context deadline", httpClient.Timeout)
 	}
 	if httpClient.CheckRedirect == nil {
 		t.Fatal("default client must reject redirects")
@@ -75,6 +76,23 @@ func TestNewUsesBoundedHTTPClient(t *testing.T) {
 	}
 	if transport.Proxy != nil {
 		t.Fatal("default provider transport must not use ambient proxies")
+	}
+}
+
+func TestDiscoverModelsUsesDedicatedDeadline(t *testing.T) {
+	var requestDeadline time.Time
+	doer := &fakeDoer{fn: func(request *http.Request) (*http.Response, error) {
+		requestDeadline, _ = request.Context().Deadline()
+		return jsonResponse(http.StatusOK, `{"object":"list","data":[{"id":"gpt-future"}]}`), nil
+	}}
+	started := time.Now()
+	if _, err := newWithDoer(doer).DiscoverModels(context.Background(), "codex_subscription", "sk-openai-test"); err != nil {
+		t.Fatalf("DiscoverModels returned error: %v", err)
+	}
+	remaining := time.Until(requestDeadline)
+	if requestDeadline.IsZero() || remaining <= 0 || requestDeadline.Before(started.Add(modelDiscoveryTimeout-time.Second)) ||
+		requestDeadline.After(started.Add(modelDiscoveryTimeout+time.Second)) {
+		t.Fatalf("model discovery deadline = %s, want approximately %s from call start", requestDeadline, modelDiscoveryTimeout)
 	}
 }
 

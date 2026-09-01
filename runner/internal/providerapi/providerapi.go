@@ -18,15 +18,15 @@ import (
 )
 
 const (
-	clientTimeout        = 15 * time.Second
-	maxAPIKeyBytes       = 16 * 1024
-	maxModelBytes        = 200
-	maxPromptBytes       = 64 * 1024
-	maxRequestBodyBytes  = 128 * 1024
-	maxResponseBodyBytes = 2 * 1024 * 1024
-	maxOutputTextBytes   = 100 * 1024
-	maxModelOptions      = 100
-	maxUsageTokens       = 10_000_000
+	modelDiscoveryTimeout = 15 * time.Second
+	maxAPIKeyBytes        = 16 * 1024
+	maxModelBytes         = 200
+	maxPromptBytes        = 64 * 1024
+	maxRequestBodyBytes   = 128 * 1024
+	maxResponseBodyBytes  = 2 * 1024 * 1024
+	maxOutputTextBytes    = 100 * 1024
+	maxModelOptions       = 100
+	maxUsageTokens        = 10_000_000
 
 	openAIBaseURL    = "https://api.openai.com"
 	anthropicBaseURL = "https://api.anthropic.com"
@@ -91,7 +91,8 @@ type GenerationResult struct {
 }
 
 // New creates a client with the fixed bounded HTTPS policy. Production callers
-// cannot replace its transport, proxy, timeout, or redirect policy.
+// cannot replace its transport, proxy, or redirect policy. Request deadlines
+// are owned by the caller, with model discovery applying its own short bound.
 func New() *Client {
 	return &Client{doer: newHTTPClient(nil)}
 }
@@ -105,6 +106,9 @@ func newWithTransport(transport http.RoundTripper) *Client {
 }
 
 func (client *Client) DiscoverModels(ctx context.Context, adapterKey, apiKey string) ([]ModelOption, error) {
+	if ctx == nil {
+		return nil, providerError(CodeInvalidInput, 0)
+	}
 	spec, ok := providerSpecFor(adapterKey)
 	if !ok {
 		return nil, providerError(CodeUnsupportedProvider, 0)
@@ -112,7 +116,9 @@ func (client *Client) DiscoverModels(ctx context.Context, adapterKey, apiKey str
 	if err := validateAPIKey(apiKey); err != nil {
 		return nil, err
 	}
-	body, err := client.do(ctx, http.MethodGet, spec, spec.modelsPath, apiKey, nil)
+	discoveryContext, cancel := context.WithTimeout(ctx, modelDiscoveryTimeout)
+	defer cancel()
+	body, err := client.do(discoveryContext, http.MethodGet, spec, spec.modelsPath, apiKey, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +282,6 @@ func newHTTPClient(transport http.RoundTripper) *http.Client {
 	}
 	return &http.Client{
 		Transport:     transport,
-		Timeout:       clientTimeout,
 		CheckRedirect: rejectRedirect,
 	}
 }

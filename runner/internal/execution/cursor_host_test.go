@@ -29,6 +29,18 @@ type fakeCursorHostSource struct {
 	codexInvocation     codex.Invocation
 }
 
+type unscopedWorkspaceCatalog struct {
+	installation runtimecatalog.Installation
+}
+
+func (catalog unscopedWorkspaceCatalog) DetectWorkspace(context.Context, string) []runtimecatalog.Installation {
+	return []runtimecatalog.Installation{catalog.installation}
+}
+
+func (catalog unscopedWorkspaceCatalog) ResolveApprovedWorkspace(context.Context, string, string, []string) (runtimecatalog.Installation, bool) {
+	return catalog.installation, true
+}
+
 func (source *fakeCursorHostSource) Supported() bool {
 	return source.supported
 }
@@ -115,6 +127,15 @@ func TestCursorHostDeniesWithoutDeploymentOptInOrExactIdentity(t *testing.T) {
 		t.Fatalf("identity gate reached the source: %d", source.executeCalls)
 	}
 	_ = installation
+}
+
+func TestCursorHostModelDiscoveryFailsClosedWithoutTargetedCatalog(t *testing.T) {
+	registry, _, source, installation := cursorHostTestRegistry(t)
+	registry.catalog = unscopedWorkspaceCatalog{installation: installation}
+	result := registry.DiscoverModels(newHostModelsRequest(), workspaceOne, cursor.AdapterKey, protocol.ExecutionModeHostTrusted)
+	if result.Status != providerconfig.ModelDiscoveryFailed || source.discoveryCalls != 0 {
+		t.Fatalf("host model discovery did not fail closed without targeted detection: result=%#v calls=%d", result, source.discoveryCalls)
+	}
 }
 
 func TestCursorHostRejectsStrongIsolationPolicy(t *testing.T) {

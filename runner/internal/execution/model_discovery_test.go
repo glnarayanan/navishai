@@ -58,6 +58,13 @@ func (catalog fixedWorkspaceCatalog) DetectWorkspace(context.Context, string) []
 	return []runtimecatalog.Installation{catalog.installation}
 }
 
+func (catalog fixedWorkspaceCatalog) DetectWorkspaceAdapter(_ context.Context, _, adapterKey string) []runtimecatalog.Installation {
+	if catalog.installation.AdapterKey != adapterKey {
+		return nil
+	}
+	return []runtimecatalog.Installation{catalog.installation}
+}
+
 func (catalog fixedWorkspaceCatalog) ResolveApprovedWorkspace(context.Context, string, string, []string) (runtimecatalog.Installation, bool) {
 	return catalog.installation, true
 }

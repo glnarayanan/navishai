@@ -47,7 +47,7 @@ func NewManagedCatalog(config Config, providers *providerconfig.Store, identityK
 
 func (catalog *ManagedCatalog) DetectWorkspace(ctx context.Context, workspaceKey string) []runtimecatalog.Installation {
 	installations := catalog.apiKeyInstallations(workspaceKey)
-	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true)
+	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true, "")
 	if err == nil {
 		installations = append(installations, catalog.approvedDetections(ctx, workspaceCatalog)...)
 	}
@@ -60,13 +60,30 @@ func (catalog *ManagedCatalog) DetectWorkspace(ctx context.Context, workspaceKey
 	return installations
 }
 
+func (catalog *ManagedCatalog) DetectWorkspaceAdapter(ctx context.Context, workspaceKey, adapterKey string) []runtimecatalog.Installation {
+	installations := make([]runtimecatalog.Installation, 0, 1)
+	for _, installation := range catalog.apiKeyInstallations(workspaceKey) {
+		if installation.AdapterKey == adapterKey {
+			installations = append(installations, installation)
+		}
+	}
+	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true, adapterKey)
+	if err == nil {
+		installations = append(installations, catalog.approvedDetections(ctx, workspaceCatalog)...)
+	}
+	sort.Slice(installations, func(left, right int) bool {
+		return installations[left].DetectionKey < installations[right].DetectionKey
+	})
+	return installations
+}
+
 func (catalog *ManagedCatalog) ResolveApprovedWorkspace(ctx context.Context, workspaceKey, wantedKey string, approvedPaths []string) (runtimecatalog.Installation, bool) {
 	for _, installation := range catalog.apiKeyInstallations(workspaceKey) {
 		if installation.DetectionKey == wantedKey {
 			return installation, true
 		}
 	}
-	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true)
+	workspaceCatalog, err := catalog.workspaceCatalog(workspaceKey, true, "")
 	if err != nil {
 		return runtimecatalog.Installation{}, false
 	}
@@ -208,9 +225,12 @@ func (catalog *ManagedCatalog) approvedDetections(ctx context.Context, workspace
 	return workspaceCatalog.DetectApproved(ctx, catalog.config.Supervisor.ApprovedExecutables)
 }
 
-func (catalog *ManagedCatalog) workspaceCatalog(workspaceKey string, configuredOnly bool) (*runtimecatalog.Catalog, error) {
+func (catalog *ManagedCatalog) workspaceCatalog(workspaceKey string, configuredOnly bool, adapterKey string) (*runtimecatalog.Catalog, error) {
 	definitions := make([]runtimecatalog.Definition, 0, 4)
 	for _, provider := range providerconfig.Definitions() {
+		if adapterKey != "" && provider.AdapterKey != adapterKey {
+			continue
+		}
 		definition, ok := catalog.definition(provider.AdapterKey, workspaceKey, configuredOnly)
 		if ok {
 			definitions = append(definitions, definition)
@@ -313,7 +333,7 @@ func (catalog *ManagedCatalog) supportedExecutionModes(adapterKey string) []stri
 		if mode == protocol.ExecutionModeHostTrusted && (!isHostTrustedSubscriptionAdapter(adapterKey) || !catalog.hostTrustedAvailable()) {
 			continue
 		}
-		if mode == protocol.ExecutionModeStrongIsolated && !catalog.strongIsolationAvailable() {
+		if mode == protocol.ExecutionModeStrongIsolated {
 			continue
 		}
 		result = append(result, mode)

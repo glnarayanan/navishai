@@ -98,7 +98,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 func (handler *Handler) writeError(response http.ResponseWriter, status int, code, message string) {
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(protocol.ErrorResponse{
-		ProtocolVersion: protocol.Version,
+		ProtocolVersion: protocol.AdmissionVersion,
 		Error:           protocol.ProtocolError{Code: code, Message: message},
 	})
 }

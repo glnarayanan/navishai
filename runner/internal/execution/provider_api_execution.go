@@ -113,6 +113,8 @@ func providerAPIErrorEvent(err error, ctx context.Context) (string, map[string]a
 			return "run.canceled", map[string]any{"reason": "Provider request was canceled."}
 		case providerapi.CodeTimeout:
 			return "run.timed_out", map[string]any{"reason": "Provider request exceeded the run deadline."}
+		case providerapi.CodeUnavailable:
+			return "run.failed", map[string]any{"code": "provider_api_failed", "retryable": true}
 		}
 	}
 	if errors.Is(err, context.Canceled) || (ctx != nil && errors.Is(ctx.Err(), context.Canceled)) {
