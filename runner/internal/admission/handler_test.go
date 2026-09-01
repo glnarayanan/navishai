@@ -89,7 +89,7 @@ func TestAdmissionRejectsConflictAuthenticationAndBounds(t *testing.T) {
 	if response := serveAdmission(t, handler, body, testNow, []byte("different-secret-that-is-at-least-32-bytes")); response.Code != http.StatusUnauthorized {
 		t.Fatalf("expected bad signature rejection, got %d", response.Code)
 	}
-	wrongType := httptest.NewRequest(http.MethodPost, "/v1/runs/admit", bytes.NewReader(body))
+	wrongType := httptest.NewRequest(http.MethodPost, protocol.AdmissionPath, bytes.NewReader(body))
 	timestamp := strconv.FormatInt(testNow.Unix(), 10)
 	signature, _ := protocol.Sign(testSecret, timestamp, wrongType.Method, wrongType.URL.Path, body)
 	wrongType.Header.Set("Content-Type", "text/plain")
@@ -104,14 +104,14 @@ func TestAdmissionRejectsConflictAuthenticationAndBounds(t *testing.T) {
 		t.Fatalf("expected stale timestamp rejection, got %d", response.Code)
 	}
 
-	oversized := httptest.NewRequest(http.MethodPost, "/v1/runs/admit", strings.NewReader(strings.Repeat("x", protocol.MaxBodyBytes+1)))
+	oversized := httptest.NewRequest(http.MethodPost, protocol.AdmissionPath, strings.NewReader(strings.Repeat("x", protocol.MaxBodyBytes+1)))
 	oversized.Header.Set("X-NavishAI-Timestamp", "0")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, oversized)
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected oversized rejection, got %d", response.Code)
 	}
-	chunked := httptest.NewRequest(http.MethodPost, "/v1/runs/admit", strings.NewReader(strings.Repeat("x", protocol.MaxBodyBytes+1)))
+	chunked := httptest.NewRequest(http.MethodPost, protocol.AdmissionPath, strings.NewReader(strings.Repeat("x", protocol.MaxBodyBytes+1)))
 	chunked.ContentLength = -1
 	chunkedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(chunkedResponse, chunked)
@@ -122,6 +122,10 @@ func TestAdmissionRejectsConflictAuthenticationAndBounds(t *testing.T) {
 	malformed := []byte(`{"protocol_version":"v1"}`)
 	if response := serveAdmission(t, handler, malformed, testNow, testSecret); response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected signed malformed request rejection, got %d", response.Code)
+	}
+	retainedV1 := bytes.Replace(body, []byte(`"protocol_version": "v2"`), []byte(`"protocol_version": "v1"`), 1)
+	if response := serveAdmission(t, handler, retainedV1, testNow, testSecret); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected retained v1 request rejection, got %d", response.Code)
 	}
 }
 
@@ -163,8 +167,12 @@ func TestConcurrentReplayReturnsOneCanonicalAdmission(t *testing.T) {
 }
 
 func serveAdmission(t *testing.T, handler http.Handler, body []byte, at time.Time, secret []byte) *httptest.ResponseRecorder {
+	return serveAdmissionAt(t, handler, protocol.AdmissionPath, body, at, secret)
+}
+
+func serveAdmissionAt(t *testing.T, handler http.Handler, path string, body []byte, at time.Time, secret []byte) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodPost, "/v1/runs/admit", bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 	timestamp := strconv.FormatInt(at.Unix(), 10)
 	signature, err := protocol.Sign(secret, timestamp, request.Method, request.URL.Path, body)
 	if err != nil {
@@ -180,7 +188,7 @@ func serveAdmission(t *testing.T, handler http.Handler, body []byte, at time.Tim
 
 func admissionFixture(t *testing.T) []byte {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json")
+	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

@@ -29,6 +29,7 @@ class RunnerClient
   end
 
   def admit!(task:, run:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
+    readiness_payload
     request_message = RunnerProtocol::AdmissionRequest.for_task(
       task: task, run: run,
       run_id: run_id,
@@ -68,12 +69,9 @@ class RunnerClient
   end
 
   def ready?
-    response = perform(Net::HTTP::Get.new("/readyz"))
-    return false unless response.code == 200
-
-    payload = JSON.parse(response.body)
-    payload == { "status" => "ok", "protocol_versions" => [ RunnerProtocol::VERSION ] }
-  rescue Error, JSON::ParserError, OpenSSL::SSL::SSLError, SystemCallError, Timeout::Error
+    readiness_payload
+    true
+  rescue Unavailable
     false
   end
 
@@ -218,6 +216,33 @@ class RunnerClient
     raise MalformedResponse, error.message
   end
 
+  def readiness_payload
+    response = perform(Net::HTTP::Get.new("/readyz"))
+    raise Unavailable, "runner readiness returned HTTP #{response.code}" unless response.code == 200
+
+    payload = JSON.parse(response.body)
+    unless payload.is_a?(Hash) && payload["status"] == "ok" &&
+        payload["protocol_versions"] == [ RunnerProtocol::VERSION ] && valid_readiness_shape?(payload)
+      raise Unavailable, "runner readiness response is invalid"
+    end
+
+    payload
+  rescue JSON::ParserError, MalformedResponse, OpenSSL::SSL::SSLError, SocketError, SystemCallError, Timeout::Error, EOFError => error
+    raise Unavailable, "runner readiness is unavailable: #{error.class}"
+  end
+
+  def valid_readiness_shape?(payload)
+    payload.keys.sort == %w[admission_versions protocol_versions status] &&
+      valid_admission_versions?(payload.fetch("admission_versions"))
+  end
+
+  def valid_admission_versions?(versions)
+    return false unless versions.is_a?(Array) && versions.present? && versions.uniq.length == versions.length
+
+    versions.all? { |version| version.is_a?(String) && version.in?([ RunnerProtocol::VERSION, RunnerProtocol::ADMISSION_VERSION ]) } &&
+      versions.include?(RunnerProtocol::ADMISSION_VERSION)
+  end
+
   def raise_for_response(response)
     message = error_message(response.body)
     case response.code
@@ -232,7 +257,7 @@ class RunnerClient
 
   def error_message(body)
     payload = JSON.parse(body)
-    supported_versions = [ RunnerProtocol::VERSION, RunnerProtocol::RUNTIME_DETECTION_VERSION ]
+    supported_versions = [ RunnerProtocol::VERSION, RunnerProtocol::ADMISSION_VERSION, RunnerProtocol::RUNTIME_DETECTION_VERSION ]
     return "runner rejected the request" unless payload.is_a?(Hash) && payload.keys.sort == %w[error protocol_version] && payload["protocol_version"].in?(supported_versions)
     return "runner rejected the request" unless payload["error"].is_a?(Hash) && payload["error"].keys.sort == %w[code message]
 

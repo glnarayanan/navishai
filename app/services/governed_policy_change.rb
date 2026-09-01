@@ -8,7 +8,7 @@ class GovernedPolicyChange
 
   MAX_SUBJECTS = 50
   PROFILE_POLICY_FIELDS = %i[
-    runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy
+    runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy isolation_policy
   ].freeze
   CONTRACT_FIELDS = %i[
     required_claim_categories evidence_freshness_days mandatory_review_checks execution_budget_units
@@ -250,7 +250,9 @@ class GovernedPolicyChange
     end
 
     def build_profile_version!(profile, prior, attributes)
-      values = attributes.to_h.symbolize_keys.slice(*PROFILE_POLICY_FIELDS)
+      submitted = attributes.to_h.symbolize_keys
+      values = submitted.slice(*PROFILE_POLICY_FIELDS)
+      values[:isolation_policy] = prior.isolation_policy unless submitted.key?(:isolation_policy)
       values[:fallback_profile_keys] = Array(values[:fallback_profile_keys]).compact_blank.map(&:to_s).uniq
       %i[timeout_seconds max_steps max_tool_calls].each { |key| values[key] = Integer(values[key].to_s, 10) }
       profile.versions.create!(
@@ -259,7 +261,7 @@ class GovernedPolicyChange
         **values, created_by_membership: @membership, created_by_user: @membership.user
       )
     rescue KeyError, ArgumentError, TypeError
-      raise InvalidChange, "Runtime, fallback, review, and budget fields are incomplete or invalid."
+      raise InvalidChange, "Runtime, isolation, fallback, review, and budget fields are incomplete or invalid."
     end
 
     def source_snapshot(proposal)
@@ -308,7 +310,7 @@ class GovernedPolicyChange
     def runtime_snapshot(runtime)
       %w[id updated_at detection_key adapter_key approved health_status compatibility_status capabilities profile_keys
         allowed_role_keys allowed_tools allowed_data_classes max_timeout_seconds max_steps max_tool_calls
-        max_input_units max_output_units].to_h do |field|
+        max_input_units max_output_units execution_mode].to_h do |field|
         value = runtime.public_send(field)
         [ field, value.is_a?(Time) || value.is_a?(ActiveSupport::TimeWithZone) ? timestamp(value) : value ]
       end

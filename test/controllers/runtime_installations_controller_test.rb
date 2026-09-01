@@ -467,7 +467,7 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
   private
     def create_installation(workspace, key: "a" * 64)
       workspace.runtime_installations.create!(
-        detection_key: key, adapter_key: "fixture", protocol_version: "v1",
+        detection_key: key, adapter_key: "fixture", protocol_version: "v1", execution_mode: "bounded",
         executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
         account_metadata: { "authentication" => "managed_on_runner" },
         capabilities: %w[structured_output tool_calling], minimum_version: "2.0.0", maximum_version: "2.x",

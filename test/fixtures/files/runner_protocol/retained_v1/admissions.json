@@ -1,0 +1,79 @@
+{
+  "admit:3d07f334-88ef-4fe4-a640-421e3ba79921": {
+    "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "request": {
+      "protocol_version": "v1",
+      "run_id": "3d07f334-88ef-4fe4-a640-421e3ba79921",
+      "idempotency_key": "admit:3d07f334-88ef-4fe4-a640-421e3ba79921",
+      "workspace_key": "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+      "task": {
+        "task_key": "fae7db72-e33b-46b9-8f9e-9a0dfdd56661",
+        "attempt": 1,
+        "title": "Investigate sign-in failure",
+        "input_context": "Use the current case conversation and approved knowledge sources.",
+        "expected_output": "State the cause, cite evidence, and name material uncertainty."
+      },
+      "agent": {
+        "role_key": "support_investigator",
+        "policy_version": 3,
+        "instructions": "Investigate current evidence and state uncertainty.",
+        "allowed_tools": ["case_read", "conversation_read", "knowledge_search"],
+        "runtime_profile_key": "workspace_default",
+        "fallback_profile_keys": ["fast"],
+        "timeout_seconds": 300,
+        "max_steps": 10,
+        "max_tool_calls": 20,
+        "review_policy": "required"
+      },
+      "routing": {
+        "detection_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "configuration_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "effective_model": "deterministic_fixture",
+        "adapter_key": "scripted",
+        "profile_key": "workspace_default",
+        "selection_reason": "primary",
+        "selection_detail": "Primary Workspace default profile selected.",
+        "data_classes": ["approved_knowledge", "case_content", "customer_identity"],
+        "max_input_units": 100000,
+        "max_output_units": 25000
+      }
+    },
+    "response": {
+      "protocol_version": "v1",
+      "run_id": "3d07f334-88ef-4fe4-a640-421e3ba79921",
+      "status": "accepted",
+      "event": {
+        "protocol_version": "v1",
+        "event_id": "55a4662d-aef5-4d14-8552-a57b57f2f01e",
+        "run_id": "3d07f334-88ef-4fe4-a640-421e3ba79921",
+        "sequence": 1,
+        "event_type": "run.admitted",
+        "occurred_at": "2026-08-24T12:00:00Z",
+        "data": {
+          "workspace_key": "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+          "task_key": "fae7db72-e33b-46b9-8f9e-9a0dfdd56661",
+          "attempt": 1
+        }
+      }
+    },
+    "phase": "queued",
+    "last_sequence": 1,
+    "last_occurred_at": "2026-08-24T12:00:00Z",
+    "delivered_sequence": 0,
+    "outbox": [
+      {
+        "protocol_version": "v1",
+        "event_id": "55a4662d-aef5-4d14-8552-a57b57f2f01e",
+        "run_id": "3d07f334-88ef-4fe4-a640-421e3ba79921",
+        "sequence": 1,
+        "event_type": "run.admitted",
+        "occurred_at": "2026-08-24T12:00:00Z",
+        "data": {
+          "workspace_key": "c9bb966b-1fe9-4304-bd51-404e4fd9a09c",
+          "task_key": "fae7db72-e33b-46b9-8f9e-9a0dfdd56661",
+          "attempt": 1
+        }
+      }
+    ]
+  }
+}

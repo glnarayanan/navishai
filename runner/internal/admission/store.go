@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	maximumRecords = 100_000
-	maximumBytes   = 64 * 1024 * 1024
+	maximumRecords                = 100_000
+	maximumBytes                  = 64 * 1024 * 1024
+	retainedV1AdmissionDenialCode = "legacy_admission_requires_v2"
+	retainedV1AdmissionDenialTool = "execution_boundary"
 )
 
 var (
@@ -77,10 +79,19 @@ func OpenStore(path string) (*Store, error) {
 	if len(store.records) > maximumRecords {
 		return nil, ErrCapacity
 	}
+	migrated, err := store.migrateRetainedV1Records()
+	if err != nil {
+		return nil, err
+	}
 	if err := store.validate(); err != nil {
 		return nil, err
 	}
 	store.indexRecords()
+	if migrated {
+		if err := store.persist(); err != nil {
+			return nil, fmt.Errorf("migrate admission store: %w", err)
+		}
+	}
 	return store, nil
 }
 
@@ -88,6 +99,9 @@ func (store *Store) Admit(request protocol.AdmissionRequest, digest string, resp
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
+	if request.Validate() != nil || !validAdmissionResponse(request, response) {
+		return protocol.AdmissionResponse{}, false, ErrInvalidState
+	}
 	key := request.IdempotencyKey
 	if record, exists := store.records[key]; exists {
 		if record.RequestDigest != digest {
@@ -102,11 +116,12 @@ func (store *Store) Admit(request protocol.AdmissionRequest, digest string, resp
 		return protocol.AdmissionResponse{}, false, ErrCapacity
 	}
 	requestCopy := request
-	store.records[key] = Record{
+	record := Record{
 		RequestDigest: digest, Request: &requestCopy, Response: response, Phase: "queued",
 		LastSequence: 1, LastOccurredAt: response.Event.OccurredAt,
 		Outbox: []protocol.CanonicalEvent{response.Event},
 	}
+	store.records[key] = record
 	store.runKeys[request.RunID] = key
 	store.insertSortedID(key)
 	if err := store.persist(); err != nil {
@@ -285,6 +300,38 @@ func (store *Store) removeSortedID(key string) {
 	store.sortedIDs = append(store.sortedIDs[:index], store.sortedIDs[index+1:]...)
 }
 
+func (store *Store) migrateRetainedV1Records() (bool, error) {
+	changed := false
+	for key, record := range store.records {
+		if record.Request == nil || record.Request.ProtocolVersion != protocol.Version {
+			continue
+		}
+		if record.Phase != "terminal" {
+			terminal, err := retainedV1TerminalEvent(record)
+			if err != nil {
+				return false, err
+			}
+			record.LastSequence = terminal.Sequence
+			record.LastOccurredAt = terminal.OccurredAt
+			record.Outbox = append(record.Outbox, terminal)
+			record.Phase = "terminal"
+			changed = true
+		}
+		store.records[key] = record
+	}
+	return changed, nil
+}
+
+func retainedV1TerminalEvent(record Record) (protocol.CanonicalEvent, error) {
+	if record.Request == nil || record.LastSequence < 1 || record.LastOccurredAt.IsZero() {
+		return protocol.CanonicalEvent{}, ErrInvalidState
+	}
+	return protocol.NewCanonicalEvent(
+		record.Response.RunID, record.LastSequence+1, "run.policy_denied", record.LastOccurredAt.Add(time.Nanosecond),
+		map[string]any{"code": retainedV1AdmissionDenialCode, "tool": retainedV1AdmissionDenialTool},
+	)
+}
+
 func (store *Store) validate() error {
 	runs := make(map[string]bool, len(store.records))
 	for _, record := range store.records {
@@ -295,8 +342,16 @@ func (store *Store) validate() error {
 		if record.Request == nil {
 			continue
 		}
-		if record.Request.Validate() != nil || record.Request.RunID != record.Response.RunID ||
-			(record.Phase != "queued" && record.Phase != "running" && record.Phase != "terminal") ||
+		expectedVersion := protocol.AdmissionVersion
+		validRequest := record.Request.Validate() == nil
+		validPhase := record.Phase == "queued" || record.Phase == "running" || record.Phase == "terminal"
+		if record.Request.ProtocolVersion == protocol.Version {
+			expectedVersion = protocol.Version
+			validRequest = record.Request.ValidateRetainedV1() == nil
+			validPhase = record.Phase == "terminal"
+		}
+		if !validRequest || record.Response.ProtocolVersion != expectedVersion || record.Response.Status != "accepted" ||
+			record.Request.RunID != record.Response.RunID || !validPhase ||
 			record.DeliveredSequence < 0 || record.LastSequence < record.DeliveredSequence || record.LastSequence < 1 ||
 			record.LastOccurredAt.IsZero() || record.Response.Event.Validate() != nil ||
 			record.Response.Event.RunID != record.Request.RunID || record.Response.Event.Sequence != 1 ||
@@ -325,9 +380,22 @@ func (store *Store) validate() error {
 	return nil
 }
 
+func validAdmissionResponse(request protocol.AdmissionRequest, response protocol.AdmissionResponse) bool {
+	return response.ProtocolVersion == protocol.AdmissionVersion && response.Status == "accepted" &&
+		response.RunID == request.RunID && response.Event.Validate() == nil &&
+		response.Event.RunID == request.RunID && response.Event.Sequence == 1 &&
+		response.Event.EventType == "run.admitted" && admissionAttemptMatchesRecord(request, response) &&
+		response.Event.Data["workspace_key"] == request.WorkspaceKey &&
+		response.Event.Data["task_key"] == request.Task.TaskKey
+}
+
+func admissionAttemptMatchesRecord(request protocol.AdmissionRequest, response protocol.AdmissionResponse) bool {
+	attempt := response.Event.Data["attempt"]
+	return attempt == request.Task.Attempt || attempt == float64(request.Task.Attempt)
+}
+
 func admissionAttemptMatches(record Record) bool {
-	attempt := record.Response.Event.Data["attempt"]
-	return attempt == record.Request.Task.Attempt || attempt == float64(record.Request.Task.Attempt)
+	return admissionAttemptMatchesRecord(*record.Request, record.Response)
 }
 
 func (store *Store) replace(key string, previous, current Record) error {

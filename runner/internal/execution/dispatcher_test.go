@@ -133,7 +133,7 @@ func (executor *countingExecutor) Execute(context.Context, protocol.AdmissionReq
 
 func admittedStore(t *testing.T, path string) (*admission.Store, protocol.AdmissionRequest, protocol.AdmissionResponse) {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func admittedStore(t *testing.T, path string) (*admission.Store, protocol.Admiss
 	event, _ := protocol.NewCanonicalEvent(request.RunID, 1, "run.admitted", at, map[string]any{
 		"workspace_key": request.WorkspaceKey, "task_key": request.Task.TaskKey, "attempt": request.Task.Attempt,
 	})
-	response := protocol.AdmissionResponse{ProtocolVersion: protocol.Version, RunID: request.RunID, Status: "accepted", Event: event}
+	response := protocol.AdmissionResponse{ProtocolVersion: protocol.AdmissionVersion, RunID: request.RunID, Status: "accepted", Event: event}
 	store, err := admission.OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

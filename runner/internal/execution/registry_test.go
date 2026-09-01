@@ -60,6 +60,14 @@ func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T
 	if len(events) != 6 || events[0].EventType != "run.started" || events[len(events)-1].EventType != "run.completed" {
 		t.Fatalf("unexpected scripted lifecycle: %#v", events)
 	}
+	boundaryMismatch := request
+	boundaryMismatch.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
+	if err := registry.Execute(context.Background(), boundaryMismatch, func(event protocol.CanonicalEvent) error {
+		events = append(events, event)
+		return nil
+	}); !errors.Is(err, ErrPolicyDenied) || len(events) != 6 {
+		t.Fatalf("scripted transport accepted a mismatched boundary: err=%v events=%#v", err, events)
+	}
 
 	request.Routing.DataClasses = append(request.Routing.DataClasses, "retrieved_memory")
 	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != ErrPolicyDenied {
@@ -154,7 +162,7 @@ func TestScriptedCatalogIdentityMatchesExecutionAndInvalidatesChangedSymlink(t *
 	}
 }
 
-func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
+func TestRegistryDeniesUnclassifiedProcessTransportsBeforeExecution(t *testing.T) {
 	request := executionRequest(t)
 	for _, adapterKey := range []string{"codex_subscription", "claude_subscription", "grok_acp_subscription", "cursor_acp_subscription"} {
 		t.Run(adapterKey, func(t *testing.T) {
@@ -165,6 +173,8 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 			executablePath := testExecutable(t, executableRoot, "approved", "exit 1")
 			request := request
 			request.Routing.AdapterKey = adapterKey
+			request.Routing.ExecutionMode = protocol.ExecutionModeBounded
+			request.Routing.IsolationPolicy = protocol.IsolationPolicyStrongRequired
 			request.Routing.DetectionKey = testDetectionKey(t, adapterKey, executablePath)
 			request.Routing.ConfigurationFingerprint = strings.Repeat("a", 64)
 			request.Routing.EffectiveModel = "runtime_default"
@@ -206,11 +216,12 @@ func TestRegistryDispatchesEachConfiguredLiveAdapter(t *testing.T) {
 				events = append(events, event)
 				return nil
 			})
-			if errors.Is(err, ErrPolicyDenied) {
-				t.Fatalf("adapter branch was not dispatched: %v", err)
+			if !errors.Is(err, ErrPolicyDenied) || len(events) != 0 {
+				t.Fatalf("unclassified process transport was not denied before execution: err=%v events=%#v", err, events)
 			}
-			if len(events) > 0 && (events[0].EventType != "run.started" || events[0].Data["adapter"] != adapterKey) {
-				t.Fatalf("adapter branch emitted the wrong lifecycle: %#v", events)
+			entries, readErr := os.ReadDir(workRoot)
+			if readErr != nil || len(entries) != 0 {
+				t.Fatalf("process transport created a work directory before denial: entries=%#v err=%v", entries, readErr)
 			}
 			stale := request
 			stale.Routing.ConfigurationFingerprint = strings.Repeat("f", 64)
@@ -236,6 +247,25 @@ func TestRuntimeTestEligibilityUsesOnlyTheDeclaredCapability(t *testing.T) {
 	undeclared := runtimecatalog.Installation{AdapterKey: "codex_subscription", Capabilities: []string{"structured_output"}}
 	if supportsRuntimeTest(undeclared) {
 		t.Fatal("adapter name enabled runtime testing without the declared capability")
+	}
+}
+
+func TestRuntimeTestExecutionBoundaryMatchesTransport(t *testing.T) {
+	for _, test := range []struct {
+		name, adapterKey, wantMode, wantPolicy string
+		directProviderAPI                      bool
+	}{
+		{name: "scripted", adapterKey: "scripted", wantMode: protocol.ExecutionModeBounded, wantPolicy: protocol.IsolationPolicyStrongRequired},
+		{name: "built-in HTTPS", adapterKey: "codex", directProviderAPI: true, wantMode: protocol.ExecutionModeBounded, wantPolicy: protocol.IsolationPolicyStrongRequired},
+		{name: "subscription process", adapterKey: "codex"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mode, policy, known := runtimeTestExecutionBoundary(test.adapterKey, test.directProviderAPI)
+			wantKnown := test.wantMode != ""
+			if mode != test.wantMode || policy != test.wantPolicy || known != wantKnown {
+				t.Fatalf("runtime-test boundary = %q/%q/%t, want %q/%q/%t", mode, policy, known, test.wantMode, test.wantPolicy, wantKnown)
+			}
+		})
 	}
 }
 
@@ -337,7 +367,10 @@ func TestRuntimeTestAdmissionCarriesOnlyFixedSentinelContextAndZeroTools(t *test
 		MaxTimeoutSeconds: 900, MaxInputUnits: 100_000, MaxOutputUnits: 25_000,
 	}
 
-	admission := runtimeTestAdmission(request, "codex_subscription", config, "gpt-test", strings.Repeat("b", 64))
+	admission := runtimeTestAdmission(
+		request, "scripted", config, "gpt-test", strings.Repeat("b", 64),
+		protocol.ExecutionModeBounded, protocol.IsolationPolicyStrongRequired,
+	)
 
 	if err := admission.Validate(); err != nil {
 		t.Fatal(err)
@@ -455,6 +488,33 @@ func TestDirectProviderAPIRejectsToolsBeforeCallingProvider(t *testing.T) {
 	}
 }
 
+func TestDirectProviderAPIRejectsForgedExecutionBoundariesBeforeCallingProvider(t *testing.T) {
+	registry, request, client, _ := directProviderAPIRegistry(t, providerapi.GenerationResult{
+		Text: "should not be used", InputTokens: 1, OutputTokens: 1,
+	}, nil)
+	for _, test := range []struct {
+		name, executionMode, isolationPolicy string
+	}{
+		{name: "host trusted mode", executionMode: protocol.ExecutionModeHostTrusted, isolationPolicy: protocol.IsolationPolicyStrongRequired},
+		{name: "host trusted policy", executionMode: protocol.ExecutionModeBounded, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed},
+		{name: "host trusted pair", executionMode: protocol.ExecutionModeHostTrusted, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			forged := request
+			forged.Routing.ExecutionMode = test.executionMode
+			forged.Routing.IsolationPolicy = test.isolationPolicy
+			events := []protocol.CanonicalEvent{}
+			err := registry.Execute(context.Background(), forged, func(event protocol.CanonicalEvent) error {
+				events = append(events, event)
+				return nil
+			})
+			if !errors.Is(err, ErrPolicyDenied) || client.generationCalls != 0 || len(events) != 0 {
+				t.Fatalf("forged direct API boundary was not denied before provider execution: err=%v calls=%d events=%#v", err, client.generationCalls, events)
+			}
+		})
+	}
+}
+
 func TestDirectProviderAPIMapsTypedFailureWithoutProviderDetails(t *testing.T) {
 	registry, request, client, _ := directProviderAPIRegistry(t, providerapi.GenerationResult{}, &providerapi.Error{Code: providerapi.CodeAuthentication, StatusCode: 401})
 	events := []protocol.CanonicalEvent{}
@@ -473,7 +533,7 @@ func TestDirectProviderAPIMapsTypedFailureWithoutProviderDetails(t *testing.T) {
 	}
 }
 
-func TestSubscriptionRuntimeTestsKeepCLIInstallationSemantics(t *testing.T) {
+func TestSubscriptionRuntimeTestsFailClosedBeforeProcessExecution(t *testing.T) {
 	for _, adapterKey := range []string{codex.AdapterKey, claude.AdapterKey} {
 		t.Run(adapterKey, func(t *testing.T) {
 			store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
@@ -490,6 +550,8 @@ func TestSubscriptionRuntimeTestsKeepCLIInstallationSemantics(t *testing.T) {
 			request := executionRequest(t)
 			request.WorkspaceKey = workspaceOne
 			request.Routing.AdapterKey = adapterKey
+			request.Routing.ExecutionMode = protocol.ExecutionModeBounded
+			request.Routing.IsolationPolicy = protocol.IsolationPolicyStrongRequired
 			adapter := AdapterConfig{
 				HomeDir: home, EgressProfileKey: "model_api", Profiles: []string{request.Routing.ProfileKey},
 				Roles: []string{request.Agent.RoleKey}, DataClasses: append([]string(nil), request.Routing.DataClasses...),
@@ -544,8 +606,8 @@ func TestSubscriptionRuntimeTestsKeepCLIInstallationSemantics(t *testing.T) {
 			result, err := registry.TestRuntime(context.Background(), runtimecatalog.TestRequest{
 				WorkspaceKey: workspaceOne, RequestID: request.RunID, DetectionKey: detectionKey, ConfigurationFingerprint: fingerprint,
 			})
-			if err != nil || result.Status != "passed" || !executed || client.generationCalls != 0 {
-				t.Fatalf("subscription runtime test did not preserve process path: result=%#v err=%v executed=%t api_calls=%d", result, err, executed, client.generationCalls)
+			if !errors.Is(err, ErrPolicyDenied) || result.Status != "" || executed || client.generationCalls != 0 {
+				t.Fatalf("subscription runtime test was not denied before process execution: result=%#v err=%v executed=%t api_calls=%d", result, err, executed, client.generationCalls)
 			}
 		})
 	}
@@ -630,7 +692,7 @@ func testDetectionKey(t *testing.T, adapterKey, path string) string {
 
 func executionRequest(t *testing.T) protocol.AdmissionRequest {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

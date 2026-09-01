@@ -29,6 +29,8 @@ class RuntimeRouterTest < ActiveSupport::TestCase
     assert_equal %w[approved_knowledge case_content customer_identity public_web_query], selection.data_classes
     assert_equal 12_000, selection.max_input_units
     assert_equal 3_000, selection.max_output_units
+    assert_equal "bounded", selection.execution_mode
+    assert_equal "strong_isolation_required", selection.isolation_policy
   end
 
   test "denies fallback when capability, data, or budget policy changes semantics" do
@@ -64,5 +66,18 @@ class RuntimeRouterTest < ActiveSupport::TestCase
     assert_raises(RuntimeRouter::NoCompatibleRuntime) do
       RuntimeRouter.resolve!(workspace: @workspace, profile_version: @version)
     end
+  end
+
+  test "does not fall back from a strong-isolation policy to a host-trusted runtime" do
+    @installation.update!(
+      approved: false, approved_by_membership: nil, approved_by_user: nil, approved_at: nil,
+      execution_mode: "host_trusted"
+    )
+    @installation = approve_scripted_runtime(workspace: @workspace, membership: memberships(:owner_support))
+
+    error = assert_raises(RuntimeRouter::NoCompatibleRuntime) do
+      RuntimeRouter.resolve!(workspace: @workspace, profile_version: @version)
+    end
+    assert_includes error.message, "execution boundary is not allowed by the isolation policy"
   end
 end

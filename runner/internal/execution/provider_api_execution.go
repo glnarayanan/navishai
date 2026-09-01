@@ -17,7 +17,8 @@ import (
 )
 
 func (registry *Registry) executeProviderAPIRequest(ctx context.Context, request protocol.AdmissionRequest, connection providerconfig.Connection, emit func(protocol.CanonicalEvent) error) error {
-	if registry == nil || registry.providerAPI == nil || registry.providers == nil || connection.AuthMode != "api_key" ||
+	if registry == nil || registry.providerAPI == nil || registry.providers == nil || !boundedExecutionBoundary(request) ||
+		connection.AuthMode != "api_key" ||
 		!isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
 		return ErrPolicyDenied
 	}

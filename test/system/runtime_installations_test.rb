@@ -88,6 +88,7 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     workspace = workspaces(:acme_support)
     installation = workspace.runtime_installations.create!(
       detection_key: "a" * 64, adapter_key: "fixture", protocol_version: "v1",
+      execution_mode: "bounded",
       executable_path: "/opt/navishai/fixture", executable_version: "fixture 2.4.1",
       account_metadata: { "authentication" => "managed_on_runner", "account_label" => "Fixture Team" },
       effective_model: "fixture-model", configuration_fingerprint: "c" * 64,

@@ -1,15 +1,26 @@
 require "test_helper"
 
 class RunnerProtocolTest < ActiveSupport::TestCase
-  FIXTURE_PATH = Rails.root.join("test/fixtures/files/runner_protocol/v1")
+  FIXTURE_PATH = Rails.root.join("test/fixtures/files/runner_protocol/v2")
   BIGINT_MAX = 9_223_372_036_854_775_807
 
   test "parses the shared admission fixture" do
     request = RunnerProtocol::AdmissionRequest.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
 
-    assert_equal RunnerProtocol::VERSION, request.attributes.fetch("protocol_version")
+    assert_equal RunnerProtocol::ADMISSION_VERSION, request.attributes.fetch("protocol_version")
     assert_equal "support_investigator", request.attributes.dig("agent", "role_key")
     assert_equal 20, request.attributes.dig("agent", "max_tool_calls")
+  end
+
+  test "rejects a retained v1 admission record on the live decoder" do
+    body = JSON.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
+    body["protocol_version"] = RunnerProtocol::VERSION
+    body.fetch("routing").delete("execution_mode")
+    body.fetch("routing").delete("isolation_policy")
+
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::AdmissionRequest.parse(JSON.generate(body))
+    end
   end
 
   test "matches the shared signature vector" do
@@ -40,11 +51,12 @@ class RunnerProtocolTest < ActiveSupport::TestCase
       task:, run: Data.define(
         :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
         :selected_runtime_configuration_fingerprint, :selected_effective_model,
-        :runtime_selection_reason, :runtime_selection_detail, :disclosed_data_classes,
-        :max_input_units, :max_output_units
+        :runtime_selection_reason, :runtime_selection_detail, :selected_execution_mode,
+        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units
       ).new(
         "b" * 64, "scripted", "workspace_default", "c" * 64, "deterministic_fixture", "primary",
-        "Primary Workspace default profile selected.", %w[approved_knowledge case_content], 100_000, 25_000
+        "Primary Workspace default profile selected.", "bounded", "strong_isolation_required",
+        %w[approved_knowledge case_content], 100_000, 25_000
       ), run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
       idempotency_key: "admit:3d07f334-88ef-4fe4-a640-421e3ba79921", attempt: 1
     )
@@ -54,6 +66,8 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     assert_equal 3, request.attributes.dig("agent", "policy_version")
     assert_equal "c" * 64, request.attributes.dig("routing", "configuration_fingerprint")
     assert_equal "deterministic_fixture", request.attributes.dig("routing", "effective_model")
+    assert_equal "bounded", request.attributes.dig("routing", "execution_mode")
+    assert_equal "strong_isolation_required", request.attributes.dig("routing", "isolation_policy")
   end
 
   test "rejects unknown fields and mismatched admission responses" do
@@ -62,7 +76,7 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     assert_raises(RunnerProtocol::MalformedMessage) { RunnerProtocol::AdmissionRequest.parse(JSON.generate(body)) }
 
     response = {
-      protocol_version: "v1", run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", status: "accepted",
+      protocol_version: RunnerProtocol::ADMISSION_VERSION, run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", status: "accepted",
       event: {
         protocol_version: "v1", event_id: "55a4662d-aef5-4d14-8552-a57b57f2f01e",
         run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", sequence: 1,
@@ -72,6 +86,12 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     }
     assert_raises(RunnerProtocol::MalformedMessage) do
       RunnerProtocol::AdmissionResponse.parse(JSON.generate(response), expected_run_id: SecureRandom.uuid)
+    end
+
+    body = JSON.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
+    body.fetch("routing")["execution_mode"] = "host_trusted"
+    assert_raises(RunnerProtocol::MalformedMessage) do
+      RunnerProtocol::AdmissionRequest.parse(JSON.generate(body))
     end
   end
 

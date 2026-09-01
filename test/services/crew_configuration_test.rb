@@ -19,6 +19,21 @@ class CrewConfigurationTest < ActiveSupport::TestCase
     assert_not_includes AgentPolicy::TOOLS, "customer_send"
   end
 
+  test "ordinary profile edits preserve the current isolation policy" do
+    profile = @workspace.agent_profiles.find_by!(role_key: "support_investigator")
+    original = profile.current_version
+
+    version = CrewConfiguration.update_profile!(
+      workspace: @workspace, membership: @owner, agent_profile: profile,
+      attributes: attributes_for(original).merge(
+        instructions: "Investigate with current evidence and preserve material uncertainty."
+      )
+    )
+
+    assert_equal original.isolation_policy, version.isolation_policy
+    assert_equal version, profile.reload.current_version
+  end
+
   test "an Admin can version instructions and tools but bounded policy requires governed preview" do
     admin_user = User.create!(
       email_address: "crew-admin@example.com", password: "password12345", verified_at: Time.current

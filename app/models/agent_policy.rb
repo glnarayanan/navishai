@@ -19,6 +19,16 @@ class AgentPolicy
     "required" => "Review every result",
     "on_policy_flag" => "Review when policy flags risk"
   }.freeze
+  ISOLATION_POLICIES = {
+    "strong_isolation_required" => "Strong isolation required",
+    "host_trusted_allowed" => "Host-trusted execution allowed"
+  }.freeze
+  DEFAULT_ISOLATION_POLICY = "strong_isolation_required"
+  LEGACY_ISOLATION_POLICY = "legacy_unknown"
+  EXECUTION_MODE_MATRIX = {
+    "strong_isolation_required" => %w[bounded strong_isolated],
+    "host_trusted_allowed" => %w[bounded host_trusted strong_isolated]
+  }.freeze
   ROLE_DEFINITIONS = {
     "support_coordinator" => {
       crew_kind: "support", name: "Coordinator / Triage",
@@ -68,5 +78,9 @@ class AgentPolicy
 
   def self.tools_for(role_key)
     definition(role_key).fetch(:tools)
+  end
+
+  def self.execution_mode_allowed?(isolation_policy, execution_mode)
+    EXECUTION_MODE_MATRIX.fetch(isolation_policy.to_s, []).include?(execution_mode.to_s)
   end
 end

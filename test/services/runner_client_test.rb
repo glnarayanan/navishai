@@ -43,7 +43,7 @@ class RunnerClientTest < ActiveSupport::TestCase
   test "parses an accepted response and maps protocol failures" do
     client = RunnerClient.new(secret: "s" * 32)
     response_body = JSON.generate(
-      protocol_version: "v1", run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", status: "accepted",
+      protocol_version: RunnerProtocol::ADMISSION_VERSION, run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", status: "accepted",
       event: {
         protocol_version: "v1", event_id: "55a4662d-aef5-4d14-8552-a57b57f2f01e",
         run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921", sequence: 1,
@@ -60,6 +60,84 @@ class RunnerClientTest < ActiveSupport::TestCase
       body: JSON.generate(protocol_version: "v1", error: { code: "idempotency_conflict", message: "Key conflict." })
     )
     assert_raises(RunnerClient::Conflict) { client.send(:raise_for_response, error) }
+  end
+
+  test "uses v2 admission only after readiness advertises it" do
+    secret = "s" * 32
+    now = Time.iso8601("2026-08-31T12:00:00Z")
+    run_id = "3d07f334-88ef-4fe4-a640-421e3ba79921"
+    client = RunnerClient.new(secret:, clock: -> { now })
+    responses = [
+      RunnerClient::Response.new(
+        code: 200,
+        body: JSON.generate(status: "ok", protocol_versions: [ RunnerProtocol::VERSION ], admission_versions: [ "v2" ])
+      ),
+      RunnerClient::Response.new(code: 202, body: admission_response_body(run_id:))
+    ]
+    requests = []
+    client.define_singleton_method(:perform) do |request|
+      requests << request
+      responses.shift
+    end
+
+    response = client.admit!(task: admission_task, run: admission_run, run_id:, idempotency_key: "admit:#{run_id}", attempt: 1)
+
+    assert_instance_of RunnerProtocol::AdmissionResponse, response
+    assert_equal [ "/readyz", RunnerProtocol::ADMISSION_PATH ], requests.map(&:path)
+    assert_equal RunnerProtocol::ADMISSION_VERSION, JSON.parse(requests.last.body).fetch("protocol_version")
+  end
+
+  test "fails closed when readiness is malformed, transient, or unavailable" do
+    readiness_responses = [
+      RunnerClient::Response.new(code: 200, body: "not-json"),
+      RunnerClient::Response.new(code: 503, body: JSON.generate(status: "unavailable")),
+      RunnerClient::Response.new(
+        code: 200,
+        body: JSON.generate(status: "ok", protocol_versions: [ RunnerProtocol::VERSION ], admission_versions: [ "v3" ])
+      ),
+      RunnerClient::Response.new(code: 200, body: JSON.generate(status: "ok", protocol_versions: [ RunnerProtocol::VERSION ])),
+      RunnerClient::Response.new(
+        code: 200,
+        body: JSON.generate(status: "ok", protocol_versions: [ RunnerProtocol::VERSION ], admission_versions: [ "v1" ])
+      )
+    ]
+
+    readiness_responses.each_with_index do |readiness, index|
+      client = RunnerClient.new(secret: "s" * 32)
+      requests = []
+      client.define_singleton_method(:perform) do |request|
+        requests << request
+        readiness
+      end
+
+      error = assert_raises(RunnerClient::Unavailable) do
+        client.admit!(
+          task: admission_task, run: admission_run,
+          run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
+          idempotency_key: "admit:3d07f334-88ef-4fe4-a640-421e3ba79921", attempt: 1
+        )
+      end
+      assert_includes error.message, "readiness"
+      assert_equal [ "/readyz" ], requests.map(&:path), "readiness case #{index} issued an admission request"
+    end
+  end
+
+  test "fails closed when readiness transport is unavailable" do
+    client = RunnerClient.new(secret: "s" * 32)
+    requests = []
+    client.define_singleton_method(:perform) do |request|
+      requests << request
+      raise Errno::ECONNREFUSED
+    end
+
+    assert_raises(RunnerClient::Unavailable) do
+      client.admit!(
+        task: admission_task, run: admission_run,
+        run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
+        idempotency_key: "admit:3d07f334-88ef-4fe4-a640-421e3ba79921", attempt: 1
+      )
+    end
+    assert_equal [ "/readyz" ], requests.map(&:path)
   end
 
   test "rejects malformed and oversized accepted responses" do
@@ -180,4 +258,47 @@ class RunnerClientTest < ActiveSupport::TestCase
       secret:, timestamp: now.to_i.to_s, method: "POST", path: captured.path, body: captured.body
     ), captured["X-NavishAI-Signature"]
   end
+
+  private
+    def admission_task
+      profile = Data.define(:role_key).new("support_investigator")
+      version = Data.define(
+        :version_number, :instructions, :allowed_tools, :runtime_profile_key,
+        :fallback_profile_keys, :timeout_seconds, :max_steps, :max_tool_calls, :review_policy
+      ).new(3, "Investigate current evidence.", %w[knowledge_search case_read], "workspace_default", [ "fast" ], 300, 10, 20, "required")
+      workspace = Data.define(:runner_key).new("c9bb966b-1fe9-4304-bd51-404e4fd9a09c")
+      Data.define(
+        :workspace, :task_key, :title, :input_context, :expected_output,
+        :assigned_agent_profile, :assigned_agent_profile_version
+      ).new(
+        workspace, "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", "Investigate sign-in failure",
+        "Use the current case conversation.", "State the cause, cite evidence, and name material uncertainty.", profile, version
+      )
+    end
+
+    def admission_run
+      Data.define(
+        :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
+        :selected_runtime_configuration_fingerprint, :selected_effective_model,
+        :runtime_selection_reason, :runtime_selection_detail, :selected_execution_mode,
+        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units
+      ).new(
+        "b" * 64, "scripted", "workspace_default", "c" * 64, "deterministic_fixture", "primary",
+        "Primary Workspace default profile selected.", "bounded", "strong_isolation_required",
+        %w[approved_knowledge case_content], 100_000, 25_000
+      )
+    end
+
+    def admission_response_body(run_id:)
+      JSON.generate(
+        protocol_version: RunnerProtocol::ADMISSION_VERSION, run_id:, status: "accepted",
+        event: {
+          protocol_version: RunnerProtocol::VERSION, event_id: "55a4662d-aef5-4d14-8552-a57b57f2f01e",
+          run_id:, sequence: 1, event_type: "run.admitted", occurred_at: "2026-08-24T12:00:00Z",
+          data: {
+            workspace_key: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c", task_key: "fae7db72-e33b-46b9-8f9e-9a0dfdd56661", attempt: 1
+          }
+        }
+      )
+    end
 end

@@ -42,7 +42,7 @@ func TestHealthEndpoints(t *testing.T) {
 			if contentType := response.Header().Get("Content-Type"); contentType != "application/json" {
 				t.Fatalf("expected application/json, got %q", contentType)
 			}
-			if body := response.Body.String(); body != "{\"protocol_versions\":[\"v1\"],\"status\":\"ok\"}\n" {
+			if body := response.Body.String(); body != "{\"admission_versions\":[\"v2\"],\"protocol_versions\":[\"v1\"],\"status\":\"ok\"}\n" {
 				t.Fatalf("unexpected response body %q", body)
 			}
 		})

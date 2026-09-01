@@ -239,6 +239,8 @@ func TestBlankAPIKeyConnectionRemainsCatalogAndExecutionFailClosed(t *testing.T)
 	request := executionRequest(t)
 	request.WorkspaceKey = workspaceOne
 	request.Routing.AdapterKey = claude.AdapterKey
+	request.Routing.ExecutionMode = protocol.ExecutionModeHostTrusted
+	request.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
 	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); !errors.Is(err, ErrPolicyDenied) {
 		t.Fatalf("incomplete API-key connection did not fail closed for execution: %v", err)
 	}

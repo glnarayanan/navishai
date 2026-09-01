@@ -33,6 +33,10 @@ func NewHandler(secret []byte, store *Store, now func() time.Time) (*Handler, er
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
 	response.Header().Set("Cache-Control", "no-store")
+	if request.URL.Path != protocol.AdmissionPath {
+		http.NotFound(response, request)
+		return
+	}
 	if request.ContentLength > protocol.MaxBodyBytes {
 		handler.writeError(response, http.StatusRequestEntityTooLarge, "request_too_large", "Request body exceeds the protocol limit.")
 		return
@@ -56,7 +60,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	}
 	admission, err := protocol.DecodeAdmissionBytes(body)
 	if err != nil {
-		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Admission request does not match protocol v1.")
+		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Admission request does not match protocol v2.")
 		return
 	}
 	acceptedAt := handler.now().UTC()
@@ -70,7 +74,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		return
 	}
 	result := protocol.AdmissionResponse{
-		ProtocolVersion: protocol.Version,
+		ProtocolVersion: protocol.AdmissionVersion,
 		RunID:           admission.RunID,
 		Status:          "accepted",
 		Event:           event,

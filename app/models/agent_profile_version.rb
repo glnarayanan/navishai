@@ -4,6 +4,8 @@ class AgentProfileVersion < ApplicationRecord
   STEP_RANGE = 1..20
   TOOL_CALL_RANGE = 0..50
 
+  attribute :isolation_policy, default: AgentPolicy::DEFAULT_ISOLATION_POLICY
+
   belongs_to :workspace
   belongs_to :agent_profile
   belongs_to :created_by_membership, class_name: "Membership", optional: true
@@ -14,6 +16,7 @@ class AgentProfileVersion < ApplicationRecord
   validates :instructions, presence: true
   validates :runtime_profile_key, inclusion: { in: AgentPolicy::RUNTIME_PROFILES }
   validates :review_policy, inclusion: { in: AgentPolicy::REVIEW_POLICIES }
+  validates :isolation_policy, inclusion: { in: AgentPolicy::ISOLATION_POLICIES.keys }
   validates :timeout_seconds, numericality: { only_integer: true, in: TIMEOUT_RANGE }
   validates :max_steps, numericality: { only_integer: true, in: STEP_RANGE }
   validates :max_tool_calls, numericality: { only_integer: true, in: TOOL_CALL_RANGE }

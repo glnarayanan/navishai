@@ -136,6 +136,7 @@ class RuntimeRegistry
       installation = @workspace.runtime_installations.find_or_initialize_by(detection_key: report.fetch("detection_key"))
       detected = {
         adapter_key: report.fetch("adapter_key"), protocol_version: report.fetch("protocol_version"),
+        execution_mode: inferred_execution_mode(report),
         executable_path: report.fetch("executable_path"), executable_version: report.fetch("executable_version"),
         account_metadata: report.fetch("account_metadata"), capabilities: report.fetch("capabilities").sort,
         effective_model: report.fetch("effective_model"),
@@ -156,6 +157,13 @@ class RuntimeRegistry
       installation.allowed_data_classes = [] unless installation.persisted?
       installation.profile_keys = [ "workspace_default" ] unless installation.persisted?
       installation.save!
+    end
+
+    def inferred_execution_mode(report)
+      metadata = report.fetch("account_metadata")
+      bounded = report.fetch("adapter_key") == "scripted" ||
+        (metadata.is_a?(Hash) && metadata["transport"] == "built_in_https")
+      bounded ? "bounded" : "legacy_unknown"
     end
 
     def revoke!(installation)

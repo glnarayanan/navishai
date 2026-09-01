@@ -261,7 +261,7 @@ func newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret []byte, store
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", healthHandler)
 	mux.HandleFunc("GET /readyz", healthHandler)
-	mux.Handle("POST /v1/runs/admit", admissionHandler)
+	mux.Handle("POST "+protocol.AdmissionPath, admissionHandler)
 	mux.Handle("POST "+runtimecatalog.LegacyDetectionPath, legacyRuntimeHandler)
 	mux.Handle("POST "+runtimecatalog.DetectionPath, runtimeHandler)
 	mux.Handle("POST "+runtimecatalog.TestPath, testHandler)
@@ -279,5 +279,6 @@ func healthHandler(response http.ResponseWriter, _ *http.Request) {
 	response.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(response).Encode(map[string]any{
 		"status": "ok", "protocol_versions": []string{protocol.Version},
+		"admission_versions": []string{protocol.AdmissionVersion},
 	})
 }

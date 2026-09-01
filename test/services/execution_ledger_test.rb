@@ -56,6 +56,18 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_equal 1, @run.reload.current_sequence
   end
 
+  test "policy denial can terminalize an admitted run before execution starts" do
+    ingest(1, "run.admitted", workspace_key: @workspace.runner_key, task_key: @task.task_key, attempt: 1)
+    ingest(2, "run.policy_denied", code: "legacy_admission_requires_v2", tool: "execution_boundary")
+
+    @run.reload
+    assert @run.policy_denied?
+    assert_equal "legacy_admission_requires_v2", @run.failure_code
+    assert_not @run.retryable
+    assert_equal 2, @run.current_sequence
+    assert_equal %w[run.admitted run.policy_denied], @run.events.order(:sequence_number).pluck(:event_type)
+  end
+
   test "attempts freeze policy and request keys are idempotent under the task lock" do
     same = @ledger.prepare!(task: @task, request_key: "request:one")
     second = @ledger.prepare!(task: @task, request_key: "request:two")
@@ -70,6 +82,8 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
       second.selected_runtime_configuration_fingerprint
     assert_equal runtime_installations(:acme_scripted).effective_model, second.selected_effective_model
     assert_equal "scripted", second.selected_adapter_key
+    assert_equal "bounded", second.selected_execution_mode
+    assert_equal "strong_isolation_required", second.selected_isolation_policy
     assert_equal "primary", second.runtime_selection_reason
     assert_equal %w[approved_knowledge case_content customer_identity public_web_query], second.disclosed_data_classes
     assert_equal 100_000, second.max_input_units
@@ -180,6 +194,16 @@ class ExecutionLedgerTest < ActiveSupport::TestCase
     assert_raises(ActiveRecord::StatementInvalid) do
       ExecutionRun.transaction(requires_new: true) do
         ExecutionRun.where(id: @run.id).update_all(selected_runtime_configuration_fingerprint: "f" * 64)
+      end
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ExecutionRun.transaction(requires_new: true) do
+        ExecutionRun.where(id: @run.id).update_all(selected_execution_mode: "strong_isolated")
+      end
+    end
+    assert_raises(ActiveRecord::StatementInvalid) do
+      ExecutionRun.transaction(requires_new: true) do
+        ExecutionRun.where(id: @run.id).update_all(selected_isolation_policy: "host_trusted_allowed")
       end
     end
 

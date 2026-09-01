@@ -1,4 +1,6 @@
 class ExecutionRun < ApplicationRecord
+  LEGACY_EXECUTION_MODE = RuntimeInstallation::LEGACY_EXECUTION_MODE
+  LEGACY_ISOLATION_POLICY = AgentPolicy::LEGACY_ISOLATION_POLICY
   STATUSES = %w[admitting admitted running completed failed timed_out canceled policy_denied].freeze
   TERMINAL_STATUSES = %w[completed failed timed_out canceled policy_denied].freeze
   MEMORY_CONTEXT_STATUSES = %w[not_applicable available degraded].freeze
@@ -39,6 +41,8 @@ class ExecutionRun < ApplicationRecord
   validates :selected_runtime_configuration_fingerprint, format: { with: /\A[0-9a-f]{64}\z/ }
   validates :selected_effective_model, presence: true, length: { maximum: 200 },
     format: { without: /[\r\n]/ }
+  validates :selected_execution_mode, inclusion: { in: RuntimeInstallation::EXECUTION_MODES }
+  validates :selected_isolation_policy, inclusion: { in: AgentPolicy::ISOLATION_POLICIES.keys + [ LEGACY_ISOLATION_POLICY ] }
   validates :selected_adapter_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }
   validates :max_input_units, :max_output_units,
     numericality: { only_integer: true, in: 1..10_000_000 }
@@ -47,6 +51,9 @@ class ExecutionRun < ApplicationRecord
   validates :input_context, presence: true
   validate :assignment_is_consistent
   validate :content_fits
+  validate :execution_boundary_is_usable, on: :create
+  validate :execution_boundary_matches_assignments, on: :create
+  before_validation :populate_execution_boundary, on: :create
 
   scope :terminal, -> { where(status: TERMINAL_STATUSES) }
   scope :active, -> { where.not(status: TERMINAL_STATUSES) }
@@ -56,6 +63,30 @@ class ExecutionRun < ApplicationRecord
   end
 
   private
+    def populate_execution_boundary
+      self.selected_execution_mode = runtime_installation.execution_mode if
+        runtime_installation && selected_execution_mode.in?([ nil, LEGACY_EXECUTION_MODE ])
+      self.selected_isolation_policy = agent_profile_version.isolation_policy if
+        agent_profile_version && selected_isolation_policy.in?([ nil, LEGACY_ISOLATION_POLICY ])
+    end
+
+    def execution_boundary_is_usable
+      if selected_execution_mode == LEGACY_EXECUTION_MODE || selected_isolation_policy == LEGACY_ISOLATION_POLICY
+        errors.add(:selected_execution_mode, "must be known for a new run")
+      elsif !AgentPolicy.execution_mode_allowed?(selected_isolation_policy, selected_execution_mode)
+        errors.add(:selected_execution_mode, "is not allowed by the selected isolation policy")
+      end
+    end
+
+    def execution_boundary_matches_assignments
+      if runtime_installation && selected_execution_mode != runtime_installation.execution_mode
+        errors.add(:selected_execution_mode, "must match the selected runtime installation")
+      end
+      if agent_profile_version && selected_isolation_policy != agent_profile_version.isolation_policy
+        errors.add(:selected_isolation_policy, "must match the selected profile version")
+      end
+    end
+
     def assignment_is_consistent
       return if crew_task.nil? || agent_profile.nil? || agent_profile_version.nil?
 

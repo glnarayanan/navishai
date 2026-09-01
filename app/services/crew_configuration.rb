@@ -97,6 +97,8 @@ class CrewConfiguration
         max_steps: strict_integer(attributes[:max_steps]),
         max_tool_calls: strict_integer(attributes[:max_tool_calls]),
         review_policy: attributes[:review_policy].to_s,
+        isolation_policy: attributes.key?(:isolation_policy) ?
+          attributes[:isolation_policy].to_s : profile.current_version.isolation_policy,
         memory_required: attributes.key?(:memory_required) ?
           ActiveModel::Type::Boolean.new.cast(attributes[:memory_required]) : profile.current_version.memory_required
       }

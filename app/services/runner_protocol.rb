@@ -3,7 +3,8 @@ require "uri"
 
 module RunnerProtocol
   VERSION = "v1"
-  ADMISSION_PATH = "/v1/runs/admit"
+  ADMISSION_VERSION = "v2"
+  ADMISSION_PATH = "/v2/runs/admit"
   RUNTIME_DETECTION_VERSION = "v2"
   RUNTIME_DETECTION_PATH = "/v2/runtimes/detect"
   RUNTIME_TEST_PATH = "/v1/runtimes/test"
@@ -29,14 +30,21 @@ module RunnerProtocol
     KEYS = %w[protocol_version run_id idempotency_key workspace_key task agent routing].freeze
     TASK_KEYS = %w[task_key attempt title input_context expected_output].freeze
     AGENT_KEYS = %w[role_key policy_version instructions allowed_tools runtime_profile_key fallback_profile_keys timeout_seconds max_steps max_tool_calls review_policy].freeze
-    ROUTING_KEYS = %w[detection_key configuration_fingerprint effective_model adapter_key profile_key selection_reason selection_detail data_classes max_input_units max_output_units].freeze
+    ROUTING_KEYS = %w[
+      detection_key configuration_fingerprint effective_model adapter_key profile_key selection_reason selection_detail
+      execution_mode isolation_policy data_classes max_input_units max_output_units
+    ].freeze
 
     attr_reader :attributes
+
+    def self.protocol_version
+      ADMISSION_VERSION
+    end
 
     def self.for_task(task:, run:, run_id:, idempotency_key:, attempt:, input_context: task.input_context)
       version = task.assigned_agent_profile_version
       new(
-        "protocol_version" => VERSION,
+        "protocol_version" => protocol_version,
         "run_id" => run_id,
         "idempotency_key" => idempotency_key,
         "workspace_key" => task.workspace.runner_key,
@@ -59,19 +67,26 @@ module RunnerProtocol
           "max_tool_calls" => version.max_tool_calls,
           "review_policy" => version.review_policy
         },
-        "routing" => {
-          "detection_key" => run.selected_runtime_detection_key,
-          "configuration_fingerprint" => run.selected_runtime_configuration_fingerprint,
-          "effective_model" => run.selected_effective_model,
-          "adapter_key" => run.selected_adapter_key,
-          "profile_key" => run.selected_runtime_profile_key,
-          "selection_reason" => run.runtime_selection_reason,
-          "selection_detail" => run.runtime_selection_detail,
-          "data_classes" => run.disclosed_data_classes,
-          "max_input_units" => run.max_input_units,
-          "max_output_units" => run.max_output_units
-        }
+        "routing" => routing_for(run)
       )
+    end
+
+    def self.routing_for(run)
+      routing = {
+        "detection_key" => run.selected_runtime_detection_key,
+        "configuration_fingerprint" => run.selected_runtime_configuration_fingerprint,
+        "effective_model" => run.selected_effective_model,
+        "adapter_key" => run.selected_adapter_key,
+        "profile_key" => run.selected_runtime_profile_key,
+        "selection_reason" => run.runtime_selection_reason,
+        "selection_detail" => run.runtime_selection_detail,
+        "execution_mode" => run.selected_execution_mode,
+        "isolation_policy" => run.selected_isolation_policy,
+        "data_classes" => run.disclosed_data_classes,
+        "max_input_units" => run.max_input_units,
+        "max_output_units" => run.max_output_units
+      }
+      routing
     end
 
     def self.parse(body)
@@ -99,7 +114,7 @@ module RunnerProtocol
 
     def validate!(value)
       object!(value, KEYS, "request")
-      equal!(value["protocol_version"], VERSION, "protocol_version")
+      equal!(value["protocol_version"], self.class.protocol_version, "protocol_version")
       uuid!(value["run_id"], "run_id")
       key!(value["idempotency_key"], "idempotency_key")
       uuid!(value["workspace_key"], "workspace_key")
@@ -129,7 +144,7 @@ module RunnerProtocol
       end
 
       routing = value["routing"]
-      object!(routing, ROUTING_KEYS, "routing")
+      object!(routing, self.class::ROUTING_KEYS, "routing")
       unless routing["detection_key"].is_a?(String) && routing["detection_key"].match?(/\A[0-9a-f]{64}\z/)
         raise MalformedMessage, "routing.detection_key is invalid"
       end
@@ -142,6 +157,11 @@ module RunnerProtocol
       end
       policy_key!(routing["adapter_key"], "routing.adapter_key")
       policy_key!(routing["profile_key"], "routing.profile_key")
+      unless RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(routing["execution_mode"]) &&
+          AgentPolicy::ISOLATION_POLICIES.key?(routing["isolation_policy"]) &&
+          AgentPolicy.execution_mode_allowed?(routing["isolation_policy"], routing["execution_mode"])
+        raise MalformedMessage, "routing execution boundary is invalid"
+      end
       unless %w[primary fallback].include?(routing["selection_reason"])
         raise MalformedMessage, "routing.selection_reason is invalid"
       end
@@ -195,6 +215,10 @@ module RunnerProtocol
 
     attr_reader :attributes
 
+    def self.protocol_version
+      ADMISSION_VERSION
+    end
+
     def self.parse(body, expected_run_id:, expected_data: nil)
       raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
 
@@ -205,7 +229,7 @@ module RunnerProtocol
 
     def initialize(attributes, expected_run_id:, expected_data: nil)
       object!(attributes, KEYS, "response")
-      equal!(attributes["protocol_version"], VERSION, "protocol_version")
+      equal!(attributes["protocol_version"], self.class.protocol_version, "protocol_version")
       equal!(attributes["run_id"], expected_run_id, "run_id")
       equal!(attributes["status"], "accepted", "status")
 

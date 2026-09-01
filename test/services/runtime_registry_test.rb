@@ -32,10 +32,14 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
       RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
     end
     installation = @workspace.runtime_installations.sole
+    assert_equal "bounded", installation.execution_mode
     assert_equal "/opt/navishai/fixture", installation.executable_path
     assert_equal "fixture-model", installation.effective_model
     assert_equal "c" * 64, installation.configuration_fingerprint
-    assert_equal({ "authentication" => "managed_on_runner", "account_label" => "Fixture Team" }, installation.account_metadata)
+    assert_equal(
+      { "authentication" => "managed_on_runner", "account_label" => "Fixture Team", "transport" => "built_in_https" },
+      installation.account_metadata
+    )
     assert_not installation.runnable?
 
     RuntimeRegistry.test!(workspace: @workspace, membership: @owner, installation:, client: @client)
@@ -230,6 +234,24 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     assert_not installation.runnable?
   end
 
+  test "refresh infers bounded only from scripted or built-in HTTPS reports" do
+    @reports[0] = runtime_report.merge(
+      "adapter_key" => "fixture",
+      "account_metadata" => { "authentication" => "managed_on_runner" }
+    )
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    installation = @workspace.runtime_installations.sole
+    assert_equal "legacy_unknown", installation.execution_mode
+    assert_not installation.runnable?
+
+    @reports[0] = runtime_report.merge(
+      "adapter_key" => "scripted",
+      "account_metadata" => { "authentication" => "built_in" }
+    )
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    assert_equal "bounded", installation.reload.execution_mode
+  end
+
   test "model and database reject secret metadata and incomplete approval attribution" do
     installation = @workspace.runtime_installations.build(runtime_report.slice(
       "detection_key", "adapter_key", "protocol_version", "executable_path", "executable_version",
@@ -253,7 +275,9 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
       {
         "detection_key" => "a" * 64, "adapter_key" => "fixture", "protocol_version" => "v1",
         "executable_path" => "/opt/navishai/fixture", "executable_version" => "fixture 2.4.1",
-        "account_metadata" => { "authentication" => "managed_on_runner", "account_label" => "Fixture Team" },
+        "account_metadata" => {
+          "authentication" => "managed_on_runner", "account_label" => "Fixture Team", "transport" => "built_in_https"
+        },
         "capabilities" => %w[structured_output tool_calling], "minimum_version" => "2.0.0",
         "effective_model" => "fixture-model", "configuration_fingerprint" => "c" * 64,
         "maximum_version" => "2.x", "compatibility_status" => "compatible", "incompatibility_reason" => "",

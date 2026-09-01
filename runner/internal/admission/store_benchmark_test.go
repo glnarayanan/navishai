@@ -32,7 +32,7 @@ func BenchmarkStoreLookupWithTenThousandRuns(b *testing.B) {
 
 func benchmarkStore(b *testing.B, size int) (*Store, string) {
 	b.Helper()
-	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func benchmarkStore(b *testing.B, size int) (*Store, string) {
 			b.Fatal(err)
 		}
 		response := protocol.AdmissionResponse{
-			ProtocolVersion: protocol.Version,
+			ProtocolVersion: protocol.AdmissionVersion,
 			RunID:           request.RunID,
 			Status:          "accepted",
 			Event:           event,

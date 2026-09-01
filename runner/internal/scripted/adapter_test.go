@@ -123,7 +123,7 @@ func execute(t *testing.T, ctx context.Context, request protocol.AdmissionReques
 
 func admissionRequest(t *testing.T) protocol.AdmissionRequest {
 	t.Helper()
-	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v1", "admission_request.json")
+	path := filepath.Join("..", "..", "..", "test", "fixtures", "files", "runner_protocol", "v2", "admission_request.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,7 @@
 class RuntimeInstallation < ApplicationRecord
+  KNOWN_EXECUTION_MODES = %w[bounded host_trusted strong_isolated].freeze
+  LEGACY_EXECUTION_MODE = "legacy_unknown"
+  EXECUTION_MODES = (KNOWN_EXECUTION_MODES + [ LEGACY_EXECUTION_MODE ]).freeze
   COMPATIBILITY_STATUSES = %w[compatible warning incompatible unknown].freeze
   HEALTH_STATUSES = %w[available unhealthy missing].freeze
   RUNTIME_TEST_STATUSES = %w[untested passed failed].freeze
@@ -18,7 +21,10 @@ class RuntimeInstallation < ApplicationRecord
   belongs_to :approved_by_membership, class_name: "Membership", optional: true
   belongs_to :approved_by_user, class_name: "User", optional: true
 
+  before_validation :reset_approval_for_execution_mode_change, if: -> { persisted? && execution_mode_changed? }
+
   validates :detection_key, format: { with: /\A[0-9a-f]{64}\z/ }, uniqueness: { scope: :workspace_id }
+  validates :execution_mode, inclusion: { in: EXECUTION_MODES }
   validates :adapter_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }
   validates :protocol_version, format: { with: /\Av[1-9][0-9]*\z/ }
   validates :executable_path, presence: true, length: { maximum: 4_096 }, format: { with: %r{\A/.+\z} }
@@ -44,15 +50,35 @@ class RuntimeInstallation < ApplicationRecord
   validate :policy_is_bounded
   validate :approval_is_complete
   validate :runtime_test_evidence_is_complete
+  validate :legacy_execution_mode_is_not_approved
 
   scope :ordered, -> { order(:adapter_key, :id) }
 
   def runnable?
-    approved? && health_status == "available" && compatibility_status != "incompatible" &&
+    approved? && execution_mode.in?(KNOWN_EXECUTION_MODES) && health_status == "available" && compatibility_status != "incompatible" &&
       runtime_test_status == "passed" && runtime_tested_configuration_fingerprint == configuration_fingerprint
   end
 
   private
+    def reset_approval_for_execution_mode_change
+      self.approved = false
+      self.approved_by_membership = nil
+      self.approved_by_user = nil
+      self.approved_at = nil
+      self.runtime_test_status = "untested"
+      self.runtime_test_failure_code = nil
+      self.runtime_tested_at = nil
+      self.runtime_tested_configuration_fingerprint = nil
+      self.runtime_test_input_units = 0
+      self.runtime_test_output_units = 0
+      self.runtime_test_usage_observed = false
+    end
+
+    def legacy_execution_mode_is_not_approved
+      errors.add(:approved, "cannot be approved until execution mode is known") if
+        execution_mode == LEGACY_EXECUTION_MODE && approved?
+    end
+
     def metadata_is_non_secret
       unless account_metadata.is_a?(Hash) && account_metadata.size <= 16 && account_metadata.to_json.bytesize <= 8.kilobytes &&
           account_metadata.values.all? { |value| value.is_a?(String) && value.bytesize <= 500 }
