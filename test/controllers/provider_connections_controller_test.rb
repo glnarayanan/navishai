@@ -269,6 +269,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_includes source, "const currentModel = this.modelTarget.value"
     assert_match(/if \(currentModel && !discoveredIds\.has\(currentModel\)\)/, source)
     assert_includes source, "currentOption.textContent = `Current model (${currentModel})`"
+    assert_includes source, "const preserveManualModel = currentModel !== \"\" && document.activeElement === this.modelTarget"
+    assert_match(/if \(preserveManualModel\) \{\s+this\.useManualModel\(\)/, source)
+    assert_match(/this\.modelTarget\.disabled = true\s+this\.modelTarget\.removeAttribute\("name"\)/, source)
   end
 
   test "provider discovery source recomputes saved settings and owns its timeout" do

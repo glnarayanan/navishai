@@ -11,9 +11,16 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     @workspace.memberships.create!(user: user, role: :member)
     sign_in_as user
 
-    get workspace_runtime_installations_path(@workspace)
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { raise "member runtime index called the provider gateway" }
+    begin
+      get workspace_runtime_installations_path(@workspace)
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original)
+    end
     assert_response :success
     assert_select "h1", "AI providers"
+    assert_select "#runtime-#{@installation.id}", count: 1
     assert_select "code", { text: "/opt/navishai/fixture", count: 0 }
     assert_select ".runtime-policy-form", count: 0
     assert_select "form[action='#{detect_workspace_runtime_installations_path(@workspace)}']", count: 0
@@ -26,6 +33,24 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_response :forbidden
     post test_workspace_runtime_installation_path(@workspace, @installation)
     assert_response :forbidden
+  end
+
+  test "viewers render persisted runtime facts without the provider gateway" do
+    user = User.create!(email_address: "runtime-viewer@example.com", password: "password12345", verified_at: Time.current)
+    @workspace.memberships.create!(user: user, role: :viewer)
+    sign_in_as user
+
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { raise "viewer runtime index called the provider gateway" }
+    begin
+      get workspace_runtime_installations_path(@workspace)
+    ensure
+      ProviderConnectionGateway.define_singleton_method(:new, original)
+    end
+
+    assert_response :success
+    assert_select "#runtime-#{@installation.id}", count: 1
+    assert_select ".runtime-policy-form", count: 0
   end
 
   test "an Owner detects and approves a bounded runtime policy" do

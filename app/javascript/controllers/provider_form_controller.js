@@ -225,6 +225,7 @@ export default class extends Controller {
     }
 
     const currentModel = this.modelTarget.value
+    const preserveManualModel = currentModel !== "" && document.activeElement === this.modelTarget
     this.resetDiscoveredModels()
     const discoveredIds = new Set(models.map((model) => model.id))
     if (currentModel && !discoveredIds.has(currentModel)) {
@@ -242,11 +243,15 @@ export default class extends Controller {
       this.discoveredModelsTarget.append(option)
     })
     this.modelSelectFieldTarget.hidden = false
-    this.modelTarget.disabled = true
-    this.modelTarget.removeAttribute("name")
-    this.manualModelFieldTarget.hidden = true
-    this.discoveredModelsTarget.disabled = false
-    this.discoveredModelsTarget.name = "provider_connection[model]"
+    if (preserveManualModel) {
+      this.useManualModel()
+    } else {
+      this.modelTarget.disabled = true
+      this.modelTarget.removeAttribute("name")
+      this.manualModelFieldTarget.hidden = true
+      this.discoveredModelsTarget.disabled = false
+      this.discoveredModelsTarget.name = "provider_connection[model]"
+    }
     this.discoveredModelsTarget.required = false
     this.setModelState("Models found. Choose one, or enter an exact ID manually.", "available")
   }

@@ -72,6 +72,8 @@ class RuntimeInstallationsController < ApplicationController
     end
 
     def load_provider_catalog(workspace)
+      return load_persisted_installations(include_missing: true) unless @can_configure
+
       @provider_catalog = ProviderConnectionGateway.new.catalog(workspace_key: workspace.runner_key)
       @configured_providers = @provider_catalog.select { |provider| provider.fetch("configured") }
       @current_installations = @configured_providers.each_with_object({}) do |provider, installations|
@@ -82,15 +84,20 @@ class RuntimeInstallationsController < ApplicationController
         catalog_keys.include?(installation.adapter_key) || installation.health_status == "missing"
       end
     rescue RunnerClient::Error => error
-      @provider_catalog = []
-      @configured_providers = []
-      @current_installations = {}
-      @standalone_installations = @installations.reject { |installation| installation.health_status == "missing" }
+      load_persisted_installations(include_missing: false)
       @provider_catalog_error = if error.is_a?(RunnerClient::ClientConfigurationError)
         "The provider service is not configured. Start the runner to manage provider connections."
       else
         "Live provider settings are unavailable. Showing the last known connection state."
       end
+    end
+
+    def load_persisted_installations(include_missing:)
+      @provider_catalog = []
+      @configured_providers = []
+      @current_installations = {}
+      @standalone_installations = include_missing ? @installations : @installations.reject { |installation| installation.health_status == "missing" }
+      @provider_catalog_error = nil
     end
 
     def current_installation_for(provider)
