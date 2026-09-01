@@ -14,6 +14,9 @@ class RequirePassingRuntimeTestForApprovalTest < ActiveSupport::TestCase
       approved: true, approved_by_membership_id: owner.id, approved_by_user_id: owner.user_id,
       approved_at: Time.current
     )
+    previous_audit_count = AuditEvent.where(
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
+    ).count
 
     migration.migrate(:up)
 
@@ -22,6 +25,15 @@ class RequirePassingRuntimeTestForApprovalTest < ActiveSupport::TestCase
     assert_nil installation.approved_by_membership_id
     assert_nil installation.approved_by_user_id
     assert_nil installation.approved_at
+    assert_equal previous_audit_count + 1, AuditEvent.where(
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
+    ).count
+    audit = AuditEvent.where(
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
+    ).order(:id).last
+    assert audit.system?
+    assert audit.source_system?
+    assert_nil audit.actor_id
     assert constraint_present?
 
     assert_raises(ActiveRecord::StatementInvalid) do

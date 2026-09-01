@@ -1,6 +1,16 @@
 class RequirePassingRuntimeTestForApproval < ActiveRecord::Migration[8.1]
   def up
     execute <<~SQL.squish
+      INSERT INTO audit_events (
+        workspace_id, actor_id, actor_kind, source, action, subject_type, subject_id,
+        metadata, occurred_at, created_at
+      )
+      SELECT workspace_id, NULL, 'system', 'system', 'runtime.installation_revoked',
+             'RuntimeInstallation', id, '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      FROM runtime_installations
+      WHERE approved = true
+    SQL
+    execute <<~SQL.squish
       UPDATE runtime_installations
       SET approved = false,
           approved_by_membership_id = NULL,
