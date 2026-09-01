@@ -3,8 +3,6 @@ package execution
 import (
 	"context"
 
-	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
-	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/providerapi"
 )
 
@@ -18,5 +16,5 @@ type ProviderAPI interface {
 var _ ProviderAPI = (*providerapi.Client)(nil)
 
 func isDirectProviderAPIAdapter(adapterKey string) bool {
-	return adapterKey == codex.AdapterKey || adapterKey == claude.AdapterKey
+	return providerapi.Supports(adapterKey)
 }

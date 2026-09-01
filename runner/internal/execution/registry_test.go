@@ -62,16 +62,38 @@ func TestRegistryExecutesConfiguredScriptedAdapterAndEnforcesPolicy(t *testing.T
 	}
 	boundaryMismatch := request
 	boundaryMismatch.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
+	boundaryEvents := []protocol.CanonicalEvent{}
 	if err := registry.Execute(context.Background(), boundaryMismatch, func(event protocol.CanonicalEvent) error {
-		events = append(events, event)
+		boundaryEvents = append(boundaryEvents, event)
 		return nil
-	}); !errors.Is(err, ErrPolicyDenied) || len(events) != 6 {
-		t.Fatalf("scripted transport accepted a mismatched boundary: err=%v events=%#v", err, events)
+	}); err != nil || len(boundaryEvents) != 6 {
+		t.Fatalf("scripted transport rejected a bounded host-trusted policy: err=%v events=%#v", err, boundaryEvents)
 	}
 
 	request.Routing.DataClasses = append(request.Routing.DataClasses, "retrieved_memory")
 	if err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil }); err != ErrPolicyDenied {
 		t.Fatalf("expected policy denial, got %v", err)
+	}
+}
+
+func TestBoundedExecutionBoundaryAcceptsOnlyBoundedRunnerPolicies(t *testing.T) {
+	for _, test := range []struct {
+		name, executionMode, isolationPolicy string
+		allowed                              bool
+	}{
+		{name: "strong isolation required", executionMode: protocol.ExecutionModeBounded, isolationPolicy: protocol.IsolationPolicyStrongRequired, allowed: true},
+		{name: "host trusted allowed", executionMode: protocol.ExecutionModeBounded, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed, allowed: true},
+		{name: "host trusted mode", executionMode: protocol.ExecutionModeHostTrusted, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed},
+		{name: "strong isolated mode", executionMode: protocol.ExecutionModeStrongIsolated, isolationPolicy: protocol.IsolationPolicyStrongRequired},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := executionRequest(t)
+			request.Routing.ExecutionMode = test.executionMode
+			request.Routing.IsolationPolicy = test.isolationPolicy
+			if got := boundedExecutionBoundary(request); got != test.allowed {
+				t.Fatalf("boundedExecutionBoundary() = %t, want %t", got, test.allowed)
+			}
+		})
 	}
 }
 
@@ -544,8 +566,8 @@ func TestDirectProviderAPIRejectsForgedExecutionBoundariesBeforeCallingProvider(
 		name, executionMode, isolationPolicy string
 	}{
 		{name: "host trusted mode", executionMode: protocol.ExecutionModeHostTrusted, isolationPolicy: protocol.IsolationPolicyStrongRequired},
-		{name: "host trusted policy", executionMode: protocol.ExecutionModeBounded, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed},
 		{name: "host trusted pair", executionMode: protocol.ExecutionModeHostTrusted, isolationPolicy: protocol.IsolationPolicyHostTrustedAllowed},
+		{name: "strong isolated mode", executionMode: protocol.ExecutionModeStrongIsolated, isolationPolicy: protocol.IsolationPolicyStrongRequired},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			forged := request
@@ -560,6 +582,23 @@ func TestDirectProviderAPIRejectsForgedExecutionBoundariesBeforeCallingProvider(
 				t.Fatalf("forged direct API boundary was not denied before provider execution: err=%v calls=%d events=%#v", err, client.generationCalls, events)
 			}
 		})
+	}
+}
+
+func TestDirectProviderAPIRequiresExplicitGenerationCapability(t *testing.T) {
+	registry, _, _, _ := directProviderAPIRegistry(t, providerapi.GenerationResult{
+		Text: "should not be used", InputTokens: 1, OutputTokens: 1,
+	}, nil)
+	installations := registry.catalog.(*ManagedCatalog).apiKeyInstallations(workspaceOne)
+	if len(installations) != 1 {
+		t.Fatalf("direct provider API installation was not available: %#v", installations)
+	}
+	installation := installations[0]
+	installation.Capabilities = []string{runtimecatalog.RuntimeTestCapability, "structured_output"}
+	if isDirectProviderAPIInstallation(installation, providerconfig.Connection{
+		AuthMode: "api_key", ExecutionMode: protocol.ExecutionModeBounded,
+	}) {
+		t.Fatal("provider generation remained available without its explicit capability")
 	}
 }
 

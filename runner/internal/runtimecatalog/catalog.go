@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	RuntimeTestCapability = "runtime_test"
-	maxVersionBytes       = 8 * 1024
-	probeTimeout          = 3 * time.Second
+	RuntimeTestCapability        = "runtime_test"
+	ProviderGenerationCapability = "provider_generation"
+	maxVersionBytes              = 8 * 1024
+	probeTimeout                 = 3 * time.Second
 )
 
 type Transport string

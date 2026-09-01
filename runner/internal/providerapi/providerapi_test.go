@@ -58,6 +58,22 @@ func requireErrorCode(t *testing.T, err error, expected ErrorCode) {
 	}
 }
 
+func TestSupportsReportsRegisteredProviderAPIContracts(t *testing.T) {
+	for _, test := range []struct {
+		adapterKey string
+		supported  bool
+	}{
+		{adapterKey: "codex_subscription", supported: true},
+		{adapterKey: "claude_subscription", supported: true},
+		{adapterKey: "cursor_subscription"},
+		{adapterKey: "unknown"},
+	} {
+		if got := Supports(test.adapterKey); got != test.supported {
+			t.Fatalf("Supports(%q) = %t, want %t", test.adapterKey, got, test.supported)
+		}
+	}
+}
+
 func TestNewUsesCallerBoundedHTTPClient(t *testing.T) {
 	client := New()
 	httpClient, ok := client.doer.(*http.Client)

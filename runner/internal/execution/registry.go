@@ -101,7 +101,7 @@ func (registry *Registry) Execute(ctx context.Context, request protocol.Admissio
 				return ErrPolicyDenied
 			}
 			if connection.AuthMode == "api_key" {
-				if isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
+				if providerapi.Supports(request.Routing.AdapterKey) {
 					if connection.ExecutionMode != request.Routing.ExecutionMode || !boundedExecutionBoundary(request) {
 						return ErrPolicyDenied
 					}
@@ -280,7 +280,8 @@ func runtimeTestExecutionBoundary(installation runtimecatalog.Installation, dire
 
 func boundedExecutionBoundary(request protocol.AdmissionRequest) bool {
 	return request.Routing.ExecutionMode == protocol.ExecutionModeBounded &&
-		request.Routing.IsolationPolicy == protocol.IsolationPolicyStrongRequired
+		(request.Routing.IsolationPolicy == protocol.IsolationPolicyStrongRequired ||
+			request.Routing.IsolationPolicy == protocol.IsolationPolicyHostTrustedAllowed)
 }
 
 func runtimeTestAdmission(request runtimecatalog.TestRequest, adapterKey string, config AdapterConfig, model, fingerprint, executionMode, isolationPolicy string) protocol.AdmissionRequest {

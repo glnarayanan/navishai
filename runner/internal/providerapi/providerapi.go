@@ -193,6 +193,14 @@ func providerSpecFor(adapterKey string) (providerSpec, bool) {
 	}
 }
 
+// Supports reports whether the provider API has a registered wire contract for
+// the adapter. Callers use this as the provider registration boundary without
+// duplicating provider-specific adapter switches.
+func Supports(adapterKey string) bool {
+	_, ok := providerSpecFor(adapterKey)
+	return ok
+}
+
 func (client *Client) do(ctx context.Context, method string, spec providerSpec, path, apiKey string, payload any) ([]byte, error) {
 	if ctx == nil {
 		return nil, providerError(CodeInvalidInput, 0)

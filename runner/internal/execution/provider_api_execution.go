@@ -19,7 +19,7 @@ import (
 func (registry *Registry) executeProviderAPIRequest(ctx context.Context, request protocol.AdmissionRequest, connection providerconfig.Connection, emit func(protocol.CanonicalEvent) error) error {
 	if registry == nil || registry.providerAPI == nil || registry.providers == nil || !boundedExecutionBoundary(request) ||
 		connection.AuthMode != "api_key" ||
-		!isDirectProviderAPIAdapter(request.Routing.AdapterKey) {
+		!providerapi.Supports(request.Routing.AdapterKey) {
 		return ErrPolicyDenied
 	}
 	adapter, ok := registry.config.Adapters[request.Routing.AdapterKey]
@@ -31,7 +31,9 @@ func (registry *Registry) executeProviderAPIRequest(ctx context.Context, request
 		request.WorkspaceKey, request.Routing.AdapterKey, adapter, connection,
 		registry.configurationIdentityKey, registry.currentTime(),
 	)
-	if !ok || installation.DetectionKey != request.Routing.DetectionKey ||
+	if !ok || !isDirectProviderAPIInstallation(installation, connection) ||
+		!contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability) ||
+		installation.DetectionKey != request.Routing.DetectionKey ||
 		installation.EffectiveModel != request.Routing.EffectiveModel ||
 		installation.ConfigurationFingerprint != request.Routing.ConfigurationFingerprint ||
 		installation.HealthStatus != "available" || installation.CompatibilityStatus != "compatible" {

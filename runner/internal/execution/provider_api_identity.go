@@ -70,7 +70,9 @@ func providerAPIInstallation(workspaceKey, adapterKey string, adapter AdapterCon
 		ProtocolVersion: protocol.Version, ExecutablePath: path, ExecutableVersion: providerAPIVersionEvidence,
 		AccountMetadata: map[string]string{"authentication": "api_key", "transport": "built_in_https"},
 		Transport:       runtimecatalog.TransportBuiltInHTTPS, ExecutionMode: protocol.ExecutionModeBounded,
-		Capabilities:   []string{runtimecatalog.RuntimeTestCapability, "structured_output"},
+		Capabilities: []string{
+			runtimecatalog.RuntimeTestCapability, runtimecatalog.ProviderGenerationCapability, "structured_output",
+		},
 		EffectiveModel: model, ConfigurationFingerprint: fingerprint,
 		MinimumVersion: providerAPIMinimumVersion, MaximumVersion: providerAPIMaximumVersion,
 		CompatibilityStatus: "compatible", HealthStatus: "available",
@@ -95,7 +97,8 @@ func isDirectProviderAPIInstallation(installation runtimecatalog.Installation, c
 		installation.DetectionKey == detectionKeyForProviderAPI(installation.AdapterKey) &&
 		installation.ExecutablePath == providerAPIExecutablePath(installation.AdapterKey) &&
 		installation.ExecutableVersion == providerAPIVersionEvidence &&
-		installation.Transport == runtimecatalog.TransportBuiltInHTTPS
+		installation.Transport == runtimecatalog.TransportBuiltInHTTPS &&
+		contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability)
 }
 
 func detectionKeyForProviderAPI(adapterKey string) string {

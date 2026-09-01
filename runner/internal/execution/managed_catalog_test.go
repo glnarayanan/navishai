@@ -13,6 +13,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/codex"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
+	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
 )
 
 func TestManagedCatalogProvidesBuiltInAPIForAPIKeyConnection(t *testing.T) {
@@ -47,7 +48,8 @@ func TestManagedCatalogProvidesBuiltInAPIForAPIKeyConnection(t *testing.T) {
 	}
 	catalog.supported = func() bool { return true }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
-	if len(installations) != 1 || installations[0].ExecutablePath != providerAPIOpenAIPath || installations[0].AccountMetadata["transport"] != "built_in_https" {
+	if len(installations) != 1 || installations[0].ExecutablePath != providerAPIOpenAIPath || installations[0].AccountMetadata["transport"] != "built_in_https" ||
+		!contains(installations[0].Capabilities, runtimecatalog.ProviderGenerationCapability) {
 		t.Fatalf("API-key connection was not represented by the built-in client: %#v", installations)
 	}
 	if other := catalog.DetectWorkspace(context.Background(), "3d07f334-88ef-4fe4-a640-421e3ba79921"); len(other) != 0 {
