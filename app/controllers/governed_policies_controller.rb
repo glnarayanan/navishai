@@ -77,7 +77,7 @@ class GovernedPoliciesController < ApplicationController
           contract: [ :execution_budget_units, :missing_items_block,
             { required_claim_categories: [], mandatory_review_checks: [], evidence_freshness_days: {} } ],
           profile: [ :runtime_profile_key, :timeout_seconds, :max_steps, :max_tool_calls,
-            :review_policy, { fallback_profile_keys: [] } ] }
+            :review_policy, :isolation_policy, { fallback_profile_keys: [] } ] }
       ])
     end
 

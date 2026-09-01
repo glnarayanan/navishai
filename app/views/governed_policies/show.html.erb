@@ -114,6 +114,12 @@
               <%= hidden_field_tag "governed_policy[profile][max_steps]", profile_version.max_steps %>
               <%= hidden_field_tag "governed_policy[profile][max_tool_calls]", profile_version.max_tool_calls %>
               <%= hidden_field_tag "governed_policy[profile][review_policy]", profile_version.review_policy %>
+              <div class="field">
+                <%= label_tag "profile_#{profile.id}_isolation_policy", "Execution isolation" %>
+                <%= select_tag "governed_policy[profile][isolation_policy]",
+                  options_for_select(AgentPolicy::ISOLATION_POLICIES.map { |key, label| [ label, key ] }, profile_version.isolation_policy),
+                  id: "profile_#{profile.id}_isolation_policy" %>
+              </div>
             </div>
 
             <details class="policy-freshness">
