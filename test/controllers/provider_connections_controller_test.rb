@@ -271,6 +271,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_includes source, "currentOption.textContent = `Current model (${currentModel})`"
     assert_includes source, "const preserveManualModel = currentModel !== \"\" && document.activeElement === this.modelTarget"
     assert_match(/if \(preserveManualModel\) \{\s+this\.useManualModel\(\)/, source)
+    assert_includes source, "if (shouldFocus && document.activeElement !== this.modelTarget) this.modelTarget.focus()"
     assert_match(/this\.modelTarget\.disabled = true\s+this\.modelTarget\.removeAttribute\("name"\)/, source)
   end
 

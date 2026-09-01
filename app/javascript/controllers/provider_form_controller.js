@@ -335,7 +335,7 @@ export default class extends Controller {
     this.discoveredModelsTarget.removeAttribute("name")
     this.discoveredModelsTarget.required = false
     this.sync()
-    if (shouldFocus) this.modelTarget.focus()
+    if (shouldFocus && document.activeElement !== this.modelTarget) this.modelTarget.focus()
   }
 
   modelLabel(required) {
