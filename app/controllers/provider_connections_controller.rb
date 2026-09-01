@@ -37,9 +37,14 @@ class ProviderConnectionsController < ApplicationController
   def destroy
     workspace = Current.require_workspace!
     gateway = ProviderConnectionGateway.new
-    provider = gateway.remove(
-      workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key: params[:adapter_key]
-    )
+    provider = begin
+      gateway.remove(
+        workspace_key: workspace.runner_key, request_id: SecureRandom.uuid, adapter_key: params[:adapter_key]
+      )
+    rescue RunnerClient::AmbiguousResult
+      invalidate_uncertain_provider_change!(workspace:, adapter_key: params[:adapter_key])
+      raise
+    end
     return unless record_confirmed_provider_change(
       workspace:, adapter_key: params[:adapter_key], action: "runtime.provider_removed"
     )
@@ -99,9 +104,7 @@ class ProviderConnectionsController < ApplicationController
           api_key: attributes.fetch(:api_key)
         )
       rescue RunnerClient::AmbiguousResult
-        RuntimeRegistry.invalidate_adapter!(
-          workspace:, membership: Current.require_membership!, adapter_key:
-        )
+        invalidate_uncertain_provider_change!(workspace:, adapter_key:)
         raise
       end
       return unless record_confirmed_provider_change(
@@ -126,6 +129,12 @@ class ProviderConnectionsController < ApplicationController
       end
 
       redirect_to provider_status_path(workspace:, installation:), notice: saved_provider_notice(configured, installation:)
+    rescue RunnerClient::AmbiguousResult => error
+      if action_name == "create"
+        redirect_to workspace_runtime_installations_path(workspace), alert: user_facing_error(error)
+      else
+        render_configuration_error(error, adapter_key:)
+      end
     rescue RunnerClient::Error, RuntimeRegistry::InvalidPolicy => error
       render_configuration_error(error, adapter_key:)
     rescue ProviderConnectionProtocol::MalformedMessage => error
@@ -157,6 +166,12 @@ class ProviderConnectionsController < ApplicationController
         )
         audit_event(action, workspace:, subject: workspace)
       end
+    end
+
+    def invalidate_uncertain_provider_change!(workspace:, adapter_key:)
+      RuntimeRegistry.invalidate_adapter!(
+        workspace:, membership: Current.require_membership!, adapter_key:
+      )
     end
 
     def record_confirmed_provider_change(workspace:, adapter_key:, action:)

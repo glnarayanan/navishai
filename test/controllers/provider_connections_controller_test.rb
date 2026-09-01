@@ -710,9 +710,41 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[runtime.installation_revoked runtime.provider_configured], actions
   end
 
-  test "an ambiguous configuration revokes stale approval and test evidence without confirming the change" do
+  test "an ambiguous create redirects after revoking stale approval and test evidence without confirming the change" do
     installation = approved_codex_installation
-    @gateway.configure_error = RunnerClient::AmbiguousResult.new("outcome unknown")
+    installation.update!(adapter_key: "claude")
+    @gateway.configure_after_persist_error = RunnerClient::AmbiguousResult.new("outcome unknown")
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      post workspace_provider_connections_path(@workspace), params: {
+        provider_connection: {
+          adapter_key: "claude", auth_mode: "api_key", model: "claude-sonnet-4-5",
+          api_key: "provider-secret-value"
+        }
+      }
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider service did not confirm the change. Check connection status before trying again.", flash[:alert]
+    provider = @gateway.catalog(workspace_key: @workspace.runner_key).find do |candidate|
+      candidate.fetch("adapter_key") == "claude"
+    end
+    assert provider.fetch("configured")
+    installation.reload
+    refute installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_tested_configuration_fingerprint
+    revoked = @workspace.audit_events.find_by!(
+      action: "runtime.installation_revoked", subject: installation
+    )
+    assert_equal users(:owner), revoked.actor
+    refute @workspace.audit_events.exists?(action: "runtime.provider_configured")
+  end
+
+  test "an ambiguous update revokes stale approval and test evidence without confirming the change" do
+    installation = approved_codex_installation
+    @gateway.configure_after_persist_error = RunnerClient::AmbiguousResult.new("outcome unknown")
     sign_in_as users(:owner)
 
     with_gateway(@gateway) do
@@ -734,6 +766,32 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     )
     assert_equal users(:owner), revoked.actor
     refute @workspace.audit_events.exists?(action: "runtime.provider_configured")
+  end
+
+  test "an ambiguous removal revokes stale approval and test evidence without confirming the change" do
+    installation = approved_codex_installation
+    @gateway.remove_after_persist_error = RunnerClient::AmbiguousResult.new("outcome unknown")
+    sign_in_as users(:owner)
+
+    with_gateway(@gateway) do
+      delete workspace_provider_connection_path(@workspace, "codex")
+    end
+
+    assert_redirected_to workspace_runtime_installations_path(@workspace)
+    assert_equal "The provider service did not confirm the change. Check connection status before trying again.", flash[:alert]
+    provider = @gateway.catalog(workspace_key: @workspace.runner_key).find do |candidate|
+      candidate.fetch("adapter_key") == "codex"
+    end
+    refute provider.fetch("configured")
+    installation.reload
+    refute installation.approved?
+    assert_equal "untested", installation.runtime_test_status
+    assert_nil installation.runtime_tested_configuration_fingerprint
+    revoked = @workspace.audit_events.find_by!(
+      action: "runtime.installation_revoked", subject: installation
+    )
+    assert_equal users(:owner), revoked.actor
+    refute @workspace.audit_events.exists?(action: "runtime.provider_removed")
   end
 
   test "a confirmed removal revokes stale approval and is audited before a failed refresh" do
@@ -803,7 +861,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
 
     class FakeProviderGateway
-      attr_accessor :configure_error, :detect_error, :models_error, :models_result, :test_error, :test_result
+      attr_accessor :configure_after_persist_error, :detect_error, :models_error,
+        :models_result, :remove_after_persist_error, :test_error, :test_result
       attr_reader :configure_calls, :remove_calls, :models_calls, :test_calls
 
       def initialize(catalog)
@@ -821,8 +880,6 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
       def configure(**attributes)
         @configure_calls << attributes
-        raise configure_error if configure_error
-
         provider = @catalog.find { |item| item.fetch("adapter_key") == attributes.fetch(:adapter_key) }
         provider.merge!(
           "configured" => true, "secret_configured" => attributes.fetch(:api_key).present? || provider.fetch("secret_configured"),
@@ -830,6 +887,8 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
           "model" => attributes.fetch(:model), "health_status" => "available", "available" => true,
           "unavailable_reason" => ""
         )
+        raise configure_after_persist_error if configure_after_persist_error
+
         provider
       end
 
@@ -842,10 +901,14 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
       def remove(workspace_key:, request_id:, adapter_key:)
         @remove_calls << adapter_key
-        @catalog.find { |item| item.fetch("adapter_key") == adapter_key }.merge(
+        provider = @catalog.find { |item| item.fetch("adapter_key") == adapter_key }
+        provider.merge!(
           "configured" => false, "secret_configured" => false, "auth_mode" => "", "model" => "",
           "execution_mode" => "", "health_status" => "not_configured", "unavailable_reason" => ""
         )
+        raise remove_after_persist_error if remove_after_persist_error
+
+        provider
       end
 
       def detect_runtimes!(workspace_key:)
