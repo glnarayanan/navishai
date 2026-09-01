@@ -56,6 +56,10 @@
   padding: 1.25rem;
 }
 
+.workspace-settings-form > .button-primary {
+  width: auto;
+}
+
 .workspace-settings-links {
   display: grid;
   gap: 1rem;
@@ -63,10 +67,11 @@
 }
 
 .settings-link-list {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
+  overflow: visible;
+  border-block: 1px solid var(--border);
+  border-inline: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .settings-link {
@@ -75,7 +80,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.9rem 1rem;
+  padding: 0.9rem 0.25rem;
+  border-radius: 0;
   color: var(--foreground);
   text-decoration: none;
 }
@@ -92,6 +98,7 @@
 .settings-link > span:first-child {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .settings-link small {
@@ -110,12 +117,17 @@
   .workspace-index-heading .button,
   .workspace-settings-heading .button,
   .workspace-card > .button {
-    width: 100%;
+    width: auto;
+    justify-self: start;
   }
 
   .is-app .provider-actions .button.button-compact,
   .is-app .runtime-heading-actions .button.button-compact {
     min-height: 3rem;
+  }
+
+  .workspace-settings-form > .button-primary {
+    width: 100%;
   }
 }
 
@@ -400,30 +412,36 @@
 
 .workspace-list {
   display: grid;
-  gap: 0.65rem;
-  margin: 1.25rem 0 0;
+  gap: 0;
+  margin: 1.5rem 0 0;
   padding: 0;
+  border-top: 1px solid var(--border);
   list-style: none;
+}
+
+.workspace-list > li {
+  border-bottom: 1px solid var(--border);
 }
 
 .workspace-link {
   display: flex;
-  min-height: 4.25rem;
+  min-width: 0;
+  min-height: 4rem;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.15rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  padding: 1rem 0.25rem;
+  border: 0;
+  border-radius: 0;
   color: var(--foreground);
   text-decoration: none;
-  background: var(--card);
-  box-shadow: var(--shadow);
+  background: transparent;
+  box-shadow: none;
 }
 
 .workspace-link:hover {
   color: var(--foreground);
-  border-color: color-mix(in oklch, var(--secondary) 35%, var(--border));
+  background: var(--muted-surface);
 }
 
 .workspace-link small,
@@ -434,6 +452,7 @@
 .workspace-link span:first-child {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .empty-state {
@@ -444,6 +463,16 @@
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-lg);
   background: color-mix(in oklch, var(--muted-surface) 60%, var(--card));
+}
+
+.empty-state.provider-empty,
+.empty-state.workspace-empty {
+  padding: 1.25rem 0;
+  border: 0;
+  border-block: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .route-status {

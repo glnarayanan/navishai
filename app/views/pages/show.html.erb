@@ -2,19 +2,10 @@
 
 <main class="landing">
   <section class="landing-hero" id="hero" aria-labelledby="hero-title">
-    <div class="landing-hero-wash" aria-hidden="true"></div>
     <div class="landing-hero-inner">
-      <p class="landing-badge">
-        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-          <path fill="currentColor" d="M7.63 1.1A.87.87 0 0 1 8 1c.13 0 .26.03.37.1l5.25 3c.23.13.38.37.38.64s-.15.51-.38.64L8.37 8.4A.87.87 0 0 1 8 8.5a.87.87 0 0 1-.37-.1L2.38 5.4A.75.75 0 0 1 2 4.75c0-.27.15-.51.38-.64l5.25-3z"/>
-          <path fill="currentColor" d="M2.57 7.24 2.38 7.35A.75.75 0 0 0 2 8c0 .27.15.51.38.64l5.25 3c.11.06.24.1.37.1s.26-.04.37-.1l5.25-3A.75.75 0 0 0 14 8a.75.75 0 0 0-.38-.65l-.19-.11-4.31 2.46A2.6 2.6 0 0 1 8 10a2.6 2.6 0 0 1-1.12-.3L2.57 7.24z"/>
-          <path fill="currentColor" d="M2.38 10.6 2.57 10.49 6.88 12.95c.34.2.73.3 1.12.3s.78-.1 1.12-.3l4.31-2.46.19.11c.23.13.38.37.38.64s-.15.51-.38.64L8.37 14.9A.87.87 0 0 1 8 15a.87.87 0 0 1-.37-.1L2.38 11.9A.75.75 0 0 1 2 11.25c0-.27.15-.51.38-.64z"/>
-        </svg>
-        Self-hosted customer operations
-      </p>
       <div class="landing-hero-copy">
         <h1 id="hero-title">Resolve support cases with proof.<br>Keep every message human.</h1>
-        <p>Bring shared email and Intercom into one workspace. Specialist crews investigate with current knowledge and account history, prepare a cited draft, and show what needs review before a teammate sends it.</p>
+        <p>Bring shared email and Intercom into one workspace. Self-hosted customer operations use current knowledge and account history to prepare a cited draft and show what needs review before a teammate sends it.</p>
       </div>
       <div class="landing-actions">
         <%= link_to "Sign in to your workspace", new_session_path, class: "button button-primary" %>
@@ -41,7 +32,7 @@
               <div class="stage-draft">
                 <strong>Cited draft ready for review</strong>
                 <span>The secret rotation completed at 14:02. The 401 is from the previous signing key still cached on one worker.</span>
-                <span class="button button-primary" aria-hidden="true">Review draft</span>
+                <span class="draft-status" aria-hidden="true">Draft awaiting review</span>
               </div>
             </div>
           </div>
@@ -52,14 +43,13 @@
 
   <section class="proof-section" id="proof" aria-labelledby="proof-title">
     <header class="proof-heading">
-      <p class="proof-kicker">One accountable workspace</p>
       <h2 id="proof-title">The customer context behind every answer</h2>
     </header>
     <div class="proof-grid">
       <% [
         ["Shared email + Intercom", "Conversations become linked cases with Account and Contact context."],
         ["Cited investigations", "Drafts keep current knowledge, memory, and public sources close to each claim."],
-        ["Account context", "Support history feeds a source-backed dossier and deterministic health signals."],
+        ["Account context", "Support history feeds a source-backed dossier and explainable health signals."],
         ["Human-controlled replies", "A teammate owns the final wording and deliberately sends the message."]
       ].each do |name, detail| %>
         <article class="proof-cell">
@@ -126,7 +116,7 @@
                   <div class="feature-send-card">
                     <strong>Ready for your review</strong>
                     <span>Edit the wording, confirm the recipient, and send as yourself.</span>
-                    <span class="button button-primary">Review draft</span>
+                    <span class="draft-status">Draft awaiting review</span>
                   </div>
                 <% end %>
                 </div>
@@ -183,8 +173,6 @@
 
   <section id="features" class="bento-section" aria-labelledby="outcomes-title">
     <div class="section-frame">
-      <div class="section-hatch section-hatch-start" aria-hidden="true"></div>
-      <div class="section-hatch section-hatch-end" aria-hidden="true"></div>
       <header class="section-header">
         <h2 id="outcomes-title">Support history becomes customer context</h2>
         <p>Carry what the team learns into a source-backed Account view, explainable health, and human-owned Customer Success work.</p>
@@ -193,7 +181,6 @@
         <article class="bento-card">
           <div class="bento-visual outcome-stage">
             <div class="outcome-board">
-              <p class="outcome-kicker">Account dossier</p>
               <div class="feature-evidence-card"><strong>Customer identity</strong><small>Linked sources and corrections</small></div>
               <div class="feature-evidence-card"><strong>Current facts</strong><small>Source, observed time, and conflicts</small></div>
               <div class="feature-evidence-card is-web"><strong>Next human action</strong><small>Open questions stay visible</small></div>
@@ -208,14 +195,7 @@
         <article class="bento-card">
           <div class="bento-visual health-stage is-on" aria-hidden="true">
             <div class="health-tooltip">72</div>
-            <span class="health-stem"></span>
             <svg class="health-chart" viewBox="0 0 600 200">
-              <defs>
-                <linearGradient id="health-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--secondary)" stop-opacity="0.3"/>
-                  <stop offset="100%" stop-color="var(--secondary)" stop-opacity="0"/>
-                </linearGradient>
-              </defs>
               <path class="chart-fill" d="M0 160 C100 150 150 120 200 128 C280 140 340 70 400 82 C470 96 530 48 600 54 L600 200 L0 200 Z"/>
               <path class="chart-line" d="M0 160 C100 150 150 120 200 128 C280 140 340 70 400 82 C470 96 530 48 600 54"/>
               <circle class="chart-dot" cx="300" cy="105" r="4"/>
@@ -230,7 +210,6 @@
         <article class="bento-card">
           <div class="bento-visual outcome-stage">
             <div class="outcome-board outcome-timeline">
-              <p class="outcome-kicker">Explain this outcome</p>
               <div class="outcome-event"><span class="outcome-state">1</span><p><strong>Evidence gathered</strong><small>Knowledge, history, and sources</small></p></div>
               <div class="outcome-event"><span class="outcome-state">2</span><p><strong>Draft reviewed</strong><small>Edits and unresolved claims retained</small></p></div>
               <div class="outcome-event"><span class="outcome-state">3</span><p><strong>Human action recorded</strong><small>Exact message, channel, and actor</small></p></div>
@@ -245,7 +224,6 @@
         <article class="bento-card">
           <div class="bento-visual outcome-stage">
             <div class="outcome-board">
-              <p class="outcome-kicker">Customer Success intervention</p>
               <ul class="feature-review-list">
                 <li class="is-ok">Recommendation tied to Account evidence</li>
                 <li class="is-ok">Manager decision stays attributable</li>
@@ -277,8 +255,6 @@
 
   <section id="self-host" class="growth-section" aria-labelledby="host-title">
     <div class="section-frame">
-      <div class="section-hatch section-hatch-start" aria-hidden="true"></div>
-      <div class="section-hatch section-hatch-end" aria-hidden="true"></div>
       <header class="section-header">
         <h2 id="host-title">Run customer operations on infrastructure you control</h2>
         <p>Keep customer records, evidence, and operational history with the team responsible for them.</p>
@@ -292,9 +268,6 @@
             <svg class="shield-inner" viewBox="0 0 81 80">
               <path fill="currentColor" fill-rule="evenodd" d="M20.5 36V28C20.5 22.7 22.6 17.6 26.4 13.9C30.1 10.1 35.2 8 40.5 8C45.8 8 50.9 10.1 54.6 13.9C58.4 17.6 60.5 22.7 60.5 28V36C62.6 36 64.7 36.8 66.2 38.3C67.7 39.8 68.5 41.9 68.5 44V64C68.5 66.1 67.7 68.2 66.2 69.7C64.7 71.2 62.6 72 60.5 72H20.5C18.4 72 16.3 71.2 14.8 69.7C13.3 68.2 12.5 66.1 12.5 64V44C12.5 41.9 13.3 39.8 14.8 38.3C16.3 36.8 18.4 36 20.5 36ZM52.5 28V36H28.5V28C28.5 24.8 29.8 21.8 32 19.5C34.3 17.3 37.3 16 40.5 16C43.7 16 46.7 17.3 49 19.5C51.2 21.8 52.5 24.8 52.5 28Z"/>
             </svg>
-            <div class="shield-grid" data-controller="flickering-grid" data-flickering-grid-max-opacity-value="0.5" data-flickering-grid-square-size-value="2" data-flickering-grid-grid-gap-value="4">
-              <canvas></canvas>
-            </div>
           </div>
           <h3>Keep customer data close</h3>
           <p>Self-hosted workspaces send no outbound product telemetry by default. Records stay local unless an operator uses an approved integration.</p>
@@ -349,7 +322,7 @@
       </details>
       <details class="faq-item">
         <summary>What happens if memory or a model is unavailable?</summary>
-        <p>NavishAI shows the degraded state and keeps deterministic case work available. It does not silently switch customer data to a managed memory service.</p>
+        <p>NavishAI shows the degraded state and keeps core case work available. It does not silently switch customer data to a managed memory service.</p>
       </details>
       <details class="faq-item">
         <summary>Where do model credentials stay?</summary>
@@ -357,7 +330,7 @@
       </details>
       <details class="faq-item">
         <summary>Can we use our own health scorecard?</summary>
-        <p>Yes. Teams can propose, preview, backtest, publish, version, and roll back a deterministic scorecard while keeping generated analysis separate.</p>
+        <p>Yes. Teams can propose, preview, backtest, publish, version, and roll back a scorecard while keeping generated analysis separate.</p>
       </details>
       <details class="faq-item">
         <summary>Is there a hosted trial or a compliance certification?</summary>
@@ -422,14 +395,8 @@
         </div>
       </div>
     </div>
-    <div class="footer-signoff" data-controller="flickering-grid"
-      data-flickering-grid-text-value="NavishAI"
-      data-flickering-grid-font-size-value="90"
-      data-flickering-grid-square-size-value="2"
-      data-flickering-grid-grid-gap-value="3"
-      data-flickering-grid-max-opacity-value="0.3"
-      data-flickering-grid-color-value="107,114,128">
-      <canvas></canvas>
+    <div class="footer-signoff">
+      <span aria-hidden="true">NavishAI</span>
     </div>
   </footer>
 </main>

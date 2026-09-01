@@ -38,6 +38,11 @@ end %>
   <% end %>
 
   <div class="provider-form-fields">
+    <div class="provider-form-section-heading field-wide">
+      <h2>Connection</h2>
+      <p>Choose where this workspace connects and how the runner may use it.</p>
+    </div>
+
     <div class="field-wide">
       <%= form.label :adapter_key, "Provider" %>
       <% if editing %>
@@ -96,6 +101,11 @@ end %>
       <p class="field-hint" id="provider-api-key-hint" data-provider-form-target="apiKeyHint"><%= provider.fetch("secret_configured") ? "A key is already saved. Leave this blank to keep it." : "Stored encrypted on this self-hosted deployment and never shown again." %></p>
     </div>
 
+    <div class="provider-form-section-heading provider-form-section-heading-model field-wide">
+      <h2>Model</h2>
+      <p>Select an exact model when required. Suggestions are optional and never save by themselves.</p>
+    </div>
+
     <% if editing %>
       <section class="provider-model-discovery" data-provider-form-target="modelDiscovery"
         data-models-url="<%= models_workspace_provider_connections_path(Current.workspace) %>"
@@ -104,7 +114,7 @@ end %>
         aria-labelledby="provider-model-discovery-heading">
         <div class="provider-model-discovery-heading">
           <div>
-            <h2 id="provider-model-discovery-heading">Choose a model</h2>
+            <h3 id="provider-model-discovery-heading">Choose from discovered models</h3>
             <p class="field-hint">Loaded from the connected provider. Your current choice stays selected.</p>
           </div>
           <button type="button" class="button button-secondary button-compact" data-provider-form-target="modelRefresh"

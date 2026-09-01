@@ -31,8 +31,8 @@
 
   <% if @configured_providers.empty? && @standalone_installations.empty? %>
     <section class="empty-state provider-empty">
-      <h2>No providers connected</h2>
-      <p>Add a provider, choose its sign-in method and execution boundary, then select a model when required.</p>
+      <h2>Connect your first provider</h2>
+      <p>Choose a sign-in method, select an execution boundary, and pick a model when required. A successful test comes before workspace access.</p>
       <% if @can_configure %>
         <%= link_to "Add your first provider", new_workspace_provider_connection_path(Current.workspace), class: "button button-secondary button-compact" %>
       <% end %>

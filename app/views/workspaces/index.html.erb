@@ -20,7 +20,7 @@
               <strong><%= workspace.name %></strong>
               <small><%= workspace.organization.name %></small>
             </span>
-            <span>Open</span>
+            <span>Open workspace</span>
           <% end %>
           <% if @owned_workspace_ids.include?(workspace.id) %>
             <%= link_to "Manage", edit_workspace_path(workspace), class: "button button-secondary button-compact" %>
@@ -29,9 +29,10 @@
       <% end %>
     </ul>
   <% else %>
-    <%= render "shared/empty_state",
-      title: "No workspace access",
-      description: "Ask a workspace Owner or Admin to invite you." %>
+    <section class="empty-state workspace-empty" aria-labelledby="workspace-empty-title">
+      <h2 id="workspace-empty-title">No workspace access</h2>
+      <p>Ask a workspace Owner or Admin to invite you.</p>
+    </section>
   <% end %>
 
   <% if @deleting_workspaces.any? %>
