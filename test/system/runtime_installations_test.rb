@@ -67,6 +67,7 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
     assert_field "API key", type: "password"
     select "Claude", from: "Provider"
     assert_field "Sign-in method", with: "subscription"
+    assert_field "Execution boundary", with: ""
     assert_no_field "API key", visible: true
     select "Codex", from: "Provider"
     select "API key", from: "Sign-in method"

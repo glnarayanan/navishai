@@ -27,8 +27,9 @@ class RuntimeRegistry
     reports = client.detect_runtimes!(workspace_key: @workspace.runner_key)
     RuntimeInstallation.transaction do
       lock_workspace!
-      seen = reports.map { |report| report.fetch("detection_key") }
-      reports.each { |report| persist_report!(report) }
+      seen = reports.map { |report| report.fetch("detection_key") }.uniq
+      installations_by_detection_key = @workspace.runtime_installations.where(detection_key: seen).index_by(&:detection_key)
+      reports.each { |report| persist_report!(report, installations_by_detection_key:) }
       @workspace.runtime_installations.where.not(detection_key: seen).find_each do |installation|
         audit_revoke!(installation) if installation.approved?
         reset_runtime_test!(installation)
@@ -138,8 +139,9 @@ class RuntimeRegistry
   end
 
   private
-    def persist_report!(report)
-      installation = @workspace.runtime_installations.find_or_initialize_by(detection_key: report.fetch("detection_key"))
+    def persist_report!(report, installations_by_detection_key:)
+      detection_key = report.fetch("detection_key")
+      installation = installations_by_detection_key[detection_key] ||= @workspace.runtime_installations.build(detection_key:)
       execution_mode = report["execution_mode"]
       unless valid_report_execution_mode?(report, execution_mode)
         reject_report!(installation)
@@ -176,9 +178,7 @@ class RuntimeRegistry
         RuntimeInstallation::KNOWN_TRANSPORTS.include?(report["transport"])
 
       transport = report.fetch("transport")
-      if report.fetch("adapter_key") == "scripted"
-        execution_mode == "bounded" && (transport.blank? || transport == "built_in_https")
-      elsif transport == "built_in_https"
+      if transport == "built_in_https"
         execution_mode == "bounded"
       elsif transport == "managed_process"
         execution_mode.in?(%w[host_trusted strong_isolated])

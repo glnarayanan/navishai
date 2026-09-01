@@ -107,6 +107,14 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ "status" => "unavailable", "models" => [] }, JSON.parse(response.body))
     assert_not_includes response.body, "secret transport detail"
 
+    @gateway.models_error = RunnerClient::Conflict.new("provider settings changed")
+    with_gateway(@gateway) do
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
+    end
+    assert_response :conflict
+    assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
+    assert_not_includes response.body, "provider settings changed"
+
     @gateway.models_error = RunnerClient::MalformedResponse.new("raw provider output")
     with_gateway(@gateway) do
       post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "codex", execution_mode: "bounded" }
@@ -182,8 +190,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-provider-form-target='apiKeyHint']", text: /Stored encrypted on this self-hosted deployment and never shown again/
     assert_select "[data-provider-form-target='executionField'][hidden]", count: 1
     assert_select "select[name='provider_connection[execution_mode]'][disabled]", count: 0
-    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']"
-    assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded']", count: 0
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded'][selected]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='host_trusted']", count: 0
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']", count: 0
     assert_select ".field-hint", text: /model ID/
     assert_includes response.body, "Save without a model to load live choices"
     assert_not_includes response.body, "data-models-url"
@@ -208,6 +217,72 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_select "select[name='provider_connection[execution_mode]'][required]", count: 1
     assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated'][selected]", count: 1
     assert_select "select[name='provider_connection[execution_mode]'] option[value='bounded']", count: 0
+  end
+
+  test "a subscription form selects its only runnable boundary without inventing one" do
+    sign_in_as users(:owner)
+    gateway = FakeProviderGateway.new([
+      provider(
+        adapter_key: "codex", name: "Codex", configured: true, secret_configured: true,
+        auth_mode: "subscription", model: "gpt-5.6"
+      ).merge(
+        "model_required" => false, "supported_execution_modes" => [ "host_trusted" ], "execution_mode" => ""
+      )
+    ])
+
+    with_gateway(gateway) do
+      get edit_workspace_provider_connection_path(@workspace, "codex")
+    end
+
+    assert_response :success
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='host_trusted'][selected]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']", count: 0
+  end
+
+  test "a subscription form reports when the runner has no runnable boundary" do
+    sign_in_as users(:owner)
+    gateway = FakeProviderGateway.new([
+      provider(
+        adapter_key: "codex", name: "Codex", configured: true, secret_configured: true,
+        auth_mode: "subscription", model: "gpt-5.6"
+      ).merge(
+        "model_required" => false, "supported_execution_modes" => [ "bounded" ], "execution_mode" => ""
+      )
+    ])
+
+    with_gateway(gateway) do
+      get edit_workspace_provider_connection_path(@workspace, "codex")
+    end
+
+    assert_response :success
+    assert_select "[data-provider-form-target='executionField']", text: /Reconfigure the runner before saving/
+    assert_select "select[name='provider_connection[execution_mode]'][disabled]", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value=''][selected]",
+      text: "No runnable boundary reported; reconfigure the runner"
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='host_trusted']", count: 0
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']", count: 0
+  end
+
+  test "provider discovery source keeps a manual model while delayed results arrive" do
+    source = Rails.root.join("app/javascript/controllers/provider_form_controller.js").read
+
+    assert_includes source, "const currentModel = this.modelTarget.value"
+    assert_match(/if \(currentModel && !discoveredIds\.has\(currentModel\)\)/, source)
+    assert_includes source, "currentOption.textContent = `Current model (${currentModel})`"
+  end
+
+  test "provider discovery source recomputes saved settings and owns its timeout" do
+    source = Rails.root.join("app/javascript/controllers/provider_form_controller.js").read
+
+    assert_includes source, "syncDiscoveryAvailability()"
+    assert_match(/const settingsChanged = this\.authModeTarget\.value !== this\.modelDiscoveryTarget\.dataset\.savedAuthMode/, source)
+    assert_match(/if \(settingsChanged\) \{\s+this\.blockModelDiscovery\(\)/, source)
+    assert_match(/this\.discoveryBlocked = false\s+this\.modelRefreshTarget\.disabled = false\s+this\.modelRefreshTarget\.textContent = "Refresh models"/, source)
+    assert_includes source, "No runnable execution boundary was reported for this sign-in method. Reconfigure the runner before saving."
+    assert_includes source, "const MODEL_DISCOVERY_TIMEOUT_MS = 22_000"
+    assert_match(/timedOut = true\s+controller\.abort\(\)/, source)
+    assert_includes source, 'if (timedOut) this.showModelState("unavailable")'
+    assert_operator source.scan("clearTimeout(this.modelsTimeout)").size, :>=, 5
   end
 
   test "the add page explains when every supported provider is already connected" do

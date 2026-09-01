@@ -69,6 +69,8 @@ class ProviderConnectionsController < ApplicationController
       workspace_key: workspace.runner_key, adapter_key:, execution_mode:
     )
     render json: discovery.slice("status", "checked_at", "models")
+  rescue RunnerClient::Conflict
+    render json: { status: "failed", models: [] }, status: :conflict
   rescue RunnerClient::Unavailable
     render json: { status: "unavailable", models: [] }, status: :service_unavailable
   rescue RunnerClient::MalformedResponse

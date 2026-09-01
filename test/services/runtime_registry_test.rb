@@ -278,6 +278,38 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
     assert_not installation.approved?
   end
 
+  test "refresh preloads reported installations once before persisting reports" do
+    @reports << runtime_report.merge("detection_key" => "b" * 64)
+    queries = []
+    subscriber = lambda do |_name, _started, _finished, _unique_id, payload|
+      queries << payload[:sql] unless payload[:name].in?(%w[SCHEMA CACHE])
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+    end
+
+    preload_queries = queries.select do |sql|
+      sql.include?('SELECT "runtime_installations".*') &&
+        sql.include?('FROM "runtime_installations"') && sql.include?('"detection_key" IN')
+    end
+    assert_equal 1, preload_queries.size
+    per_report_loads = queries.select do |sql|
+      sql.include?('SELECT "runtime_installations".*') &&
+        sql.include?('FROM "runtime_installations"') && sql.include?('"detection_key" =')
+    end
+    assert_empty per_report_loads
+    assert_equal %w[a b].map { |suffix| suffix * 64 }, @workspace.runtime_installations.order(:detection_key).pluck(:detection_key)
+  end
+
+  test "refresh rejects a blank transport even for a scripted adapter" do
+    @reports[0] = runtime_report.merge("adapter_key" => "scripted", "transport" => "")
+
+    RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
+
+    assert_empty @workspace.runtime_installations
+  end
+
   test "model and database reject secret metadata and incomplete approval attribution" do
     installation = @workspace.runtime_installations.build(runtime_report.slice(
       "detection_key", "adapter_key", "protocol_version", "executable_path", "executable_version",

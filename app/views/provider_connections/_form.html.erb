@@ -3,16 +3,20 @@
 <% selected_model = @submitted_model.nil? ? provider.fetch("model") : @submitted_model %>
 <% model_required_for_runtime = provider.fetch("model_required") || selected_auth_mode == "api_key" %>
 <% supported_execution_modes = Array(provider["supported_execution_modes"]) %>
-<% subscription_execution_modes = supported_execution_modes.select { |mode| %w[host_trusted strong_isolated].include?(mode) } %>
+<% runnable_execution_modes = if selected_auth_mode == "api_key"
+  supported_execution_modes.select { |mode| mode == "bounded" }
+else
+  supported_execution_modes.select { |mode| %w[host_trusted strong_isolated].include?(mode) }
+end %>
 <% selected_execution_mode = @submitted_execution_mode.nil? ? provider.fetch("execution_mode").presence : @submitted_execution_mode %>
 <% selected_execution_mode = if selected_auth_mode == "api_key"
   supported_execution_modes.include?("bounded") ? "bounded" : ""
-elsif subscription_execution_modes.include?(selected_execution_mode)
+elsif runnable_execution_modes.include?(selected_execution_mode)
   selected_execution_mode
-elsif subscription_execution_modes.include?("strong_isolated")
-  "strong_isolated"
+elsif runnable_execution_modes.one?
+  runnable_execution_modes.first
 else
-  subscription_execution_modes.first.to_s
+  ""
 end %>
 <% execution_mode_options = supported_execution_modes.filter_map do |mode|
   next if selected_auth_mode == "api_key" && mode != "bounded"
@@ -27,7 +31,11 @@ end %>
   [ label, mode ]
 end %>
 <% execution_select_options = { selected: selected_execution_mode } %>
-<% execution_select_options[:include_blank] = "No supported boundary reported" if execution_mode_options.empty? %>
+<% execution_select_options[:include_blank] = if execution_mode_options.empty?
+  "No runnable boundary reported; reconfigure the runner"
+elsif selected_execution_mode.blank?
+  "Choose an execution boundary"
+end %>
 <% form_url = editing ? workspace_provider_connection_path(Current.workspace, provider.fetch("adapter_key")) : workspace_provider_connections_path(Current.workspace) %>
 <% form_method = editing ? :patch : :post %>
 
@@ -77,10 +85,13 @@ end %>
     <div class="field-wide" data-provider-form-target="executionField" <%= "hidden" if selected_auth_mode == "api_key" %>>
       <%= form.label :execution_mode, "Execution boundary" %>
       <%= form.select :execution_mode, execution_mode_options, execution_select_options,
-        required: true, data: { provider_form_target: "executionMode", action: "change->provider-form#executionChanged" },
+        required: execution_mode_options.present?, disabled: execution_mode_options.empty?,
+        data: { provider_form_target: "executionMode", action: "change->provider-form#executionChanged" },
         aria: { describedby: "provider-execution-hint" } %>
       <p class="field-hint" id="provider-execution-hint" data-provider-form-target="executionHint">
-        <% if selected_auth_mode == "api_key" %>
+        <% if execution_mode_options.empty? %>
+          No runnable execution boundary was reported for this sign-in method. Reconfigure the runner before saving.
+        <% elsif selected_auth_mode == "api_key" %>
           API-key connections use the runner's bounded HTTPS path.
         <% elsif selected_execution_mode == "host_trusted" %>
           Uses the runner user's existing provider session. This process is not isolated from that account.

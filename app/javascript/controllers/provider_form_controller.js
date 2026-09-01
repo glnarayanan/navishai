@@ -1,5 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
+const MODEL_DISCOVERY_TIMEOUT_MS = 22_000
+
 export default class extends Controller {
   static targets = [
     "provider", "authMode", "apiKeyField", "apiKey", "model", "modelLabel", "modelHint", "apiKeyHint", "description",
@@ -10,17 +12,15 @@ export default class extends Controller {
   connect() {
     this.disconnected = false
     this.modelsAbortController = null
+    this.modelsTimeout = null
     this.modelsGeneration = 0
     this.beforeCache = () => this.prepareForCache()
     document.addEventListener("turbo:before-cache", this.beforeCache)
     this.sync()
     if (this.hasModelDiscoveryTarget) {
-      this.discoveryBlocked = this.modelStateTarget.dataset.state === "blocked" ||
-        this.authModeTarget.value !== this.modelDiscoveryTarget.dataset.savedAuthMode ||
-        this.executionModeTarget.value !== this.modelDiscoveryTarget.dataset.savedExecutionMode
-      if (this.discoveryBlocked) {
-        this.blockModelDiscovery()
-      } else {
+      this.discoveryBlocked = false
+      this.syncDiscoveryAvailability()
+      if (!this.discoveryBlocked) {
         this.refreshModels()
       }
     } else {
@@ -31,6 +31,8 @@ export default class extends Controller {
   disconnect() {
     this.disconnected = true
     this.modelsGeneration += 1
+    if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+    this.modelsTimeout = null
     this.modelsAbortController?.abort()
     document.removeEventListener("turbo:before-cache", this.beforeCache)
     this.modelsAbortController = null
@@ -67,16 +69,14 @@ export default class extends Controller {
     this.sync()
     if (!this.hasModelDiscoveryTarget) return
 
-    this.blockModelDiscovery()
+    this.syncDiscoveryAvailability()
   }
 
   executionChanged() {
     this.sync()
     if (!this.hasModelDiscoveryTarget) return
 
-    if (this.executionModeTarget.value !== this.modelDiscoveryTarget.dataset.savedExecutionMode) {
-      this.blockModelDiscovery()
-    }
+    this.syncDiscoveryAvailability()
   }
 
   async refreshModels(event) {
@@ -84,9 +84,18 @@ export default class extends Controller {
     if (!this.hasModelDiscoveryTarget || this.discoveryBlocked) return
 
     this.modelsAbortController?.abort()
+    if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+    this.modelsTimeout = null
     const controller = new AbortController()
     const generation = ++this.modelsGeneration
+    let timedOut = false
     this.modelsAbortController = controller
+    this.modelsTimeout = setTimeout(() => {
+      if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
+
+      timedOut = true
+      controller.abort()
+    }, MODEL_DISCOVERY_TIMEOUT_MS)
     this.modelRefreshTarget.disabled = true
     this.modelRefreshTarget.textContent = "Finding models…"
     this.modelDiscoveryTarget.setAttribute("aria-busy", "true")
@@ -109,19 +118,30 @@ export default class extends Controller {
 
       if (!response.ok) {
         if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
+        if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+        this.modelsTimeout = null
         this.showModelState(response.status === 503 ? "unavailable" : response.status === 409 ? "conflict" : "failed")
         return
       }
 
       const payload = await response.json()
       if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
+      if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+      this.modelsTimeout = null
       this.renderModels(payload)
     } catch (error) {
-      if (error.name === "AbortError" || this.disconnected) return
-      if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
+      if (this.modelsGeneration !== generation || this.modelsAbortController !== controller || this.disconnected) return
+      if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+      this.modelsTimeout = null
+      if (error.name === "AbortError") {
+        if (timedOut) this.showModelState("unavailable")
+        return
+      }
       this.showModelState("unavailable")
     } finally {
       if (this.modelsGeneration !== generation || this.modelsAbortController !== controller) return
+      if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+      this.modelsTimeout = null
       this.modelsAbortController = null
       this.modelRefreshTarget.disabled = false
       this.modelRefreshTarget.textContent = "Refresh models"
@@ -149,6 +169,8 @@ export default class extends Controller {
   prepareForCache() {
     if (this.hasApiKeyTarget) this.apiKeyTarget.value = ""
     this.modelsGeneration += 1
+    if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+    this.modelsTimeout = null
     this.modelsAbortController?.abort()
     this.modelsAbortController = null
     if (!this.hasModelDiscoveryTarget) return
@@ -256,6 +278,8 @@ export default class extends Controller {
   blockModelDiscovery() {
     this.discoveryBlocked = true
     this.modelsGeneration += 1
+    if (this.modelsTimeout !== null) clearTimeout(this.modelsTimeout)
+    this.modelsTimeout = null
     this.modelsAbortController?.abort()
     this.modelsAbortController = null
     this.modelSelectFieldTarget.hidden = true
@@ -265,6 +289,23 @@ export default class extends Controller {
     this.modelRefreshTarget.textContent = "Refresh after saving"
     this.modelDiscoveryTarget.removeAttribute("aria-busy")
     this.setModelState("Save sign-in or execution-boundary changes before refreshing models.", "blocked")
+  }
+
+  syncDiscoveryAvailability() {
+    const settingsChanged = this.authModeTarget.value !== this.modelDiscoveryTarget.dataset.savedAuthMode ||
+      this.executionModeTarget.value !== this.modelDiscoveryTarget.dataset.savedExecutionMode
+    if (settingsChanged) {
+      this.blockModelDiscovery()
+      return
+    }
+
+    if (!this.discoveryBlocked) return
+
+    this.discoveryBlocked = false
+    this.modelRefreshTarget.disabled = false
+    this.modelRefreshTarget.textContent = "Refresh models"
+    this.modelDiscoveryTarget.removeAttribute("aria-busy")
+    this.setModelState("Model suggestions load here when available.", "idle")
   }
 
   resetDiscoveredModels() {
@@ -339,29 +380,30 @@ export default class extends Controller {
       ? current
       : usesKey
         ? modes[0] || ""
-        : modes.includes("strong_isolated")
-          ? "strong_isolated"
-          : modes[0] || ""
+        : modes.length === 1
+          ? modes[0]
+          : ""
 
-    const options = modes.map((mode) => {
+    const options = []
+    if (!selected) {
+      const option = document.createElement("option")
+      option.value = ""
+      option.textContent = modes.length === 0 ? "No runnable boundary reported; reconfigure the runner" : "Choose an execution boundary"
+      option.selected = true
+      options.push(option)
+    }
+    options.push(...modes.map((mode) => {
       const option = document.createElement("option")
       option.value = mode
       option.textContent = this.executionModeLabel(mode)
       option.selected = mode === selected
       return option
-    })
-    if (options.length === 0) {
-      const option = document.createElement("option")
-      option.value = ""
-      option.textContent = "No supported boundary reported"
-      option.selected = true
-      options.push(option)
-    }
+    }))
     this.executionModeTarget.replaceChildren(...options)
     this.executionModeTarget.value = selected
     this.executionModeTarget.disabled = modes.length === 0
-    this.executionModeTarget.required = true
-    this.executionHintTarget.textContent = this.executionModeHint(selected, usesKey)
+    this.executionModeTarget.required = modes.length > 0
+    this.executionHintTarget.textContent = this.executionModeHint(selected, usesKey, modes.length)
   }
 
   executionModeLabel(mode) {
@@ -372,7 +414,8 @@ export default class extends Controller {
     }[mode] || this.label(mode)
   }
 
-  executionModeHint(mode, usesKey) {
+  executionModeHint(mode, usesKey, modeCount) {
+    if (modeCount === 0) return "No runnable execution boundary was reported for this sign-in method. Reconfigure the runner before saving."
     if (usesKey) return "API-key connections use the runner's bounded HTTPS path."
     if (mode === "host_trusted") {
       return "Uses the runner user's existing provider session. This process is not isolated from that account."
