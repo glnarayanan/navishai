@@ -268,7 +268,7 @@ func TestDarwinRunnerExecutesCodexWithExactRequestAndEnvironment(t *testing.T) {
 	homeDir := t.TempDir()
 	executable := filepath.Join(workDir, "codex")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.log\n" +
-		"{ printf '%s\\n' \"$HOME\"; printf '%s\\n' \"$LANG\"; printf '%s\\n' \"$PATH\"; printf '%s\\n' \"$CODEX_HOME\"; } > env.log\n" +
+		"{ printf 'HOME=%s\\n' \"$HOME\"; printf 'LANG=%s\\n' \"$LANG\"; printf 'PATH=%s\\n' \"$PATH\"; printf 'CODEX_HOME=%s\\n' \"$CODEX_HOME\"; } > env.log\n" +
 		"cat > input.log\nprintf '%s\\n' '{\"type\":\"done\"}'\n"
 	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
 		t.Fatal(err)

@@ -218,6 +218,14 @@ func TestHostExecutionDeniesOccupiedRunDirectoryWithoutDeletingIt(t *testing.T) 
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			controlRegistry, controlRequest, controlSource, _ := test.buildRegistry(t)
+			if err := controlRegistry.Execute(context.Background(), controlRequest, func(protocol.CanonicalEvent) error { return nil }); err != nil {
+				t.Fatalf("valid host execution control failed: %v", err)
+			}
+			if calls := test.executeCalls(controlSource); calls != 1 {
+				t.Fatalf("valid host execution control did not reach the source: %d", calls)
+			}
+
 			registry, request, source, _ := test.buildRegistry(t)
 			workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
 			if err := os.Mkdir(workingDirectory, 0o700); err != nil {
@@ -248,6 +256,10 @@ func cursorHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest,
 	homeDir := t.TempDir()
 	executable := filepath.Join(workRoot, "cursor-agent")
 	if err := os.WriteFile(executable, []byte("cursor-host-test-runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
 		t.Fatal(err)
 	}
 	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
@@ -323,6 +335,10 @@ func codexHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, 
 	if err := os.WriteFile(executable, []byte("codex-host-test-runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	executable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +352,7 @@ func codexHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, 
 	request.Routing.ExecutionMode = protocol.ExecutionModeHostTrusted
 	request.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
 	adapterConfig := AdapterConfig{
-		Enabled: true, HomeDir: homeDir, EgressProfileKey: "model_api",
+		Enabled: true, HomeDir: homeDir, EgressProfileKey: "model_api", Model: "gpt-5.6-sol",
 		Profiles: []string{request.Routing.ProfileKey}, Roles: []string{request.Agent.RoleKey},
 		Tools: append([]string(nil), request.Agent.AllowedTools...), DataClasses: append([]string(nil), request.Routing.DataClasses...),
 		MaxTimeoutSeconds: request.Agent.TimeoutSeconds, MaxSteps: request.Agent.MaxSteps,
