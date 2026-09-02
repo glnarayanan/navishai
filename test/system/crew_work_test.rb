@@ -91,14 +91,28 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "Runner connection degraded"
     assert_text "Retry runner connection"
 
-    # Prime the validator, then prove an unchanged poll preserves the open panel.
-    page.evaluate_async_script(<<~JS)
+    # The first poll has no seeded ETag, so it replaceWiths. Open details must survive that 200.
+    find("summary", text: "Operator details").click
+    first_poll = page.evaluate_async_script(<<~JS)
       const done = arguments[0]
       const frame = document.getElementById("task-execution-runs")
-      window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh().then(done)
+      const originalFetch = window.fetch
+      let status
+      window.fetch = async (...args) => {
+        const response = await originalFetch(...args)
+        status = response.status
+        return response
+      }
+      window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh().then(() => {
+        window.fetch = originalFetch
+        const next = document.getElementById("task-execution-runs")
+        done({ status, detailsOpen: next.querySelector(".run-diagnostics").open })
+      })
     JS
+    assert_equal 200, first_poll.fetch("status")
+    assert first_poll.fetch("detailsOpen")
     assert_selector "#task-execution-runs[data-run-poll-etag-value]"
-    find("summary", text: "Operator details").click
+
     unchanged = page.evaluate_async_script(<<~JS)
       const done = arguments[0]
       const frame = document.getElementById("task-execution-runs")
@@ -162,7 +176,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       window.Stimulus.getControllerForElementAndIdentifier(
         document.getElementById("task-execution-runs"), "run-poll").timer
     JS
-    find("summary", text: "Operator details").click
+    reveal_setup "Operator details"
     assert_text run.run_key
     save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-desktop.png") if ENV["CAPTURE_EXECUTION"]
 

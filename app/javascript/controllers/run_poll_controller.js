@@ -31,6 +31,10 @@ export default class extends Controller {
       const replacement = parsed.getElementById(this.element.id)
       if (replacement) {
         replacement.dataset.runPollEtagValue = response.headers.get("ETag") || ""
+        const openDetails = [...this.element.querySelectorAll("details")].map((details) => details.open)
+        replacement.querySelectorAll("details").forEach((details, index) => {
+          if (openDetails[index]) details.open = true
+        })
         this.element.replaceWith(replacement)
       }
     } catch {
