@@ -280,7 +280,7 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 	incompleteModel := configured && definition.RequiresModel(connection.AuthMode) && connection.Model == ""
 	supportedModes := append([]string(nil), definition.SupportedExecutionModes...)
 	if availability.SupportedExecutionModes != nil {
-		supportedModes = append([]string(nil), availability.SupportedExecutionModes...)
+		supportedModes = slices.Clone(availability.SupportedExecutionModes)
 	}
 	sort.Strings(supportedModes)
 	selectedMode := ""
