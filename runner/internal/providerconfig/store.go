@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
@@ -451,7 +452,7 @@ func validateConnection(adapterKey string, connection Connection, requireInput b
 
 func validateStoredConnection(adapterKey string, connection Connection) error {
 	definition, ok := definitions[adapterKey]
-	if !ok || !contains(definition.AuthModes, connection.AuthMode) || len(connection.Model) > 200 ||
+	if !ok || !slices.Contains(definition.AuthModes, connection.AuthMode) || len(connection.Model) > 200 ||
 		containsControl(connection.Model) || len(connection.APIKey) > maximumKeyBytes || containsNUL(connection.APIKey) {
 		return ErrInvalidConnection
 	}
@@ -584,15 +585,6 @@ func cloneRequests(values map[string]requestRecord) map[string]requestRecord {
 		result[key] = value
 	}
 	return result
-}
-
-func contains(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func containsControl(value string) bool {

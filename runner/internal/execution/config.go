@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -313,7 +314,7 @@ func (config Config) validate() error {
 		return errors.New("enabled scripted adapter requires at least one fixture")
 	}
 	for profile, path := range config.Scripted {
-		if !policyKeyPattern.MatchString(profile) || path == "" || !contains(scripted.Profiles, profile) {
+		if !policyKeyPattern.MatchString(profile) || path == "" || !slices.Contains(scripted.Profiles, profile) {
 			return errors.New("scripted fixture does not match the scripted adapter policy")
 		}
 	}

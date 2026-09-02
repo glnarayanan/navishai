@@ -2,10 +2,10 @@ package execution
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
@@ -68,9 +68,6 @@ func (registry *Registry) executeCursorHost(ctx context.Context, request protoco
 		return ErrPolicyDenied
 	}
 	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if _, err := os.Lstat(workingDirectory); !errors.Is(err, os.ErrNotExist) {
-		return ErrPolicyDenied
-	}
 	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
 		return ErrPolicyDenied
 	}
@@ -130,9 +127,6 @@ func (registry *Registry) executeCodexHost(ctx context.Context, request protocol
 		return ErrPolicyDenied
 	}
 	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if _, err := os.Lstat(workingDirectory); !errors.Is(err, os.ErrNotExist) {
-		return ErrPolicyDenied
-	}
 	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
 		return ErrPolicyDenied
 	}
@@ -160,8 +154,8 @@ func validCursorHostInstallation(installation runtimecatalog.Installation) bool 
 		installation.Transport == runtimecatalog.TransportManagedProcess &&
 		installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
 		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible" &&
-		contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
-		contains(installation.Capabilities, "acp") && contains(installation.Capabilities, "structured_output")
+		slices.Contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
+		slices.Contains(installation.Capabilities, "acp") && slices.Contains(installation.Capabilities, "structured_output")
 }
 
 func validCodexHostInstallation(installation runtimecatalog.Installation) bool {
@@ -169,8 +163,8 @@ func validCodexHostInstallation(installation runtimecatalog.Installation) bool {
 		installation.Transport == runtimecatalog.TransportManagedProcess &&
 		installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
 		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible" &&
-		contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
-		contains(installation.Capabilities, "structured_output") && contains(installation.Capabilities, "tool_calling")
+		slices.Contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
+		slices.Contains(installation.Capabilities, "structured_output") && slices.Contains(installation.Capabilities, "tool_calling")
 }
 
 func (registry *Registry) discoverCursorHostModels(request *http.Request, workspaceKey string) providerconfig.ModelDiscovery {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -32,7 +33,7 @@ func (registry *Registry) executeProviderAPIRequest(ctx context.Context, request
 		registry.configurationIdentityKey, registry.currentTime(),
 	)
 	if !ok || !isDirectProviderAPIInstallation(installation, connection) ||
-		!contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability) ||
+		!slices.Contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability) ||
 		installation.DetectionKey != request.Routing.DetectionKey ||
 		installation.EffectiveModel != request.Routing.EffectiveModel ||
 		installation.ConfigurationFingerprint != request.Routing.ConfigurationFingerprint ||

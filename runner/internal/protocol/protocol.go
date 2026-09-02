@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -176,7 +177,7 @@ func (request AdmissionRequest) validate(expectedVersion string, requireExecutio
 	}
 	if !validDistinctValues(agent.AllowedTools, 8, toolPattern) ||
 		!validDistinctValues(agent.FallbackProfileKeys, 2, runtimePattern) ||
-		contains(agent.FallbackProfileKeys, agent.RuntimeProfileKey) {
+		slices.Contains(agent.FallbackProfileKeys, agent.RuntimeProfileKey) {
 		return ErrInvalidRequest
 	}
 	routing := request.Routing
@@ -379,13 +380,4 @@ func validDistinctValues(values []string, maximum int, pattern *regexp.Regexp) b
 		seen[value] = struct{}{}
 	}
 	return true
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
