@@ -5,22 +5,41 @@ export default class extends Controller {
 
   connect() {
     this.manual = false
-    this.onScroll = () => this.update()
+    this.activeId = null
+    this.activeLink = null
+    this.scrolled = null
+    this.scrollFrame = null
+    this.headerWrap = this.element.querySelector(".site-header-wrap")
+    this.links = this.hasMenuTarget ? [...this.menuTarget.querySelectorAll("a")] : []
+    this.sections = this.links.filter((link) => link.hasAttribute("data-landing-section")).map((link) => ({
+      link,
+      section: document.getElementById(link.dataset.landingSection)
+    }))
+    this.onScroll = () => {
+      if (this.scrollFrame !== null) return
+      this.scrollFrame = window.requestAnimationFrame(() => {
+        this.scrollFrame = null
+        this.update()
+      })
+    }
     this.onResize = () => this.placeIndicator()
     window.addEventListener("scroll", this.onScroll, { passive: true })
     window.addEventListener("resize", this.onResize)
     this.update()
-    this.placeIndicator()
   }
 
   disconnect() {
     window.removeEventListener("scroll", this.onScroll)
     window.removeEventListener("resize", this.onResize)
+    if (this.scrollFrame !== null) window.cancelAnimationFrame(this.scrollFrame)
   }
 
   update() {
     const scrolled = window.scrollY > 10
-    this.element.querySelector(".site-header-wrap")?.classList.toggle("is-scrolled", scrolled)
+    if (this.scrolled !== scrolled) {
+      this.headerWrap?.classList.toggle("is-scrolled", scrolled)
+      this.scrolled = scrolled
+    }
     if (!this.manual) this.syncActive()
   }
 
@@ -39,12 +58,9 @@ export default class extends Controller {
 
   syncActive() {
     if (!this.hasMenuTarget) return
-    const links = [...this.menuTarget.querySelectorAll("a[data-landing-section]")]
-    let active = links[0]
+    let active = this.sections[0]?.link
     let min = Infinity
-    links.forEach((link) => {
-      const id = link.dataset.landingSection
-      const section = document.getElementById(id)
+    this.sections.forEach(({ link, section }) => {
       if (!section) return
       const distance = Math.abs(section.getBoundingClientRect().top - 100)
       if (distance < min) {
@@ -57,7 +73,10 @@ export default class extends Controller {
 
   setActive(id, link) {
     if (!this.hasMenuTarget) return
-    this.menuTarget.querySelectorAll("a").forEach((anchor) => {
+    if (this.activeId === id && this.activeLink === link) return
+    this.activeId = id
+    this.activeLink = link
+    this.links.forEach((anchor) => {
       const selected = anchor === link
       anchor.classList.toggle("is-active", selected)
       if (selected) anchor.setAttribute("aria-current", "true")
@@ -68,7 +87,7 @@ export default class extends Controller {
 
   placeIndicator(link) {
     if (!this.hasIndicatorTarget || !this.hasMenuTarget) return
-    const active = link || this.menuTarget.querySelector("a.is-active") || this.menuTarget.querySelector("a")
+    const active = link || this.links.find((anchor) => anchor.classList.contains("is-active")) || this.links[0]
     const item = active?.parentElement
     if (!item || item === this.indicatorTarget) return
     const duration = this.reducedMotion() ? 0 : 280
