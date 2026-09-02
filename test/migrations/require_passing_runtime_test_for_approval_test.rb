@@ -2,8 +2,6 @@ require "test_helper"
 require Rails.root.join("db/migrate/20260831121000_require_passing_runtime_test_for_approval")
 
 class RequirePassingRuntimeTestForApprovalTest < ActiveSupport::TestCase
-  self.use_transactional_tests = false
-
   test "up revokes existing approvals before adding the passing-test constraint" do
     migration = RequirePassingRuntimeTestForApproval.new
     installation = runtime_installations(:acme_scripted)
@@ -37,10 +35,12 @@ class RequirePassingRuntimeTestForApprovalTest < ActiveSupport::TestCase
     assert constraint_present?
 
     assert_raises(ActiveRecord::StatementInvalid) do
-      installation.update_columns(
-        approved: true, approved_by_membership_id: owner.id, approved_by_user_id: owner.user_id,
-        approved_at: Time.current
-      )
+      RuntimeInstallation.transaction(requires_new: true) do
+        installation.update_columns(
+          approved: true, approved_by_membership_id: owner.id, approved_by_user_id: owner.user_id,
+          approved_at: Time.current
+        )
+      end
     end
     installation.reload.update_columns(
       runtime_test_status: "passed", runtime_test_failure_code: nil, runtime_tested_at: Time.current,

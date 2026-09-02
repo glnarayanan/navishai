@@ -2,8 +2,6 @@ require "test_helper"
 require Rails.root.join("db/migrate/20260901020000_add_runtime_transport_contract")
 
 class AddRuntimeTransportContractTest < ActiveSupport::TestCase
-  self.use_transactional_tests = false
-
   test "up revokes every preexisting approval and test record and audits approved installations" do
     migration = AddRuntimeTransportContract.new
     source = runtime_installations(:acme_scripted)

@@ -6,8 +6,6 @@ require Rails.root.join("db/migrate/20260901010000_add_execution_boundary_contra
 require Rails.root.join("db/migrate/20260901020000_add_runtime_transport_contract")
 
 class RuntimeConfigurationMigrationSequenceTest < ActiveSupport::TestCase
-  self.use_transactional_tests = false
-
   test "the runtime configuration migrations preserve the audit boundary in sequence" do
     source_id = runtime_installations(:acme_scripted).id
     owner = memberships(:owner_support)
