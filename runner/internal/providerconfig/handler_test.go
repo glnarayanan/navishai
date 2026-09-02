@@ -128,8 +128,8 @@ func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	if unknown.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown field status = %d", unknown.Code)
 	}
-	before, configured := store.Get(workspaceOne, CodexAdapterKey)
-	if !configured {
+	before, retained := store.Get(workspaceOne, CodexAdapterKey)
+	if !retained {
 		t.Fatal("initial provider configuration was not retained")
 	}
 	replaced := serve(t, handler, ConfigurePath, map[string]any{
@@ -140,8 +140,8 @@ func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	if replaced.Code != http.StatusUnprocessableEntity || strings.Contains(replaced.Body.String(), "replacement-secret") {
 		t.Fatalf("field substitution status=%d body=%s", replaced.Code, replaced.Body.String())
 	}
-	after, configured := store.Get(workspaceOne, CodexAdapterKey)
-	if !configured || after != before {
+	after, retained := store.Get(workspaceOne, CodexAdapterKey)
+	if !retained || after != before {
 		t.Fatalf("invalid exact-key substitution changed provider state: before=%#v after=%#v", before, after)
 	}
 }
