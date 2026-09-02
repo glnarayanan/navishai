@@ -22,5 +22,4 @@ class PublicWebSearchesController < ApplicationController
   rescue RunnerClient::Error, PublicWebResearch::Error => error
     redirect_to task_path, alert: error.message
   end
-
 end

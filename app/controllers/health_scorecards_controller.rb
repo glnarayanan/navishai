@@ -83,5 +83,4 @@ class HealthScorecardsController < ApplicationController
       load_scorecard
       render :show, status: :unprocessable_content
     end
-
 end

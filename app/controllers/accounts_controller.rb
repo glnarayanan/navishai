@@ -145,5 +145,4 @@ class AccountsController < ApplicationController
       load_account
       render :show, status: :unprocessable_content
     end
-
 end

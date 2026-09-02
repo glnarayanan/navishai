@@ -173,5 +173,4 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
         "executable_version" => "#{adapter_key} 1.0.0"
       }
     end
-
 end
