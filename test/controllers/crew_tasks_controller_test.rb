@@ -108,11 +108,26 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     run = task.execution_runs.find_by!(request_key: "web:controller")
     assert_redirected_to workspace_support_case_crew_task_path(@workspace, @support_case, task)
     assert run.admitted?
+    follow_redirect!
 
     get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
     assert_response :success
     assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
     assert_select ".run-current", text: /Accepted by runner/
+    etag = response.headers.fetch("ETag")
+    cache_control = response.headers.fetch("Cache-Control")
+    assert_includes cache_control, "private"
+
+    rendered = []
+    subscriber = ->(event) { rendered << event.payload[:identifier] }
+    ActiveSupport::Notifications.subscribed(subscriber, "render_partial.action_view") do
+      get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+        headers: { "If-None-Match" => etag }
+    end
+    assert_response :not_modified
+    assert_empty response.body
+    assert_empty rendered
+    assert_equal cache_control, response.headers["Cache-Control"]
 
     ledger = ExecutionLedger.new(workspace: @workspace)
     base = run.current_event.occurred_at
@@ -120,17 +135,35 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
       adapter: "scripted", scenario: "failure", attempt: 1)
     ingest_run_event(ledger, run, 3, "run.failed", base + 2.seconds,
       code: "fixture_failure", retryable: true)
-    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+      headers: { "If-None-Match" => etag }
+    assert_response :success
     assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='false']"
     assert_select ".execution-alert-error", text: /Run did not complete/
     assert_select "form[action='#{workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)}']",
       text: /Run specialist again/
+    etag = response.headers.fetch("ETag")
+
+    with_runner_client(client) do
+      post workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+        params: { request_key: "web:controller-second" }
+    end
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+      headers: { "If-None-Match" => etag }
+    assert_response :success
+    assert_select ".run-history summary", text: "Earlier attempts (1)"
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
+    etag = response.headers.fetch("ETag")
 
     viewer = @workspace.memberships.create!(
       user: User.create!(email_address: "run-panel-viewer@example.com", password: "password12345", verified_at: Time.current),
       role: :viewer
     )
     sign_in_as viewer.user
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+      headers: { "If-None-Match" => etag }
+    assert_response :success
+    assert_select ".run-action", count: 0
     assert_no_difference "ExecutionRun.count" do
       post workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
         params: { request_key: "web:forged" }
@@ -140,8 +173,40 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     foreign_case = create_support_case(
       workspace: workspaces(:beta_support), contact: contacts(:bob), membership: memberships(:outsider_beta)
     )
-    get workspace_support_case_crew_task_execution_runs_path(@workspace, foreign_case, task)
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, foreign_case, task),
+      headers: { "If-None-Match" => etag }
     assert_response :not_found
+  end
+
+  test "run panel validator includes task state before the first attempt" do
+    task = CrewWork.create!(workspace: @workspace, membership: @owner, scope: @support_case,
+      profile: @profile, title: "Unstarted task", input_context: "Use current case facts.",
+      expected_output: "Keep progress visible.")
+    path = workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
+    get path
+    assert_response :success
+    assert_select ".run-action", count: 0
+    etag = response.headers.fetch("ETag")
+
+    CrewWork.apply!(workspace: @workspace, membership: @owner, task:, command: :start,
+      expected_sequence: task.current_event.sequence_number)
+    get path, headers: { "If-None-Match" => etag }
+    assert_response :success
+    assert_select ".run-action", text: "Run specialist"
+
+    ledger = ExecutionLedger.new(workspace: @workspace)
+    run = ledger.prepare!(task:, request_key: "web:conditional-admission")
+    client = Object.new
+    client.define_singleton_method(:admit!) { |**| raise RunnerClient::AmbiguousResult, "connection_lost" }
+    2.times do
+      get path
+      etag = response.headers.fetch("ETag")
+      assert_raises(RunnerClient::AmbiguousResult) { ledger.admit!(run:, client:) }
+      get path, headers: { "If-None-Match" => etag }
+      assert_response :success
+      assert_not_equal etag, response.headers["ETag"]
+      assert_select ".run-current", text: /Runner connection degraded/
+    end
   end
 
   test "account crew workspace uses Customer Success specialists and account-scoped run routes" do

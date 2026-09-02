@@ -11,6 +11,8 @@ class ExecutionRunsController < ApplicationController
   helper_method :crew_task_runs_path, :crew_task_run_reconcile_path
 
   def index
+    return unless stale?(etag: run_panel_version, template: "crew_tasks/_execution_runs")
+
     load_runs
     render partial: "crew_tasks/execution_runs"
   end
@@ -38,6 +40,17 @@ class ExecutionRunsController < ApplicationController
   end
 
   private
+    def run_panel_version
+      runs = @task.execution_runs
+      # Events, profile names, and frozen policy versions are immutable. Run
+      # updates version their displayed progress; artifacts have a separate version.
+      [
+        @task, @membership, Current.session, request.path, I18n.locale, Time.zone.name,
+        runs.cache_key_with_version,
+        @task.artifacts.cache_key_with_version
+      ]
+    end
+
     def load_runs
       @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
       @active_run = @runs.find(&:active?)
