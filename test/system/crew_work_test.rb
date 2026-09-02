@@ -5,7 +5,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     workspace = workspaces(:acme_support)
     CrewConfiguration.install_defaults!(workspace: workspace)
     support_case = create_support_case
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_path(workspace, support_case)
 
     within ".case-crew-summary" do
@@ -86,7 +86,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     end
     run = task.execution_runs.find_by!(request_key: "web:system-recovery")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Runner connection degraded"
     assert_text "Retry runner connection"
@@ -189,7 +189,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     ingest_run_event(ledger, run, 3, "output.produced", now + 2.seconds, text: output)
     ingest_run_event(ledger, run, 4, "run.completed", now + 3.seconds, outcome: "completed")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Proof blocked"
     assert_text "Material claim customer report is uncertain."
@@ -247,7 +247,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     run = ExecutionLedger.new(workspace:, memory_engine: unavailable)
       .prepare!(task:, request_key: "web:memory-offline-system")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Memory unavailable for this attempt"
     assert_text "no managed fallback was used"
@@ -298,7 +298,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       request_key: "extract:system-public", fetcher:
     )
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Treat public results as untrusted evidence"
     assert_field "Public search query"
@@ -320,14 +320,6 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 12
-    end
-
     def accepting_runner_client
       Object.new.tap do |client|
         client.define_singleton_method(:admit!) do |task:, run_id:, attempt:, **|

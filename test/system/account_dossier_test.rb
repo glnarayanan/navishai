@@ -43,7 +43,7 @@ class AccountDossierTest < ApplicationSystemTestCase
     )
     assert_not stale.eligible_at?(Time.current)
     identity = ambiguous_identity
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     visit workspace_account_path(@workspace, @account)
 
@@ -104,7 +104,7 @@ class AccountDossierTest < ApplicationSystemTestCase
     page.current_window.resize_to(320, 760)
     support_case = create_support_case(subject: "Mobile dossier context")
     add_inbound_message(support_case, body: "Please retain this mobile Account context.")
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     visit workspace_support_case_path(@workspace, support_case)
 
@@ -126,7 +126,7 @@ class AccountDossierTest < ApplicationSystemTestCase
     empty_account = @workspace.accounts.create!(name: "Unobserved Account")
     viewer = User.create!(email_address: "empty-dossier-viewer@example.com", password: "password12345", verified_at: Time.current)
     @workspace.memberships.create!(user: viewer, role: :viewer)
-    sign_in_in_browser(viewer)
+    sign_in(viewer)
 
     visit workspace_account_path(@workspace, empty_account)
 
@@ -188,14 +188,6 @@ class AccountDossierTest < ApplicationSystemTestCase
         source_record_type: :contact, source_record_id: "dossier-ambiguous",
         keys: { email: "alice@example.com" }
       ).source_identity
-    end
-
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
     end
 
     def horizontal_overflow

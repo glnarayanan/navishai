@@ -5,7 +5,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     page.current_window.resize_to(1440, 1000)
     support_case = create_support_case
     add_inbound_message(support_case)
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     click_link "Acme Support"
     assert_selector "h2", text: "Case queue"
@@ -66,7 +66,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     add_inbound_message(support_case)
     other = create_support_case(subject: "Invoice webhook retry")
     add_inbound_message(other, body: "The invoice webhook still returns 401.")
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     click_link "Acme Support"
     click_link "Cannot sign in", match: :first
@@ -100,7 +100,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     page.current_window.resize_to(390, 844)
     support_case = create_support_case
     add_inbound_message(support_case)
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     visit workspace_support_cases_path(support_case.workspace)
 
     click_link "Cannot sign in", match: :first
@@ -125,7 +125,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
   test "keyboard validation focuses the case error" do
     page.current_window.resize_to(1440, 1000)
     support_case = create_support_case
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     visit workspace_support_case_path(support_case.workspace, support_case)
 
     find("body").send_keys(:tab)
@@ -146,7 +146,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     add_inbound_message(support_case)
     viewer = User.create!(email_address: "browser-viewer@example.com", password: "password12345", verified_at: Time.current)
     Membership.create!(workspace: support_case.workspace, user: viewer, role: :viewer)
-    sign_in_in_browser(viewer)
+    sign_in(viewer)
 
     visit workspace_support_case_path(support_case.workspace, support_case)
     assert_text "Read-only access"
@@ -156,7 +156,7 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
     refute_field "Add a private note"
 
     click_button "Sign out"
-    sign_in_in_browser(users(:outsider))
+    sign_in(users(:outsider))
     click_link "Beta Support"
     assert_text "No cases in the queue"
     open_workspace_nav
@@ -164,14 +164,6 @@ class CaseQueueAndWorkspaceTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
-
     def assert_select_value(label, value)
       assert_equal value, find_field(label).value
     end

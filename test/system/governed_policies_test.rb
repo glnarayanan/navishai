@@ -208,14 +208,6 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
       proposal.publications.reload.first
     end
 
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
-
     def capture_mobile_card(card)
       clip = page.evaluate_script(<<~JAVASCRIPT, card)
         (() => {

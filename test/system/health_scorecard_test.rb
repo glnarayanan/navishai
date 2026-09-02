@@ -60,13 +60,4 @@ class HealthScorecardTest < ApplicationSystemTestCase
     assert_operator find_button("Refresh preview and backtest").rect.height, :>=, 48
     assert_operator find_link("Accounts", match: :first).rect.height, :>=, 48
   end
-
-  private
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
 end

@@ -24,7 +24,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
   test "a human reviews, edits, and deliberately sends an email on desktop and mobile" do
     support_case = email_support_case
     transport = RecordingTransport.new
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     with_transport(transport) do
       page.current_window.resize_to(1440, 1000)
@@ -65,7 +65,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       blocker_message: "Current reset evidence is stale.",
       remediation: "Refresh the reset evidence or qualify the final human message."
     )
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     transport = RecordingTransport.new
 
     with_transport(transport) do
@@ -160,7 +160,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
     support_case = email_support_case
     viewer = User.create!(email_address: "email-browser-viewer@example.com", password: "password12345", verified_at: Time.current)
     Membership.create!(workspace: support_case.workspace, user: viewer, role: :viewer)
-    sign_in_in_browser(viewer)
+    sign_in(viewer)
 
     visit workspace_support_case_path(support_case.workspace, support_case)
 
@@ -171,7 +171,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
 
   test "a human adds and removes a quarantined draft attachment on mobile" do
     support_case = email_support_case
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     visit workspace_support_case_path(support_case.workspace, support_case)
     find(".email-reply-form textarea[name='body']").set("Draft with a file")
     click_button "Save draft"
@@ -200,7 +200,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
   test "a human sees and confirms an external Reply-To before sending" do
     support_case = email_support_case(reply_to: "third-party@example.org")
     transport = RecordingTransport.new
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     with_transport(transport) do
       page.current_window.resize_to(390, 844)
@@ -233,7 +233,7 @@ class HumanEmailSendTest < ApplicationSystemTestCase
       membership: memberships(:owner_support), draft_version: draft.lock_version,
       files: [ { filename: "review-copy.txt", data: "review bytes" } ], scanner: CleanScanner.new
     ).sole
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     with_transport(RecordingTransport.new(error: Net::ReadTimeout.new("timeout"))) do
       visit workspace_support_case_path(support_case.workspace, support_case)
@@ -274,14 +274,6 @@ class HumanEmailSendTest < ApplicationSystemTestCase
         raw_email: raw_email(reply_to: reply_to),
         received_at: Time.zone.parse("2026-08-24 12:00:00 UTC")
       ).conversation.support_case
-    end
-
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
     end
 
     def with_transport(transport)
