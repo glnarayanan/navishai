@@ -32,10 +32,6 @@ func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, ad
 			return failedModelDiscovery()
 		}
 	}
-	spec, ok := modelDiscoverySpec(adapterKey)
-	if !ok {
-		return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryUnsupported}
-	}
 	if registry != nil && registry.providers != nil {
 		connection, configured := registry.providers.Get(workspaceKey, adapterKey)
 		if !configured || connection.ExecutionMode != executionMode {
@@ -44,6 +40,10 @@ func (registry *Registry) DiscoverModels(request *http.Request, workspaceKey, ad
 		if connection.AuthMode == "api_key" {
 			return registry.discoverAPIModels(request, workspaceKey, adapterKey, connection.APIKey)
 		}
+	}
+	spec, ok := modelDiscoverySpec(adapterKey)
+	if !ok {
+		return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryUnsupported}
 	}
 	if registry == nil || registry.supported == nil || !registry.supported() || request == nil || registry.providers == nil || registry.processRunner == nil || registry.config.WorkRoot == "" {
 		return failedModelDiscovery()

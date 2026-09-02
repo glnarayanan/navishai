@@ -42,6 +42,7 @@ type fakeProviderAPI struct {
 	apiKey          string
 	calls           int
 	ctx             context.Context
+	discoveryCtxErr error
 	generation      providerapi.GenerationResult
 	generationErr   error
 	generationCalls int
@@ -72,6 +73,7 @@ func (catalog fixedWorkspaceCatalog) ResolveApprovedWorkspace(context.Context, s
 func (client *fakeProviderAPI) DiscoverModels(ctx context.Context, adapterKey, apiKey string) ([]providerapi.ModelOption, error) {
 	client.calls++
 	client.ctx, client.adapter, client.apiKey = ctx, adapterKey, apiKey
+	client.discoveryCtxErr = ctx.Err()
 	return client.models, client.err
 }
 
@@ -171,8 +173,11 @@ func TestDiscoverModelsUsesDirectProviderAPIForAPIKeysWithoutProcessExecution(t 
 			if client.ctx != nil {
 				deadline, hasDeadline = client.ctx.Deadline()
 			}
-			if client.calls != 1 || client.adapter != adapterKey || client.apiKey != "sk-model-discovery-test-value" || client.ctx == nil || client.ctx.Err() != nil || !hasDeadline || deadline.Sub(time.Now()) > modelDiscoveryTimeout {
+			if client.calls != 1 || client.adapter != adapterKey || client.apiKey != "sk-model-discovery-test-value" || client.ctx == nil || client.discoveryCtxErr != nil || !hasDeadline || deadline.Sub(time.Now()) > modelDiscoveryTimeout {
 				t.Fatalf("direct provider API did not receive bounded request context and stored credentials: calls=%d adapter=%q context_nil=%t", client.calls, client.adapter, client.ctx == nil)
+			}
+			if !errors.Is(client.ctx.Err(), context.Canceled) {
+				t.Fatalf("model-discovery context was not canceled after return: %v", client.ctx.Err())
 			}
 			if runner.calls != 0 {
 				t.Fatalf("API-key discovery invoked the process runner: %d", runner.calls)
