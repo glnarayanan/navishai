@@ -121,7 +121,8 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     scroll_to case_preview_card, align: :top
     assert_no_horizontal_overflow
     verification = case_preview_card.find(".policy-technical-verification")
-    verification.find("summary").click unless page.evaluate_script("arguments[0].open", verification)
+    verification.find("summary").send_keys(:space) unless page.evaluate_script("arguments[0].open", verification)
+    case_preview_card.assert_selector ".policy-technical-verification[open]"
     digest = case_preview_card.find(".policy-digests code", match: :first)
     assert_operator digest.rect.x + digest.rect.width, :<=, page.evaluate_script("window.innerWidth")
     assert_operator find_button("Roll back future decisions", match: :first).rect.height, :>=, 44
