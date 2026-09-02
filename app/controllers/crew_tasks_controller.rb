@@ -84,10 +84,6 @@ class CrewTasksController < ApplicationController
       render(@task ? :show : :index, status: :unprocessable_content)
     end
 
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
     def crew_tasks_path_for_scope
       @account ? workspace_account_crew_tasks_path(@workspace, @account) :
         workspace_support_case_crew_tasks_path(@workspace, @support_case)

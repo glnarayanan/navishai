@@ -27,10 +27,6 @@ class EmailAttachmentsController < SupportCasesController
   end
 
   private
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
     def invalid_attachment(error)
       @command_error = error.is_a?(ActiveRecord::StaleObjectError) ? "This draft changed in another session. Review it before changing attachments." : error.message
       load_workspace

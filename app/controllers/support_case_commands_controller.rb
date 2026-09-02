@@ -125,10 +125,6 @@ class SupportCaseCommandsController < SupportCasesController
       end
     end
 
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
     def invalid_change(error)
       @command_error = error.message
       @submitted_status = params[:status]

@@ -84,7 +84,4 @@ class HealthScorecardsController < ApplicationController
       render :show, status: :unprocessable_content
     end
 
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
 end

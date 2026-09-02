@@ -1,8 +1,9 @@
 class ExecutionRunsController < ApplicationController
   include WorkspaceAuthorization
+  include CrewTaskRouteContext
 
   before_action :require_workspace
-  before_action :set_context
+  before_action :set_crew_task_route_context
 
   rescue_from Current::RoleAccessDenied, with: :forbidden
   rescue_from ExecutionRecovery::InvalidAction, with: :invalid_action
@@ -37,18 +38,6 @@ class ExecutionRunsController < ApplicationController
   end
 
   private
-    def set_context
-      @workspace = Current.require_workspace!
-      @membership = Current.require_membership!
-      if params[:account_id]
-        @account = @workspace.accounts.find(params[:account_id])
-        @task = @account.crew_tasks.find(params[:crew_task_id])
-      else
-        @support_case = @workspace.support_cases.find(params[:support_case_id])
-        @task = @support_case.crew_tasks.find(params[:crew_task_id])
-      end
-    end
-
     def load_runs
       @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
       @active_run = @runs.find(&:active?)
@@ -58,15 +47,6 @@ class ExecutionRunsController < ApplicationController
       @command_error = error.message
       load_runs
       render partial: "crew_tasks/execution_runs", status: :unprocessable_content
-    end
-
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
-    def task_path
-      @account ? workspace_account_crew_task_path(@workspace, @account, @task) :
-        workspace_support_case_crew_task_path(@workspace, @support_case, @task)
     end
 
     def crew_task_runs_path(task)
