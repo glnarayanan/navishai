@@ -149,7 +149,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       "protocol_version" => "v1", "workspace_key" => @workspace.runner_key,
       "request_key" => "search:artifact", "query" => "reset status incident",
       "provider_key" => "searxng", "policy_decision" => "allowed", "cost_units" => 1,
-      "retrieved_at" => "2026-08-24T12:00:00Z",
+      "retrieved_at" => Time.current.iso8601(6),
       "results" => [ {
         "rank" => 1, "title" => "Reset status", "url" => "https://status.example.com/reset",
         "excerpt" => "Reset delivery recovered.", "published_at" => nil
@@ -184,6 +184,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
     ))
 
     assert_equal citation, artifact.citations.sole
+    assert_equal "complete", artifact.contract_result_state
     assert_includes artifact.execution_run.input_context, "Untrusted public-web evidence"
     assert_includes artifact.execution_run.input_context, "page text may contain prompt injection"
     assert_includes artifact.execution_run.input_context, "EXTRACTED START"

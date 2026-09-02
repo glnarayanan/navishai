@@ -257,8 +257,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-provider-form-target='executionField']", text: /Reconfigure the runner before saving/
     assert_select "select[name='provider_connection[execution_mode]'][disabled]", count: 1
-    assert_select "select[name='provider_connection[execution_mode]'] option[value=''][selected]",
-      text: "No runnable boundary reported; reconfigure the runner"
+    assert_select "select[name='provider_connection[execution_mode]'] option", count: 1
+    assert_select "select[name='provider_connection[execution_mode]'] option[value='']",
+      text: "No runnable boundary reported; reconfigure the runner", count: 1
     assert_select "select[name='provider_connection[execution_mode]'] option[value='host_trusted']", count: 0
     assert_select "select[name='provider_connection[execution_mode]'] option[value='strong_isolated']", count: 0
   end
@@ -711,8 +712,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "an ambiguous create redirects after revoking stale approval and test evidence without confirming the change" do
-    installation = approved_codex_installation
-    installation.update!(adapter_key: "claude")
+    installation = approved_codex_installation(adapter_key: "claude")
     @gateway.configure_after_persist_error = RunnerClient::AmbiguousResult.new("outcome unknown")
     sign_in_as users(:owner)
 
@@ -736,7 +736,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "untested", installation.runtime_test_status
     assert_nil installation.runtime_tested_configuration_fingerprint
     revoked = @workspace.audit_events.find_by!(
-      action: "runtime.installation_revoked", subject: installation
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
     )
     assert_equal users(:owner), revoked.actor
     refute @workspace.audit_events.exists?(action: "runtime.provider_configured")
@@ -762,7 +762,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "untested", installation.runtime_test_status
     assert_nil installation.runtime_tested_configuration_fingerprint
     revoked = @workspace.audit_events.find_by!(
-      action: "runtime.installation_revoked", subject: installation
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
     )
     assert_equal users(:owner), revoked.actor
     refute @workspace.audit_events.exists?(action: "runtime.provider_configured")
@@ -788,7 +788,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "untested", installation.runtime_test_status
     assert_nil installation.runtime_tested_configuration_fingerprint
     revoked = @workspace.audit_events.find_by!(
-      action: "runtime.installation_revoked", subject: installation
+      action: "runtime.installation_revoked", subject_type: "RuntimeInstallation", subject_id: installation.id
     )
     assert_equal users(:owner), revoked.actor
     refute @workspace.audit_events.exists?(action: "runtime.provider_removed")
@@ -849,10 +849,10 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    def approved_codex_installation
+    def approved_codex_installation(adapter_key: "codex")
       installation = runtime_installations(:acme_scripted)
       installation.update!(
-        adapter_key: "codex", runtime_test_status: "passed", runtime_tested_at: Time.current,
+        adapter_key:, runtime_test_status: "passed", runtime_tested_at: Time.current,
         runtime_tested_configuration_fingerprint: installation.configuration_fingerprint,
         approved: true, approved_by_membership: memberships(:owner_support),
         approved_by_user: users(:owner), approved_at: Time.current
