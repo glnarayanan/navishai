@@ -15,6 +15,7 @@ class KnowledgeSearch
 
     relation = workspace.knowledge_source_versions
       .joins(:knowledge_source)
+      .preload(:knowledge_source)
       .merge(KnowledgeSource.active)
       .where("knowledge_source_versions.id = knowledge_sources.current_version_id")
       .where(

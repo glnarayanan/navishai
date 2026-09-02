@@ -36,6 +36,7 @@ class AccountHealth
   end
 
   def recalculate!(account:, trigger_kind:, at:)
+    @latest_inputs = {}
     account = @workspace.accounts.find(account.id)
     raise ArgumentError, "invalid health trigger" unless AccountHealthAssessment::TRIGGER_KINDS.include?(trigger_kind.to_s)
 
@@ -154,7 +155,10 @@ class AccountHealth
     end
 
     def latest(account, key)
-      self.class.latest_input(account, key, at: @calculated_at, workspace: @workspace)
+      cache_key = [ account.id, key ]
+      return @latest_inputs[cache_key] if @latest_inputs.key?(cache_key)
+
+      @latest_inputs[cache_key] = self.class.latest_input(account, key, at: @calculated_at, workspace: @workspace)
     end
 
     def repeated_human_taggings(cases, starts_at, ends_at)

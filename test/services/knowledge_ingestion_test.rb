@@ -40,6 +40,7 @@ class KnowledgeIngestionTest < ActiveSupport::TestCase
     result = KnowledgeSearch.search(workspace: @workspace, query: "recovery link").sole
     assert_equal source, result.source
     assert_equal source.current_version, result.version
+    assert result.version.association(:knowledge_source).loaded?
     assert_equal source.current_version.citation_uri, result.citation_uri
     assert_equal source, KnowledgeSearch.search(workspace: @workspace, query: "Reset access").sole.source
 
