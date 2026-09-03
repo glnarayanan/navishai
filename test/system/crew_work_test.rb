@@ -91,14 +91,16 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "Runner connection degraded"
     assert_text "Retry runner connection"
 
-    # The first poll has no seeded ETag, so it replaceWiths. Open details must survive that 200.
+    # Show seeds the poll validator, so an unchanged first poll can 304 with details still open.
     find("summary", text: "Operator details").click
     first_poll = page.evaluate_async_script(<<~JS)
       const done = arguments[0]
       const frame = document.getElementById("task-execution-runs")
       const originalFetch = window.fetch
       let status
+      let ifNoneMatch
       window.fetch = async (...args) => {
+        ifNoneMatch = args[1]?.headers?.["If-None-Match"] || ""
         const response = await originalFetch(...args)
         status = response.status
         return response
@@ -106,10 +108,15 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh().then(() => {
         window.fetch = originalFetch
         const next = document.getElementById("task-execution-runs")
-        done({ status, detailsOpen: next.querySelector(".run-diagnostics").open })
+        done({
+          status, ifNoneMatch, sameFrame: frame === next,
+          detailsOpen: next.querySelector(".run-diagnostics").open
+        })
       })
     JS
-    assert_equal 200, first_poll.fetch("status")
+    assert first_poll.fetch("ifNoneMatch").present?
+    assert_equal 304, first_poll.fetch("status")
+    assert first_poll.fetch("sameFrame")
     assert first_poll.fetch("detailsOpen")
     assert_selector "#task-execution-runs[data-run-poll-etag-value]"
 
@@ -218,6 +225,8 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "Customer report"
     assert_text "The opening time is not available."
     assert_selector "#task-execution-runs[data-run-poll-active-value='false']"
+    assert page.evaluate_script('document.querySelector(".run-diagnostics").open'),
+      "operator details must stay open after a later 200 replace"
     assert_nil page.evaluate_script(<<~JS)
       window.Stimulus.getControllerForElementAndIdentifier(
         document.getElementById("task-execution-runs"), "run-poll").timer

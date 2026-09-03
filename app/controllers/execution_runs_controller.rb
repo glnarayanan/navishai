@@ -1,6 +1,7 @@
 class ExecutionRunsController < ApplicationController
   include WorkspaceAuthorization
   include CrewTaskRouteContext
+  include RunPanelFreshness
 
   before_action :require_workspace
   before_action :set_crew_task_route_context
@@ -8,10 +9,13 @@ class ExecutionRunsController < ApplicationController
   rescue_from Current::RoleAccessDenied, with: :forbidden
   rescue_from ExecutionRecovery::InvalidAction, with: :invalid_action
 
-  helper_method :crew_task_runs_path, :crew_task_run_reconcile_path
-
   def index
-    return unless stale?(etag: run_panel_version, template: "crew_tasks/_execution_runs")
+    response.set_header "ETag", run_panel_etag_value
+    headers["Cache-Control"] = "private, no-store"
+    if request.fresh?(response)
+      head :not_modified
+      return
+    end
 
     load_runs
     render partial: "crew_tasks/execution_runs"
@@ -40,17 +44,6 @@ class ExecutionRunsController < ApplicationController
   end
 
   private
-    def run_panel_version
-      runs = @task.execution_runs
-      # Events, profile names, and frozen policy versions are immutable. Run
-      # updates version their displayed progress; artifacts have a separate version.
-      [
-        @task, @membership, Current.session, request.path, I18n.locale, Time.zone.name,
-        runs.cache_key_with_version,
-        @task.artifacts.cache_key_with_version
-      ]
-    end
-
     def load_runs
       @runs = @task.execution_runs.includes(:current_event, :crew_artifact).order(attempt_number: :desc).to_a
       @active_run = @runs.find(&:active?)
@@ -60,15 +53,5 @@ class ExecutionRunsController < ApplicationController
       @command_error = error.message
       load_runs
       render partial: "crew_tasks/execution_runs", status: :unprocessable_content
-    end
-
-    def crew_task_runs_path(task)
-      @account ? workspace_account_crew_task_execution_runs_path(@workspace, @account, task) :
-        workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
-    end
-
-    def crew_task_run_reconcile_path(task, run)
-      @account ? reconcile_workspace_account_crew_task_execution_run_path(@workspace, @account, task, run) :
-        reconcile_workspace_support_case_crew_task_execution_run_path(@workspace, @support_case, task, run)
     end
 end

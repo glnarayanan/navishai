@@ -109,15 +109,25 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to workspace_support_case_crew_task_path(@workspace, @support_case, task)
     assert run.admitted?
     follow_redirect!
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-etag-value]"
+    assert_select "details.run-diagnostics[data-run-details-key=operator]"
+    seeded_etag = css_select("#task-execution-runs").first["data-run-poll-etag-value"]
+    assert_predicate seeded_etag, :present?
+    get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task),
+      headers: { "If-None-Match" => seeded_etag }
+    assert_response :not_modified
 
     get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
     assert_response :success
     assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
+    assert_select "turbo-frame#task-execution-runs[data-run-poll-etag-value=?]", response.headers.fetch("ETag")
     assert_select "[data-run-poll-error-template] .run-poll-error", text: /Run panel refresh delayed/
     assert_select ".run-current", text: /Accepted by runner/
+    assert_select "details.run-diagnostics[data-run-details-key=operator]"
     etag = response.headers.fetch("ETag")
     cache_control = response.headers.fetch("Cache-Control")
     assert_includes cache_control, "private"
+    assert_includes cache_control, "no-store"
 
     rendered = []
     subscriber = ->(event) { rendered << event.payload[:identifier] }
@@ -153,6 +163,7 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
       headers: { "If-None-Match" => etag }
     assert_response :success
     assert_select ".run-history summary", text: "Earlier attempts (1)"
+    assert_select "details.run-history[data-run-details-key=history]"
     assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
     etag = response.headers.fetch("ETag")
 
