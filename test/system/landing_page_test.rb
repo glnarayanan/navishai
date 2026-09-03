@@ -187,6 +187,32 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_equal 0, updates
   end
 
+  test "a second jump replaces the pending timeout and disconnect cancels it" do
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    result = page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0]
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(document.body, "landing-header")
+      const features = document.querySelector('.nav-pill a[href="#features"]')
+      const home = document.querySelector('.nav-pill a[href="#hero"]')
+      const event = (target) => ({ currentTarget: target, preventDefault() {} })
+      controller.jump(event(features))
+      const firstTimer = controller.jumpTimer
+      controller.jump(event(home))
+      const replaced = firstTimer != null && firstTimer !== controller.jumpTimer
+      controller.disconnect()
+      const timerAfterDisconnect = controller.jumpTimer
+      window.setTimeout(() => {
+        done({ replaced, timerAfterDisconnect, manual: controller.manual })
+      }, 600)
+    JAVASCRIPT
+
+    assert result.fetch("replaced")
+    assert_nil result.fetch("timerAfterDisconnect")
+    assert result.fetch("manual")
+  end
+
   test "reduced motion keeps navigation jumps and indicator placement" do
     emulate_prefers_reduced_motion("reduce")
     visit root_path

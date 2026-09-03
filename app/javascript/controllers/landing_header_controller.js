@@ -5,6 +5,7 @@ export default class extends Controller {
 
   connect() {
     this.manual = false
+    this.jumpTimer = null
     this.activeId = null
     this.activeLink = null
     this.scrolled = null
@@ -32,6 +33,10 @@ export default class extends Controller {
     window.removeEventListener("scroll", this.onScroll)
     window.removeEventListener("resize", this.onResize)
     if (this.scrollFrame !== null) window.cancelAnimationFrame(this.scrollFrame)
+    if (this.jumpTimer != null) {
+      window.clearTimeout(this.jumpTimer)
+      this.jumpTimer = null
+    }
   }
 
   update() {
@@ -53,7 +58,11 @@ export default class extends Controller {
     this.setActive(href.substring(1), event.currentTarget)
     const top = target.getBoundingClientRect().top + window.pageYOffset - 100
     window.scrollTo({ top, behavior: this.reducedMotion() ? "auto" : "smooth" })
-    window.setTimeout(() => { this.manual = false }, 500)
+    if (this.jumpTimer != null) window.clearTimeout(this.jumpTimer)
+    this.jumpTimer = window.setTimeout(() => {
+      this.manual = false
+      this.jumpTimer = null
+    }, 500)
   }
 
   syncActive() {
