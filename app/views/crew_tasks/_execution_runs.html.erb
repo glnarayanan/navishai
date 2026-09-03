@@ -5,6 +5,11 @@
     run_poll_interval_value: 3_000,
     run_poll_url_value: crew_task_runs_path(@task)
   } do %>
+  <template data-run-poll-error-template>
+    <%= render "shared/notice", kind: "degraded", css: "run-poll-error",
+      title: "Run panel refresh delayed",
+      body: "The latest run view could not be loaded. This panel will try again. The saved run record is unchanged." %>
+  </template>
   <section class="execution-panel" aria-labelledby="execution-title">
     <div class="execution-heading">
       <div>

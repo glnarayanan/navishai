@@ -11,21 +11,32 @@ export default class extends Controller {
 
   disconnect() {
     if (this.timer) window.clearInterval(this.timer)
+    this.abortController?.abort()
+    this.abortController = null
   }
 
   async refresh() {
     if (document.hidden || this.refreshing) return
     this.refreshing = true
+    this.abortController = new AbortController()
+    const { signal } = this.abortController
 
     try {
       const headers = { "Accept": "text/html", "Turbo-Frame": this.element.id }
       if (this.etagValue) headers["If-None-Match"] = this.etagValue
       const response = await fetch(this.urlValue, {
         headers,
-        cache: "no-store"
+        cache: "no-store",
+        signal
       })
-      if (response.status === 304) return
-      if (!response.ok) return
+      if (response.status === 304) {
+        this.clearPollError()
+        return
+      }
+      if (!response.ok) {
+        this.showPollError()
+        return
+      }
 
       const parsed = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = parsed.getElementById(this.element.id)
@@ -37,10 +48,25 @@ export default class extends Controller {
         })
         this.element.replaceWith(replacement)
       }
-    } catch {
-      // A later poll can recover from a transient navigation or network failure.
+    } catch (error) {
+      if (error?.name === "AbortError") return
+      this.showPollError()
     } finally {
+      if (this.abortController?.signal === signal) this.abortController = null
       this.refreshing = false
     }
+  }
+
+  showPollError() {
+    if (!this.element.isConnected || this.element.querySelector(".run-poll-error")) return
+    const template = this.element.querySelector("[data-run-poll-error-template]")
+    const heading = this.element.querySelector(".execution-heading")
+    const notice = template?.content.firstElementChild?.cloneNode(true)
+    if (!notice || !heading) return
+    heading.after(notice)
+  }
+
+  clearPollError() {
+    this.element.querySelector(".run-poll-error")?.remove()
   }
 }

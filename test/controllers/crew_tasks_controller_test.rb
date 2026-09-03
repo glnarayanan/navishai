@@ -113,6 +113,7 @@ class CrewTasksControllerTest < ActionDispatch::IntegrationTest
     get workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
     assert_response :success
     assert_select "turbo-frame#task-execution-runs[data-run-poll-active-value='true']"
+    assert_select "[data-run-poll-error-template] .run-poll-error", text: /Run panel refresh delayed/
     assert_select ".run-current", text: /Accepted by runner/
     etag = response.headers.fetch("ETag")
     cache_control = response.headers.fetch("Cache-Control")

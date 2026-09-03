@@ -133,6 +133,52 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert unchanged.fetch("sameFrame")
     assert unchanged.fetch("detailsOpen")
 
+    failed = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const originalFetch = window.fetch
+      window.fetch = async () => new Response("", { status: 500 })
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      window.fetch = async () => { throw new TypeError("Failed to fetch") }
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      const notice = frame.querySelector(".run-poll-error")
+      const title = notice?.querySelector("strong")?.textContent || null
+      window.fetch = originalFetch
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      done({
+        afterErrors: Boolean(notice),
+        title,
+        recovered: !frame.querySelector(".run-poll-error")
+      })
+    JS
+    assert failed.fetch("afterErrors")
+    assert_equal "Run panel refresh delayed", failed.fetch("title")
+    assert failed.fetch("recovered")
+
+    aborted = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll")
+      const originalFetch = window.fetch
+      let aborted = false
+      window.fetch = (_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => {
+          aborted = true
+          const error = new Error("Aborted")
+          error.name = "AbortError"
+          reject(error)
+        })
+      })
+      const pending = controller.refresh()
+      controller.disconnect()
+      await pending
+      window.fetch = originalFetch
+      controller.connect()
+      done({ aborted, notice: Boolean(frame.querySelector(".run-poll-error")) })
+    JS
+    assert aborted.fetch("aborted")
+    refute aborted.fetch("notice")
+
     ExecutionRecovery.reconcile!(workspace:, membership: owner, task:, run:, client: accepting_runner_client)
     locator = "conversation://#{support_case.conversation_id}/messages/#{message.id}"
     output = JSON.generate(
