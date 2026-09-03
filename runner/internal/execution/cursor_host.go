@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -67,9 +68,9 @@ func (registry *Registry) executeCursorHost(ctx context.Context, request protoco
 		model != request.Routing.EffectiveModel || fingerprint != request.Routing.ConfigurationFingerprint {
 		return ErrPolicyDenied
 	}
-	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
-		return ErrPolicyDenied
+	workingDirectory, err := createHostWorkingDirectory(registry.config.WorkRoot, request.RunID)
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(workingDirectory)
 	prompt, err := executionPrompt(request)
@@ -126,9 +127,9 @@ func (registry *Registry) executeCodexHost(ctx context.Context, request protocol
 		model != request.Routing.EffectiveModel || fingerprint != request.Routing.ConfigurationFingerprint {
 		return ErrPolicyDenied
 	}
-	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
-		return ErrPolicyDenied
+	workingDirectory, err := createHostWorkingDirectory(registry.config.WorkRoot, request.RunID)
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(workingDirectory)
 	prompt, err := executionPrompt(request)
@@ -284,6 +285,17 @@ func (registry *Registry) discoverCodexHostModels(request *http.Request, workspa
 		options = append(options, providerconfig.ModelOption{ID: model.ID, Label: model.Label, Default: model.Default})
 	}
 	return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryAvailable, Models: options}
+}
+
+func createHostWorkingDirectory(workRoot, runID string) (string, error) {
+	workingDirectory := filepath.Join(workRoot, runID)
+	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrPolicyDenied
+		}
+		return "", err
+	}
+	return workingDirectory, nil
 }
 
 func approvedHostExecutable(approvedPaths []string, executable string) bool {
