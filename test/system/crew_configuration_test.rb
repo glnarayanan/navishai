@@ -73,13 +73,4 @@ class CrewConfigurationSystemTest < ApplicationSystemTestCase
     page.execute_script("window.scrollTo(0, 0)")
     save_screenshot Rails.root.join(".amp/in/artifacts/crew-configuration-desktop.png") if ENV["CAPTURE_CREWS"]
   end
-
-  private
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
 end

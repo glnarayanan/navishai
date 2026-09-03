@@ -151,14 +151,6 @@ class OutcomeExplanationsSystemTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
-
     def create_membership(workspace, email, role)
       user = User.create!(email_address: email, password: "password12345", verified_at: Time.current)
       workspace.memberships.create!(user:, role:)

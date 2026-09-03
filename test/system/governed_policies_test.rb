@@ -121,7 +121,8 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
     scroll_to case_preview_card, align: :top
     assert_no_horizontal_overflow
     verification = case_preview_card.find(".policy-technical-verification")
-    verification.find("summary").click unless page.evaluate_script("arguments[0].open", verification)
+    verification.find("summary").send_keys(:space) unless page.evaluate_script("arguments[0].open", verification)
+    case_preview_card.assert_selector ".policy-technical-verification[open]"
     digest = case_preview_card.find(".policy-digests code", match: :first)
     assert_operator digest.rect.x + digest.rect.width, :<=, page.evaluate_script("window.innerWidth")
     assert_operator find_button("Roll back future decisions", match: :first).rect.height, :>=, 44
@@ -206,14 +207,6 @@ class GovernedPoliciesSystemTest < ApplicationSystemTestCase
       end
       assert_text "Limited rollout published"
       proposal.publications.reload.first
-    end
-
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
     end
 
     def capture_mobile_card(card)

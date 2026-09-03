@@ -307,7 +307,7 @@ class RuntimeRegistryTest < ActiveSupport::TestCase
 
     RuntimeRegistry.refresh!(workspace: @workspace, membership: @owner, client: @client)
 
-    assert_empty @workspace.runtime_installations
+    assert_not @workspace.runtime_installations.exists?
   end
 
   test "model and database reject secret metadata and incomplete approval attribution" do

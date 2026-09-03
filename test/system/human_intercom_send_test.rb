@@ -31,7 +31,7 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
   test "a human saves and deliberately sends an Intercom reply on desktop and mobile" do
     support_case = intercom_support_case
     client = RecordingClient.new
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
 
     with_client(client) do
       page.current_window.resize_to(1440, 1000)
@@ -79,7 +79,7 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
       blocker_message: "Current technical evidence was refused.",
       remediation: "Supply current technical evidence or keep the refusal in human review."
     )
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     client = RecordingClient.new
     page.current_window.resize_to(320, 844)
     visit workspace_support_case_path(support_case.workspace, support_case)
@@ -184,14 +184,6 @@ class HumanIntercomSendTest < ApplicationSystemTestCase
         body: message.body, source_digest: "b" * 64, remote_created_at: message.occurred_at
       )
       link.support_case
-    end
-
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
     end
 
     def with_client(client)

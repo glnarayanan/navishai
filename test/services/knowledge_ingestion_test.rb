@@ -52,6 +52,27 @@ class KnowledgeIngestionTest < ActiveSupport::TestCase
     end
   end
 
+  test "search loads every matching knowledge source in one query" do
+    2.times do |index|
+      KnowledgeIngestion.create!(
+        workspace: @workspace, membership: @membership,
+        source_kind: :manual, title: "Shared recovery #{index}",
+        content: "Use the shared recovery link for owners."
+      )
+    end
+
+    queries = []
+    subscriber = lambda do |*, payload|
+      queries << payload[:sql] if payload[:name] == "KnowledgeSource Load"
+    end
+    results = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      KnowledgeSearch.search(workspace: @workspace, query: "shared recovery")
+    end
+
+    assert_equal 2, results.size
+    assert_equal 1, queries.size
+  end
+
   test "stale and deleted sources preserve warnings and citations but leave current search" do
     source = create_manual(content: "Legacy cancellation steps", expires_at: 1.minute.ago)
     version = source.current_version

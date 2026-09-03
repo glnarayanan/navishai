@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -381,13 +382,6 @@ func evaluateRuntimeTest(events []protocol.CanonicalEvent, executeErr error, exe
 	return result
 }
 
-func min(left, right int) int {
-	if left < right {
-		return left
-	}
-	return right
-}
-
 func (registry *Registry) executeScripted(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
 	config, ok := registry.config.Adapters["scripted"]
 	path := registry.config.Scripted[request.Routing.ProfileKey]
@@ -420,7 +414,7 @@ func executionPrompt(request protocol.AdmissionRequest) (string, error) {
 }
 
 func (config AdapterConfig) allows(request protocol.AdmissionRequest) bool {
-	return contains(config.Profiles, request.Routing.ProfileKey) && contains(config.Roles, request.Agent.RoleKey) &&
+	return slices.Contains(config.Profiles, request.Routing.ProfileKey) && slices.Contains(config.Roles, request.Agent.RoleKey) &&
 		subset(request.Agent.AllowedTools, config.Tools) && subset(request.Routing.DataClasses, config.DataClasses) &&
 		request.Agent.TimeoutSeconds <= config.MaxTimeoutSeconds && request.Agent.MaxSteps <= config.MaxSteps &&
 		request.Agent.MaxToolCalls <= config.MaxToolCalls && request.Routing.MaxInputUnits <= config.MaxInputUnits &&
@@ -536,22 +530,13 @@ func scriptedRuntimeIdentity(config Config, configurationIdentityKey []byte, pat
 	return resolved, detectionKey, fingerprint, fixture, err
 }
 
-func contains(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
-}
-
 func supportsRuntimeTest(installation runtimecatalog.Installation) bool {
-	return contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability)
+	return slices.Contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability)
 }
 
 func subset(values, allowed []string) bool {
 	for _, value := range values {
-		if !contains(allowed, value) {
+		if !slices.Contains(allowed, value) {
 			return false
 		}
 	}

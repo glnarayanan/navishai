@@ -61,6 +61,23 @@ class HealthScorecardTest < ActiveSupport::TestCase
     assert_equal version, @scorecard.reload.current_version
   end
 
+  test "selects current assessments for sampled accounts in one query with stable tie breaking" do
+    newer = AccountHealth.recalculate!(workspace: @workspace, account: @account,
+      trigger_kind: "schedule", membership: @owner, at: @at)
+    version = propose(weights: { "open_cases" => 40 })
+    queries = []
+    subscriber = ->(*args) { queries << args.last.fetch(:sql) }
+
+    backtest = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
+    end
+
+    assert_equal [ newer.id ], backtest.results.fetch("current").pluck("assessment_id")
+    current_queries = queries.grep(/DISTINCT ON \(account_health_assessments\.account_id\)/)
+    assert_equal 1, current_queries.size
+    assert_match(/ORDER BY .*account_id.*ASC, .*calculated_at.*DESC, .*id.*DESC/, current_queries.sole)
+  end
+
   test "rolls back a backtest when its audit fails and rejects a stale publish" do
     version = propose(weights: { "open_cases" => 30 })
     before = HealthScorecardBacktest.count

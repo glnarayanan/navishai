@@ -12,7 +12,7 @@ class CustomerSuccessInterventionsTest < ApplicationSystemTestCase
     @plan, = create_reviewed_intervention_plan(
       workspace: @workspace, account: @account, membership: @owner, assessment: @assessment
     )
-    sign_in_in_browser(@owner.user)
+    sign_in(@owner.user)
   end
 
   test "human owns intervention decisions and reviews observed outcomes on desktop and mobile" do
@@ -110,14 +110,6 @@ class CustomerSuccessInterventionsTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
-
     def horizontal_overflow
       page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     end

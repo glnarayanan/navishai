@@ -193,7 +193,8 @@ class RuntimeInstallationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#runtime-codex_subscription .status-badge", text: "Choose model"
     assert_select "#runtime-codex_subscription dd", text: "No model selected"
     assert_select "#runtime-codex_subscription .provider-actions button[disabled]", text: "Test connection"
-    assert_select "#runtime-codex_subscription .provider-action-note", text: /Choose an exact model ID/
+    assert_select "#runtime-codex_subscription .runtime-status-note", text: /Choose an exact model ID in Edit settings/
+    assert_select "#runtime-codex_subscription .provider-action-note", text: /Choose a model in Edit settings before testing/
     assert_not_includes response.body, "will use its default model for now"
   end
 

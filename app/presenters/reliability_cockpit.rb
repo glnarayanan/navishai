@@ -50,11 +50,11 @@ class ReliabilityCockpit
       items = email_connector_items + intercom_connector_items
       statuses = email_connector_statuses + intercom_connector_statuses
       status = statuses.empty? ? "not_configured" : strongest_status(statuses)
-      retryable = @workspace.inbound_email_deliveries.outstanding.count +
-        @workspace.intercom_webhook_deliveries.retryable.count
-      terminal = terminal_email_deliveries.count + terminal_intercom_deliveries.count
-      replayed = @workspace.inbound_email_deliveries.processed.where("attempt_count > 0").count +
-        @workspace.intercom_webhook_deliveries.processed.where("attempt_count > 1").count
+      retryable = email_connector_metrics[:retry_counts].values.sum +
+        intercom_connector_metrics[:retry_counts].values.sum
+      terminal = email_connector_metrics[:terminal_counts].values.sum +
+        intercom_connector_metrics[:terminal_counts].values.sum
+      replayed = email_connector_metrics[:replayed_count] + intercom_connector_metrics[:replayed_count]
       summary = if items.empty?
         "No inbound connector is configured."
       else
@@ -66,25 +66,24 @@ class ReliabilityCockpit
     end
 
     def email_connector_statuses
-      latest = @workspace.inbound_email_deliveries.group(:shared_email_inbox_id).maximum(:received_at)
-      retries = @workspace.inbound_email_deliveries.outstanding.group(:shared_email_inbox_id).count
-      terminal = terminal_email_deliveries.group(:shared_email_inbox_id).count
+      metrics = email_connector_metrics
       @workspace.shared_email_inboxes.find_each.map do |inbox|
         connector_status(
-          active: inbox.active?, ready: inbox.webhook_ready?, last_seen: latest[inbox.id],
-          retry_count: retries.fetch(inbox.id, 0), terminal_count: terminal.fetch(inbox.id, 0),
+          active: inbox.active?, ready: inbox.webhook_ready?, last_seen: metrics[:latest][inbox.id],
+          retry_count: metrics[:retry_counts].fetch(inbox.id, 0),
+          terminal_count: metrics[:terminal_counts].fetch(inbox.id, 0),
           error_code: nil
         ).first
       end
     end
 
     def intercom_connector_statuses
-      retries = @workspace.intercom_webhook_deliveries.retryable.group(:intercom_connection_id).count
-      terminal = terminal_intercom_deliveries.group(:intercom_connection_id).count
+      metrics = intercom_connector_metrics
       @workspace.intercom_connections.find_each.map do |connection|
         connector_status(
           active: connection.active?, ready: connection.ready?, last_seen: connection.last_reconciled_at,
-          retry_count: retries.fetch(connection.id, 0), terminal_count: terminal.fetch(connection.id, 0),
+          retry_count: metrics[:retry_counts].fetch(connection.id, 0),
+          terminal_count: metrics[:terminal_counts].fetch(connection.id, 0),
           error_code: connection.last_error_code
         ).first
       end
@@ -92,13 +91,11 @@ class ReliabilityCockpit
 
     def email_connector_items
       inboxes = @workspace.shared_email_inboxes.order(:name, :id).limit(DETAIL_LIMIT).to_a
-      latest = @workspace.inbound_email_deliveries.group(:shared_email_inbox_id).maximum(:received_at)
-      retry_counts = @workspace.inbound_email_deliveries.outstanding.group(:shared_email_inbox_id).count
-      terminal_counts = terminal_email_deliveries.group(:shared_email_inbox_id).count
+      metrics = email_connector_metrics
       inboxes.map do |inbox|
-        retry_count = retry_counts.fetch(inbox.id, 0)
-        terminal_count = terminal_counts.fetch(inbox.id, 0)
-        last_seen = latest[inbox.id]
+        retry_count = metrics[:retry_counts].fetch(inbox.id, 0)
+        terminal_count = metrics[:terminal_counts].fetch(inbox.id, 0)
+        last_seen = metrics[:latest][inbox.id]
         status, summary = connector_status(
           active: inbox.active?, ready: inbox.webhook_ready?, last_seen:,
           retry_count:, terminal_count:, error_code: nil
@@ -114,11 +111,10 @@ class ReliabilityCockpit
 
     def intercom_connector_items
       connections = @workspace.intercom_connections.order(:name, :id).limit(DETAIL_LIMIT).to_a
-      retry_counts = @workspace.intercom_webhook_deliveries.retryable.group(:intercom_connection_id).count
-      terminal_counts = terminal_intercom_deliveries.group(:intercom_connection_id).count
+      metrics = intercom_connector_metrics
       connections.map do |connection|
-        retry_count = retry_counts.fetch(connection.id, 0)
-        terminal_count = terminal_counts.fetch(connection.id, 0)
+        retry_count = metrics[:retry_counts].fetch(connection.id, 0)
+        terminal_count = metrics[:terminal_counts].fetch(connection.id, 0)
         status, summary = connector_status(
           active: connection.active?, ready: connection.ready?, last_seen: connection.last_reconciled_at,
           retry_count:, terminal_count:, error_code: connection.last_error_code
@@ -130,6 +126,23 @@ class ReliabilityCockpit
           action: @membership.can_configure_integrations? ? "manage_intercom" : nil
         )
       end
+    end
+
+    def email_connector_metrics
+      @email_connector_metrics ||= {
+        latest: @workspace.inbound_email_deliveries.group(:shared_email_inbox_id).maximum(:received_at),
+        retry_counts: @workspace.inbound_email_deliveries.outstanding.group(:shared_email_inbox_id).count,
+        terminal_counts: terminal_email_deliveries.group(:shared_email_inbox_id).count,
+        replayed_count: @workspace.inbound_email_deliveries.processed.where("attempt_count > 0").count
+      }
+    end
+
+    def intercom_connector_metrics
+      @intercom_connector_metrics ||= {
+        retry_counts: @workspace.intercom_webhook_deliveries.retryable.group(:intercom_connection_id).count,
+        terminal_counts: terminal_intercom_deliveries.group(:intercom_connection_id).count,
+        replayed_count: @workspace.intercom_webhook_deliveries.processed.where("attempt_count > 1").count
+      }
     end
 
     def connector_status(active:, ready:, last_seen:, retry_count:, terminal_count:, error_code:)
@@ -231,7 +244,7 @@ class ReliabilityCockpit
     end
 
     def execution_run_items
-      relation = @workspace.execution_runs
+      runs = @workspace.execution_runs
         .where(status: %w[admitting failed timed_out policy_denied])
         .includes(crew_task: [ :support_case, :account ])
         .order(Arel.sql(<<~SQL.squish), :created_at, :id).limit(DETAIL_LIMIT)
@@ -241,7 +254,16 @@ class ReliabilityCockpit
             ELSE 2
           END
         SQL
-      relation.map do |run|
+        .to_a
+      retryable_runs = runs.select { |run| run.failed? && run.retryable? }
+      retryable_task_ids = retryable_runs.map(&:crew_task_id).uniq
+      active_task_ids = if retryable_task_ids.empty?
+        []
+      else
+        @workspace.execution_runs.active.where(crew_task_id: retryable_task_ids).distinct.pluck(:crew_task_id)
+      end
+
+      runs.map do |run|
         if run.admitting?
           Item.new(
             key: "run-#{run.id}", title: "Unconfirmed run ##{run.id}", status: "unknown",
@@ -250,7 +272,7 @@ class ReliabilityCockpit
             record: run, action: "reconcile_run"
           )
         elsif run.failed? && run.retryable?
-          eligible = run.crew_task.in_progress? && !run.crew_task.execution_runs.active.where.not(id: run.id).exists?
+          eligible = run.crew_task.in_progress? && !active_task_ids.include?(run.crew_task_id)
           Item.new(
             key: "run-#{run.id}", title: "Retryable run ##{run.id}", status: "attention",
             summary: run.failure_code.to_s.humanize.presence || "Definite failure can be retried.",

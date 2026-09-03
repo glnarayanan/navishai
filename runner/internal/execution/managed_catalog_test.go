@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func TestManagedCatalogProvidesBuiltInAPIForAPIKeyConnection(t *testing.T) {
 	catalog.supported = func() bool { return true }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
 	if len(installations) != 1 || installations[0].ExecutablePath != providerAPIOpenAIPath || installations[0].AccountMetadata["transport"] != "built_in_https" ||
-		!contains(installations[0].Capabilities, runtimecatalog.ProviderGenerationCapability) {
+		!slices.Contains(installations[0].Capabilities, runtimecatalog.ProviderGenerationCapability) {
 		t.Fatalf("API-key connection was not represented by the built-in client: %#v", installations)
 	}
 	if other := catalog.DetectWorkspace(context.Background(), "3d07f334-88ef-4fe4-a640-421e3ba79921"); len(other) != 0 {
@@ -93,7 +94,7 @@ func TestManagedCatalogDoesNotExposeUnimplementedStrongIsolation(t *testing.T) {
 		hostTrustedSupported: func() bool { return false },
 	}
 	for _, definition := range providerconfig.Definitions() {
-		if contains(catalog.supportedExecutionModes(definition.AdapterKey), protocol.ExecutionModeStrongIsolated) {
+		if slices.Contains(catalog.supportedExecutionModes(definition.AdapterKey), protocol.ExecutionModeStrongIsolated) {
 			t.Fatalf("unimplemented strong isolation was advertised for %q", definition.AdapterKey)
 		}
 	}
@@ -162,15 +163,17 @@ func TestManagedCatalogProbesConfiguredSubscriptionHome(t *testing.T) {
 	t.Setenv("PATH", directory)
 	store, _ := providerconfig.OpenStore("", []byte("managed-catalog-provider-secret-at-least-32-bytes"))
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeHostTrusted, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := NewManagedCatalog(managedCatalogTestConfig(home, executable), store,
+	config := managedCatalogTestConfig(home, executable)
+	config.HostTrustedEnabled = true
+	catalog, err := NewManagedCatalog(config, store,
 		[]byte("managed-catalog-identity-secret-at-least-32-bytes"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.supported = func() bool { return true }
+	catalog.hostTrustedSupported = func() bool { return true }
 	installations := catalog.DetectWorkspace(context.Background(), workspaceKey)
 	if len(installations) != 1 || installations[0].HealthStatus != "available" ||
 		installations[0].AccountMetadata["authentication"] != "chatgpt_subscription" {
@@ -200,15 +203,17 @@ func TestManagedCatalogDoesNotProbeUnapprovedRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspaceKey := "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
-	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeStrongIsolated, "", ""); err != nil {
+	if _, err := store.Configure(workspaceKey, codex.AdapterKey, "subscription", protocol.ExecutionModeHostTrusted, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := NewManagedCatalog(managedCatalogTestConfig(home, approved), store,
+	config := managedCatalogTestConfig(home, approved)
+	config.HostTrustedEnabled = true
+	catalog, err := NewManagedCatalog(config, store,
 		[]byte("managed-catalog-identity-secret-at-least-32-bytes"), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.supported = func() bool { return true }
+	catalog.hostTrustedSupported = func() bool { return true }
 
 	if installations := catalog.DetectWorkspace(context.Background(), workspaceKey); len(installations) != 0 {
 		t.Fatalf("unapproved runtime was detected: %#v", installations)
@@ -217,6 +222,14 @@ func TestManagedCatalogDoesNotProbeUnapprovedRuntime(t *testing.T) {
 		t.Fatalf("unapproved runtime executed and observed credential paths: %q", contents)
 	} else if !os.IsNotExist(err) {
 		t.Fatal(err)
+	}
+
+	catalog.config.Supervisor.ApprovedExecutables = append(catalog.config.Supervisor.ApprovedExecutables, unapproved)
+	if installations := catalog.DetectWorkspace(context.Background(), workspaceKey); len(installations) != 1 {
+		t.Fatalf("approved positive control did not detect the runtime: %#v", installations)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("approved positive control did not run the probe: %v", err)
 	}
 }
 
@@ -239,8 +252,12 @@ func TestManagedCatalogUnsupportedSupervisorFailsClosedBeforeProbes(t *testing.T
 		t.Fatal(err)
 	}
 	config := managedCatalogTestConfig(home, executable)
-	fixture, err := filepath.Abs(filepath.Join("..", "scripted", "testdata", "success.json"))
+	fixtureBytes, err := os.ReadFile(filepath.Join("..", "scripted", "testdata", "success.json"))
 	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(directory, "success.json")
+	if err := os.WriteFile(fixture, fixtureBytes, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	config.Scripted = map[string]string{"workspace_default": fixture}

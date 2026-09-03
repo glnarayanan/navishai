@@ -1,8 +1,10 @@
 class PublicWebExtractionsController < ApplicationController
   include WorkspaceAuthorization
+  include CrewTaskRouteContext
 
   before_action :require_workspace
-  before_action :set_context
+  before_action :set_crew_task_route_context
+  before_action :set_result
   rate_limit to: 20, within: 1.hour, by: -> { Current.user&.id || request.remote_ip },
     with: -> { head :too_many_requests }
 
@@ -21,27 +23,9 @@ class PublicWebExtractionsController < ApplicationController
   end
 
   private
-    def set_context
-      @workspace = Current.require_workspace!
-      @membership = Current.require_membership!
-      if params[:account_id]
-        @account = @workspace.accounts.find(params[:account_id])
-        @task = @account.crew_tasks.find(params[:crew_task_id])
-      else
-        @support_case = @workspace.support_cases.find(params[:support_case_id])
-        @task = @support_case.crew_tasks.find(params[:crew_task_id])
-      end
+    def set_result
       @result = @workspace.public_web_search_results.joins(:public_web_search)
         .where(public_web_searches: { crew_task_id: @task.id, status: "completed" })
         .find(params[:public_web_search_result_id])
-    end
-
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
-    def task_path
-      @account ? workspace_account_crew_task_path(@workspace, @account, @task) :
-        workspace_support_case_crew_task_path(@workspace, @support_case, @task)
     end
 end

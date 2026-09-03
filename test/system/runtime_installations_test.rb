@@ -87,6 +87,11 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
   end
 
   test "an Owner reviews and approves a runtime policy on desktop and mobile" do
+    gateway = Object.new
+    gateway.define_singleton_method(:catalog) { |workspace_key:| [] }
+    original = ProviderConnectionGateway.method(:new)
+    ProviderConnectionGateway.define_singleton_method(:new) { gateway }
+
     workspace = workspaces(:acme_support)
     installation = workspace.runtime_installations.create!(
       detection_key: "a" * 64, adapter_key: "fixture", protocol_version: "v1",
@@ -160,6 +165,8 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
       assert_operator find_button("Save workspace access").rect.height, :>=, 48
     end
     save_screenshot Rails.root.join(".amp/in/artifacts/runtime-approvals-mobile.png") if ENV["CAPTURE_RUNTIMES"]
+  ensure
+    ProviderConnectionGateway.define_singleton_method(:new, original) if original
   end
 
   private
@@ -172,13 +179,5 @@ class RuntimeInstallationsSystemTest < ApplicationSystemTestCase
         "health_status" => "not_configured", "available" => true,
         "executable_version" => "#{adapter_key} 1.0.0"
       }
-    end
-
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
     end
 end

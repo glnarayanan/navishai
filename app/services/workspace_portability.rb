@@ -291,7 +291,17 @@ class WorkspacePortability
       raise VerificationFailed, "table_count_mismatch" unless
         models.fetch(table).where(workspace_id: target.id).count == expected_count
 
-      normalized_source = source_rows.map { |row| normalize_portable_types(row, models.fetch(table)) }
+      normalized_source = source_rows.map do |row|
+        attributes = normalize_portable_types(row, models.fetch(table))
+        if table == "audit_events" && attributes["subject_id"]
+          subject_table = attributes["subject_type"].to_s.safe_constantize&.table_name
+          workspace_subject = subject_table == "workspaces" && attributes["subject_id"] == archive.dig("workspace", "id")
+          archived_subject = mappings[subject_table]&.key?(attributes["subject_id"])
+          # Import intentionally unlinks subjects that are not part of this archive.
+          attributes["subject_id"] = nil unless workspace_subject || archived_subject
+        end
+        attributes
+      end
       normalized_target = source_rows.map do |source_row|
         imported = target_rows.fetch(table_mapping.fetch(source_row.fetch("id"))).attributes
         normalize_imported_row(

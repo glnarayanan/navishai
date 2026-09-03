@@ -138,6 +138,91 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_nav_pill_behind_active("Home")
   end
 
+  test "unchanged scroll events share one frame without rewriting the active navigation" do
+    visit root_path
+    assert_nav_pill_behind_active("Home")
+
+    activity = page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0]
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(document.body, 'landing-header')
+      const indicator = document.querySelector('.nav-pill-indicator')
+      const originalUpdate = controller.update
+      const originalAnimate = indicator.animate
+      const activity = { updates: 0, mutations: 0, animations: 0 }
+      const observer = new MutationObserver((records) => { activity.mutations += records.length })
+      observer.observe(document.querySelector('.site-header-wrap'), { attributes: true, subtree: true })
+      controller.update = function() { activity.updates++; originalUpdate.call(this) }
+      indicator.animate = function(...args) { activity.animations++; return originalAnimate.apply(this, args) }
+      for (let i = 0; i < 20; i++) window.dispatchEvent(new Event('scroll'))
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        observer.disconnect()
+        controller.update = originalUpdate
+        indicator.animate = originalAnimate
+        done(activity)
+      }))
+    JAVASCRIPT
+
+    assert_equal({ "updates" => 1, "mutations" => 0, "animations" => 0 }, activity)
+  end
+
+  test "disconnect cancels a pending navigation update" do
+    visit root_path
+    assert_nav_pill_behind_active("Home")
+
+    updates = page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0]
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(document.body, 'landing-header')
+      const originalUpdate = controller.update
+      let updates = 0
+      controller.update = () => { updates++ }
+      window.dispatchEvent(new Event('scroll'))
+      controller.disconnect()
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        controller.update = originalUpdate
+        controller.connect()
+        done(updates)
+      }))
+    JAVASCRIPT
+
+    assert_equal 0, updates
+  end
+
+  test "a second jump replaces the pending timeout and disconnect cancels it" do
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    result = page.evaluate_async_script(<<~JAVASCRIPT)
+      const done = arguments[0]
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(document.body, "landing-header")
+      const features = document.querySelector('.nav-pill a[href="#features"]')
+      const home = document.querySelector('.nav-pill a[href="#hero"]')
+      const event = (target) => ({ currentTarget: target, preventDefault() {} })
+      controller.jump(event(features))
+      const firstTimer = controller.jumpTimer
+      controller.jump(event(home))
+      const replaced = firstTimer != null && firstTimer !== controller.jumpTimer
+      controller.disconnect()
+      const timerAfterDisconnect = controller.jumpTimer
+      window.setTimeout(() => {
+        done({ replaced, timerAfterDisconnect, manual: controller.manual })
+      }, 600)
+    JAVASCRIPT
+
+    assert result.fetch("replaced")
+    assert_nil result.fetch("timerAfterDisconnect")
+    assert result.fetch("manual")
+  end
+
+  test "reduced motion keeps navigation jumps and indicator placement" do
+    emulate_prefers_reduced_motion("reduce")
+    visit root_path
+    page.current_window.resize_to(1440, 1000)
+
+    click_link "Features", href: "#features"
+    assert_nav_pill_behind_active("Features")
+    assert_in_delta 100, page.evaluate_script("document.getElementById('features').getBoundingClientRect().top"), 2
+  end
+
   test "the hero CTA sizes from its label at 390 pixels" do
     visit root_path
     page.current_window.resize_to(390, 844)
@@ -188,7 +273,7 @@ class LandingPageTest < ApplicationSystemTestCase
               }
             })()
           JAVASCRIPT
-          break if metrics && metrics["label"] == label && metrics["leftDelta"] <= 2 && metrics["position"] == "absolute"
+          break if metrics && metrics["label"] == label && metrics["leftDelta"] <= 2 && metrics["widthDelta"] <= 2 && metrics["position"] == "absolute"
           sleep 0.05
         end
       end

@@ -72,8 +72,4 @@ class CustomerSuccessInterventionsController < ApplicationController
     def invalid_change(error)
       redirect_to account_path, alert: error.message
     end
-
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
 end

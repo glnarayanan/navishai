@@ -11,7 +11,7 @@ class AccountHealthTest < ApplicationSystemTestCase
       renewal_on: (Date.current + 30.days).iso8601, contract_value: 90_000,
       active_users: 20, licensed_seats: 100
     } ])
-    sign_in_in_browser(owner.user)
+    sign_in(owner.user)
 
     page.current_window.resize_to(1440, 1000)
     visit workspace_account_path(workspace, account)
@@ -70,18 +70,9 @@ class AccountHealthTest < ApplicationSystemTestCase
 
   test "account rows keep list and link semantics" do
     workspace = workspaces(:acme_support)
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     visit workspace_accounts_path(workspace)
 
     assert_selector "[role='list'] [role='listitem'] a", text: accounts(:acme).name
   end
-
-  private
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
 end

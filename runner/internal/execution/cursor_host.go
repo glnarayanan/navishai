@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
@@ -67,12 +68,9 @@ func (registry *Registry) executeCursorHost(ctx context.Context, request protoco
 		model != request.Routing.EffectiveModel || fingerprint != request.Routing.ConfigurationFingerprint {
 		return ErrPolicyDenied
 	}
-	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if _, err := os.Lstat(workingDirectory); !errors.Is(err, os.ErrNotExist) {
-		return ErrPolicyDenied
-	}
-	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
-		return ErrPolicyDenied
+	workingDirectory, err := createHostWorkingDirectory(registry.config.WorkRoot, request.RunID)
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(workingDirectory)
 	prompt, err := executionPrompt(request)
@@ -129,12 +127,9 @@ func (registry *Registry) executeCodexHost(ctx context.Context, request protocol
 		model != request.Routing.EffectiveModel || fingerprint != request.Routing.ConfigurationFingerprint {
 		return ErrPolicyDenied
 	}
-	workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
-	if _, err := os.Lstat(workingDirectory); !errors.Is(err, os.ErrNotExist) {
-		return ErrPolicyDenied
-	}
-	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
-		return ErrPolicyDenied
+	workingDirectory, err := createHostWorkingDirectory(registry.config.WorkRoot, request.RunID)
+	if err != nil {
+		return err
 	}
 	defer os.RemoveAll(workingDirectory)
 	prompt, err := executionPrompt(request)
@@ -160,8 +155,8 @@ func validCursorHostInstallation(installation runtimecatalog.Installation) bool 
 		installation.Transport == runtimecatalog.TransportManagedProcess &&
 		installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
 		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible" &&
-		contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
-		contains(installation.Capabilities, "acp") && contains(installation.Capabilities, "structured_output")
+		slices.Contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
+		slices.Contains(installation.Capabilities, "acp") && slices.Contains(installation.Capabilities, "structured_output")
 }
 
 func validCodexHostInstallation(installation runtimecatalog.Installation) bool {
@@ -169,8 +164,8 @@ func validCodexHostInstallation(installation runtimecatalog.Installation) bool {
 		installation.Transport == runtimecatalog.TransportManagedProcess &&
 		installation.ExecutionMode == protocol.ExecutionModeHostTrusted &&
 		installation.HealthStatus == "available" && installation.CompatibilityStatus == "compatible" &&
-		contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
-		contains(installation.Capabilities, "structured_output") && contains(installation.Capabilities, "tool_calling")
+		slices.Contains(installation.Capabilities, runtimecatalog.RuntimeTestCapability) &&
+		slices.Contains(installation.Capabilities, "structured_output") && slices.Contains(installation.Capabilities, "tool_calling")
 }
 
 func (registry *Registry) discoverCursorHostModels(request *http.Request, workspaceKey string) providerconfig.ModelDiscovery {
@@ -290,6 +285,17 @@ func (registry *Registry) discoverCodexHostModels(request *http.Request, workspa
 		options = append(options, providerconfig.ModelOption{ID: model.ID, Label: model.Label, Default: model.Default})
 	}
 	return providerconfig.ModelDiscovery{Status: providerconfig.ModelDiscoveryAvailable, Models: options}
+}
+
+func createHostWorkingDirectory(workRoot, runID string) (string, error) {
+	workingDirectory := filepath.Join(workRoot, runID)
+	if err := os.Mkdir(workingDirectory, 0o700); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return "", ErrPolicyDenied
+		}
+		return "", err
+	}
+	return workingDirectory, nil
 }
 
 func approvedHostExecutable(approvedPaths []string, executable string) bool {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -188,7 +189,7 @@ func (handler *Handler) configure(response http.ResponseWriter, request *http.Re
 	adapterKey := stringValue(input["adapter_key"])
 	executionMode := stringValue(input["execution_mode"])
 	availability := handler.status.ProviderAvailability(request, workspaceKey, adapterKey)
-	if !contains(availability.SupportedExecutionModes, executionMode) {
+	if !slices.Contains(availability.SupportedExecutionModes, executionMode) {
 		handler.writeError(response, http.StatusUnprocessableEntity, "execution_mode_unavailable", "The requested provider execution mode is not available in this runner deployment.")
 		return
 	}
@@ -279,7 +280,7 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 	incompleteModel := configured && definition.RequiresModel(connection.AuthMode) && connection.Model == ""
 	supportedModes := append([]string(nil), definition.SupportedExecutionModes...)
 	if availability.SupportedExecutionModes != nil {
-		supportedModes = append([]string(nil), availability.SupportedExecutionModes...)
+		supportedModes = slices.Clone(availability.SupportedExecutionModes)
 	}
 	sort.Strings(supportedModes)
 	selectedMode := ""
@@ -291,14 +292,14 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 		health = "not_configured"
 	} else if selectedMode == protocol.ExecutionModeLegacyUnknown || selectedMode == "" {
 		health = "unavailable"
-	} else if !contains(supportedModes, selectedMode) {
+	} else if !slices.Contains(supportedModes, selectedMode) {
 		health = "unavailable"
 	} else if incompleteModel {
 		health = "unavailable"
 	} else if health == "" {
 		health = "unavailable"
 	}
-	available := configured && !incompleteModel && availability.Available && health == "available" && contains(supportedModes, selectedMode)
+	available := configured && !incompleteModel && availability.Available && health == "available" && slices.Contains(supportedModes, selectedMode)
 	reason := availability.UnavailableReason
 	if incompleteModel {
 		reason = "Choose a model before testing or running this provider."
@@ -306,7 +307,7 @@ func (handler *Handler) provider(request *http.Request, workspaceKey, adapterKey
 		reason = "Execution mode must be selected again for this provider."
 	} else if configured && selectedMode == "" {
 		reason = "Execution mode is missing; configure this provider again."
-	} else if configured && !contains(supportedModes, selectedMode) {
+	} else if configured && !slices.Contains(supportedModes, selectedMode) {
 		reason = "The selected execution mode is not supported by this runner deployment."
 	} else if configured && !available && reason == "" {
 		reason = "The selected execution mode is unavailable in this runner deployment."

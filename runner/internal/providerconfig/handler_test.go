@@ -38,6 +38,45 @@ type recordingModelDiscovery struct {
 	modes      []string
 }
 
+type unavailableModesStatus struct{}
+
+func (unavailableModesStatus) ProviderAvailability(*http.Request, string, string) Availability {
+	return Availability{HealthStatus: "unavailable", SupportedExecutionModes: []string{}}
+}
+
+func TestHandlerCatalogSerializesUnavailableModesAsEmptyArray(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	store, err := OpenStore("", testSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := NewHandler(testSecret, store, unavailableModesStatus{}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serve(t, handler, CatalogPath, map[string]any{
+		"protocol_version": protocol.Version, "workspace_key": workspaceOne,
+	}, now, testSecret)
+	if response.Code != http.StatusOK {
+		t.Fatalf("catalog status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Providers []map[string]any `json:"providers"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Providers) != len(Definitions()) {
+		t.Fatalf("catalog omitted providers: %s", response.Body.String())
+	}
+	for _, provider := range payload.Providers {
+		modes, ok := provider["supported_execution_modes"].([]any)
+		if !ok || len(modes) != 0 || provider["available"] != false {
+			t.Fatalf("unavailable provider must have an empty modes array: %#v", provider)
+		}
+	}
+}
+
 func (source *recordingModelDiscovery) DiscoverModels(_ *http.Request, workspaceKey, adapterKey, executionMode string) ModelDiscovery {
 	source.workspaces = append(source.workspaces, workspaceKey)
 	source.adapters = append(source.adapters, adapterKey)
@@ -128,8 +167,8 @@ func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	if unknown.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("unknown field status = %d", unknown.Code)
 	}
-	before, configured := store.Get(workspaceOne, CodexAdapterKey)
-	if !configured {
+	before, retained := store.Get(workspaceOne, CodexAdapterKey)
+	if !retained {
 		t.Fatal("initial provider configuration was not retained")
 	}
 	replaced := serve(t, handler, ConfigurePath, map[string]any{
@@ -140,8 +179,8 @@ func TestHandlerAuthenticatesStrictSchemasAndNeverReturnsSecrets(t *testing.T) {
 	if replaced.Code != http.StatusUnprocessableEntity || strings.Contains(replaced.Body.String(), "replacement-secret") {
 		t.Fatalf("field substitution status=%d body=%s", replaced.Code, replaced.Body.String())
 	}
-	after, configured := store.Get(workspaceOne, CodexAdapterKey)
-	if !configured || after != before {
+	after, retained := store.Get(workspaceOne, CodexAdapterKey)
+	if !retained || after != before {
 		t.Fatalf("invalid exact-key substitution changed provider state: before=%#v after=%#v", before, after)
 	}
 }

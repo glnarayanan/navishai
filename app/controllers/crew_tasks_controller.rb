@@ -1,16 +1,17 @@
 class CrewTasksController < ApplicationController
   include WorkspaceAuthorization
+  include CrewTaskRouteContext
+  include RunPanelFreshness
 
   before_action :require_workspace
-  before_action :set_context
+  before_action :set_crew_task_scope
   before_action :set_task, only: %i[ show command ]
 
   rescue_from Current::RoleAccessDenied, with: :forbidden
   rescue_from CrewWork::InvalidCommand, ActiveRecord::RecordInvalid, with: :invalid_change
 
   helper_method :crew_tasks_path_for_scope, :crew_task_path_for_scope, :crew_task_command_path,
-    :crew_task_runs_path, :crew_task_run_reconcile_path, :crew_task_searches_path,
-    :crew_task_extractions_path
+    :crew_task_searches_path, :crew_task_extractions_path
 
   def index
     load_workspace
@@ -40,18 +41,6 @@ class CrewTasksController < ApplicationController
   end
 
   private
-    def set_context
-      @workspace = Current.require_workspace!
-      @membership = Current.require_membership!
-      if params[:account_id]
-        @account = @workspace.accounts.find(params[:account_id])
-        @scope = @account
-      else
-        @support_case = @workspace.support_cases.includes(conversation: :contact).find(params[:support_case_id])
-        @scope = @support_case
-      end
-    end
-
     def set_task
       @task = @scope.crew_tasks.find(params[:id])
     end
@@ -84,10 +73,6 @@ class CrewTasksController < ApplicationController
       render(@task ? :show : :index, status: :unprocessable_content)
     end
 
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
     def crew_tasks_path_for_scope
       @account ? workspace_account_crew_tasks_path(@workspace, @account) :
         workspace_support_case_crew_tasks_path(@workspace, @support_case)
@@ -101,16 +86,6 @@ class CrewTasksController < ApplicationController
     def crew_task_command_path(task)
       @account ? command_workspace_account_crew_task_path(@workspace, @account, task) :
         command_workspace_support_case_crew_task_path(@workspace, @support_case, task)
-    end
-
-    def crew_task_runs_path(task)
-      @account ? workspace_account_crew_task_execution_runs_path(@workspace, @account, task) :
-        workspace_support_case_crew_task_execution_runs_path(@workspace, @support_case, task)
-    end
-
-    def crew_task_run_reconcile_path(task, run)
-      @account ? reconcile_workspace_account_crew_task_execution_run_path(@workspace, @account, task, run) :
-        reconcile_workspace_support_case_crew_task_execution_run_path(@workspace, @support_case, task, run)
     end
 
     def crew_task_searches_path(task)

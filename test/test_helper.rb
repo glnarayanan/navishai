@@ -3,6 +3,7 @@ require_relative "../config/environment"
 require "rails/test_help"
 require_relative "test_helpers/session_test_helper"
 require_relative "test_helpers/helpdesk_test_helper"
+require_relative "test_helpers/crew_test_helper"
 require_relative "test_helpers/human_draft_test_helper"
 require_relative "test_helpers/intervention_test_helper"
 
@@ -22,6 +23,7 @@ module ActiveSupport
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
     include HelpdeskTestHelper
+    include CrewTestHelper
     include HumanDraftTestHelper
     include InterventionTestHelper
 

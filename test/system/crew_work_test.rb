@@ -5,7 +5,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     workspace = workspaces(:acme_support)
     CrewConfiguration.install_defaults!(workspace: workspace)
     support_case = create_support_case
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_path(workspace, support_case)
 
     within ".case-crew-summary" do
@@ -86,10 +86,105 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     end
     run = task.execution_runs.find_by!(request_key: "web:system-recovery")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Runner connection degraded"
     assert_text "Retry runner connection"
+
+    # Show seeds the poll validator, so an unchanged first poll can 304 with details still open.
+    find("summary", text: "Operator details").click
+    first_poll = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const originalFetch = window.fetch
+      let status
+      let ifNoneMatch
+      window.fetch = async (...args) => {
+        ifNoneMatch = args[1]?.headers?.["If-None-Match"] || ""
+        const response = await originalFetch(...args)
+        status = response.status
+        return response
+      }
+      window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh().then(() => {
+        window.fetch = originalFetch
+        const next = document.getElementById("task-execution-runs")
+        done({
+          status, ifNoneMatch, sameFrame: frame === next,
+          detailsOpen: next.querySelector(".run-diagnostics").open
+        })
+      })
+    JS
+    assert first_poll.fetch("ifNoneMatch").present?
+    assert_equal 304, first_poll.fetch("status")
+    assert first_poll.fetch("sameFrame")
+    assert first_poll.fetch("detailsOpen")
+    assert_selector "#task-execution-runs[data-run-poll-etag-value]"
+
+    unchanged = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const originalFetch = window.fetch
+      let status
+      window.fetch = async (...args) => {
+        const response = await originalFetch(...args)
+        status = response.status
+        return response
+      }
+      window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh().then(() => {
+        window.fetch = originalFetch
+        done({ status, sameFrame: frame === document.getElementById("task-execution-runs"),
+          detailsOpen: frame.querySelector(".run-diagnostics").open })
+      })
+    JS
+    assert_equal 304, unchanged.fetch("status")
+    assert unchanged.fetch("sameFrame")
+    assert unchanged.fetch("detailsOpen")
+
+    failed = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const originalFetch = window.fetch
+      window.fetch = async () => new Response("", { status: 500 })
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      window.fetch = async () => { throw new TypeError("Failed to fetch") }
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      const notice = frame.querySelector(".run-poll-error")
+      const title = notice?.querySelector("strong")?.textContent || null
+      window.fetch = originalFetch
+      await window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll").refresh()
+      done({
+        afterErrors: Boolean(notice),
+        title,
+        recovered: !frame.querySelector(".run-poll-error")
+      })
+    JS
+    assert failed.fetch("afterErrors")
+    assert_equal "Run panel refresh delayed", failed.fetch("title")
+    assert failed.fetch("recovered")
+
+    aborted = page.evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const frame = document.getElementById("task-execution-runs")
+      const controller = window.Stimulus.getControllerForElementAndIdentifier(frame, "run-poll")
+      const originalFetch = window.fetch
+      let aborted = false
+      window.fetch = (_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => {
+          aborted = true
+          const error = new Error("Aborted")
+          error.name = "AbortError"
+          reject(error)
+        })
+      })
+      const pending = controller.refresh()
+      controller.disconnect()
+      await pending
+      window.fetch = originalFetch
+      controller.connect()
+      done({ aborted, notice: Boolean(frame.querySelector(".run-poll-error")) })
+    JS
+    assert aborted.fetch("aborted")
+    refute aborted.fetch("notice")
 
     ExecutionRecovery.reconcile!(workspace:, membership: owner, task:, run:, client: accepting_runner_client)
     locator = "conversation://#{support_case.conversation_id}/messages/#{message.id}"
@@ -129,7 +224,14 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     assert_text "The customer used an expired reset link.", wait: 8
     assert_text "Customer report"
     assert_text "The opening time is not available."
-    find("summary", text: "Operator details").click
+    assert_selector "#task-execution-runs[data-run-poll-active-value='false']"
+    assert page.evaluate_script('document.querySelector(".run-diagnostics").open'),
+      "operator details must stay open after a later 200 replace"
+    assert_nil page.evaluate_script(<<~JS)
+      window.Stimulus.getControllerForElementAndIdentifier(
+        document.getElementById("task-execution-runs"), "run-poll").timer
+    JS
+    reveal_setup "Operator details"
     assert_text run.run_key
     save_screenshot Rails.root.join(".amp/in/artifacts/execution-recovery-desktop.png") if ENV["CAPTURE_EXECUTION"]
 
@@ -189,7 +291,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     ingest_run_event(ledger, run, 3, "output.produced", now + 2.seconds, text: output)
     ingest_run_event(ledger, run, 4, "run.completed", now + 3.seconds, outcome: "completed")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Proof blocked"
     assert_text "Material claim customer report is uncertain."
@@ -247,7 +349,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
     run = ExecutionLedger.new(workspace:, memory_engine: unavailable)
       .prepare!(task:, request_key: "web:memory-offline-system")
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Memory unavailable for this attempt"
     assert_text "no managed fallback was used"
@@ -298,7 +400,7 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
       request_key: "extract:system-public", fetcher:
     )
 
-    sign_in(users(:owner))
+    sign_in(users(:owner), wait: 12)
     visit workspace_support_case_crew_task_path(workspace, support_case, task)
     assert_text "Treat public results as untrusted evidence"
     assert_field "Public search query"
@@ -320,14 +422,6 @@ class CrewWorkSystemTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_on "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 12
-    end
-
     def accepting_runner_client
       Object.new.tap do |client|
         client.define_singleton_method(:admit!) do |task:, run_id:, attempt:, **|

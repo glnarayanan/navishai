@@ -17,6 +17,14 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     page.current_window.resize_to(1400, 1400)
   end
 
+  def sign_in(user, wait: 6)
+    visit new_session_path
+    fill_in "Email address", with: user.email_address
+    fill_in "Password", with: "password12345"
+    click_button "Sign in"
+    assert_selector "h1", text: "Choose a workspace", wait:
+  end
+
   def open_workspace_nav
     return unless page.has_button?("Open navigation", wait: 0)
 

@@ -21,7 +21,7 @@ class HealthScorecardBacktester
     digest = Digest::SHA256.hexdigest(JSON.generate(
       "definition" => version.definition, "source" => source
     ))
-    current_ids = workspace.accounts.map { |account| account.current_health_assessment&.id }.compact.to_set
+    current_ids = current_assessment_ids(workspace, snapshots)
     results = {
       "current" => rows.select { |row| current_ids.include?(row.fetch("assessment_id")) },
       "history" => rows,
@@ -39,6 +39,19 @@ class HealthScorecardBacktester
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidBacktest, error.record.errors.full_messages.to_sentence
   end
+
+  def self.current_assessment_ids(workspace, snapshots)
+    account_ids = snapshots.map(&:account_id).uniq
+    return Set.new if account_ids.empty?
+
+    workspace.account_health_assessments
+      .where(account_id: account_ids)
+      .select("DISTINCT ON (account_health_assessments.account_id) account_health_assessments.id")
+      .reorder(:account_id, calculated_at: :desc, id: :desc)
+      .map(&:id)
+      .to_set
+  end
+  private_class_method :current_assessment_ids
 
   def self.result_for(assessment, definition)
     proposed = HealthScorecardDefinition.score(

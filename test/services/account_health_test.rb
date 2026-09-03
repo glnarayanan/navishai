@@ -108,6 +108,23 @@ class AccountHealthTest < ActiveSupport::TestCase
     assert_equal "human_request", requested.risk_investigation.trigger_kind
   end
 
+  test "caches effective inputs only within one recalculation including missing inputs" do
+    service = AccountHealth.new(workspace: @workspace, membership: @owner)
+    queries = []
+    subscriber = lambda do |*, payload|
+      queries << payload[:sql] if payload[:name] == "AccountHealthInput Load"
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      service.recalculate!(account: @account, trigger_kind: "schedule", at: @at)
+      assert_equal 4, queries.size
+
+      service.recalculate!(account: @account, trigger_kind: "schedule", at: @at + 1.hour)
+    end
+
+    assert_equal 8, queries.size
+  end
+
   test "starts a Customer Success crew investigation and preserves workspace boundaries" do
     import_api("risk", renewal_on: "2026-09-10")
     investigation = @account.reload.current_health_assessment.risk_investigation

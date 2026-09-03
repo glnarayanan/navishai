@@ -118,6 +118,36 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
     assert_equal ReliabilityCockpit::DETAIL_LIMIT, execution.items.count { |item| item.record.is_a?(RuntimeInstallation) }
   end
 
+  test "reuses connector aggregates for statuses summaries and detail" do
+    queries = capture_sql { build_cockpit }
+
+    email_aggregates = queries.grep(
+      /FROM "inbound_email_deliveries".*GROUP BY "inbound_email_deliveries"\."shared_email_inbox_id"/
+    )
+    intercom_aggregates = queries.grep(
+      /FROM "intercom_webhook_deliveries".*GROUP BY "intercom_webhook_deliveries"\."intercom_connection_id"/
+    )
+
+    assert_equal 3, email_aggregates.size
+    assert_equal 2, intercom_aggregates.size
+  end
+
+  test "loads active task ids once while preserving retry action eligibility" do
+    eligible_run = create_retryable_run(title: "Eligible retry")
+    superseded_run = create_retryable_run(title: "Superseded retry", with_active_run: true)
+
+    cockpit = nil
+    queries = capture_sql { cockpit = build_cockpit }
+    items = cockpit.groups.index_by(&:key).fetch("execution").items.index_by(&:record)
+
+    assert_equal "retry_run", items.fetch(eligible_run).action
+    assert_nil items.fetch(superseded_run).action
+    active_task_queries = queries.grep(
+      /SELECT DISTINCT "execution_runs"\."crew_task_id" FROM "execution_runs"/
+    )
+    assert_equal 1, active_task_queries.size
+  end
+
   test "denies non-managers and foreign memberships at the read seam" do
     member = @workspace.memberships.create!(
       user: User.create!(email_address: "cockpit-member@example.com", password: "password12345", verified_at: Time.current),
@@ -152,6 +182,38 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
           }
         end
       }
+    end
+
+    def capture_sql
+      queries = []
+      subscriber = lambda do |*, payload|
+        queries << payload[:sql] unless payload[:name].in?(%w[SCHEMA CACHE])
+      end
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+      queries
+    end
+
+    def create_retryable_run(title:, with_active_run: false)
+      install_crew_test_dependencies(workspace: @workspace, membership: @owner)
+      support_case = create_support_case(workspace: @workspace, membership: @owner)
+      profile = @workspace.agent_profiles.find_by!(role_key: "support_investigator")
+      task = CrewWork.create!(
+        workspace: @workspace, membership: @owner, scope: support_case, profile:,
+        title:, input_context: "Use retained facts.", expected_output: "Return a finding."
+      )
+      CrewWork.apply!(
+        workspace: @workspace, membership: @owner, task:, command: "start",
+        expected_sequence: task.current_event.sequence_number
+      )
+      ledger = ExecutionLedger.new(workspace: @workspace)
+      run = ledger.prepare!(task:, request_key: "reliability-retryable-#{SecureRandom.uuid}")
+      ingest_foreign_event(ledger, run, 1, "run.admitted",
+        workspace_key: @workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number)
+      ingest_foreign_event(ledger, run, 2, "run.started",
+        adapter: run.selected_adapter_key, scenario: "reliability", attempt: run.attempt_number)
+      ingest_foreign_event(ledger, run, 3, "run.failed", code: "temporary_failure", retryable: true)
+      ledger.prepare!(task:, request_key: "reliability-active-#{SecureRandom.uuid}") if with_active_run
+      run.reload
     end
 
     def create_foreign_execution_records(workspace)

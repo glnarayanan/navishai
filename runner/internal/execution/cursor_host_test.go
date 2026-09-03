@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -158,11 +159,11 @@ func TestManagedCatalogExposesHostModeForCodexAndCursorSources(t *testing.T) {
 	if modes := catalog.supportedExecutionModes(cursor.AdapterKey); len(modes) != 1 || modes[0] != protocol.ExecutionModeHostTrusted {
 		t.Fatalf("unexpected Cursor host modes: %#v", modes)
 	}
-	if modes := catalog.supportedExecutionModes(codex.AdapterKey); !contains(modes, protocol.ExecutionModeHostTrusted) || contains(modes, protocol.ExecutionModeStrongIsolated) {
+	if modes := catalog.supportedExecutionModes(codex.AdapterKey); !slices.Contains(modes, protocol.ExecutionModeHostTrusted) || slices.Contains(modes, protocol.ExecutionModeStrongIsolated) {
 		t.Fatalf("unexpected Codex host modes: %#v", modes)
 	}
 	for _, adapterKey := range []string{"claude_subscription", "grok_acp_subscription"} {
-		if modes := catalog.supportedExecutionModes(adapterKey); contains(modes, protocol.ExecutionModeHostTrusted) {
+		if modes := catalog.supportedExecutionModes(adapterKey); slices.Contains(modes, protocol.ExecutionModeHostTrusted) {
 			t.Fatalf("unsupported host adapter was exposed: adapter=%q modes=%#v", adapterKey, modes)
 		}
 	}
@@ -197,12 +198,68 @@ func TestCodexHostUsesOneSourceForDiscoveryRuntimeTestAndExecution(t *testing.T)
 	}
 }
 
+func TestHostExecutionDeniesOccupiedRunDirectoryWithoutDeletingIt(t *testing.T) {
+	tests := []struct {
+		name          string
+		buildRegistry func(*testing.T) (*Registry, protocol.AdmissionRequest, *fakeCursorHostSource, runtimecatalog.Installation)
+		executeCalls  func(*fakeCursorHostSource) int
+	}{
+		{
+			name:          "cursor",
+			buildRegistry: cursorHostTestRegistry,
+			executeCalls:  func(source *fakeCursorHostSource) int { return source.executeCalls },
+		},
+		{
+			name:          "codex",
+			buildRegistry: codexHostTestRegistry,
+			executeCalls:  func(source *fakeCursorHostSource) int { return source.codexExecuteCalls },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			controlRegistry, controlRequest, controlSource, _ := test.buildRegistry(t)
+			if err := controlRegistry.Execute(context.Background(), controlRequest, func(protocol.CanonicalEvent) error { return nil }); err != nil {
+				t.Fatalf("valid host execution control failed: %v", err)
+			}
+			if calls := test.executeCalls(controlSource); calls != 1 {
+				t.Fatalf("valid host execution control did not reach the source: %d", calls)
+			}
+
+			registry, request, source, _ := test.buildRegistry(t)
+			workingDirectory := filepath.Join(registry.config.WorkRoot, request.RunID)
+			if err := os.Mkdir(workingDirectory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(workingDirectory, "existing")
+			if err := os.WriteFile(marker, []byte("preserve"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			err := registry.Execute(context.Background(), request, func(protocol.CanonicalEvent) error { return nil })
+			if !errors.Is(err, ErrPolicyDenied) {
+				t.Fatalf("occupied run directory was not denied: %v", err)
+			}
+			if calls := test.executeCalls(source); calls != 0 {
+				t.Fatalf("occupied run directory reached the host source: %d", calls)
+			}
+			if contents, err := os.ReadFile(marker); err != nil || string(contents) != "preserve" {
+				t.Fatalf("occupied run directory was changed: contents=%q err=%v", contents, err)
+			}
+		})
+	}
+}
+
 func cursorHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, *fakeCursorHostSource, runtimecatalog.Installation) {
 	t.Helper()
 	workRoot := t.TempDir()
 	homeDir := t.TempDir()
 	executable := filepath.Join(workRoot, "cursor-agent")
 	if err := os.WriteFile(executable, []byte("cursor-host-test-runtime"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
 		t.Fatal(err)
 	}
 	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
@@ -278,6 +335,10 @@ func codexHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, 
 	if err := os.WriteFile(executable, []byte("codex-host-test-runtime"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	executable, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := providerconfig.OpenStore("", testConfigurationIdentityKey)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +352,7 @@ func codexHostTestRegistry(t *testing.T) (*Registry, protocol.AdmissionRequest, 
 	request.Routing.ExecutionMode = protocol.ExecutionModeHostTrusted
 	request.Routing.IsolationPolicy = protocol.IsolationPolicyHostTrustedAllowed
 	adapterConfig := AdapterConfig{
-		Enabled: true, HomeDir: homeDir, EgressProfileKey: "model_api",
+		Enabled: true, HomeDir: homeDir, EgressProfileKey: "model_api", Model: "gpt-5.6-sol",
 		Profiles: []string{request.Routing.ProfileKey}, Roles: []string{request.Agent.RoleKey},
 		Tools: append([]string(nil), request.Agent.AllowedTools...), DataClasses: append([]string(nil), request.Routing.DataClasses...),
 		MaxTimeoutSeconds: request.Agent.TimeoutSeconds, MaxSteps: request.Agent.MaxSteps,

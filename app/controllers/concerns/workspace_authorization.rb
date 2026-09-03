@@ -22,4 +22,8 @@ module WorkspaceAuthorization
     rescue Current::RoleAccessDenied
       head :forbidden
     end
+
+    def forbidden
+      render "shared/permission_denied", status: :forbidden
+    end
 end

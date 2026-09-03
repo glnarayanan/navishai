@@ -3,8 +3,14 @@
     controller: "run-poll",
     run_poll_active_value: @active_run.present?,
     run_poll_interval_value: 3_000,
-    run_poll_url_value: crew_task_runs_path(@task)
+    run_poll_url_value: crew_task_runs_path(@task),
+    run_poll_etag_value: run_panel_etag_value
   } do %>
+  <template data-run-poll-error-template>
+    <%= render "shared/notice", kind: "degraded", css: "run-poll-error",
+      title: "Run panel refresh delayed",
+      body: "The latest run view could not be loaded. This panel will try again. The saved run record is unchanged." %>
+  </template>
   <section class="execution-panel" aria-labelledby="execution-title">
     <div class="execution-heading">
       <div>
@@ -153,7 +159,7 @@
             class: "button button-secondary run-action" %>
         <% end %>
 
-        <details class="run-diagnostics">
+        <details class="run-diagnostics" data-run-details-key="operator">
           <summary>Operator details</summary>
           <dl>
             <div><dt>Run ID</dt><dd><code><%= latest_run.run_key %></code></dd></div>
@@ -194,7 +200,7 @@
     <% end %>
 
     <% if @runs.size > 1 %>
-      <details class="run-history">
+      <details class="run-history" data-run-details-key="history">
         <summary>Earlier attempts (<%= @runs.size - 1 %>)</summary>
         <ol>
           <% @runs.drop(1).each do |run| %>

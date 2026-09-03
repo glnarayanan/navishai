@@ -44,10 +44,6 @@ class IntercomRepliesController < SupportCasesController
   end
 
   private
-    def forbidden
-      render "shared/permission_denied", status: :forbidden
-    end
-
     def invalid_reply(error)
       @command_error = error.is_a?(ActiveRecord::StaleObjectError) ?
         "This draft changed in another session. Review the latest draft before sending." : error.message

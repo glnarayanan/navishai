@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sort"
 	"time"
 
@@ -214,6 +215,9 @@ func (catalog *ManagedCatalog) apiKeyInstallations(workspaceKey string) []runtim
 			continue
 		}
 		adapter, ok := catalog.config.Adapters[adapterKey]
+		if !ok {
+			continue
+		}
 		if installation, available := providerAPIInstallation(workspaceKey, adapterKey, adapter, connection, catalog.identityKey, catalog.now()); available {
 			installations = append(installations, installation)
 		}
@@ -268,7 +272,7 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		authMode, apiKey = connection.AuthMode, connection.APIKey
 		executionMode = connection.ExecutionMode
 		adapterConfig.Model = connection.Model
-		if !contains(catalog.supportedExecutionModes(adapterKey), executionMode) ||
+		if !slices.Contains(catalog.supportedExecutionModes(adapterKey), executionMode) ||
 			(executionMode == protocol.ExecutionModeHostTrusted && (!isHostTrustedSubscriptionAdapter(adapterKey) || connection.AuthMode != "subscription" || !catalog.hostTrustedAvailable())) {
 			return runtimecatalog.Definition{}, false
 		}

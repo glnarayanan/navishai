@@ -92,7 +92,7 @@ func (runner *darwinRunner) run(ctx context.Context, request supervisor.Request,
 	go drain(child.stderr, stderr, stderrDone)
 	var inputErr error
 	if len(request.Input) > 0 {
-		_, inputErr = child.input.WriteBounded(request.Input, hostInteractionWriteTimeout)
+		inputErr = child.input.WriteBounded(request.Input, hostInteractionWriteTimeout)
 	}
 	_ = child.input.Close()
 	if inputErr != nil {

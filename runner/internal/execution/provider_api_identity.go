@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -98,7 +99,7 @@ func isDirectProviderAPIInstallation(installation runtimecatalog.Installation, c
 		installation.ExecutablePath == providerAPIExecutablePath(installation.AdapterKey) &&
 		installation.ExecutableVersion == providerAPIVersionEvidence &&
 		installation.Transport == runtimecatalog.TransportBuiltInHTTPS &&
-		contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability)
+		slices.Contains(installation.Capabilities, runtimecatalog.ProviderGenerationCapability)
 }
 
 func detectionKeyForProviderAPI(adapterKey string) string {

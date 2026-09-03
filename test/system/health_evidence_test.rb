@@ -19,7 +19,7 @@ class HealthEvidenceTest < ApplicationSystemTestCase
 
   test "desktop and mobile views trace a deterministic signal to retained Support records" do
     page.current_window.resize_to(1440, 1000)
-    sign_in_in_browser(users(:owner))
+    sign_in(users(:owner))
     visit workspace_account_path(@workspace, @account)
 
     within ".health-signals-table" do
@@ -51,14 +51,6 @@ class HealthEvidenceTest < ApplicationSystemTestCase
   end
 
   private
-    def sign_in_in_browser(user)
-      visit new_session_path
-      fill_in "Email address", with: user.email_address
-      fill_in "Password", with: "password12345"
-      click_button "Sign in"
-      assert_selector "h1", text: "Choose a workspace", wait: 6
-    end
-
     def horizontal_overflow
       page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
     end

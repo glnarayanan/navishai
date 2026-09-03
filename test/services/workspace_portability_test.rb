@@ -386,6 +386,89 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
     archive&.close!
   end
 
+  test "verifies retained audit events with deleted or unbound subjects without restoring unsafe links" do
+    travel_to Time.zone.parse("2026-09-02 12:00:00 UTC")
+    source = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    retained_runtime = runtime_installations(:acme_scripted)
+    deleted_runtime = retained_runtime.dup
+    deleted_runtime.detection_key = "f" * 64
+    deleted_runtime.save!
+    deleted_audit = AuditEvent.record!(
+      action: "runtime.installation_revoked", source: :system, workspace: source,
+      actor_kind: :system, subject: deleted_runtime, request_id: "deleted-runtime"
+    )
+    deleted_runtime.destroy!
+    subjects = {
+      "mapped-runtime" => [ "RuntimeInstallation", retained_runtime.id ],
+      "mapped-workspace" => [ "Workspace", source.id ],
+      "foreign-workspace" => [ "Workspace", workspaces(:beta_support).id ],
+      "unknown-type" => [ "ArchivedRuntimeInstallation", retained_runtime.id ],
+      "missing-type" => [ nil, retained_runtime.id ]
+    }
+    audits = [ deleted_audit ] + subjects.map do |request_id, (subject_type, subject_id)|
+      AuditEvent.create!(
+        workspace: source, actor_kind: :system, source: :system,
+        action: "runtime.installation_revoked", subject_type:, subject_id:,
+        request_id:, occurred_at: Time.current
+      )
+    end
+    original_attributes = audits.to_h { |audit| [ audit.id, audit.attributes ] }
+
+    verification = WorkspacePortability.verify_round_trip(
+      workspace: source, membership: owner, name: "Retained Audit Restore", slug: "retained-audit-restore",
+      source_commit: "d" * 40
+    )
+
+    restored = verification.workspace
+    assert_equal "passed", verification.operational_check.result
+    restored_runtime = restored.runtime_installations.find_by!(detection_key: retained_runtime.detection_key)
+    audits.each do |audit|
+      imported = restored.audit_events.find_by!(request_id: audit.request_id)
+      expected_subject_id = case audit.request_id
+      when "mapped-runtime" then restored_runtime.id
+      when "mapped-workspace" then restored.id
+      end
+      if expected_subject_id
+        assert_equal expected_subject_id, imported.subject_id
+        assert_not_equal audit.subject_id, imported.subject_id
+      else
+        assert_nil imported.subject_id, audit.request_id
+      end
+      assert_equal audit.attributes.except("id", "workspace_id", "subject_id"),
+        imported.attributes.except("id", "workspace_id", "subject_id")
+      assert_equal original_attributes.fetch(audit.id), audit.reload.attributes
+    end
+  end
+
+  test "rejects a retained audit subject redirected to another valid archived runtime" do
+    source = workspaces(:acme_support)
+    runtime = runtime_installations(:acme_scripted)
+    other_runtime = runtime.dup
+    other_runtime.detection_key = "e" * 64
+    other_runtime.save!
+    AuditEvent.record!(
+      action: "runtime.installation_revoked", source: :system, workspace: source,
+      actor_kind: :system, subject: runtime, request_id: "redirected-runtime"
+    )
+    original = WorkspacePortability.method(:normalize_imported_row)
+    redirected_id = nil
+    replacement = lambda do |row, **arguments|
+      if arguments.fetch(:table) == "audit_events" && row["request_id"] == "redirected-runtime"
+        redirected_id = arguments.fetch(:reverse_mappings).fetch("runtime_installations").key(other_runtime.id)
+        row = row.merge("subject_id" => redirected_id)
+      end
+      original.call(row, **arguments)
+    end
+
+    with_workspace_portability_method(:normalize_imported_row, replacement) do
+      assert_verification_failure(
+        "table_digest_mismatch", source:, slug: "redirected-audit-restore", source_commit: "e" * 40
+      )
+    end
+    assert redirected_id
+  end
+
   test "verifies a full round trip with table and attachment digests, tenant links, and Memory claims" do
     source = workspaces(:acme_support)
     owner = memberships(:owner_support)

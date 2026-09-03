@@ -413,7 +413,7 @@ func parseModels(kind providerKind, body []byte) ([]ModelOption, error) {
 			ids = append(ids, item.ID)
 		}
 		sort.Strings(ids)
-		models := make([]ModelOption, 0, minInt(maxModelOptions, len(ids)))
+		models := make([]ModelOption, 0, min(maxModelOptions, len(ids)))
 		seen := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
 			if _, exists := seen[id]; exists {
@@ -448,7 +448,7 @@ func parseModels(kind providerKind, body []byte) ([]ModelOption, error) {
 		}
 		return candidates[left].ID < candidates[right].ID
 	})
-	models := make([]ModelOption, 0, minInt(maxModelOptions, len(candidates)))
+	models := make([]ModelOption, 0, min(maxModelOptions, len(candidates)))
 	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
 		if _, exists := seen[candidate.ID]; exists {
@@ -461,13 +461,6 @@ func parseModels(kind providerKind, body []byte) ([]ModelOption, error) {
 		}
 	}
 	return models, nil
-}
-
-func minInt(left, right int) int {
-	if left < right {
-		return left
-	}
-	return right
 }
 
 type openAIRequest struct {

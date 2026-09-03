@@ -2,8 +2,6 @@ require "test_helper"
 require Rails.root.join("db/migrate/20260901010000_add_execution_boundary_contract")
 
 class AddExecutionBoundaryContractTest < ActiveSupport::TestCase
-  self.use_transactional_tests = false
-
   test "up preserves bounded evidence and revokes ambiguous runtime evidence" do
     migration = AddExecutionBoundaryContract.new
     source = runtime_installations(:acme_scripted)
