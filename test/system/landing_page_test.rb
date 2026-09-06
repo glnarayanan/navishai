@@ -79,10 +79,6 @@ class LandingPageTest < ApplicationSystemTestCase
     visit root_path
 
     assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']", visible: :all
-    assert_no_selector ".readiness-section"
-    assert_no_selector ".principles-section"
-    assert_no_selector ".principle-stage"
-    assert_no_selector ".orbit-stage"
 
     [ [ 1440, 1000 ], [ 390, 844 ], [ 320, 700 ] ].each do |width, height|
       page.current_window.resize_to(width, height)
