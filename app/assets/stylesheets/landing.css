@@ -433,7 +433,6 @@
 
 .chart-fill {
   fill: color-mix(in oklch, var(--secondary) 12%, transparent);
-  opacity: 1;
 }
 
 .chart-line {
@@ -441,8 +440,6 @@
   stroke: var(--secondary);
   stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: none;
-  stroke-dashoffset: 0;
 }
 
 .chart-dot {
@@ -464,13 +461,9 @@
   background: #1a1b25;
   font-family: var(--font-mono);
   font-size: 0.875rem;
-  opacity: 0;
   transform: translateX(-50%);
   box-shadow: inset 0 1.1px 0 rgba(255, 255, 255, 0.2), 0 2.2px 6.6px rgba(18, 43, 105, 0.04);
-  transition: none;
 }
-
-.health-stage.is-on .health-tooltip { opacity: 1; }
 
 .quote-section {
   display: flex;
