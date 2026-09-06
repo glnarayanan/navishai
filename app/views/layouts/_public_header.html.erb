@@ -1,6 +1,6 @@
 <div class="site-header-wrap<%= " is-marketing" if landing_page? %>">
-  <div class="site-header-frame" data-landing-header-target="frame">
-    <header class="site-header" data-landing-header-target="bar">
+  <div class="site-header-frame">
+    <header class="site-header">
       <%= render "layouts/wordmark" %>
       <% if landing_page? %>
         <nav class="nav-desktop" aria-label="Page">
@@ -15,7 +15,7 @@
       <% end %>
       <div class="header-tools">
         <% unless controller_name == "sessions" && action_name == "new" %>
-          <%= link_to landing_page? ? "Sign in" : "Sign in", new_session_path, class: "button button-primary header-cta" %>
+          <%= link_to "Sign in", new_session_path, class: "button button-primary header-cta" %>
         <% end %>
         <%= render "layouts/theme_control", icon_only: landing_page? %>
         <% if landing_page? %>

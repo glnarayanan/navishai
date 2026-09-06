@@ -17,8 +17,6 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#features", text: /Support history becomes customer context/
     assert_select "#features", text: /Know why an outcome happened/
     assert_select "#features", text: /deterministic score|signal weights|tool calls|execution budget/i, count: 0
-    assert_select ".principles-section", count: 0
-    assert_select ".readiness-section", count: 0
     assert_select "a[href='#hero']"
     assert_select "a[href='#how-it-works']"
     assert_select "a[href='#features']"

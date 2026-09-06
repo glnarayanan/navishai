@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["frame", "bar", "menu", "indicator"]
+  static targets = ["menu", "indicator"]
 
   connect() {
     this.manual = false
