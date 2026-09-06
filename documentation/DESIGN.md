@@ -15,7 +15,7 @@ Light and dark themes share one token set. The interface follows the operating-s
 
 ## Public product page
 
-The landing page retains the template section rhythm: sticky header contracting on scroll, centered active-nav pill, icon-only theme control, media stage, bordered proof grid, a static four-step support workflow, customer-outcome cards, quote band, two-panel self-hosting visual, FAQ, CTA with supplied artwork, and a large NavishAI footer sign-off. Sign in lives in the mobile drawer. The workflow uses one ordered sequence across desktop and mobile, with its full explanations and illustrations available without JavaScript.
+The landing page retains the template section rhythm: sticky header contracting on scroll, centered active-nav pill, icon-only theme control, a content-fitted product preview in place of the 16:9 media stage, bordered proof grid, a static four-step support workflow, customer-outcome cards, quote band, two-panel self-hosting visual, FAQ, CTA with supplied artwork, and a large NavishAI footer sign-off. The template's pricing and testimonial sections are omitted until NavishAI has either. Sign in lives in the mobile drawer. The workflow uses one ordered sequence across desktop and mobile, with its full explanations and illustrations available without JavaScript.
 
 ## Authenticated shell
 

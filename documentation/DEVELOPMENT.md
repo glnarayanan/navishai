@@ -1,10 +1,10 @@
 # Development
 
-NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 15 with pgvector 0.8.6, and Go 1.27.0.
+NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 16 with pgvector 0.8.6, and Go 1.27.0.
 
 ## First setup
 
-Install the pinned Ruby and Go versions, PostgreSQL 15, pgvector 0.8.6, and libvips. The project-level `mise.toml` is the quickest supported way to install the language toolchains:
+Install the pinned Ruby and Go versions, PostgreSQL 16, pgvector 0.8.6, and libvips. The project-level `mise.toml` is the quickest supported way to install the language toolchains:
 
 ```sh
 mise install
@@ -17,6 +17,8 @@ bin/setup --skip-server
 ```
 
 The Amp orb setup script installs these system tools and prepares both databases.
+
+On an ephemeral host that cannot reach the mise or ruby-lang download hosts, run `script/prepare_check_host` instead. It installs the build packages, uses the installed PostgreSQL major, builds pgvector 0.8.6 from its pinned revision and Ruby 4.0.6 from the `ruby_4_0` branch when no pinned Ruby exists, creates both databases, and bundles the application. It prints every pin it could not honour so the checkpoint can record those host deviations. Claude Code on the web runs it from `.claude/hooks/session-start.sh`.
 
 ## First Owner and recovery access
 
@@ -48,7 +50,7 @@ The forwarding service must post the raw RFC 5322 message to the inbox endpoint.
 
 To send replies, put SMTP settings in Rails credentials at `shared_email.<credential_key>.smtp` with `address`, `port`, `user_name`, `password`, and optional `authentication` keys. You can instead set the matching `NAVISHAI_SHARED_EMAIL_<UPPERCASE_CREDENTIAL_KEY>_SMTP_ADDRESS`, `_PORT`, `_USER_NAME`, `_PASSWORD`, and `_AUTHENTICATION` environment variables. NavishAI sends plain text only after a signed-in workspace writer reviews the exact draft and presses **Send email**. It holds the active Workspace, Session, and Membership authority through the SMTP call, so a deletion, logout, or role change either completes before the send and blocks it or waits until the in-flight human command ends. An uncertain SMTP result blocks another send until a signed-in writer checks SMTP or the shared mailbox and marks the attempt as accepted or not sent.
 
-Inbound and user-uploaded attachments stay quarantined unless a deployment configures `AttachmentScanner.default` with an adapter whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
+Inbound and user-uploaded attachments stay quarantined unless a deployment selects a malware scanner. Set `NAVISHAI_ATTACHMENT_SCANNER=clamd` and `NAVISHAI_CLAMD_ADDRESS` (`tcp://host:port`, the default `tcp://127.0.0.1:3310`, or `unix:///path`) to scan through a deployment-run ClamAV daemon with the reference `AttachmentScanner::Clamd` adapter. It streams bytes over clamd's INSTREAM protocol with bounded connect and I/O timeouts, treats only an explicit `OK` reply as clean and only a `FOUND` reply as infected, and returns `unavailable` for every outage, timeout, size-limit, or protocol error. It never logs or stores file content or signature names. Another adapter may replace `AttachmentScanner.default` with an object whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. An unknown scanner name stops the application at boot. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
 
 ## Intercom sync
 
@@ -64,7 +66,7 @@ A workspace writer can save a plain-text Intercom draft. Each customer-facing re
 
 ## Knowledge sources
 
-Managers, Admins, and Owners can maintain approved text, ingest plain-text uploads, store reviewed URL snapshots, and register Intercom Help Center snapshots. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.
+Managers, Admins, and Owners can maintain approved text, upload documents, store reviewed URL snapshots, and register Intercom Help Center snapshots. A document upload accepts one `.txt`, `.md`, `.html`, or `.pdf` file, or a `.zip` bundle of them. Every file passes the configured attachment scanner first and the original bytes stay attached to the version. `KnowledgeDocumentExtractor` turns each file into the plain-text snapshot that search and citations use: Markdown and text are kept as written, HTML is reduced to its title and readable text with scripts, styles, and markup removed, and PDF text is extracted with the `pdf-reader` gem within a 200-page and 1 MiB budget. `KnowledgeZipBundle` reads bundles with the Ruby standard library, creates one source per contained document, and rejects path traversal, absolute paths, symbolic links, nested archives, unsupported types, more than 50 entries, entries over 5 MiB, bundles over 20 MiB, and any entry whose size or CRC32 does not match its directory record. A bad entry fails the whole bundle and leaves no partial sources or blobs. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.
 
 ## Execution runner
 
@@ -90,7 +92,7 @@ Runner signatures cover the Unix timestamp, uppercase HTTP method, canonical pat
 
 ### Public-web search
 
-Set `NAVISHAI_WEB_SEARCH_PROVIDER=searxng` and `NAVISHAI_SEARXNG_URL` to an HTTPS SearXNG origin. Loopback HTTP is allowed for local development. `NAVISHAI_WEB_SEARCH_STATE_PATH` can set a separate durable idempotency file; it defaults to `<NAVISHAI_RUNNER_STATE_PATH>.web-search`. Keep this file across runner restarts.
+Choose one runner search provider with `NAVISHAI_WEB_SEARCH_PROVIDER`. `searxng` keeps research self-hosted: set `NAVISHAI_SEARXNG_URL` to an HTTPS SearXNG origin (loopback HTTP is allowed for local development). `exa` and `tavily` are optional hosted providers for deployments that do not want to run a search engine: set `NAVISHAI_EXA_API_KEY` or `NAVISHAI_TAVILY_API_KEY` on the runner only. Both hosted adapters send one bounded HTTPS POST per search to the provider's fixed API host, follow no redirects, cap the response at 1 MiB, keep at most 600 bytes of excerpt per result, and report one cost unit per call. The runner never forwards the key to Rails or a model process. A runtime's own native search remains disabled; enabling it needs an egress profile and auditable structured results and is listed as pending work in [STATUS.md](./STATUS.md). `NAVISHAI_WEB_SEARCH_STATE_PATH` can set a separate durable idempotency file; it defaults to `<NAVISHAI_RUNNER_STATE_PATH>.web-search`. Keep this file across runner restarts.
 
 The signed `POST /v1/tools/web-search` endpoint accepts only minimized queries from Rails. The runner bounds provider time and bytes, rejects redirects, accepts only HTTPS evidence links without credentials or fragments, normalizes dates and excerpts, deduplicates links, and records observed cost units. Search results are untrusted evidence. Rails shows them for human review, stores stable `public-web://` citations, and marks them as untrusted in later run context. Current runtime adapters keep their native web-search features disabled; a future adapter may register native search only when it returns the same auditable structured contract. This search endpoint does not grant general runner or agent-runtime egress.
 
@@ -159,10 +161,10 @@ Completed Support and Customer Success Crew runs publish strict artifact schema 
 
 Managers, Admins, and Owners can import up to 2 MiB or 500 rows of account data through the Accounts page or the authenticated JSON endpoint at `POST /workspaces/:workspace_id/account-api-inputs`. Each record needs `source_id` and `account_name`; it may add `account_domain`, `contact_name`, `contact_email`, `renewal_on`, `contract_value`, `active_users`, and `licensed_seats`. Reusing a source ID is idempotent only when its values match. Changed source facts need a new source ID so prior facts remain retained.
 
-NavishAI recalculates after imported inputs and committed conversation, note, Case, priority, or SLA changes. A deployment schedule can run the same deterministic pass across every Workspace:
+NavishAI recalculates after imported inputs and committed conversation, note, Case, priority, or SLA changes. The production recurring schedule in `config/recurring.yml` also enqueues one `AccountHealthScheduledRecalculationJob` per active Workspace every day at 01:30, before retention expiry. That job runs the same deterministic pass for every Account, records `schedule` or `renewal_window` as the trigger, and skips a Workspace whose deletion has been requested. To run the pass by hand:
 
 ```sh
-bin/rails runner 'Workspace.find_each { |workspace| AccountHealth.recalculate_due!(workspace:) }'
+bin/rails runner 'AccountHealthScheduledRecalculationJob.enqueue_due'
 ```
 
 Each snapshot stores its score, risk band, renewal date, trigger, prior snapshot, and typed signals. Signals keep value, source locator, time range, weight, risk points, and a stable `health://` citation. A score or risk-band change opens a review only when it crosses the material threshold; a renewal inside 90 days and a human request also open one. Customer Success runs receive the deterministic snapshot as facts, must cite retained Account, conversation, knowledge, web, Memory, or health-signal evidence, and must state uncertainty. Their interventions remain proposals for a human owner and cannot send to a customer.
@@ -185,7 +187,7 @@ bin/ci
 
 The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails and system tests, vets and tests the Go runner, and runs the Rails-to-Go protocol contract.
 
-The Rails control plane supports local development on macOS and Linux. The execution runner's supervisor and helper require Linux on amd64 because their isolation boundary uses Landlock, seccomp, namespaces, and Linux resource controls. Run the complete `bin/ci` suite in that target environment; on macOS, use a local Linux container backend for the Go runner stages.
+The Rails control plane supports local development on macOS and Linux. The execution runner's supervisor and helper require Linux on amd64 because their isolation boundary uses Landlock, seccomp, namespaces, and Linux resource controls. On a kernel without that boundary, the supervisor's process-boundary tests skip with a stated reason so `go test ./...` stays usable on a developer host; `bin/ci` and the release workflow set `NAVISHAI_REQUIRE_ISOLATION_TESTS=1`, which turns that skip into a failure so a release checkpoint cannot pass without exercising the boundary. Run the complete `bin/ci` suite in the target Linux environment; on macOS, use a local Linux container backend for the Go runner stages.
 
 GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
 

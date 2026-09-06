@@ -21,6 +21,43 @@ import (
 
 var testBinaries string
 
+// isolationUnavailable is set when the helper cannot apply Landlock and seccomp on
+// this kernel. Process-boundary tests then skip with a stated reason so a developer
+// host stays usable, while NAVISHAI_REQUIRE_ISOLATION_TESTS=1 (set by bin/ci and
+// the release workflow) turns that skip into a hard failure.
+var isolationUnavailable bool
+
+func requireIsolation(t *testing.T) {
+	t.Helper()
+	if !isolationUnavailable {
+		return
+	}
+	if os.Getenv("NAVISHAI_REQUIRE_ISOLATION_TESTS") == "1" {
+		t.Fatal("execution isolation is unavailable on this kernel and NAVISHAI_REQUIRE_ISOLATION_TESTS=1 forbids skipping")
+	}
+	t.Skip("execution isolation (Landlock and seccomp) is unavailable on this kernel; run the supervisor suite in the target Linux environment")
+}
+
+func probeIsolation(directory string) bool {
+	working, err := os.MkdirTemp(directory, "probe-")
+	if err != nil {
+		return false
+	}
+	value, err := New(Config{
+		HelperPath: filepath.Join(directory, "navishai-exec"), AllowedExecutableRoots: []string{directory},
+		ApprovedExecutables: []string{filepath.Join(directory, "target")},
+		AllowedWorkingRoots: []string{working}, RuntimeReadRoots: []string{directory},
+		Limits: testLimits(),
+	})
+	if err != nil {
+		return false
+	}
+	result, err := value.Run(context.Background(), Request{
+		Executable: filepath.Join(directory, "target"), Arguments: []string{"exit"}, WorkingDir: working,
+	})
+	return err == nil && result.ExitCode == 7
+}
+
 func TestMain(m *testing.M) {
 	directory, err := os.MkdirTemp("", "navishai-supervisor-")
 	if err != nil {
@@ -47,10 +84,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	build("target", source)
+	if !probeIsolation(directory) {
+		isolationUnavailable = true
+		fmt.Fprintln(os.Stderr, "supervisor: execution isolation is unavailable on this kernel; process-boundary tests will skip unless NAVISHAI_REQUIRE_ISOLATION_TESTS=1")
+	}
 	os.Exit(m.Run())
 }
 
 func TestRunUsesOnlyScopedEnvironment(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	supervisor := testSupervisor(t, working)
 	t.Setenv("HOST_SECRET", "must-not-leak")
@@ -67,6 +109,7 @@ func TestRunUsesOnlyScopedEnvironment(t *testing.T) {
 }
 
 func TestRunUsesOnlyExplicitlyApprovedHome(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	home := t.TempDir()
 	value := testSupervisorWithHome(t, working, home)
@@ -85,6 +128,7 @@ func TestRunUsesOnlyExplicitlyApprovedHome(t *testing.T) {
 }
 
 func TestRunAllowsWorkingDirectoryAsEphemeralHome(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	value := testSupervisor(t, working)
 	result, err := value.Run(context.Background(), Request{
@@ -96,6 +140,7 @@ func TestRunAllowsWorkingDirectoryAsEphemeralHome(t *testing.T) {
 }
 
 func TestApprovedCredentialHomeIsReadableButNotWritable(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	home := t.TempDir()
 	credential := filepath.Join(home, "credentials.json")
@@ -118,6 +163,7 @@ func TestApprovedCredentialHomeIsReadableButNotWritable(t *testing.T) {
 }
 
 func TestInteractUsesBoundedBidirectionalStdio(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	result, err := testSupervisor(t, working).Interact(context.Background(), Request{
 		Executable: targetPath(), Arguments: []string{"echo"}, WorkingDir: working,
@@ -137,6 +183,7 @@ func TestInteractUsesBoundedBidirectionalStdio(t *testing.T) {
 }
 
 func TestInteractEnforcesInputAndOutputBounds(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	value := testSupervisor(t, working)
 	result, err := value.Interact(context.Background(), Request{
@@ -160,6 +207,7 @@ func TestInteractEnforcesInputAndOutputBounds(t *testing.T) {
 }
 
 func TestRunDeniesFilesystemOutsideRoots(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	outside := t.TempDir()
 	path := filepath.Join(outside, "secret")
@@ -178,6 +226,7 @@ func TestRunDeniesFilesystemOutsideRoots(t *testing.T) {
 }
 
 func TestRunAllowsWritesInsideWorkingRoot(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	path := filepath.Join(working, "result")
 	result, err := testSupervisor(t, working).Run(context.Background(), Request{
@@ -192,6 +241,7 @@ func TestRunAllowsWritesInsideWorkingRoot(t *testing.T) {
 }
 
 func TestRunDeniesNetwork(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	for _, operation := range []string{"socket", "io-uring"} {
 		result, err := testSupervisor(t, working).Run(context.Background(), Request{
@@ -207,6 +257,7 @@ func TestRunDeniesNetwork(t *testing.T) {
 }
 
 func TestRunDeniesNetworkNamespaceEscape(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	for _, operation := range []string{"unshare-network", "clone-network"} {
 		result, err := testSupervisor(t, working).Run(context.Background(), Request{
@@ -247,6 +298,7 @@ func TestEgressProfileBindsNamespaceAndEnvironmentToApprovedExecutable(t *testin
 }
 
 func TestRunUsesBoundedEgressNamespaceWithoutCapabilities(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	userNamespace, networkNamespace := testNamespaces(t)
 	expectedUser, err := os.Readlink(userNamespace)
@@ -372,6 +424,7 @@ func TestRunRejectsUnknownEgressProfile(t *testing.T) {
 }
 
 func TestRunTimesOutAndReapsProcess(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	supervisor := testSupervisor(t, working)
 	supervisor.limits.WallTime = 50 * time.Millisecond
@@ -397,6 +450,7 @@ func TestRunHonorsCancellation(t *testing.T) {
 }
 
 func TestRunKillsDescendantsWhenParentExits(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	pidPath := filepath.Join(working, "child.pid")
 	result, err := testSupervisor(t, working).Run(context.Background(), Request{
@@ -431,6 +485,7 @@ func processAlive(pid int) bool {
 }
 
 func TestRunKillsOnOutputOverflow(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	supervisor := testSupervisor(t, working)
 	supervisor.limits.OutputBytes = 64
@@ -443,6 +498,7 @@ func TestRunKillsOnOutputOverflow(t *testing.T) {
 }
 
 func TestRunReturnsNonzeroExit(t *testing.T) {
+	requireIsolation(t)
 	working := t.TempDir()
 	result, err := testSupervisor(t, working).Run(context.Background(), Request{
 		Executable: targetPath(), Arguments: []string{"exit"}, WorkingDir: working,

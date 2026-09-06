@@ -13,4 +13,4 @@ Import is a restore operation. The target Workspace key and referenced Account, 
 
 Managers, Admins, and Owners may export, import, or rebuild the index from the Memory page. Each action creates a user-attributed audit with counts but no Memory content. Keep archives under the same access and retention controls as customer source data.
 
-The M6 integrated proof carries a Memory record tied to a retained GET-only Intercom backfill through a verified Workspace archive round trip. The imported record keeps its PostgreSQL source lineage and receives reconstruction work without an engine-private document ID.
+The integrated proof in `test/integration/phase_completion_proof_test.rb` carries a Memory record tied to a retained GET-only Intercom backfill through a verified Workspace archive round trip. The imported record keeps its PostgreSQL source lineage and receives reconstruction work without an engine-private document ID.

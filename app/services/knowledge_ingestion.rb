@@ -10,6 +10,12 @@ class KnowledgeIngestion
     )
   end
 
+  # Imports every supported document from one ZIP bundle as its own upload source.
+  # Every entry is scanned and extracted first; the sources then commit together.
+  def self.create_bundle!(workspace:, membership:, title:, upload:, expires_at: nil)
+    new(workspace:, membership:).create_bundle!(title:, upload:, expires_at:)
+  end
+
   def self.update!(workspace:, membership:, knowledge_source:, content: nil, upload: nil, expires_at: nil,
     url_fetcher: KnowledgeUrlFetcher.new)
     new(workspace:, membership:, url_fetcher:).update!(knowledge_source:, content:, upload:, expires_at:)
@@ -60,6 +66,41 @@ class KnowledgeIngestion
     source
   ensure
     Array(prepared).each(&:purge!)
+  end
+
+  def create_bundle!(title:, upload:, expires_at:)
+    raise InvalidSource, "Choose a ZIP bundle to upload." unless upload
+    archive = if upload.respond_to?(:read)
+      upload.read(KnowledgeZipBundle::MAX_ARCHIVE_BYTES + 1).to_s.b
+    else
+      upload.to_h.fetch(:data).to_s.b
+    end
+    entries = KnowledgeZipBundle.entries(archive)
+    expiry = parse_expiry(expires_at)
+    prepared_entries = []
+    entries.each do |entry|
+      prepared, normalized_content = prepare_content(kind: "upload", content: nil, upload: { filename: entry.filename, data: entry.data })
+      prepared_entries << [ entry.filename, prepared, normalized_content ]
+    end
+    sources = KnowledgeSource.transaction do
+      prepared_entries.map do |filename, prepared, normalized_content|
+        source = @workspace.knowledge_sources.create!(
+          source_kind: :upload, source_key: SecureRandom.uuid,
+          title: bundle_title(title, filename)
+        )
+        audit!("knowledge.source_created", source)
+        attachment = persist_attachment(prepared)
+        append_version!(source:, content: normalized_content, stored_attachment: attachment,
+          retrieved_at: Time.current, expires_at: expiry)
+        source
+      end
+    end
+    prepared_entries = []
+    sources
+  rescue KnowledgeZipBundle::InvalidBundle => error
+    raise InvalidSource, error.message
+  ensure
+    Array(prepared_entries).each { |(_, prepared, _)| Array(prepared).each(&:purge!) }
   end
 
   def update!(knowledge_source:, content:, upload:, expires_at:)
@@ -136,17 +177,30 @@ class KnowledgeIngestion
         raise InvalidSource, "Choose a file to upload." unless upload
         prepared = AttachmentIntake.prepare!([ upload ])
         item = prepared.sole
-        unless item.scan_status == "available" && item.content_type == "text/plain"
+        unless item.scan_status == "available"
           prepared.each(&:purge!)
-          raise InvalidSource, "The uploaded file must be clean plain text."
+          raise InvalidSource, "The uploaded file must pass the configured malware scan."
         end
+        extracted = KnowledgeDocumentExtractor.extract(
+          data: item.blob.download, content_type: item.content_type, filename: item.filename
+        )
 
-        [ prepared, normalize_content(item.blob.download) ]
+        [ prepared, normalize_content(extracted.text) ]
       else
         [ nil, normalize_content(content) ]
       end
     rescue AttachmentIntake::InvalidAttachment => error
       raise InvalidSource, error.message
+    rescue KnowledgeDocumentExtractor::UnsupportedDocument => error
+      Array(prepared).each(&:purge!)
+      raise InvalidSource, error.message
+    end
+
+    def bundle_title(title, filename)
+      base = title.to_s.strip
+      name = File.basename(filename.to_s)
+      value = base.present? ? "#{base}: #{name}" : name
+      value.truncate(200)
     end
 
     def fetch_url_if_needed(kind:, content:, url:)

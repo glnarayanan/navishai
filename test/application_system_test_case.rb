@@ -9,8 +9,14 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     Dir[File.expand_path("~/.cache/selenium/chrome/linux64/*/chrome")].max ||
     Selenium::WebDriver::SeleniumManager.binary_paths("--browser", "chrome").fetch("browser_path")
 
+  # A host that cannot reach Selenium Manager's download service supplies a matching
+  # driver explicitly; otherwise Selenium Manager resolves it as before.
+  Selenium::WebDriver::Chrome::Service.driver_path = ENV["CHROMEDRIVER_BIN"] if ENV["CHROMEDRIVER_BIN"].present?
+
   driven_by :selenium, using: :headless_chrome, screen_size: [ 1400, 1400 ] do |options|
     options.binary = chrome_binary if chrome_binary
+    # Extra flags for constrained hosts, for example --no-sandbox when tests must run as root in a container.
+    ENV["CHROME_ARGS"].to_s.split.each { |argument| options.add_argument(argument) }
   end
 
   setup do

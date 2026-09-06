@@ -48,8 +48,8 @@
         scope: :knowledge_source, class: "knowledge-form", multipart: true do |form| %>
         <% if @source.upload? %>
           <div class="field">
-            <%= form.label :upload, "Replacement plain-text file" %>
-            <%= form.file_field :upload, required: true, accept: "text/plain,.txt" %>
+            <%= form.label :upload, "Replacement document" %>
+            <%= form.file_field :upload, required: true, accept: ".txt,.md,.markdown,.html,.htm,.pdf,text/plain,text/markdown,text/html,application/pdf" %>
           </div>
         <% else %>
           <div class="field">

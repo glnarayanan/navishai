@@ -244,15 +244,9 @@ func newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret []byte, store
 	if err != nil {
 		return nil, fmt.Errorf("open web search state: %w", err)
 	}
-	var searchProvider websearch.Provider
-	if providerKey := os.Getenv("NAVISHAI_WEB_SEARCH_PROVIDER"); providerKey != "" {
-		if providerKey != "searxng" {
-			return nil, fmt.Errorf("unsupported web search provider %q", providerKey)
-		}
-		searchProvider, err = websearch.NewSearXNG(os.Getenv("NAVISHAI_SEARXNG_URL"), nil)
-		if err != nil {
-			return nil, fmt.Errorf("configure SearXNG: %w", err)
-		}
+	searchProvider, err := configureSearchProvider(os.Getenv)
+	if err != nil {
+		return nil, err
 	}
 	searchHandler, err := websearch.NewHandler(secret, searchProvider, searchStore, now)
 	if err != nil {
@@ -281,4 +275,34 @@ func healthHandler(response http.ResponseWriter, _ *http.Request) {
 		"status": "ok", "protocol_versions": []string{protocol.Version},
 		"admission_versions": []string{protocol.AdmissionVersion},
 	})
+}
+
+// configureSearchProvider selects the runner's public-web search adapter from the
+// environment. SearXNG stays the self-hosted default; Exa and Tavily are optional
+// hosted providers whose API key is held only on the runner.
+func configureSearchProvider(getenv func(string) string) (websearch.Provider, error) {
+	switch providerKey := getenv("NAVISHAI_WEB_SEARCH_PROVIDER"); providerKey {
+	case "":
+		return nil, nil
+	case websearch.SearXNGKey:
+		provider, err := websearch.NewSearXNG(getenv("NAVISHAI_SEARXNG_URL"), nil)
+		if err != nil {
+			return nil, fmt.Errorf("configure SearXNG: %w", err)
+		}
+		return provider, nil
+	case websearch.ExaKey:
+		provider, err := websearch.NewExa(getenv("NAVISHAI_EXA_API_KEY"), getenv("NAVISHAI_EXA_URL"), nil)
+		if err != nil {
+			return nil, fmt.Errorf("configure Exa: %w", err)
+		}
+		return provider, nil
+	case websearch.TavilyKey:
+		provider, err := websearch.NewTavily(getenv("NAVISHAI_TAVILY_API_KEY"), getenv("NAVISHAI_TAVILY_URL"), nil)
+		if err != nil {
+			return nil, fmt.Errorf("configure Tavily: %w", err)
+		}
+		return provider, nil
+	default:
+		return nil, fmt.Errorf("unsupported web search provider %q", providerKey)
+	}
 }

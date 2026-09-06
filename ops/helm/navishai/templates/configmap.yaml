@@ -14,3 +14,5 @@ data:
   NAVISHAI_RUNNER_ADDRESS: {{ printf "https://%s-runner:8081" (include "navishai.fullname" .) | quote }}
   NAVISHAI_RUNNER_CA_FILE: /run/navishai/runner-ca.crt
   NAVISHAI_SUPERMEMORY_ADDRESS: {{ .Values.supermemory.address | quote }}
+  NAVISHAI_ATTACHMENT_SCANNER: {{ .Values.attachmentScanner.adapter | quote }}
+  NAVISHAI_CLAMD_ADDRESS: {{ .Values.attachmentScanner.clamdAddress | quote }}

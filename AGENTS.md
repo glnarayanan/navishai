@@ -5,11 +5,11 @@ These instructions apply to every coding agent and human contributor in this rep
 ## Read first
 
 - Discover the active repository root. Do not assume an absolute path, host, user, editor, model, or coding agent.
-- Read [documentation/BUILD.md](./documentation/BUILD.md) before changing architecture or product scope.
-- Read [documentation/NEXT_PHASE.md](./documentation/NEXT_PHASE.md) before implementing work beyond the v1 source. It is the additive next-phase authority; `BUILD.md` remains the v1 decision record.
+- Read [documentation/PRODUCT.md](./documentation/PRODUCT.md) before changing architecture or product scope. It is the consolidated specification.
+- Read [documentation/STATUS.md](./documentation/STATUS.md) before implementing anything. It records what exists, the evidence, pending work, and dated decisions; update it when implementation state changes.
 - If .local-agent/research-context.md exists, use it only as private local research input. Do not copy its names, comparisons, or provenance into tracked files or public material unless the owner explicitly asks.
 - NavishAI is greenfield. Do not invent existing behaviour that must be preserved, but do preserve user-owned files and changes.
-- Follow the scope the owner assigns. For next-phase work, the owner decides whether to assign the complete roadmap or selected parts and which tools perform them; roadmap milestones and requirement numbers are not tool assignments or a prescribed work split.
+- Follow the scope the owner assigns. Pending items in STATUS.md are product dependencies, not tool assignments or a prescribed work split.
 
 ## How the owner works
 
@@ -46,7 +46,7 @@ These instructions apply to every coding agent and human contributor in this rep
 
 - Use Conventional Commits. Each commit should contain one complete, reversible concern.
 - Deliver the milestone as small stacked PRs. Each PR must be reviewable, green, and based on the preceding PR; do not bundle unrelated work.
-- Continue autonomously through the owner-assigned scope in the applicable roadmap after each green PR. Do not wait for routine checkpoint approval.
+- Continue autonomously through the owner-assigned scope after each green PR. Do not wait for routine checkpoint approval.
 - Stop only for a material scope, security, data, cost, destructive-action, external-credential, or unapproved-production-dependency blocker. Continue independent safe work first and batch related decisions.
 - Do not create or coordinate extra implementation threads unless the owner asks. The owner will supply Amp-specific multi-threading instructions.
 - Inspect branch, remote, and working-tree state before changing or pushing anything. Never discard or sweep in unrelated changes.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Per-boot reconciliation for the NavishAI Cloud Agent environment.
-# Starts the PostgreSQL 15 cluster (its data and databases are baked into the
+# Starts the PostgreSQL 16 cluster (its data and databases are baked into the
 # environment snapshot) and returns once the server accepts connections.
 set -euo pipefail
 
