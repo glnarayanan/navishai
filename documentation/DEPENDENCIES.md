@@ -34,4 +34,17 @@ These gems come from the Rails 8.1 application generator and are approved by the
 | `image_processing` | Active Storage image variants |
 | `ruby-vips` | Vips backend for Active Storage image variants |
 
+## Services, images, and bundled assets
+
+These non-gem production dependencies are pinned in the repository and approved by the build brief. Each needs the same review as a gem before it changes.
+
+| Dependency | Pin | Role |
+|---|---|---|
+| Supermemory Local server | 0.0.8 with per-platform SHA-256 in `script/install_supermemory` | Self-hosted memory index and retrieval engine |
+| `pgvector/pgvector` image | `0.8.6-pg15` by digest in `compose.yaml`, `.github/workflows/ci.yml`, and the Compose tooling | PostgreSQL 15 with pgvector for Compose and CI |
+| Container base images | SHA-256 digests in `Dockerfile` and `ops/docker/*.Dockerfile` | Rails, runner, and Supermemory images |
+| Geist and Geist Mono | Variable WOFF2 files under `app/assets/fonts` | Self-hosted interface type |
+
+Optional deployment-run services are configured only when used and are not shipped by NavishAI: an S3-compatible object store, a SearXNG search origin, a ClamAV daemon for the reference attachment scanner, and the customer's own provider subscriptions or API keys. The runner's direct provider connections call the fixed OpenAI and Anthropic API hosts through the Go standard library; no provider SDK is bundled.
+
 Development and test gems are isolated to their Bundler groups. GitHub Dependabot tracks the Bundler lockfile and Go modules. GitHub Actions updates are paused while repository workflows remain manual-only. `script/sbom` emits the locked production gem graph as CycloneDX 1.6 JSON. The release review and patch rules are in [RELEASE.md](./RELEASE.md). Any later direct production gem, Go module, browser pin, service, or package needs owner approval unless the build brief already approves it.

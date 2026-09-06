@@ -18,6 +18,8 @@ bin/setup --skip-server
 
 The Amp orb setup script installs these system tools and prepares both databases.
 
+On an ephemeral host that cannot reach the mise or ruby-lang download hosts, run `script/prepare_check_host` instead. It installs the build packages, uses the installed PostgreSQL major, builds pgvector 0.8.6 from its pinned revision and Ruby 4.0.6 from the `ruby_4_0` branch when no pinned Ruby exists, creates both databases, and bundles the application. It prints every pin it could not honour so the checkpoint can record those host deviations. Claude Code on the web runs it from `.claude/hooks/session-start.sh`.
+
 ## First Owner and recovery access
 
 Set `NAVISHAI_BOOTSTRAP_TOKEN` to a random value of at least 32 bytes before the first start. Open `/setup/new` from the deployment host and enter that token to create the first organisation, workspace, and Owner. Setup closes for good after it succeeds.
@@ -48,7 +50,7 @@ The forwarding service must post the raw RFC 5322 message to the inbox endpoint.
 
 To send replies, put SMTP settings in Rails credentials at `shared_email.<credential_key>.smtp` with `address`, `port`, `user_name`, `password`, and optional `authentication` keys. You can instead set the matching `NAVISHAI_SHARED_EMAIL_<UPPERCASE_CREDENTIAL_KEY>_SMTP_ADDRESS`, `_PORT`, `_USER_NAME`, `_PASSWORD`, and `_AUTHENTICATION` environment variables. NavishAI sends plain text only after a signed-in workspace writer reviews the exact draft and presses **Send email**. It holds the active Workspace, Session, and Membership authority through the SMTP call, so a deletion, logout, or role change either completes before the send and blocks it or waits until the in-flight human command ends. An uncertain SMTP result blocks another send until a signed-in writer checks SMTP or the shared mailbox and marks the attempt as accepted or not sent.
 
-Inbound and user-uploaded attachments stay quarantined unless a deployment configures `AttachmentScanner.default` with an adapter whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
+Inbound and user-uploaded attachments stay quarantined unless a deployment selects a malware scanner. Set `NAVISHAI_ATTACHMENT_SCANNER=clamd` and `NAVISHAI_CLAMD_ADDRESS` (`tcp://host:port`, the default `tcp://127.0.0.1:3310`, or `unix:///path`) to scan through a deployment-run ClamAV daemon with the reference `AttachmentScanner::Clamd` adapter. It streams bytes over clamd's INSTREAM protocol with bounded connect and I/O timeouts, treats only an explicit `OK` reply as clean and only a `FOUND` reply as infected, and returns `unavailable` for every outage, timeout, size-limit, or protocol error. It never logs or stores file content or signature names. Another adapter may replace `AttachmentScanner.default` with an object whose `scan(data:, content_type:, filename:)` method returns `AttachmentScanner::Result` with `clean`, `infected`, or `unavailable` status. An unknown scanner name stops the application at boot. Missing scanners and scanner errors fail closed. NavishAI accepts PDF, plain text, PNG, JPEG, and GIF by byte signature, with at most five files, 5 MiB per file, and 10 MiB in total. Only clean files can be downloaded or sent, and NavishAI checks their stored SHA-256 digest before either action.
 
 ## Intercom sync
 
@@ -159,10 +161,10 @@ Completed Support and Customer Success Crew runs publish strict artifact schema 
 
 Managers, Admins, and Owners can import up to 2 MiB or 500 rows of account data through the Accounts page or the authenticated JSON endpoint at `POST /workspaces/:workspace_id/account-api-inputs`. Each record needs `source_id` and `account_name`; it may add `account_domain`, `contact_name`, `contact_email`, `renewal_on`, `contract_value`, `active_users`, and `licensed_seats`. Reusing a source ID is idempotent only when its values match. Changed source facts need a new source ID so prior facts remain retained.
 
-NavishAI recalculates after imported inputs and committed conversation, note, Case, priority, or SLA changes. A deployment schedule can run the same deterministic pass across every Workspace:
+NavishAI recalculates after imported inputs and committed conversation, note, Case, priority, or SLA changes. The production recurring schedule in `config/recurring.yml` also enqueues one `AccountHealthScheduledRecalculationJob` per active Workspace every day at 01:30, before retention expiry. That job runs the same deterministic pass for every Account, records `schedule` or `renewal_window` as the trigger, and skips a Workspace whose deletion has been requested. To run the pass by hand:
 
 ```sh
-bin/rails runner 'Workspace.find_each { |workspace| AccountHealth.recalculate_due!(workspace:) }'
+bin/rails runner 'AccountHealthScheduledRecalculationJob.enqueue_due'
 ```
 
 Each snapshot stores its score, risk band, renewal date, trigger, prior snapshot, and typed signals. Signals keep value, source locator, time range, weight, risk points, and a stable `health://` citation. A score or risk-band change opens a review only when it crosses the material threshold; a renewal inside 90 days and a human request also open one. Customer Success runs receive the deterministic snapshot as facts, must cite retained Account, conversation, knowledge, web, Memory, or health-signal evidence, and must state uncertainty. Their interventions remain proposals for a human owner and cannot send to a customer.
@@ -185,7 +187,7 @@ bin/ci
 
 The suite checks Ruby and Go formatting, audits Ruby and import-map dependencies, scans Rails code, runs Rails and system tests, vets and tests the Go runner, and runs the Rails-to-Go protocol contract.
 
-The Rails control plane supports local development on macOS and Linux. The execution runner's supervisor and helper require Linux on amd64 because their isolation boundary uses Landlock, seccomp, namespaces, and Linux resource controls. Run the complete `bin/ci` suite in that target environment; on macOS, use a local Linux container backend for the Go runner stages.
+The Rails control plane supports local development on macOS and Linux. The execution runner's supervisor and helper require Linux on amd64 because their isolation boundary uses Landlock, seccomp, namespaces, and Linux resource controls. On a kernel without that boundary, the supervisor's process-boundary tests skip with a stated reason so `go test ./...` stays usable on a developer host; `bin/ci` and the release workflow set `NAVISHAI_REQUIRE_ISOLATION_TESTS=1`, which turns that skip into a failure so a release checkpoint cannot pass without exercising the boundary. Run the complete `bin/ci` suite in the target Linux environment; on macOS, use a local Linux container backend for the Go runner stages.
 
 GitHub Actions runs this same check set only when started by hand. Run `bin/ci` before each development checkpoint; enable automatic pull-request checks again for release work when Actions use is approved.
 
