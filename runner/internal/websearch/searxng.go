@@ -13,7 +13,10 @@ import (
 	"time"
 )
 
-const maximumProviderBody = 1024 * 1024
+const (
+	maximumProviderBody = 1024 * 1024
+	SearXNGKey          = "searxng"
+)
 
 type SearXNG struct {
 	endpoint *url.URL
@@ -34,7 +37,7 @@ func NewSearXNG(address string, client *http.Client) (*SearXNG, error) {
 	return &SearXNG{endpoint: endpoint, client: client}, nil
 }
 
-func (provider *SearXNG) Key() string { return "searxng" }
+func (provider *SearXNG) Key() string { return SearXNGKey }
 
 func (provider *SearXNG) Search(ctx context.Context, query string, maximum int) ([]Result, int, error) {
 	endpoint := *provider.endpoint

@@ -39,6 +39,12 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_RUNNER_SHARED_SECRET } }
             - name: NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET
               valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET } }
+            - { name: NAVISHAI_WEB_SEARCH_PROVIDER, value: {{ .Values.webSearch.provider | quote }} }
+            - { name: NAVISHAI_SEARXNG_URL, value: {{ .Values.webSearch.searxngUrl | quote }} }
+            - name: NAVISHAI_EXA_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_EXA_API_KEY, optional: true } }
+            - name: NAVISHAI_TAVILY_API_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.applicationSecret }}, key: NAVISHAI_TAVILY_API_KEY, optional: true } }
           ports:
             - { name: https, containerPort: 8081 }
           volumeMounts:

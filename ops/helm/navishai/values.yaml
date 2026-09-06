@@ -15,6 +15,11 @@ database:
 supermemory:
   # Stock Supermemory Local has no TLS listener. Supply a customer-run HTTPS endpoint.
   address: https://supermemory.example.internal
+webSearch:
+  # "" disables research; "searxng" needs searxngUrl; "exa" or "tavily" need NAVISHAI_EXA_API_KEY or
+  # NAVISHAI_TAVILY_API_KEY in the application Secret. Only the runner receives the key.
+  provider: ""
+  searxngUrl: ""
 attachmentScanner:
   # "" keeps every attachment quarantined; "clamd" scans through a platform-run ClamAV daemon.
   adapter: ""
