@@ -53,7 +53,7 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 | Deterministic scripted adapter | Done | `runner/internal/scripted` | Success, retry, timeout, cancellation, malformed output, policy denial. |
 | Run ledger, ordered events, replay, attempts, usage, terminal rules | Done | `ExecutionLedger`, `ExecutionRun`, `ExecutionEvent`, database triggers | Duplicate and out-of-order events rejected by PostgreSQL functions. |
 | Execution supervision: roots, limits, timeout, cancellation, reaping, credentials, egress | Done on Linux | `runner/internal/supervisor`, `runner/internal/isolation`, `navishai-exec`, `navishai-netns-launch` | Landlock, seccomp, namespaces, resource limits, deny-by-default egress profiles bound to the exact executable. |
-| macOS host-trusted execution for Codex and Cursor | Partial | `runner/internal/adapters/cursorhost`, `RuntimeInstallation` execution modes | Works as an explicitly enabled `host_trusted` mode without kernel isolation. Owner marked it for redesign as a server-side companion boundary on 6 September 2026; treat as operator-accepted risk until then. |
+| macOS host-trusted execution for Codex and Cursor | Partial | `runner/internal/adapters/cursorhost`, `RuntimeInstallation` execution modes | Works as an explicitly enabled `host_trusted` mode without kernel isolation. The new web companion runs personal Codex accounts on deployed Linux. This retained legacy mode still requires explicit opt-in and remains an operator-accepted risk. |
 | Investigation, drafting, quality review, artifacts, change requests, reruns | Done | `CrewArtifactPublisher`, `CrewArtifact`, `CrewWork` review commands | Strict artifact schema with citations, uncertainty, conflicts, versions. |
 | Execution UX and recovery | Done | `ExecutionRunsController`, `ExecutionRecovery`, run panel views | Live progress, blocked, degraded, failed, canceled states; reconcile and retry. |
 | Runtime approval registry with detection, fingerprints, tests, compatibility | Done | `RuntimeRegistry`, `RuntimeInstallation`, `RuntimeInstallationsController`, `runner/internal/runtimecatalog` | Approval requires a passing test of the exact configuration fingerprint. |
@@ -141,6 +141,16 @@ From `fbf65f0b3c268f650a2489035236d7fb82e9467d` on Linux 6.1 x86-64 with Ruby 4.
 ### Milestone history
 
 The build ran as a v1 stack of about 40 PRs (foundation, helpdesk, agent work, runtimes, memory, Intercom and Customer Success, operations) followed by next-phase milestones M0 rebaseline, M1 proofed resolutions and explainability, M2 dossier, M3 Support-to-renewal loop, M4 operational ownership and portability, M5 governed policy change, and M6 integrated proof (merged 28 August 2026 in PR #82, re-proven from code on 6 September 2026). M7 knowledge and research intake is the open milestone; its remaining items are in section 3. Per-milestone commit evidence up to M6 is preserved in the Git history of the retired roadmap file.
+
+### 6 September 2026 unmerged knowledge and personal-account stack
+
+Five stacked source branches cover DOCX intake, Intercom sync and applicability, connector policy/OAuth and Notion, Workspace search selection, and the personal Codex web companion. No production dependency was added. These are built and tested changes, not a merge, release, deployment, or live-provider authentication claim.
+
+The combined stack passed 954 Rails tests with 6,918 assertions on ssdnodes (Ruby 4.0.6, Go 1.27.0, PostgreSQL 18.6, pgvector 0.8.6). Two subsequently added deletion tests passed there with 41 assertions. Ruby/Go style, gem/importmap audits, Brakeman, mandatory Linux isolation tests, runner builds, the signed Rails–Go contract, seeds, and the 89-component SBOM check passed.
+
+Running several browser suites concurrently overloaded the host and produced three timing failures. The complete current browser suite then passed locally with two workers: 75 tests, 1,268 assertions, no failures. Focused checks covered true 320-pixel layouts, keyboard access, native CSRF forms, Turbo, personal-account ownership and failed-start recovery. The initial overloaded browser run is not recorded as green.
+
+A separate isolated PostgreSQL 16.10 server with pgvector 0.8.6 successfully loaded the final schema, rolled all seven new migrations down and up, applied each PR layer, and freshly loaded all four PostgreSQL 16-generated schema dumps. The deployed PostgreSQL version was not changed. Risk-based review findings were fixed and regression-tested; no live OAuth or subscription credentials were consumed.
 
 ## 3. Pending work
 
