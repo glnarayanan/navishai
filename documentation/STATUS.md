@@ -150,7 +150,7 @@ The combined stack passed 954 Rails tests with 6,918 assertions on ssdnodes (Rub
 
 Running several browser suites concurrently overloaded the host and produced three timing failures. The complete current browser suite then passed locally with two workers: 75 tests, 1,268 assertions, no failures. Focused checks covered true 320-pixel layouts, keyboard access, native CSRF forms, Turbo, personal-account ownership and failed-start recovery. The initial overloaded browser run is not recorded as green.
 
-A separate isolated PostgreSQL 16.10 server with pgvector 0.8.6 successfully loaded the final schema, rolled all seven new migrations down and up, applied each PR layer, and freshly loaded all four PostgreSQL 16-generated schema dumps. The deployed PostgreSQL version was not changed. Risk-based review findings were fixed and regression-tested; no live OAuth or subscription credentials were consumed.
+A separate isolated PostgreSQL 16.10 server with pgvector 0.8.6 successfully loaded the final schema, rolled all seven new migrations down and up, applied each PR layer, and freshly loaded all four PostgreSQL 16-generated schema dumps. The deployed PostgreSQL version was not changed. Risk-based review used two internal review lenses and independent finding validation; findings were fixed and regression-tested. The external cross-provider pass was skipped because a non-Claude route could not be verified. No live OAuth or subscription credentials were consumed.
 
 ## 3. Pending work
 
