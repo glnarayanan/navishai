@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 6 September 2026
+**Updated:** 7 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -142,7 +142,7 @@ From `fbf65f0b3c268f650a2489035236d7fb82e9467d` on Linux 6.1 x86-64 with Ruby 4.
 
 The build ran as a v1 stack of about 40 PRs (foundation, helpdesk, agent work, runtimes, memory, Intercom and Customer Success, operations) followed by next-phase milestones M0 rebaseline, M1 proofed resolutions and explainability, M2 dossier, M3 Support-to-renewal loop, M4 operational ownership and portability, M5 governed policy change, and M6 integrated proof (merged 28 August 2026 in PR #82, re-proven from code on 6 September 2026). M7 knowledge and research intake is the open milestone; its remaining items are in section 3. Per-milestone commit evidence up to M6 is preserved in the Git history of the retired roadmap file.
 
-### 6 September 2026 unmerged knowledge and personal-account stack
+### 6–7 September 2026 unmerged knowledge and personal-account stack
 
 Five stacked source branches cover DOCX intake, Intercom sync and applicability, connector policy/OAuth and Notion, Workspace search selection, and the personal Codex web companion. No production dependency was added. These are built and tested changes, not a merge, release, deployment, or live-provider authentication claim.
 
@@ -151,6 +151,16 @@ The combined stack passed 954 Rails tests with 6,918 assertions on ssdnodes (Rub
 Running several browser suites concurrently overloaded the host and produced three timing failures. The complete current browser suite then passed locally with two workers: 75 tests, 1,268 assertions, no failures. Focused checks covered true 320-pixel layouts, keyboard access, native CSRF forms, Turbo, personal-account ownership and failed-start recovery. The initial overloaded browser run is not recorded as green.
 
 A separate isolated PostgreSQL 16.10 server with pgvector 0.8.6 successfully loaded the final schema, rolled all seven new migrations down and up, applied each PR layer, and freshly loaded all four PostgreSQL 16-generated schema dumps. The deployed PostgreSQL version was not changed. Risk-based review used two internal review lenses and independent finding validation; findings were fixed and regression-tested. The external cross-provider pass was skipped because a non-Claude route could not be verified. No live OAuth or subscription credentials were consumed.
+
+Stack checkpoints (all unmerged):
+
+| Branch | Feature commit | Rails tests / assertions | Browser tests / assertions | Check execution |
+|---|---|---|---|---|
+| `codex/word-imports` | `bab0985`, fixture correction `7ae58ac` | 879 / 6,580 | 67 / 1,159 | All native CI steps passed; browser rerun passed locally after host contention. |
+| `codex/knowledge-sync` | `8d77d77` | 899 / 6,686 | 69 / 1,189 | Full isolated `bin/ci` passed on ssdnodes. |
+| `codex/knowledge-connectors` | `686f59f` | 933 / 6,823 | 70 / 1,211 | Full isolated `bin/ci` passed on ssdnodes. |
+| `codex/workspace-search` | `efa01fc` | 939 / 6,859 | 71 / 1,228 | Full isolated `bin/ci` passed on ssdnodes. |
+| `codex/personal-ai-accounts` | `ac92b87` | 954 / 6,918 plus 2 / 41 | 75 / 1,268 | All native CI steps passed; full current browser suite passed locally after host contention. |
 
 ## 3. Pending work
 
