@@ -156,8 +156,7 @@
   padding: 1.25rem 1.5rem;
 }
 
-.stage-row,
-.stage-note {
+.stage-row {
   border: 1px solid var(--border);
   border-radius: 0.7rem;
   background: var(--card);
@@ -857,14 +856,6 @@
 }
 .cta-button:hover { color: #000; background: #fff; }
 .cta-action span { color: #fff; font-size: 0.875rem; }
-.cta-caveat {
-  width: min(100% - 3rem, 40rem);
-  margin: 1rem auto 0;
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
-  text-align: center;
-}
-
 .landing-footer {
   padding: 0;
   border-bottom: 0;
