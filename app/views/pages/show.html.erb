@@ -60,76 +60,27 @@
     </div>
   </section>
 
-  <section id="how-it-works" class="feature-section" aria-labelledby="workflow-title" data-controller="feature-cycle">
+  <section id="how-it-works" class="feature-section" aria-labelledby="workflow-title">
     <header class="section-header section-header-plain">
       <h2 id="workflow-title">From customer question to reviewed answer</h2>
       <p>Follow the same evidence from intake through investigation, review, and the final human action.</p>
-      <button type="button" class="feature-pause" data-feature-cycle-target="pause" data-action="feature-cycle#togglePause" aria-pressed="false">
-        Pause slideshow
-      </button>
     </header>
-    <div class="feature-cycle">
-      <% workflow_steps = [
-        ["Bring the conversation together", "Shared email and Intercom connect the customer, Account, conversation, and case."],
-        ["Investigate current evidence", "The crew uses approved knowledge, scoped memory, Account history, and read-only public sources."],
-        ["See what needs attention", "Material claims show whether evidence is supported, stale, conflicting, uncertain, or refused."],
-        ["Edit and send as yourself", "A signed-in teammate owns the final wording. NavishAI records the exact message, channel, and actor."]
-      ] %>
-      <div class="feature-desktop">
-        <ul class="feature-list" role="tablist" aria-label="Support workflow steps">
-          <% workflow_steps.each_with_index do |(title, body), index| %>
-            <li>
-              <button type="button" class="feature-item<%= " is-active" if index.zero? %>" role="tab"
-                id="workflow-tab-<%= index %>" aria-controls="workflow-panel-<%= index %>"
-                aria-selected="<%= index.zero? %>" tabindex="<%= index.zero? ? 0 : -1 %>" data-feature-cycle-target="item" data-feature-index="<%= index %>"
-                data-action="feature-cycle#select keydown->feature-cycle#keyselect">
-                <span class="feature-rail" aria-hidden="true"><span class="feature-line" data-feature-cycle-target="line"></span></span>
-                <h3><%= title %></h3>
-                <p><%= body %></p>
-              </button>
-            </li>
-          <% end %>
-        </ul>
-        <div class="feature-stage">
-          <% workflow_steps.each_with_index do |(title, _body), index| %>
-            <article class="feature-panel<%= " is-active" if index.zero? %>" id="workflow-panel-<%= index %>" role="tabpanel"
-              aria-labelledby="workflow-tab-<%= index %>" tabindex="<%= index.zero? ? 0 : -1 %>" data-feature-cycle-target="panel" <%= "hidden" unless index.zero? %>>
-              <div class="feature-canvas feature-visual-<%= index %>">
-                <div class="feature-canvas-inner">
-                <% if index.zero? %>
-                  <span class="feature-chip">Shared email</span>
-                  <span class="feature-chip">Intercom</span>
-                  <div class="feature-inbox-row is-new"><strong>New case</strong><small>Invoice webhook retry</small></div>
-                  <div class="feature-inbox-row"><strong>Customer linked</strong><small>Acme · Maya Chen</small></div>
-                <% elsif index == 1 %>
-                  <div class="feature-evidence-card"><strong>Knowledge</strong><small>Rotation runbook · current</small></div>
-                  <div class="feature-evidence-card"><strong>Account history</strong><small>Prior 401 after secret change</small></div>
-                  <div class="feature-evidence-card is-web"><strong>Public source</strong><small>Cited and ready for review</small></div>
-                <% elsif index == 2 %>
-                  <p class="feature-chip">Evidence check</p>
-                  <ul class="feature-review-list">
-                    <li class="is-ok">Supported facts stay cited beside the draft</li>
-                    <li class="is-warn">Stale guidance is visible before review</li>
-                    <li class="is-ok">Uncertain claims stay qualified</li>
-                  </ul>
-                <% else %>
-                  <div class="feature-send-card">
-                    <strong>Ready for your review</strong>
-                    <span>Edit the wording, confirm the recipient, and send as yourself.</span>
-                    <span class="draft-status">Draft awaiting review</span>
-                  </div>
-                <% end %>
-                </div>
-              </div>
-            </article>
-          <% end %>
-        </div>
-      </div>
-      <div class="feature-mobile">
-        <div class="feature-mobile-stage">
-          <% workflow_steps.each_with_index do |(_title, _body), index| %>
-            <div class="feature-mobile-canvas feature-visual-<%= index %><%= " is-active" if index.zero? %>" data-feature-cycle-target="mobileCanvas" <%= "hidden" unless index.zero? %>>
-              <div class="feature-canvas-inner">
+    <% workflow_steps = [
+      ["Bring the conversation together", "Shared email and Intercom connect the customer, Account, conversation, and case."],
+      ["Investigate current evidence", "The crew uses approved knowledge, scoped memory, Account history, and read-only public sources."],
+      ["See what needs attention", "Material claims show whether evidence is supported, stale, conflicting, uncertain, or refused."],
+      ["Edit and send as yourself", "A signed-in teammate owns the final wording. NavishAI records the exact message, channel, and actor."]
+    ] %>
+    <ol class="workflow-steps" role="list" aria-label="Support workflow steps">
+      <% workflow_steps.each_with_index do |(title, body), index| %>
+        <li class="workflow-step">
+          <div class="workflow-copy">
+            <span class="workflow-number" aria-hidden="true"><%= format("%02d", index + 1) %></span>
+            <h3><%= title %></h3>
+            <p><%= body %></p>
+          </div>
+          <div class="feature-canvas">
+            <div class="feature-canvas-inner">
               <% if index.zero? %>
                 <span class="feature-chip">Shared email</span>
                 <span class="feature-chip">Intercom</span>
@@ -142,33 +93,22 @@
               <% elsif index == 2 %>
                 <p class="feature-chip">Evidence check</p>
                 <ul class="feature-review-list">
-                  <li class="is-ok">Supported facts stay cited</li>
-                  <li class="is-warn">Stale guidance stays visible</li>
+                  <li class="is-ok">Supported facts stay cited beside the draft</li>
+                  <li class="is-warn">Stale guidance is visible before review</li>
                   <li class="is-ok">Uncertain claims stay qualified</li>
                 </ul>
               <% else %>
                 <div class="feature-send-card">
                   <strong>Ready for your review</strong>
-                  <span>Edit the wording and send as yourself.</span>
+                  <span>Edit the wording, confirm the recipient, and send as yourself.</span>
+                  <span class="draft-status">Draft awaiting review</span>
                 </div>
               <% end %>
-              </div>
             </div>
-          <% end %>
-        </div>
-        <ul class="feature-carousel" data-feature-cycle-target="carousel">
-          <% workflow_steps.each_with_index do |(title, body), index| %>
-            <li class="card<%= " is-active" if index.zero? %>" data-feature-cycle-target="card">
-              <button type="button" data-feature-index="<%= index %>" data-action="feature-cycle#select">
-                <span class="feature-rail" aria-hidden="true"><span class="feature-line" data-feature-cycle-target="mobileLine"></span></span>
-                <h3><%= title %></h3>
-                <p><%= body %></p>
-              </button>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    </div>
+          </div>
+        </li>
+      <% end %>
+    </ol>
   </section>
 
   <section id="features" class="bento-section" aria-labelledby="outcomes-title">

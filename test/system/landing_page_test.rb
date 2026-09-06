@@ -57,10 +57,7 @@ class LandingPageTest < ApplicationSystemTestCase
     click_link "See the support workflow", href: "#how-it-works", match: :first
     assert_selector "#how-it-works"
 
-    attention_step = first(:button, "See what needs attention")
-    page.scroll_to(attention_step, align: :center)
-    attention_step.click
-    assert_selector ".feature-panel:not([hidden])", text: /Evidence check/
+    assert_selector ".workflow-step", text: /Evidence check/
 
     intercom_faq = find("summary", text: "Does NavishAI replace Intercom?")
     page.scroll_to(intercom_faq, align: :center)
@@ -78,9 +75,8 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_includes page.evaluate_script("getComputedStyle(document.body).fontFamily"), "Geist"
   end
 
-  test "workflow controls follow ARIA patterns and internal showcase sections are absent" do
+  test "workflow is one readable sequence on desktop and mobile" do
     visit root_path
-    page.current_window.resize_to(1440, 1000)
 
     assert_selector "dialog#public-nav-drawer[aria-label='Page navigation']", visible: :all
     assert_no_selector ".readiness-section"
@@ -88,41 +84,32 @@ class LandingPageTest < ApplicationSystemTestCase
     assert_no_selector ".principle-stage"
     assert_no_selector ".orbit-stage"
 
-    assert_button "Pause slideshow"
-    pause_slideshow = find("button.feature-pause", text: "Pause slideshow")
-    page.scroll_to(pause_slideshow, align: :center)
-    pause_slideshow.click
-    assert_button "Play slideshow"
-    assert_selector ".feature-pause[aria-pressed='true']"
-
-    first_tab = find("#workflow-tab-0")
-    first_tab.click
-    first_tab.send_keys(:arrow_right)
-    assert_equal "workflow-tab-1", page.evaluate_script("document.activeElement.id")
-    assert_selector "#workflow-panel-1:not([hidden])[role='tabpanel']"
-    find("#workflow-tab-1").send_keys(:end)
-    assert_equal "workflow-tab-3", page.evaluate_script("document.activeElement.id")
-    find("#workflow-tab-3").send_keys(:home)
-    assert_equal "workflow-tab-0", page.evaluate_script("document.activeElement.id")
+    [ [ 1440, 1000 ], [ 390, 844 ], [ 320, 700 ] ].each do |width, height|
+      page.current_window.resize_to(width, height)
+      assert_workflow_content
+      assert_no_horizontal_overflow
+      assert_no_selector "#how-it-works button, #how-it-works [role='tab'], #how-it-works [hidden]", visible: :all
+      assert_operator page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.workflow-copy p')).fontSize)"), :>=, 16
+    end
   end
 
-  test "reduced motion keeps the workflow slideshow paused until Play is pressed" do
+  test "workflow stays readable with JavaScript disabled" do
+    page.driver.browser.execute_cdp("Emulation.setScriptExecutionDisabled", value: true)
+    visit root_path
+    assert_workflow_content
+    page.current_window.resize_to(390, 844)
+    assert_workflow_content
+  ensure
+    page.driver.browser.execute_cdp("Emulation.setScriptExecutionDisabled", value: false)
+  end
+
+  test "keyboard can open the workflow from the hero" do
     emulate_prefers_reduced_motion("reduce")
     visit root_path
-    page.current_window.resize_to(1440, 1000)
-
-    assert_button "Play slideshow"
-    assert_selector ".feature-pause[aria-pressed='true']"
-    assert_selector "#workflow-tab-0[aria-selected='true']"
-    assert_selector "#workflow-panel-0:not([hidden])"
-
-    click_button "Play slideshow"
-    assert_button "Pause slideshow"
-    assert_selector ".feature-pause[aria-pressed='false']"
-
-    assert_selector "#workflow-tab-1[aria-selected='true']", wait: 6
-    assert_selector "#workflow-panel-1:not([hidden])"
-    assert_no_selector "#workflow-tab-0[aria-selected='true']"
+    link = find(".landing-actions a[href='#how-it-works']")
+    link.send_keys(:enter)
+    assert_in_delta 100, page.evaluate_script("document.getElementById('how-it-works').getBoundingClientRect().top"), 2
+    assert_workflow_content
   end
 
   test "the desktop nav pill sits behind the active link at rest and after a jump" do
@@ -237,6 +224,26 @@ class LandingPageTest < ApplicationSystemTestCase
   end
 
   private
+    def assert_workflow_content
+      within "#how-it-works" do
+        assert_selector "ol.workflow-steps > li", count: 4
+        assert_equal [
+          "Bring the conversation together",
+          "Investigate current evidence",
+          "See what needs attention",
+          "Edit and send as yourself"
+        ], all(".workflow-step h3").map(&:text)
+        assert_text "Shared email and Intercom connect the customer, Account, conversation, and case."
+        assert_text "The crew uses approved knowledge, scoped memory, Account history, and read-only public sources."
+        assert_text "Material claims show whether evidence is supported, stale, conflicting, uncertain, or refused."
+        assert_text "A signed-in teammate owns the final wording. NavishAI records the exact message, channel, and actor."
+        assert_text "Customer linked"
+        assert_text "Rotation runbook · current"
+        assert_text "Supported facts stay cited beside the draft"
+        assert_text "Edit the wording, confirm the recipient, and send as yourself."
+      end
+    end
+
     def emulate_prefers_reduced_motion(value)
       page.driver.browser.execute_cdp(
         "Emulation.setEmulatedMedia",

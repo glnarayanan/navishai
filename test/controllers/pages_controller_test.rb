@@ -13,7 +13,7 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "a", text: "First-time setup", count: 0
     assert_select ".proof-cell", count: 4
     assert_select ".proof-more", text: /Conversations become linked cases/
-    assert_select "#how-it-works[data-controller='feature-cycle']"
+    assert_select "#how-it-works ol.workflow-steps > li", count: 4
     assert_select "#features", text: /Support history becomes customer context/
     assert_select "#features", text: /Know why an outcome happened/
     assert_select "#features", text: /deterministic score|signal weights|tool calls|execution budget/i, count: 0
