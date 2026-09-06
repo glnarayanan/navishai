@@ -26,7 +26,15 @@ openssl x509 -in "$certs/server.crt" -noout -ext subjectAltName | grep -q 'DNS:r
 
 compose up -d --wait postgres
 postgres_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command 'SHOW server_version_num')"
-[[ "$postgres_version" == 15* ]] || { printf 'PostgreSQL 15 is required; found %s.\n' "$postgres_version" >&2; exit 1; }
+case "$postgres_version" in
+  15*|16*) ;;
+  *) printf 'PostgreSQL 15 or 16 is required; found %s.\n' "$postgres_version" >&2; exit 1 ;;
+esac
+target_postgres_version="$(compose run --rm -T --no-deps --entrypoint psql postgres --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)"
+if [[ "$postgres_version" == 15* && "$target_postgres_version" != "15" ]]; then
+  printf 'The database runs PostgreSQL 15 but the target image is PostgreSQL %s. Follow the major-version upgrade in documentation/OPERATIONS.md before this release.\n' "${target_postgres_version:-unknown}" >&2
+  exit 1
+fi
 vector_version="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command "SELECT extversion FROM pg_extension WHERE extname = 'vector'")"
 case "$vector_version" in
   0.8.1|0.8.6) ;;

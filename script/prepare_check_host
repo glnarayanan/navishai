@@ -48,8 +48,8 @@ ensure_postgres() {
   local major
   major="$(pg_lsclusters --no-header | awk '{print $1}' | sort -n | tail -1)"
   [[ -n "$major" ]] || { log "no PostgreSQL cluster found"; return 1; }
-  if [[ "$major" != "15" ]]; then
-    DEVIATIONS+=("PostgreSQL ${major} used instead of the pinned 15")
+  if [[ "$major" != "16" ]]; then
+    DEVIATIONS+=("PostgreSQL ${major} used instead of the pinned 16")
   fi
   dpkg-query -W "postgresql-server-dev-${major}" >/dev/null 2>&1 ||
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "postgresql-server-dev-${major}"

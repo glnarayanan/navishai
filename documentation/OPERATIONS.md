@@ -120,6 +120,19 @@ For S3-compatible storage, use the provider's versioned snapshot or replication 
 
 The experimental Helm chart relies on platform snapshots for PostgreSQL, Rails storage, and runner state. Stop or scale down writers before those snapshots. Back up the customer-run Supermemory service under its own deployment contract. Do not claim a Helm backup as verified until it has passed the same isolated restore checks.
 
+## PostgreSQL major-version upgrade
+
+NavishAI pins PostgreSQL 16 from 6 September 2026; earlier checkouts pinned PostgreSQL 15. PostgreSQL cannot start a newer server on an older data directory, so a deployment created on 15 must move its data before it pulls the 16 image. Do this as its own change window, before any application release that carries the new image:
+
+1. Run `ops/compose/backup` and `ops/compose/verify_backup` against the running PostgreSQL 15 stack, then stop `jobs`, `web`, and `runner`.
+2. Keep the four verified custom-format dumps from that backup; they are the migration source.
+3. Stop `postgres`, move the old data volume aside (for example `docker volume create navishai_postgres_data_pg15` and copy, or rename the volume in your platform), and start the PostgreSQL 16 image against an empty `postgres_data` volume.
+4. Restore the four dumps into the new server with `pg_restore --clean --if-exists --create` using the image's own client, then run `ALTER EXTENSION vector UPDATE TO '0.8.6'` in each database and `ANALYZE`.
+5. Run `ops/compose/upgrade_preflight` with the verified backup; it now sees PostgreSQL 16 and continues to the ordinary release checks.
+6. Keep the PostgreSQL 15 volume and backup until the post-upgrade checks pass, then remove them under the operator's retention policy.
+
+Native Linux follows the same order with the distribution's `pg_upgradecluster` or a dump and restore into a new 16 cluster. Never run the 16 image against a 15 data directory and never run the application against a database it has not been tested with.
+
 ## Upgrade preflight
 
 Build or pull the target images without changing the running services. Then run:
@@ -128,7 +141,7 @@ Build or pull the target images without changing the running services. Then run:
 ops/compose/upgrade_preflight /secure/backups/navishai-2026-08-24
 ```
 
-Preflight requires a verified backup, valid Compose configuration, a runner certificate valid for at least seven more days with the `runner` DNS SAN, PostgreSQL 15, and either the previously supported pgvector 0.8.1 extension or pgvector 0.8.6. It also proves that the target PostgreSQL image makes pgvector 0.8.6 available. It prints the target image's migration status against the current database so the operator can review the exact pending set. It does not migrate data or restart the application. Run it while the current Compose application is healthy; the target Rails check shares the live Supermemory network namespace.
+Preflight requires a verified backup, valid Compose configuration, a runner certificate valid for at least seven more days with the `runner` DNS SAN, PostgreSQL 16 (or a PostgreSQL 15 database that is about to follow the major-version upgrade below), and either the previously supported pgvector 0.8.1 extension or pgvector 0.8.6. It also proves that the target PostgreSQL image makes pgvector 0.8.6 available and refuses to continue when the running database is PostgreSQL 15 but the target image is not. It prints the target image's migration status against the current database so the operator can review the exact pending set. It does not migrate data or restart the application. Run it while the current Compose application is healthy; the target Rails check shares the live Supermemory network namespace.
 
 After preflight, stop jobs and web. For a release containing migration `20260831121000` or any later runtime migration, also stop the old runner, install and start the target runner, then query that newly started target runner's `/readyz` and verify that it advertises the expected protocol version and v2 admission version; do not use the old runner's readiness result. For an ordinary release, no runner replacement or readiness step is required. For both release types, apply and start the target Rails image, allow web to run `db:prepare`, start jobs, and confirm `/up`, runner `/readyz`, queue processing, attachment download, and Memory health before ending the change window.
 
