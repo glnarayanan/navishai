@@ -101,10 +101,12 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 - Mark planned controls as planned until executable tests prove them.
 - Treat database, deployment host, backup, and operator access as privileged. Release hardening must document key handling, backup access, restore checks, and incident response.
 
-## Synced knowledge
+## Knowledge, connector and search extensions
 
 | Threat | Control |
 |---|---|
 | Failed sync retires valid knowledge or one connection changes another's articles | Immutable connection origin, bounded resumable passes, complete enumeration before reconciliation, two confirmed absences, retained versions and human mappings. |
 | Article applicability bypasses case context | Product and Intercom mappings enforced in case search and evidence resolution; composite Workspace foreign keys. |
+| DOCX payload executes code or exhausts extraction | Scanned retained original, bounded ZIP/XML parsing, no DTD/entity expansion or macro execution, no Rails subprocess. |
 | Personal OAuth resources leak into shared knowledge or archives | Separate Workspace service and membership-owned credentials; explicit connector policy checked at initiation/callback/use; private bounded browsing; no automatic personal publication; archive credential removal and disabled restore. |
+| Provider choice changes during retry | Frozen search provider selection and request conflict checks; Admin-only configuration from signed deployment catalog. |

@@ -22,12 +22,12 @@ class PublicWebResearch
       raise PolicyDenied, "This specialist is not allowed to search the public web."
     end
     safe_query, decision = minimize(query)
-    search = claim!(task:, query: safe_query, request_key:, policy_decision: decision)
+    search = claim!(client:, task:, query: safe_query, request_key:, policy_decision: decision)
     return search if search.completed? || search.failed?
 
     client ||= RunnerClient.new
     response = client.web_search!(
-      workspace_key: @workspace.runner_key, request_key: search.request_key, query: search.query, max_results: 5
+      workspace_key: @workspace.runner_key, request_key: search.request_key, query: search.query, max_results: 5, provider_key: search.requested_provider_key
     )
     complete!(search, response)
   rescue RunnerClient::AmbiguousResult
@@ -54,7 +54,7 @@ class PublicWebResearch
       [ safe, safe == value ? "allowed" : "redacted" ]
     end
 
-    def claim!(task:, query:, request_key:, policy_decision:)
+    def claim!(client:, task:, query:, request_key:, policy_decision:)
       PublicWebSearch.transaction do
         task.lock!
         existing = @workspace.public_web_searches.find_by(request_key: request_key.to_s)
@@ -70,7 +70,12 @@ class PublicWebResearch
           end
           return existing
         end
+        provider_key = @workspace.web_search_provider_key.presence ||
+          (client || RunnerClient.new).web_search_catalog!(workspace_key: @workspace.runner_key).fetch("default_provider_key").presence
+        raise RunnerClient::Unavailable, "No search provider is configured." unless provider_key
+
         search = @workspace.public_web_searches.create!(
+          requested_provider_key: provider_key,
           crew_task: task, request_key: request_key.to_s, query:, policy_decision:,
           requested_by_membership: @membership, requested_by_user: @membership.user,
           usage_rate_version: @workspace.usage_rate_setting&.current_version
@@ -91,6 +96,9 @@ class PublicWebResearch
         search.lock!
         return search unless search.searching?
 
+        if search.requested_provider_key.present? && response.fetch("provider_key") != search.requested_provider_key
+          raise RunnerClient::MalformedResponse, "Search provider does not match the requested provider."
+        end
         retrieved_at = Time.iso8601(response.fetch("retrieved_at"))
         search.update!(
           status: "completed", provider_key: response.fetch("provider_key"),

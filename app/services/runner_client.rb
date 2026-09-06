@@ -125,10 +125,29 @@ class RunnerClient
     raise Unavailable, "runner is unavailable: #{error.class}"
   end
 
-  def web_search!(workspace_key:, request_key:, query:, max_results: 5)
-    body = JSON.generate(
-      protocol_version: RunnerProtocol::VERSION, workspace_key:, request_key:, query:, max_results:
-    )
+  def web_search_catalog!(workspace_key:)
+    body = JSON.generate(protocol_version: RunnerProtocol::VERSION, workspace_key:)
+    timestamp = @clock.call.to_i.to_s
+    path = RunnerProtocol::WEB_SEARCH_CATALOG_PATH
+    request = Net::HTTP::Post.new(path)
+    request["Content-Type"] = "application/json"
+    request["X-NavishAI-Timestamp"] = timestamp
+    request["X-NavishAI-Signature"] = RunnerProtocol.signature(secret: @secret, timestamp:, method: "POST", path:, body:)
+    request.body = body
+    response = perform(request)
+    raise_for_response(response) unless response.code == 200
+    RunnerProtocol::WebSearchCatalogResponse.parse(response.body, workspace_key:).attributes
+  rescue RunnerProtocol::MalformedMessage => error
+    raise MalformedResponse, error.message
+  rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE,
+      OpenSSL::SSL::SSLError, SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+    raise Unavailable, "search catalog is unavailable: #{error.class}"
+  end
+
+  def web_search!(workspace_key:, request_key:, query:, max_results: 5, provider_key: nil)
+    body = JSON.generate({ protocol_version: RunnerProtocol::VERSION, workspace_key:, request_key:, query:, max_results: }.tap do |payload|
+      payload[:provider_key] = provider_key if provider_key.present?
+    end)
     timestamp = @clock.call.to_i.to_s
     request = Net::HTTP::Post.new(RunnerProtocol::WEB_SEARCH_PATH)
     request["Content-Type"] = "application/json"
@@ -140,7 +159,7 @@ class RunnerClient
     response = perform(request)
     raise_for_response(response) unless response.code == 200
 
-    RunnerProtocol::WebSearchResponse.parse(response.body, workspace_key:, request_key:, query:).attributes
+    RunnerProtocol::WebSearchResponse.parse(response.body, workspace_key:, request_key:, query:, provider_key:).attributes
   rescue RunnerProtocol::MalformedMessage => error
     raise MalformedResponse, error.message
   rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, EOFError, Errno::ECONNRESET, Errno::EPIPE => error

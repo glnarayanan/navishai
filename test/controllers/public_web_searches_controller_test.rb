@@ -17,6 +17,7 @@ class PublicWebSearchesControllerTest < ActionDispatch::IntegrationTest
 
   test "writer runs a redacted search and reviews a safe external citation" do
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) do |workspace_key:, request_key:, query:, **|
       {
         "protocol_version" => "v1", "workspace_key" => workspace_key,

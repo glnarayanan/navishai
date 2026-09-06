@@ -113,6 +113,7 @@ class Workspace < ApplicationRecord
   normalizes :slug, with: ->(slug) { slug.strip.downcase }
 
   validates :name, presence: true, length: { maximum: 100 }
+  validates :web_search_provider_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validates :runner_key, presence: true, uniqueness: true
   validates :slug,
     presence: true,

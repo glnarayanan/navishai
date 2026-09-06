@@ -1958,6 +1958,22 @@ $$;
 
 
 --
+-- Name: protect_search_provider_selection(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_search_provider_selection() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.requested_provider_key IS DISTINCT FROM OLD.requested_provider_key THEN
+    RAISE EXCEPTION 'search provider selection is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: protect_stored_attachment(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6250,8 +6266,11 @@ CREATE TABLE public.public_web_searches (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     usage_rate_version_id bigint,
+    requested_provider_key character varying,
     CONSTRAINT public_web_searches_result CHECK (((((status)::text = 'searching'::text) AND (provider_key IS NULL) AND (failure_code IS NULL) AND (retrieved_at IS NULL)) OR (((status)::text = 'completed'::text) AND ((provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND (failure_code IS NULL) AND (retrieved_at IS NOT NULL)) OR (((status)::text = 'failed'::text) AND (provider_key IS NULL) AND ((failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text) AND (retrieved_at IS NULL)))),
-    CONSTRAINT public_web_searches_state CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY (ARRAY[('searching'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((policy_decision)::text = ANY (ARRAY[('allowed'::character varying)::text, ('redacted'::character varying)::text])) AND (cost_units >= 0)))
+    CONSTRAINT public_web_searches_state CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND ((octet_length(query) >= 2) AND (octet_length(query) <= 500)) AND ((status)::text = ANY (ARRAY[('searching'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])) AND ((policy_decision)::text = ANY (ARRAY[('allowed'::character varying)::text, ('redacted'::character varying)::text])) AND (cost_units >= 0))),
+    CONSTRAINT search_provider_matches_request CHECK (((requested_provider_key IS NULL) OR (provider_key IS NULL) OR ((requested_provider_key)::text = (provider_key)::text))),
+    CONSTRAINT search_requested_provider_key CHECK (((requested_provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))
 );
 
 
@@ -7385,7 +7404,9 @@ CREATE TABLE public.workspaces (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     runner_key uuid DEFAULT gen_random_uuid() NOT NULL,
-    deletion_requested_at timestamp(6) without time zone
+    deletion_requested_at timestamp(6) without time zone,
+    web_search_provider_key character varying,
+    CONSTRAINT workspace_search_provider_key CHECK (((web_search_provider_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))
 );
 
 
@@ -13048,6 +13069,13 @@ CREATE TRIGGER runtime_installations_validate_routing BEFORE INSERT OR UPDATE ON
 
 
 --
+-- Name: public_web_searches search_provider_selection_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER search_provider_selection_immutable BEFORE UPDATE ON public.public_web_searches FOR EACH ROW EXECUTE FUNCTION public.protect_search_provider_selection();
+
+
+--
 -- Name: service_calendar_holidays service_calendar_holidays_protect_used_settings; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -16473,6 +16501,7 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260906060000'),
 ('20260906041000'),
 ('20260906040000'),
+('20260906020000'),
 ('20260906010000'),
 ('20260906000000'),
 ('20260901020000'),

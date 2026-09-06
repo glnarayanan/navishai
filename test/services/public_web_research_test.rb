@@ -48,6 +48,7 @@ class PublicWebResearchTest < ActiveSupport::TestCase
     response = @response.merge("request_key" => "search:redacted",
       "query" => "Find [redacted email] at [redacted phone] using [redacted secret] after 2026-08-24")
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) do |**attributes|
       captured = attributes
       response
@@ -68,6 +69,7 @@ class PublicWebResearchTest < ActiveSupport::TestCase
 
   test "ambiguous retry reuses one durable request while definite failure is terminal" do
     ambiguous = Object.new
+    ambiguous.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     ambiguous.define_singleton_method(:web_search!) { |**| raise RunnerClient::AmbiguousResult, "unknown" }
     assert_raises(RunnerClient::AmbiguousResult) do
       PublicWebResearch.perform!(
@@ -86,6 +88,7 @@ class PublicWebResearchTest < ActiveSupport::TestCase
     assert_equal 1, AuditEvent.where(action: "public_web.search_retried", subject_id: search.id).count
 
     unavailable = Object.new
+    unavailable.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     unavailable.define_singleton_method(:web_search!) { |**| raise RunnerClient::Unavailable, "offline" }
     assert_raises(RunnerClient::Unavailable) do
       PublicWebResearch.perform!(
@@ -151,9 +154,47 @@ class PublicWebResearchTest < ActiveSupport::TestCase
     end
   end
 
+  test "new searches resolve the default once and retries preserve it after settings change" do
+    client = client_returning(@response)
+    client.define_singleton_method(:web_search!) { |**| raise RunnerClient::AmbiguousResult, "unknown" }
+    assert_raises(RunnerClient::AmbiguousResult) do
+      PublicWebResearch.perform!(workspace: @workspace, membership: @owner, task: @task,
+        query: "status incident", request_key: "search:one", client:)
+    end
+    search = @workspace.public_web_searches.sole
+    assert_equal "searxng", search.requested_provider_key
+    @workspace.update!(web_search_provider_key: "tavily")
+    response = @response
+    requested = nil
+    client.define_singleton_method(:web_search_catalog!) { |**| raise "retry must not need catalog" }
+    client.define_singleton_method(:web_search!) { |**attributes| requested = attributes; response }
+    PublicWebResearch.perform!(workspace: @workspace, membership: @owner, task: @task,
+      query: "status incident", request_key: "search:one", client:)
+    assert_equal "searxng", requested.fetch(:provider_key)
+    assert search.reload.completed?
+    assert_raises(ActiveRecord::StatementInvalid) do
+      PublicWebSearch.where(id: search.id).update_all(requested_provider_key: "tavily")
+    end
+  end
+
+  test "an explicit workspace provider does not depend on the catalog and rejects another provider response" do
+    @workspace.update!(web_search_provider_key: "tavily")
+    client = client_returning(@response)
+    client.define_singleton_method(:web_search_catalog!) { |**| raise "not needed" }
+    assert_raises(RunnerClient::MalformedResponse) do
+      PublicWebResearch.perform!(workspace: @workspace, membership: @owner, task: @task,
+        query: "status incident", request_key: "search:one", client:)
+    end
+    search = @workspace.public_web_searches.sole
+    assert_equal "tavily", search.requested_provider_key
+    assert search.failed?
+    assert_empty search.results
+  end
+
   private
     def client_returning(response)
       Object.new.tap do |client|
+        client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
         client.define_singleton_method(:web_search!) { |**| response }
       end
     end

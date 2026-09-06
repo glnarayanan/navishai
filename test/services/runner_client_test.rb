@@ -285,6 +285,27 @@ class RunnerClientTest < ActiveSupport::TestCase
     ), captured["X-NavishAI-Signature"]
   end
 
+  test "search catalog is signed scoped and rejects an invalid default" do
+    workspace_key = "c9bb966b-1fe9-4304-bd51-404e4fd9a09c"
+    client = RunnerClient.new(secret: "s" * 32)
+    payload = { protocol_version: "v1", workspace_key:, default_provider_key: "exa", provider_keys: [ "exa" ] }
+    captured = nil
+    client.define_singleton_method(:perform) do |request|
+      captured = request
+      RunnerClient::Response.new(code: 200, body: JSON.generate(payload))
+    end
+    assert_equal [ "exa" ], client.web_search_catalog!(workspace_key:).fetch("provider_keys")
+    assert_equal RunnerProtocol::WEB_SEARCH_CATALOG_PATH, captured.path
+    assert_equal workspace_key, JSON.parse(captured.body).fetch("workspace_key")
+    assert_equal RunnerProtocol.signature(secret: "s" * 32, timestamp: captured["X-NavishAI-Timestamp"],
+      method: "POST", path: captured.path, body: captured.body), captured["X-NavishAI-Signature"]
+    payload[:default_provider_key] = "unconfigured"
+    assert_raises(RunnerClient::MalformedResponse) { client.web_search_catalog!(workspace_key:) }
+    payload[:default_provider_key] = "exa"
+    payload[:workspace_key] = "another-workspace"
+    assert_raises(RunnerClient::MalformedResponse) { client.web_search_catalog!(workspace_key:) }
+  end
+
   private
     def admission_task
       profile = Data.define(:role_key).new("support_investigator")

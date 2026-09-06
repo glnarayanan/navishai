@@ -238,6 +238,7 @@ class OutcomeExplanationsControllerTest < ActionDispatch::IntegrationTest
     search_task = create_task(investigator, "Search usage")
     completed_search(search_task, request_key: "explain:search:reported", cost_units: 100)
     failed = Object.new
+    failed.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     failed.define_singleton_method(:web_search!) { |**| raise RunnerClient::Unavailable, "offline" }
     assert_raises(RunnerClient::Unavailable) do
       PublicWebResearch.perform!(
@@ -425,6 +426,7 @@ class OutcomeExplanationsControllerTest < ActionDispatch::IntegrationTest
         "retrieved_at" => Time.current.change(usec: 0).iso8601(6), "results" => []
       }
       client = Object.new
+      client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
       client.define_singleton_method(:web_search!) { |**| response }
       PublicWebResearch.perform!(
         workspace: @workspace, membership: @owner, task:, query: "public status history",

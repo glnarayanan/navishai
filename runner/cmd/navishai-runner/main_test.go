@@ -204,3 +204,24 @@ func hasCapability(capabilities []string, wanted string) bool {
 	}
 	return false
 }
+
+func TestSearchRegistryKeepsLegacyDefaultAndEnablesConfiguredProviders(t *testing.T) {
+	env := map[string]string{
+		"NAVISHAI_WEB_SEARCH_PROVIDER":  "searxng",
+		"NAVISHAI_WEB_SEARCH_PROVIDERS": "exa,tavily,exa",
+		"NAVISHAI_SEARXNG_URL":          "https://search.example.com",
+		"NAVISHAI_EXA_API_KEY":          "test-exa-key",
+		"NAVISHAI_TAVILY_API_KEY":       "test-tavily-key",
+	}
+	providers, err := configureSearchProviders(func(key string) string { return env[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(providers) != 3 || providers[0].Key() != "exa" || providers[1].Key() != "tavily" || providers[2].Key() != "searxng" {
+		t.Fatalf("providers %#v", providers)
+	}
+	env["NAVISHAI_WEB_SEARCH_PROVIDERS"] = "unknown"
+	if _, err := configureSearchProviders(func(key string) string { return env[key] }); err == nil {
+		t.Fatal("unknown provider accepted")
+	}
+}

@@ -1,0 +1,36 @@
+<% content_for :title, "Public-web search · #{@workspace.name} — NavishAI" %>
+
+<main class="page-shell workspace-settings-shell">
+  <%= link_to "Back to AI providers", workspace_runtime_installations_path(@workspace), class: "back-link" %>
+  <div class="page-heading">
+    <div>
+      <h1>Public-web search</h1>
+      <p>Choose the search service this workspace is authorised to use. Only Owners and Admins can change it.</p>
+    </div>
+  </div>
+  <section class="config-panel workspace-settings-panel" aria-labelledby="search-provider-title">
+    <h2 id="search-provider-title">Search provider</h2>
+    <%= render "shared/form_errors", record: @workspace %>
+    <% if @catalog_error %>
+      <p class="inline-error" role="alert"><%= @catalog_error %></p>
+      <p>Saved choice: <strong><%= @workspace.web_search_provider_key.presence || "Deployment default" %></strong></p>
+      <%= link_to "Try again", edit_workspace_search_settings_path(@workspace), class: "button button-secondary" %>
+    <% else %>
+      <% if @workspace.web_search_provider_key.present? && !@provider_keys.include?(@workspace.web_search_provider_key) %>
+        <p class="inline-error" role="alert">Your saved provider is unavailable. Searches will fail until it is restored or you choose another provider.</p>
+      <% elsif @provider_keys.empty? %>
+        <p>No search providers are configured. Ask your deployment operator to configure a provider on the runner.</p>
+      <% end %>
+      <%= form_with model: @workspace, url: workspace_search_settings_path(@workspace), class: "form-stack" do |form| %>
+        <div class="field">
+          <%= form.label :web_search_provider_key, "Authorised provider" %>
+          <% options = [["Deployment default#{@default_provider_key ? " (#{@default_provider_key})" : " (unavailable)"}", ""]] + @provider_keys.map { |key| [key, key] } %>
+          <% options << ["#{@workspace.web_search_provider_key} (unavailable)", @workspace.web_search_provider_key] if @workspace.web_search_provider_key.present? && !@provider_keys.include?(@workspace.web_search_provider_key) %>
+          <%= form.select :web_search_provider_key, options, {}, aria: { describedby: "search-provider-hint" } %>
+          <p class="field-hint" id="search-provider-hint">Queries are minimised before disclosure. Existing searches retain their original provider when retried. Deployment default follows the operator's choice for new searches.</p>
+        </div>
+        <%= form.submit "Save search provider", class: "button button-primary button-compact" %>
+      <% end %>
+    <% end %>
+  </section>
+</main>
