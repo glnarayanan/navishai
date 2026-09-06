@@ -42,7 +42,7 @@ x-rails-service: &rails-service
 
 services:
   postgres:
-    image: pgvector/pgvector:0.8.6-pg15@sha256:a947c45cdc5906a1bc951f20a8709e321256343ee0f251e4ae00b5e7def4e6da
+    image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
     restart: unless-stopped
     environment:
       POSTGRES_USER: navishai
@@ -76,6 +76,11 @@ services:
       PATH: /opt/navishai/runtimes:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       NAVISHAI_RUNNER_TLS_CERT_FILE: /run/navishai/tls.crt
       NAVISHAI_RUNNER_TLS_KEY_FILE: /run/navishai/tls.key
+      # Optional public-web search: searxng (self-hosted), exa, or tavily. Keys stay on the runner.
+      NAVISHAI_WEB_SEARCH_PROVIDER: ${NAVISHAI_WEB_SEARCH_PROVIDER:-}
+      NAVISHAI_SEARXNG_URL: ${NAVISHAI_SEARXNG_URL:-}
+      NAVISHAI_EXA_API_KEY: ${NAVISHAI_EXA_API_KEY:-}
+      NAVISHAI_TAVILY_API_KEY: ${NAVISHAI_TAVILY_API_KEY:-}
     volumes:
       - runner_data:/var/lib/navishai
       - ${NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH:-./ops/runner/execution.example.json}:/etc/navishai/execution.json:ro

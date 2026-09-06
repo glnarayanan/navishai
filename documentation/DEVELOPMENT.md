@@ -1,10 +1,10 @@
 # Development
 
-NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 15 with pgvector 0.8.6, and Go 1.27.0.
+NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 16 with pgvector 0.8.6, and Go 1.27.0.
 
 ## First setup
 
-Install the pinned Ruby and Go versions, PostgreSQL 15, pgvector 0.8.6, and libvips. The project-level `mise.toml` is the quickest supported way to install the language toolchains:
+Install the pinned Ruby and Go versions, PostgreSQL 16, pgvector 0.8.6, and libvips. The project-level `mise.toml` is the quickest supported way to install the language toolchains:
 
 ```sh
 mise install
@@ -66,7 +66,7 @@ A workspace writer can save a plain-text Intercom draft. Each customer-facing re
 
 ## Knowledge sources
 
-Managers, Admins, and Owners can maintain approved text, ingest plain-text uploads, store reviewed URL snapshots, and register Intercom Help Center snapshots. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.
+Managers, Admins, and Owners can maintain approved text, upload documents, store reviewed URL snapshots, and register Intercom Help Center snapshots. A document upload accepts one `.txt`, `.md`, `.html`, or `.pdf` file, or a `.zip` bundle of them. Every file passes the configured attachment scanner first and the original bytes stay attached to the version. `KnowledgeDocumentExtractor` turns each file into the plain-text snapshot that search and citations use: Markdown and text are kept as written, HTML is reduced to its title and readable text with scripts, styles, and markup removed, and PDF text is extracted with the `pdf-reader` gem within a 200-page and 1 MiB budget. `KnowledgeZipBundle` reads bundles with the Ruby standard library, creates one source per contained document, and rejects path traversal, absolute paths, symbolic links, nested archives, unsupported types, more than 50 entries, entries over 5 MiB, bundles over 20 MiB, and any entry whose size or CRC32 does not match its directory record. A bad entry fails the whole bundle and leaves no partial sources or blobs. URL ingestion accepts HTTPS only, rejects credentials and any DNS answer in a private or reserved network, pins the checked address for TLS, rechecks every redirect, and accepts at most 1 MiB of plain text or HTML. Uploaded knowledge must pass the configured attachment scanner and must contain plain text. PostgreSQL full-text search uses only the current version of active sources; expired and deleted versions retain stable citation links and warnings.
 
 ## Execution runner
 
@@ -92,7 +92,7 @@ Runner signatures cover the Unix timestamp, uppercase HTTP method, canonical pat
 
 ### Public-web search
 
-Set `NAVISHAI_WEB_SEARCH_PROVIDER=searxng` and `NAVISHAI_SEARXNG_URL` to an HTTPS SearXNG origin. Loopback HTTP is allowed for local development. `NAVISHAI_WEB_SEARCH_STATE_PATH` can set a separate durable idempotency file; it defaults to `<NAVISHAI_RUNNER_STATE_PATH>.web-search`. Keep this file across runner restarts.
+Choose one runner search provider with `NAVISHAI_WEB_SEARCH_PROVIDER`. `searxng` keeps research self-hosted: set `NAVISHAI_SEARXNG_URL` to an HTTPS SearXNG origin (loopback HTTP is allowed for local development). `exa` and `tavily` are optional hosted providers for deployments that do not want to run a search engine: set `NAVISHAI_EXA_API_KEY` or `NAVISHAI_TAVILY_API_KEY` on the runner only. Both hosted adapters send one bounded HTTPS POST per search to the provider's fixed API host, follow no redirects, cap the response at 1 MiB, keep at most 600 bytes of excerpt per result, and report one cost unit per call. The runner never forwards the key to Rails or a model process. A runtime's own native search remains disabled; enabling it needs an egress profile and auditable structured results and is tracked as roadmap M7.3. `NAVISHAI_WEB_SEARCH_STATE_PATH` can set a separate durable idempotency file; it defaults to `<NAVISHAI_RUNNER_STATE_PATH>.web-search`. Keep this file across runner restarts.
 
 The signed `POST /v1/tools/web-search` endpoint accepts only minimized queries from Rails. The runner bounds provider time and bytes, rejects redirects, accepts only HTTPS evidence links without credentials or fragments, normalizes dates and excerpts, deduplicates links, and records observed cost units. Search results are untrusted evidence. Rails shows them for human review, stores stable `public-web://` citations, and marks them as untrusted in later run context. Current runtime adapters keep their native web-search features disabled; a future adapter may register native search only when it returns the same auditable structured contract. This search endpoint does not grant general runner or agent-runtime egress.
 

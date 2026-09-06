@@ -32,7 +32,7 @@ Keep `.env` and `ops/secrets/runner` outside source control. Back up both throug
 
 To enable OpenID Connect, set the three optional `NAVISHAI_OIDC_*` values in `.env`. Keep the client secret in the host secret store. Leave all three blank to keep single sign-on off.
 
-Optional S3-compatible object storage, SearXNG, and ClamAV remain external. Configure them only when used; the default stack has no general runner egress. To scan attachments, run a ClamAV daemon on the private `control` network or the host, then set `NAVISHAI_ATTACHMENT_SCANNER=clamd` and `NAVISHAI_CLAMD_ADDRESS` in `.env`. Without a scanner every attachment stays quarantined.
+Optional S3-compatible object storage, SearXNG, and ClamAV remain external. Configure them only when used; the default stack has no general runner egress. Public-web research is off until `.env` sets `NAVISHAI_WEB_SEARCH_PROVIDER` to `searxng` with `NAVISHAI_SEARXNG_URL`, or to `exa` or `tavily` with the matching API key; Compose passes those values to the runner container only. To scan attachments, run a ClamAV daemon on the private `control` network or the host, then set `NAVISHAI_ATTACHMENT_SCANNER=clamd` and `NAVISHAI_CLAMD_ADDRESS` in `.env`. Without a scanner every attachment stays quarantined.
 
 The checked-in runner execution policy starts with all live adapters disabled. `NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH` selects the deployment-owned infrastructure template, `NAVISHAI_RUNTIME_EXECUTABLES_PATH` mounts approved CLI files at `/opt/navishai/runtimes`, and `NAVISHAI_RUNTIME_STATE_PATH` mounts pre-existing subscription credential homes at `/var/lib/navishai/runtime`. Keep those host directories and credential files out of source control and make the homes readable by the container's runner UID; the example mounts them read-only because subscription login is completed on the host, outside NavishAI. A live adapter also needs an exact executable approval and a deployment-owned subordinate user/network namespace egress profile in the immutable policy ceiling. Compose does not create those host security boundaries. Leave the adapter disabled until the namespace files, firewall or allowlisting proxy, TLS roots, executable, and any subscription login are present. The runner sends signed events back to Rails over the private, internal Compose network; the explicit cleartext opt-in applies only to that link. Its admission state, pending event outbox, runtime-test state, and encrypted provider vault are writable and persistent on `runner_data`. Workspace Owners and Admins then connect API-key or existing-login providers in **Providers** without editing the policy or restarting the runner.
 
@@ -45,7 +45,7 @@ The supported layout is:
 - `/var/lib/navishai`: Rails `log`, `storage`, and `tmp` directories, owned by `navishai` and linked from the matching paths in the release tree
 - `/var/lib/navishai-runner`: runner state and run roots, owned by the separate `navishai-runner` user
 - `/var/lib/supermemory`: Supermemory state, owned by `supermemory`
-- a PostgreSQL 15 server with pgvector 0.8.6 and four databases named in `config/database.yml`
+- a PostgreSQL 16 server with pgvector 0.8.6 and four databases named in `config/database.yml`
 
 Build the three Go binaries from the pinned Go toolchain and install them in `/usr/local/bin`. Install the pinned Supermemory binary with `script/install_supermemory`, then copy it to `/usr/local/bin`. Bundle Rails with the locked gems and precompile assets with `SECRET_KEY_BASE_DUMMY=1`.
 
@@ -62,7 +62,7 @@ The web unit runs `db:prepare` before boot. Do not run migrations from the jobs 
 
 ## Experimental Helm
 
-The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 15 with pgvector 0.8.6, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it. The chart disables service-account token mounts, uses the runtime-default seccomp profile, and blocks privilege gain for each application and init container.
+The chart at `ops/helm/navishai` is cloud-neutral and does not install PostgreSQL, Supermemory, an ingress controller, or a certificate manager. Supply PostgreSQL 16 with pgvector 0.8.6, an ingress, storage classes, and immutable image references through your platform. Supply a customer-run Supermemory Local endpoint behind HTTPS with a certificate trusted by the Rails image; its stock binary has no TLS listener, so the platform must terminate TLS next to it. The chart disables service-account token mounts, uses the runtime-default seccomp profile, and blocks privilege gain for each application and init container.
 
 Create the application secret with these keys:
 
@@ -72,7 +72,7 @@ Create the application secret with these keys:
 - `NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET`
 - `NAVISHAI_SUPERMEMORY_API_KEY`
 
-To enable OpenID Connect, also add `NAVISHAI_OIDC_ISSUER`, `NAVISHAI_OIDC_CLIENT_ID`, and `NAVISHAI_OIDC_CLIENT_SECRET` to this Secret. Omit all three to keep it off.
+To enable OpenID Connect, also add `NAVISHAI_OIDC_ISSUER`, `NAVISHAI_OIDC_CLIENT_ID`, and `NAVISHAI_OIDC_CLIENT_SECRET` to this Secret. Omit all three to keep it off. To use a hosted search provider, add `NAVISHAI_EXA_API_KEY` or `NAVISHAI_TAVILY_API_KEY` to the same Secret and set `webSearch.provider`; only the runner pod reads those keys.
 
 Create the runner TLS secret with `tls.crt`, `tls.key`, and `ca.crt`. The certificate DNS SAN must match `<release>-navishai-runner` in the target namespace. The runner image contains the disabled execution policy. To replace it, create a separate Secret with an `execution.json` key and set `runner.executionConfigSecret`; that immutable template supplies only approved binaries, credential-home paths, egress profiles, and policy ceilings. Provision any subscription login in runner-only storage with runner access. Keep API keys out of both Secrets; Workspace configuration relays them to the encrypted vault on the runner state volume. The chart opts into cleartext runner callbacks only for the cluster-internal Rails Service. Use a NetworkPolicy or service mesh to keep that route private, or replace it with an HTTPS service route and remove the opt-in in a deployment overlay. Set the database host, app host, image tags or digests, storage classes, replica counts, and resource limits in a private values file. Validate before install:
 
