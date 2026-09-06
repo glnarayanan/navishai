@@ -14,7 +14,7 @@ This inventory records the production dependencies approved for the repository b
 
 ## Direct production gems
 
-These gems come from the Rails 8.1 application generator and are approved by the build brief as Rails first-party or default dependencies, plus the owner-approved additions noted in the table.
+These gems come from the Rails 8.1 application generator and are approved by [PRODUCT.md](./PRODUCT.md) as Rails first-party or default dependencies, plus the owner-approved additions noted in the table.
 
 | Gem | Role |
 |---|---|
@@ -37,7 +37,7 @@ These gems come from the Rails 8.1 application generator and are approved by the
 
 ## Services, images, and bundled assets
 
-These non-gem production dependencies are pinned in the repository and approved by the build brief. Each needs the same review as a gem before it changes.
+These non-gem production dependencies are pinned in the repository and approved by [PRODUCT.md](./PRODUCT.md). Each needs the same review as a gem before it changes.
 
 | Dependency | Pin | Role |
 |---|---|---|
@@ -48,4 +48,4 @@ These non-gem production dependencies are pinned in the repository and approved 
 
 Optional deployment-run services are configured only when used and are not shipped by NavishAI: an S3-compatible object store, a SearXNG search origin, the hosted Exa or Tavily search APIs (API key held on the runner only), a ClamAV daemon for the reference attachment scanner, and the customer's own provider subscriptions or API keys. The runner's direct provider connections call the fixed OpenAI and Anthropic API hosts through the Go standard library; no provider SDK is bundled.
 
-Development and test gems are isolated to their Bundler groups. GitHub Dependabot tracks the Bundler lockfile and Go modules. GitHub Actions updates are paused while repository workflows remain manual-only. `script/sbom` emits the locked production gem graph as CycloneDX 1.6 JSON. The release review and patch rules are in [RELEASE.md](./RELEASE.md). Any later direct production gem, Go module, browser pin, service, or package needs owner approval unless the build brief already approves it.
+Development and test gems are isolated to their Bundler groups. GitHub Dependabot tracks the Bundler lockfile and Go modules. GitHub Actions updates are paused while repository workflows remain manual-only. `script/sbom` emits the locked production gem graph as CycloneDX 1.6 JSON. The release review and patch rules are in [RELEASE.md](./RELEASE.md). Any later direct production gem, Go module, browser pin, service, or package needs owner approval unless PRODUCT.md already approves it.

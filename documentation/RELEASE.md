@@ -2,7 +2,7 @@
 
 NavishAI has no published release yet. A local release candidate requires the full repository check set and release-specific records below. GitHub Actions stays manual-only and is not a release-candidate gate unless the Owner later approves its use.
 
-The current source review boundary and known gaps are in [RELEASE_CANDIDATE.md](./RELEASE_CANDIDATE.md).
+The current implementation state, evidence, and known boundaries are in [STATUS.md](./STATUS.md).
 
 ## Build record
 

@@ -2,20 +2,20 @@
 
 NavishAI is an agent-first, human-governed workspace for Support and Customer Success. Specialist AI crews investigate, retrieve, analyse, draft, review, and remember. Humans retain customer communication and consequential authority.
 
-The v1 source stack is build-complete and market-review-ready for owner review. It is not yet a public release, a certified system, or proof of market demand. See the [release-candidate record](./documentation/RELEASE_CANDIDATE.md) for local evidence and known gaps.
+NavishAI is build-complete and pilot-ready for owner review. It is not yet a public release, a certified system, or proof of market demand. See the [implementation status](./documentation/STATUS.md) for the capability matrix, evidence, pending work, and known boundaries.
 
 ## Start here
 
 1. Read [AGENTS.md](./AGENTS.md) for working agreements and architecture boundaries.
-2. Read [documentation/BUILD.md](./documentation/BUILD.md) for the complete product decisions, Q1-Q74 interview ledger, done evidence, and autonomous stacked-PR plan.
-3. Use [documentation/DEVELOPMENT.md](./documentation/DEVELOPMENT.md) to set up the application and run its checks.
-4. Follow [documentation/DESIGN.md](./documentation/DESIGN.md) when building or reviewing product UI.
-5. Use [documentation/DOMAIN.md](./documentation/DOMAIN.md) for canonical product terms.
-6. Use [documentation/DEPLOYMENT.md](./documentation/DEPLOYMENT.md) for Compose, native Linux, and experimental Helm deployment.
-7. Use [documentation/OPERATIONS.md](./documentation/OPERATIONS.md) for backup, restore tests, and upgrade preflight.
-8. Use [documentation/DEMO.md](./documentation/DEMO.md) to create the seeded review Workspace.
-9. Use [documentation/RELEASE.md](./documentation/RELEASE.md) for SBOM, provenance, patch, and release rules.
-10. Read [documentation/RELEASE_CANDIDATE.md](./documentation/RELEASE_CANDIDATE.md) for the current review boundary and known gaps.
+2. Read [documentation/PRODUCT.md](./documentation/PRODUCT.md) for the consolidated product specification, rules, and architecture.
+3. Read [documentation/STATUS.md](./documentation/STATUS.md) for what is implemented, the evidence, and what remains.
+4. Use [documentation/DEVELOPMENT.md](./documentation/DEVELOPMENT.md) to set up the application and run its checks.
+5. Follow [documentation/DESIGN.md](./documentation/DESIGN.md) when building or reviewing product UI.
+6. Use [documentation/DOMAIN.md](./documentation/DOMAIN.md) for canonical product terms.
+7. Use [documentation/DEPLOYMENT.md](./documentation/DEPLOYMENT.md) for Compose, native Linux, and experimental Helm deployment.
+8. Use [documentation/OPERATIONS.md](./documentation/OPERATIONS.md) for backup, restore tests, upgrades, and recovery.
+9. Use [documentation/DEMO.md](./documentation/DEMO.md) to create the seeded review Workspace.
+10. Use [documentation/RELEASE.md](./documentation/RELEASE.md) for SBOM, provenance, patch, and release rules.
 
 The exact production dependency record is in [documentation/DEPENDENCIES.md](./documentation/DEPENDENCIES.md).
 
