@@ -13,9 +13,18 @@ class KnowledgeSourcesController < ApplicationController
   end
 
   def create
+    attributes = source_params.to_h.symbolize_keys
+    if attributes[:source_kind].to_s == "upload" && zip_bundle?(attributes[:upload])
+      sources = KnowledgeIngestion.create_bundle!(
+        workspace: Current.require_workspace!, membership: Current.require_membership!,
+        title: attributes[:title], upload: attributes[:upload], expires_at: attributes[:expires_at]
+      )
+      return redirect_to workspace_knowledge_sources_path(Current.workspace),
+        notice: "Added #{sources.size} knowledge #{'source'.pluralize(sources.size)} from the bundle."
+    end
+
     source = KnowledgeIngestion.create!(
-      workspace: Current.require_workspace!, membership: Current.require_membership!,
-      **source_params.to_h.symbolize_keys
+      workspace: Current.require_workspace!, membership: Current.require_membership!, **attributes
     )
     redirect_to workspace_knowledge_source_path(Current.workspace, source), notice: "Knowledge source added."
   rescue KnowledgeIngestion::InvalidSource, ActiveRecord::RecordInvalid => error
@@ -48,6 +57,14 @@ class KnowledgeSourcesController < ApplicationController
   private
     def require_knowledge_manager
       head :forbidden unless Current.require_membership!.can_manage_work?
+    end
+
+    def zip_bundle?(upload)
+      return false unless upload.respond_to?(:read) && upload.respond_to?(:rewind)
+
+      signature = upload.read(4).to_s.b
+      upload.rewind
+      KnowledgeZipBundle.bundle?(signature)
     end
 
     def source_params

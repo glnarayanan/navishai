@@ -110,9 +110,10 @@
             <span class="field-hint">Required for Intercom Help Center.</span>
           </div>
           <div class="field" hidden data-knowledge-form-target="uploadFields">
-            <%= form.label :upload, "Plain-text upload" %>
-            <%= form.file_field :upload, accept: "text/plain,.txt", aria: { describedby: "knowledge-upload-hint" } %>
-            <span class="field-hint" id="knowledge-upload-hint">Required for Upload. The file must pass the configured scanner.</span>
+            <%= form.label :upload, "Document upload" %>
+            <%= form.file_field :upload, accept: ".txt,.md,.markdown,.html,.htm,.pdf,.zip,text/plain,text/markdown,text/html,application/pdf,application/zip",
+              aria: { describedby: "knowledge-upload-hint" } %>
+            <span class="field-hint" id="knowledge-upload-hint">Required for Upload. Accepts one .txt, .md, .html, or .pdf document, or a .zip bundle of them (one source per file). Every file must pass the configured scanner; text is extracted for search and the original stays attached.</span>
           </div>
         </div>
         <div class="field" data-knowledge-form-target="contentFields">

@@ -1,6 +1,8 @@
 require "test_helper"
+require_relative "../test_helpers/zip_fixture_helper"
 
 class KnowledgeIngestionTest < ActiveSupport::TestCase
+  include ZipFixtureHelper
   class CleanScanner
     def scan(**)
       AttachmentScanner::Result.new(status: :clean, code: "clean")
@@ -157,6 +159,73 @@ class KnowledgeIngestionTest < ActiveSupport::TestCase
           filename: "blocked.txt", type: "text/plain"
         )
       )
+    end
+    assert_equal blobs_before, ActiveStorage::Blob.count
+  ensure
+    AttachmentScanner.default = previous_scanner
+  end
+
+  test "PDF and HTML uploads are extracted to searchable text while the original stays attached" do
+    previous_scanner = AttachmentScanner.default
+    AttachmentScanner.default = CleanScanner.new
+    pdf = ActionDispatch::Http::UploadedFile.new(tempfile: file_fixture("guide.pdf").open, filename: "guide.pdf", type: "application/pdf")
+    source = KnowledgeIngestion.create!(workspace: @workspace, membership: @membership, source_kind: :upload, title: "Reset guide", upload: pdf)
+
+    assert_includes source.current_version.content, "Reset links expire after 24 hours."
+    assert_equal "application/pdf", source.current_version.stored_attachment.detected_content_type
+    assert_equal file_fixture("guide.pdf").binread, source.current_version.stored_attachment.download_verified!
+
+    html = Tempfile.new([ "faq", ".html" ])
+    html.write("<html><head><title>FAQ</title></head><body><p>Reset links expire.</p><script>alert(1)</script></body></html>")
+    html.rewind
+    upload = ActionDispatch::Http::UploadedFile.new(tempfile: html, filename: "faq.html", type: "text/html")
+    source = KnowledgeIngestion.create!(workspace: @workspace, membership: @membership, source_kind: :upload, title: "FAQ page", upload: upload)
+    assert_equal "FAQ
+
+Reset links expire.", source.current_version.content
+
+    blobs_before = ActiveStorage::Blob.count
+    assert_raises(KnowledgeIngestion::InvalidSource) do
+      KnowledgeIngestion.create!(
+        workspace: @workspace, membership: @membership, source_kind: :upload, title: "Bad",
+        upload: { filename: "script.js", data: "alert(1)" }
+      )
+    end
+    assert_equal blobs_before, ActiveStorage::Blob.count
+  ensure
+    AttachmentScanner.default = previous_scanner
+  end
+
+  test "a ZIP bundle creates one scanned source per document and rolls back completely on a bad entry" do
+    previous_scanner = AttachmentScanner.default
+    AttachmentScanner.default = CleanScanner.new
+    archive = build_zip([
+      { name: "playbooks/reset.md", data: "# Reset\n\nLinks expire after 24 hours." },
+      { name: "faq.txt", data: "Escalate expired links." },
+      { name: "guide.pdf", data: file_fixture("guide.pdf").binread }
+    ])
+
+    sources = KnowledgeIngestion.create_bundle!(
+      workspace: @workspace, membership: @membership, title: "Support playbooks", upload: { filename: "bundle.zip", data: archive }
+    )
+    assert_equal [ "Support playbooks: reset.md", "Support playbooks: faq.txt", "Support playbooks: guide.pdf" ], sources.map(&:title)
+    assert sources.all?(&:upload?)
+    assert_equal "# Reset\n\nLinks expire after 24 hours.", sources[0].current_version.content
+    assert_includes sources[2].current_version.content, "Reset links expire after 24 hours."
+    assert_equal 3, AuditEvent.where(action: "attachment.uploaded", actor: @membership.user).count
+
+    blobs_before = ActiveStorage::Blob.count
+    sources_before = @workspace.knowledge_sources.count
+    bad = build_zip([ { name: "ok.txt", data: "fine" }, { name: "evil/../../escape.txt", data: "x" } ])
+    assert_raises(KnowledgeIngestion::InvalidSource) do
+      KnowledgeIngestion.create_bundle!(workspace: @workspace, membership: @membership, title: "Bad", upload: { filename: "bad.zip", data: bad })
+    end
+    assert_equal blobs_before, ActiveStorage::Blob.count
+    assert_equal sources_before, @workspace.knowledge_sources.count
+
+    AttachmentScanner.default = AttachmentScanner.new
+    assert_raises(KnowledgeIngestion::InvalidSource) do
+      KnowledgeIngestion.create_bundle!(workspace: @workspace, membership: @membership, title: "Unscanned", upload: { filename: "bundle.zip", data: archive })
     end
     assert_equal blobs_before, ActiveStorage::Blob.count
   ensure

@@ -143,6 +143,7 @@ module ApplicationHelper
   def knowledge_source_kind_label(kind)
     {
       "url" => "URL snapshot",
+      "upload" => "Document upload",
       "intercom_help_center" => "Intercom Help Center"
     }.fetch(kind.to_s, kind.to_s.humanize)
   end
