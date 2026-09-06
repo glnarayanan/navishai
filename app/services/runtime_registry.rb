@@ -28,9 +28,9 @@ class RuntimeRegistry
     RuntimeInstallation.transaction do
       lock_workspace!
       seen = reports.map { |report| report.fetch("detection_key") }.uniq
-      installations_by_detection_key = @workspace.runtime_installations.where(detection_key: seen).index_by(&:detection_key)
+      installations_by_detection_key = @workspace.runtime_installations.shared.where(detection_key: seen).index_by(&:detection_key)
       reports.each { |report| persist_report!(report, installations_by_detection_key:) }
-      @workspace.runtime_installations.where.not(detection_key: seen).find_each do |installation|
+      @workspace.runtime_installations.shared.where.not(detection_key: seen).find_each do |installation|
         audit_revoke!(installation) if installation.approved?
         reset_runtime_test!(installation)
         installation.update!(health_status: "missing", checked_at: Time.current)
@@ -92,6 +92,7 @@ class RuntimeRegistry
         record.health_status == "available" && record.compatibility_status != "incompatible"
       raise InvalidPolicy, "Only an available, compatible provider can be tested."
     end
+    raise InvalidPolicy, "Refresh the personal account to test its connection." if record.personal_provider_account_id
     request_id = SecureRandom.uuid
     response = client.test_runtime!(
       workspace_key: @workspace.runner_key, request_id:, detection_key: record.detection_key,

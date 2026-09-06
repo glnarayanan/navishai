@@ -8,7 +8,7 @@ NavishAI is build-complete and pilot-ready for owner review. That describes the 
 
 ## 1. Capability matrix
 
-Status values: **Done** (implemented, tested, merged), **Partial** (part of the requirement exists; the gap is named), **Deferred** (owner decision to postpone), **Planned** (specified, not started), **External** (needs a host, credential, legal, signing, or market step outside the repository).
+Status values: **Built** (implemented on the unmerged stack; evidence below), **Done** (implemented, tested, merged), **Partial** (part of the requirement exists; the gap is named), **Deferred** (owner decision to postpone), **Planned** (specified, not started), **External** (needs a host, credential, legal, signing, or market step outside the repository).
 
 ### Foundation and security
 
@@ -37,9 +37,11 @@ Status values: **Done** (implemented, tested, merged), **Partial** (part of the 
 | Malware-scan contract and reference adapter | Done | `AttachmentScanner`, `AttachmentScanner::Clamd` | ClamAV INSTREAM adapter selected by `NAVISHAI_ATTACHMENT_SCANNER=clamd`; default keeps every file quarantined. |
 | S3-compatible object storage | Deferred | `config/storage.yml` | Owner deferral on 6 September 2026; only the local disk service is configured and tested. |
 | Knowledge: maintained text, URL snapshots, versions, freshness, expiry, full-text search, citations | Done | `KnowledgeIngestion`, `KnowledgeUrlFetcher`, `KnowledgeSearch`, `KnowledgeSource(Version)` | SSRF-safe fetch, immutable versions, stale and deleted warnings. |
-| Knowledge document uploads: text, Markdown, HTML, PDF, ZIP bundles | Done | `KnowledgeDocumentExtractor`, `KnowledgeZipBundle`, `pdf-reader` | One source per bundled document; bounded pages, bytes, entries; CRC-verified archive reader. |
-| Intercom Help Center as a synchronised knowledge source | Partial | `KnowledgeIngestion#ingest_integration!` | Articles are registered as manual snapshots by ID. Read-only synchronisation through the Intercom connection is planned (section 3). |
-| Provider-backed knowledge connections (for example Notion) | Planned | | Specified in section 3; no implementation. |
+| Knowledge document uploads: text, Markdown, HTML, PDF, DOCX, ZIP bundles | Built | `KnowledgeDocumentExtractor`, `KnowledgeZipBundle`, `pdf-reader` | One source per bundled document; bounded pages, bytes, entries; CRC-verified archive reader. |
+| Intercom Help Center as a synchronised knowledge source | Built | `IntercomHelpCenterSync`, `KnowledgeSyncPass`, `KnowledgeSyncObservation` | Bounded resumable scans; immutable origin and versions; two complete absence confirmations retire a source. Republish restores visibility and preserves history. |
+| Notion knowledge and personal connector accounts | Built | `WorkspaceConnector`, `IntegrationOauth`, `NotionKnowledgeSync` | Admin enablement and encrypted Workspace credentials; separate personal OAuth browsing. Shared Notion roots use complete-pass reconciliation. Personal content is not automatically shared. |
+| Product and Intercom applicability | Built | `KnowledgeApplicabilityScope`, `Product`, `KnowledgeApplicability` | Dynamic connection defaults, human overrides, case product assignment, scoped retrieval and citation admission. |
+| Web companion with personal AI accounts | Built | `PersonalProviderAccount`, `runner/internal/personalaccounts` | Codex device login and execution on deployed Linux, owner-scoped credential homes, explicit runtime approval, fixed retry identity, revocation and deletion purge. Other personal AI provider adapters are not implemented. |
 
 ### Durable agent work and runtimes
 
@@ -59,7 +61,7 @@ Status values: **Done** (implemented, tested, merged), **Partial** (part of the 
 | Direct OpenAI and Anthropic API-key connections | Done | `ProviderConnectionGateway`, `ProviderConnectionsController`, `runner/internal/{providerapi,providerconfig}` | Owner-approved extension of interview decision Q12; keys live only in the encrypted runner vault. |
 | Routing, fallback, budgets, disclosure, hard stops | Done | `RuntimeRouter`, `UsageCostCapture` | Incompatible fallback denied with a visible reason; adapters stop at unit caps. |
 | Public-web search: SearXNG | Done | `runner/internal/websearch`, `PublicWebResearch` | Self-hosted default. |
-| Public-web search: hosted providers | Partial | `runner/internal/websearch/hosted.go` | Exa and Tavily implemented with runner-held keys. Parallel is not implemented. Native runtime search and per-Workspace provider selection are planned (section 3). |
+| Public-web search: hosted providers | Partial | `runner/internal/websearch/hosted.go` | Exa and Tavily implemented with runner-held keys. Parallel is not implemented. Admin per-Workspace provider selection is built; requests freeze the selected provider across retries. Native runtime search remains unavailable pending structured evidence support (section 3). |
 | Guarded extraction | Done | `GuardedWebFetcher`, `PublicWebExtractionWorkflow` | DNS and redirect revalidation, private-network denial, 1 MiB, active content stripped. |
 
 ### Memory
@@ -144,10 +146,10 @@ The build ran as a v1 stack of about 40 PRs (foundation, helpdesk, agent work, r
 
 Listed in the order they unblock a pilot. None of these blocks owner review of the current source.
 
-1. **Intercom Help Center synchronisation.** Replace manual article snapshots with read-only sync through the existing Intercom connection, reconciliation cursor, and signed-webhook boundary: one Knowledge source per published article keyed by remote article ID and updated time, stale-then-deleted handling for unpublished articles, bounded pages, bytes, and time, and review stops instead of silent truncation. Evidence: create, update, unpublish, delete, cursor resume, and cross-Workspace denial without any remote write.
-2. **Search: per-Workspace provider selection and native runtime search.** Let a Workspace choose an approved provider from the runner catalog (a provider is unavailable until the deployment enables it), and allow a runtime's native search only when the run's egress profile permits it and results are auditable, structured, and pass the same citation contract. Parallel remains unimplemented.
-3. **Provider-backed knowledge connections.** One connection kind chosen from pilot evidence (for example Notion), enabled by an Admin, with separate Workspace service credentials and user-authorised OAuth accounts, importing pages as Knowledge source versions with the same provenance, freshness, and deletion rules as uploads. No generic connector SDK.
-4. **Host-trusted execution redesign.** Replace the macOS host-trusted mode with a server-side companion boundary; until then the mode stays disabled by default and is recorded as an operator-accepted risk.
+1. **Merge and deploy the built stack.** DOCX, Intercom sync and applicability, connectors and Notion, Workspace search selection, and personal Codex accounts are unmerged source changes. The implementation and verification evidence does not establish a live deployment.
+2. **Native runtime search.** Admin authority is settled. A runtime adapter still needs structured URL/excerpt/date evidence that satisfies the existing citation contract and its allowed egress profile. Codex query events alone do not satisfy it; native search stays unavailable. Parallel remains unimplemented.
+3. **Legacy DOC intake.** An isolated conversion package needs explicit dependency approval. DOCX, PDF, Markdown, HTML, text and ZIP intake remain available.
+4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
 ## 4. External boundaries
@@ -180,4 +182,4 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 
 ### Approved implementation scope — 6 September 2026
 
-The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake. Personal content must not become shared knowledge automatically. The legacy DOC converter dependency is awaiting an explicit decision. Native search requires structured result evidence before enabling an adapter. Current implementation work is unmerged and is not a new green checkpoint.
+The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake; and a web companion whose execution stays on deployed Linux. Personal content must not become shared knowledge automatically. The legacy DOC converter dependency is awaiting an explicit decision. Native search requires structured result evidence before enabling an adapter. Implementation remains unmerged. The checkpoint section records tests separately from deployment and live-provider proof.

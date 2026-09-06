@@ -18,6 +18,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/admission"
 	"github.com/glnarayanan/navishai/runner/internal/events"
 	"github.com/glnarayanan/navishai/runner/internal/execution"
+	"github.com/glnarayanan/navishai/runner/internal/personalaccounts"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
 	"github.com/glnarayanan/navishai/runner/internal/runtimecatalog"
@@ -74,6 +75,16 @@ func main() {
 	handler, err := newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret, store, searchStatePath, catalog, registry, runtimeTestStore, providerStore, catalog, registry, time.Now)
 	if err != nil {
 		log.Fatalf("configure runner protocol: %v", err)
+	}
+	if root := os.Getenv("NAVISHAI_PERSONAL_ACCOUNTS_ROOT"); root != "" {
+		personalHandler, err := registry.PersonalAccountHandler(secret, root)
+		if err != nil {
+			log.Fatalf("configure personal accounts: %v", err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle(personalaccounts.PathPrefix, personalHandler)
+		mux.Handle("/", handler)
+		handler = mux
 	}
 	allowPrivateControlPlaneHTTP := os.Getenv("NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP") == "true"
 	eventSink, err := events.New(controlPlaneAddress, secret, allowPrivateControlPlaneHTTP, time.Now)

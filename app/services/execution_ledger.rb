@@ -32,12 +32,20 @@ class ExecutionLedger
     @memory_engine = memory_engine
   end
 
-  def prepare!(task:, request_key:)
+  def prepare!(task:, request_key:, membership: nil, personal_account: nil)
     task = @workspace.crew_tasks.find(task.id)
+    if membership
+      membership = @workspace.memberships.find(membership.id)
+      raise InvalidRun, "Your role cannot request an execution." unless membership.can_write?
+    end
+    if personal_account && (!membership || personal_account.workspace_id != @workspace.id || personal_account.membership_id != membership.id)
+      raise InvalidRun, "Choose your own AI account in this workspace."
+    end
     request_key = request_key.to_s
     raise InvalidRun, "Execution request key is invalid." if request_key.blank? || request_key.bytesize > 128
     if (existing = @workspace.execution_runs.find_by(request_key:))
       raise InvalidRun, "Execution request key belongs to another task." unless existing.crew_task_id == task.id
+      validate_requester!(existing, membership, personal_account)
       return existing
     end
     memory_context = MemoryContext.build(workspace: @workspace, task:, engine: @memory_engine)
@@ -50,6 +58,7 @@ class ExecutionLedger
       existing = @workspace.execution_runs.find_by(request_key:)
       if existing
         raise InvalidRun, "Execution request key belongs to another task." unless existing.crew_task_id == task.id
+        validate_requester!(existing, membership, personal_account)
         return existing
       end
       unless task.ready? || task.in_progress?
@@ -62,12 +71,13 @@ class ExecutionLedger
       extra_data = memory_context.present? ? [ "retrieved_memory" ] : []
       selection = RuntimeRouter.resolve!(
         workspace: @workspace, profile_version: task.assigned_agent_profile_version,
-        additional_data_classes: extra_data
+        additional_data_classes: extra_data, personal_account:
       )
       usage_rate_version = @workspace.usage_rate_setting&.current_version
       max_input_units, max_output_units = frozen_unit_limits(task, selection)
       run = @workspace.execution_runs.create!(
-        crew_task: task,
+        crew_task: task, requested_by_membership: membership,
+        selected_personal_account_key: personal_account&.account_key,
         agent_profile: task.assigned_agent_profile,
         agent_profile_version: task.assigned_agent_profile_version,
         governed_policy_publication: task.governed_policy_publication,
@@ -105,6 +115,13 @@ class ExecutionLedger
     raise InvalidRun, error.message
   end
 
+  def validate_requester!(run, membership, personal_account)
+    unless run.requested_by_membership_id == membership&.id && run.selected_personal_account_key == personal_account&.account_key
+      raise InvalidRun, "Execution request belongs to another requester or AI account."
+    end
+  end
+  private :validate_requester!
+
   def admit!(run:, client: nil)
     run = @workspace.execution_runs.find(run.id)
     run.with_lock do
@@ -117,6 +134,13 @@ class ExecutionLedger
       )
     end
 
+    if run.selected_personal_account_key
+      account = PersonalProviderAccount.find_by(workspace: @workspace, account_key: run.selected_personal_account_key,
+        membership_id: run.requested_by_membership_id)
+      unless account&.usable? && account.runtime_installation.configuration_fingerprint == run.selected_runtime_configuration_fingerprint
+        raise InvalidRun, "Your selected AI account is no longer available. Reconnect it before requesting a new run."
+      end
+    end
     response = (client || RunnerClient.new).admit!(
       task: run.crew_task, run: run,
       input_context: run.input_context,

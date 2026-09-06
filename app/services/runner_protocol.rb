@@ -62,7 +62,7 @@ module RunnerProtocol
           "instructions" => version.instructions,
           "allowed_tools" => version.allowed_tools.sort,
           "runtime_profile_key" => version.runtime_profile_key,
-          "fallback_profile_keys" => version.fallback_profile_keys,
+          "fallback_profile_keys" => run.selected_personal_account_key ? [] : version.fallback_profile_keys,
           "timeout_seconds" => version.timeout_seconds,
           "max_steps" => version.max_steps,
           "max_tool_calls" => version.max_tool_calls,
@@ -87,6 +87,9 @@ module RunnerProtocol
         "max_input_units" => run.max_input_units,
         "max_output_units" => run.max_output_units
       }
+      if run.selected_personal_account_key
+        routing["personal_account"] = { "account_key" => run.selected_personal_account_key, "membership_id" => run.requested_by_membership_id }
+      end
       routing
     end
 
@@ -145,7 +148,18 @@ module RunnerProtocol
       end
 
       routing = value["routing"]
-      object!(routing, self.class::ROUTING_KEYS, "routing")
+      keys = self.class::ROUTING_KEYS
+      keys = keys + [ "personal_account" ] if routing.is_a?(Hash) && routing.key?("personal_account")
+      object!(routing, keys, "routing")
+      if routing.key?("personal_account")
+        account = routing["personal_account"]
+        object!(account, %w[account_key membership_id], "routing.personal_account")
+        uuid!(account["account_key"], "routing.personal_account.account_key")
+        integer!(account["membership_id"], 1, 9_223_372_036_854_775_807, "routing.personal_account.membership_id")
+        unless routing["execution_mode"] == "strong_isolated" && routing["adapter_key"] == "codex_subscription" && routing["selection_reason"] == "primary" && agent["fallback_profile_keys"].empty?
+          raise MalformedMessage, "personal account execution boundary is invalid"
+        end
+      end
       unless routing["detection_key"].is_a?(String) && routing["detection_key"].match?(/\A[0-9a-f]{64}\z/)
         raise MalformedMessage, "routing.detection_key is invalid"
       end

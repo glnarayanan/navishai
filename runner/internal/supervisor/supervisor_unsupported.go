@@ -50,6 +50,7 @@ type Request struct {
 	Arguments        []string
 	WorkingDir       string
 	HomeDir          string
+	WritableHome     bool
 	Input            []byte
 	Credentials      map[string]string
 	EgressProfileKey string

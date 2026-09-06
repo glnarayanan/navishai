@@ -12,6 +12,19 @@ class RunnerProtocolTest < ActiveSupport::TestCase
     assert_equal 20, request.attributes.dig("agent", "max_tool_calls")
   end
 
+  test "personal admission binds the owner and forbids shared fallback" do
+    body = JSON.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
+    body["agent"]["fallback_profile_keys"] = []
+    body["routing"].merge!("adapter_key" => "codex_subscription", "execution_mode" => "strong_isolated", "selection_reason" => "primary",
+      "personal_account" => { "account_key" => SecureRandom.uuid, "membership_id" => 42 })
+    assert RunnerProtocol::AdmissionRequest.new(body)
+    body["agent"]["fallback_profile_keys"] = [ "fast" ]
+    assert_raises(RunnerProtocol::MalformedMessage) { RunnerProtocol::AdmissionRequest.new(body) }
+    body["agent"]["fallback_profile_keys"] = []
+    body["routing"]["personal_account"]["membership_id"] = 0
+    assert_raises(RunnerProtocol::MalformedMessage) { RunnerProtocol::AdmissionRequest.new(body) }
+  end
+
   test "rejects a retained v1 admission record on the live decoder" do
     body = JSON.parse(File.binread(FIXTURE_PATH.join("admission_request.json")))
     body["protocol_version"] = RunnerProtocol::VERSION
@@ -52,11 +65,11 @@ class RunnerProtocolTest < ActiveSupport::TestCase
         :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
         :selected_runtime_configuration_fingerprint, :selected_effective_model,
         :runtime_selection_reason, :runtime_selection_detail, :selected_execution_mode,
-        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units
+        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units, :selected_personal_account_key
       ).new(
         "b" * 64, "scripted", "workspace_default", "c" * 64, "deterministic_fixture", "primary",
         "Primary Workspace default profile selected.", "bounded", "strong_isolation_required",
-        %w[approved_knowledge case_content], 100_000, 25_000
+        %w[approved_knowledge case_content], 100_000, 25_000, nil
       ), run_id: "3d07f334-88ef-4fe4-a640-421e3ba79921",
       idempotency_key: "admit:3d07f334-88ef-4fe4-a640-421e3ba79921", attempt: 1
     )

@@ -101,7 +101,7 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 - Mark planned controls as planned until executable tests prove them.
 - Treat database, deployment host, backup, and operator access as privileged. Release hardening must document key handling, backup access, restore checks, and incident response.
 
-## Knowledge, connector and search extensions
+## Knowledge and personal account extensions
 
 | Threat | Control |
 |---|---|
@@ -109,4 +109,6 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 | Article applicability bypasses case context | Product and Intercom mappings enforced in case search and evidence resolution; composite Workspace foreign keys. |
 | DOCX payload executes code or exhausts extraction | Scanned retained original, bounded ZIP/XML parsing, no DTD/entity expansion or macro execution, no Rails subprocess. |
 | Personal OAuth resources leak into shared knowledge or archives | Separate Workspace service and membership-owned credentials; explicit connector policy checked at initiation/callback/use; private bounded browsing; no automatic personal publication; archive credential removal and disabled restore. |
+| Provider device login exposes tokens or another user's execution home | Signed member/account requests, deployed CLI-owned credentials, exact private home, explicit personal-only writable home, Linux isolation and restricted egress, frozen owner/fingerprint, no personal fallback. |
+| Revoked user credentials remain usable | Member downgrade/disconnect and Workspace purge fail closed on unconfirmed remote cleanup; active leases prevent unsafe deletion. |
 | Provider choice changes during retry | Frozen search provider selection and request conflict checks; Admin-only configuration from signed deployment catalog. |

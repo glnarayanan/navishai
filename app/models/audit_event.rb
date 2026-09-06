@@ -4,6 +4,8 @@ class AuditEvent < ApplicationRecord
   SENSITIVE_KEY = /passw|email|secret|token|(?:\A|_)key(?:\z|_)|crypt|salt|certificate|otp|ssn|cvv|cvc/i
   MAX_METADATA_BYTES = 8.kilobytes
   EVENT_METADATA = {
+    "runtime.personal_account_started" => {},
+    "runtime.personal_account_disconnected" => {},
     "workspace.search_provider_updated" => { "previous_provider" => String, "provider" => String },
     "product.created" => {},
     "product.updated" => { "previous_name" => String, "name" => String },

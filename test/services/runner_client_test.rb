@@ -328,11 +328,11 @@ class RunnerClientTest < ActiveSupport::TestCase
         :selected_runtime_detection_key, :selected_adapter_key, :selected_runtime_profile_key,
         :selected_runtime_configuration_fingerprint, :selected_effective_model,
         :runtime_selection_reason, :runtime_selection_detail, :selected_execution_mode,
-        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units
+        :selected_isolation_policy, :disclosed_data_classes, :max_input_units, :max_output_units, :selected_personal_account_key
       ).new(
         "b" * 64, "scripted", "workspace_default", "c" * 64, "deterministic_fixture", "primary",
         "Primary Workspace default profile selected.", "bounded", "strong_isolation_required",
-        %w[approved_knowledge case_content], 100_000, 25_000
+        %w[approved_knowledge case_content], 100_000, 25_000, nil
       )
     end
 

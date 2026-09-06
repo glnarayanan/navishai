@@ -47,7 +47,7 @@ class WorkspaceDeletion
     request
   end
 
-  def self.perform!(request:, engine: nil, object_purger: nil, provider_gateway: nil, completed_at: nil)
+  def self.perform!(request:, engine: nil, object_purger: nil, provider_gateway: nil, personal_gateway: nil, completed_at: nil)
     workspace_id = request.workspace_id
     connection = ActiveRecord::Base.connection
     connection.execute("SELECT pg_advisory_lock(50, #{connection.quote(workspace_id)})")
@@ -62,6 +62,7 @@ class WorkspaceDeletion
     end
     workspace = request.workspace
     purge_provider_connections!(workspace, gateway: provider_gateway)
+    (personal_gateway || PersonalProviderGateway.new).purge_workspace(workspace_key: workspace.runner_key) if workspace.personal_provider_accounts.exists?
 
     CLEANUP_ATTEMPTS.times do
       attachments = purge_attachment_objects!(workspace, object_purger:)

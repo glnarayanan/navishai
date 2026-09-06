@@ -7,6 +7,7 @@ class ExecutionRun < ApplicationRecord
 
   attribute :run_key, default: -> { SecureRandom.uuid }
 
+  belongs_to :requested_by_membership, class_name: "Membership", optional: true
   belongs_to :workspace
   belongs_to :crew_task
   belongs_to :agent_profile

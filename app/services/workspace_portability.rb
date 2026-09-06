@@ -27,10 +27,11 @@ class WorkspacePortability
     "memory_proposals" => "proposal_key",
     "memory_records" => "memory_key",
     "outbound_webhook_deliveries" => "event_key",
+    "personal_provider_accounts" => "account_key",
     "public_web_search_results" => "citation_key",
     "shared_email_inboxes" => "webhook_key"
   }.freeze
-  REFERENCE_COLUMNS = %w[capture_key source_reference].freeze
+  REFERENCE_COLUMNS = %w[capture_key source_reference selected_personal_account_key].freeze
   AUDIT_METADATA_ID_TABLES = {
     "assignee_id" => "memberships",
     "attachment_id" => "stored_attachments",
@@ -41,6 +42,9 @@ class WorkspacePortability
     email_drafts.human_edited_by_membership_id
     email_drafts.source_crew_artifact_id
     execution_runs.usage_rate_version_id
+    execution_runs.runtime_installation_id
+    execution_runs.requested_by_membership_id
+    runtime_installations.personal_provider_account_id
     intercom_drafts.human_edited_by_membership_id
     intercom_drafts.source_crew_artifact_id
     intercom_outbound_deliveries.human_edited_by_membership_id
@@ -1153,6 +1157,13 @@ class WorkspacePortability
       "SELECT * FROM #{quoted_table} WHERE workspace_id = #{connection.quote(workspace_id)} ORDER BY id"
     ).to_a
     return rows.map { |row| row.merge(DISCONNECTED_CONNECTOR_STATE) } if table == "workspace_connectors"
+    return rows.map { |row| row.merge("state" => "disconnected", "expires_at" => nil) } if table == "personal_provider_accounts"
+    if table == "runtime_installations"
+      return rows.map do |row|
+        row["personal_provider_account_id"] ? row.merge("approved" => false, "health_status" => "missing",
+          "approved_by_membership_id" => nil, "approved_by_user_id" => nil, "approved_at" => nil) : row
+      end
+    end
     return rows unless table == "memory_index_entries"
 
     rows.map { |row| row.merge(PORTABLE_MEMORY_INDEX_STATE) }

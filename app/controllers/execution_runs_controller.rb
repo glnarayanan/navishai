@@ -24,7 +24,7 @@ class ExecutionRunsController < ApplicationController
   def create
     ExecutionRecovery.request!(
       workspace: @workspace, membership: @membership, task: @task,
-      request_key: params[:request_key]
+      request_key: params[:request_key], personal_account_id: params[:personal_account_id]
     )
     redirect_to task_path, notice: "Specialist run requested."
   rescue RunnerClient::Error
