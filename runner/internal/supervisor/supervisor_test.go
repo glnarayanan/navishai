@@ -577,7 +577,7 @@ func main() {
   case "environment": fmt.Print(os.Getenv("SCOPED_TOKEN") + "|" + os.Getenv("HOST_SECRET"))
 	case "home": fmt.Print(os.Getenv("HOME"))
 	case "echo": scanner := bufio.NewScanner(os.Stdin); if scanner.Scan() { fmt.Println("response:" + scanner.Text()) }
-  case "read": _, err := os.ReadFile(os.Args[2]); fmt.Print(err)
+  case "read": if _, err := os.ReadFile(os.Args[2]); err != nil { fmt.Print(err) }
   case "write": if err := os.WriteFile(os.Args[2], []byte("result"), 0600); err != nil { fmt.Print(err); os.Exit(1) }
   case "socket": _, _, errno := syscall.Syscall(syscall.SYS_SOCKET, syscall.AF_INET, syscall.SOCK_STREAM, 0); fmt.Print(errno)
   case "io-uring": _, _, errno := syscall.RawSyscall(425, 1, 0, 0); fmt.Print(errno)
