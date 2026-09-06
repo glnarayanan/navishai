@@ -1,0 +1,23 @@
+<section class="section-block" id="help-center-<%= connection.id %>">
+  <h2>Help Center · <%= connection.name %></h2>
+  <% pass = connection.knowledge_sync_passes.order(id: :desc).first %>
+  <p>Published articles sync as versioned knowledge. Article mappings and previous citations stay intact.</p>
+  <%= form_with url: help_center_workspace_intercom_connection_path(Current.workspace, connection), method: :patch, scope: :intercom_connection do |form| %>
+    <div class="field">
+      <%= form.label :help_center_sync_enabled, "Help Center sync", for: "help-center-enabled-#{connection.id}" %>
+      <%= form.select :help_center_sync_enabled, [["Disabled", false], ["Enabled", true]], { selected: connection.help_center_sync_enabled }, id: "help-center-enabled-#{connection.id}" %>
+    </div>
+    <%= form.submit "Save sync settings", class: "button button-quiet" %>
+  <% end %>
+  <% if pass %>
+    <p role="status"><%= pass.status.humanize %> · <%= pluralize(pass.page_count, "page") %> checked<%= " · #{pass.failure_code.humanize}" if pass.failure_code %></p>
+    <% if pass.completed_at %><p>Completed <%= time_tag pass.completed_at %>.</p><% else %><p>The next batch resumes from the saved checkpoint.</p><% end %>
+    <% if pass.failure_code %><p>Check Intercom access and article content, then retry sync.</p><% end %>
+  <% else %>
+    <p>Not synced yet.</p>
+  <% end %>
+  <% if connection.active? && connection.help_center_sync_enabled? %>
+    <%= button_to "Sync Help Center now", sync_help_center_workspace_intercom_connection_path(Current.workspace, connection), class: "button button-primary" %>
+  <% end %>
+  <%= render "knowledge_applicabilities/form", connection: connection %>
+</section>

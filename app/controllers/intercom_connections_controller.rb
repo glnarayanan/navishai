@@ -43,6 +43,21 @@ class IntercomConnectionsController < ApplicationController
     redirect_to workspace_intercom_connections_path(Current.workspace), alert: "Intercom identity needs review."
   end
 
+  def help_center
+    connection = Current.require_workspace!.intercom_connections.find(params[:id])
+    connection.update!(help_center_sync_enabled: params.expect(intercom_connection: [ :help_center_sync_enabled ]).fetch(:help_center_sync_enabled))
+    audit_event("intercom.help_center_configured", subject: connection)
+    redirect_to workspace_intercom_connections_path(Current.workspace), notice: "Help Center sync settings saved."
+  end
+
+  def sync_help_center
+    connection = Current.require_workspace!.intercom_connections.active.find(params[:id])
+    return head :unprocessable_content unless connection.help_center_sync_enabled?
+    IntercomHelpCenterSyncJob.perform_later(connection.id)
+    audit_event("intercom.help_center_requested", subject: connection)
+    redirect_to workspace_intercom_connections_path(Current.workspace), notice: "Help Center sync queued."
+  end
+
   def backfill_preview
     connection = Current.require_workspace!.intercom_connections.active.find(params[:id])
     manifest = IntercomHistoricalBackfill.preview!(

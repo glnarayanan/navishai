@@ -1,0 +1,24 @@
+<p><%= link_to "Find knowledge for this case", workspace_knowledge_sources_path(Current.workspace, support_case_id: support_case.id) %></p>
+<% if Current.workspace.products.exists? %>
+  <section class="section-block" aria-labelledby="case-products-title">
+    <h2 id="case-products-title">Products</h2>
+    <% selected_ids = support_case.products.pluck(:id) %>
+    <p><%= selected_ids.any? ? support_case.products.order(:name).pluck(:name).join(", ") : "Using Intercom connection defaults. Without specific defaults, only knowledge for all products is used." %></p>
+    <% if Current.require_membership!.can_manage_work? %>
+      <details class="setup-disclosure">
+        <summary>Set case products</summary>
+        <%= form_with url: workspace_support_case_product_mapping_path(Current.workspace, support_case), method: :patch, scope: :support_case, class: "knowledge-form" do |form| %>
+          <fieldset>
+            <legend>Products relevant to this case</legend>
+            <p>Leave all unselected to use the connection defaults.</p>
+            <%= form.hidden_field :product_ids, multiple: true, value: "", id: nil %>
+            <% Current.workspace.products.order(:name, :id).each do |product| %>
+              <div class="field checkbox-field"><%= check_box_tag "support_case[product_ids][]", product.id, selected_ids.include?(product.id), id: "case_product_#{product.id}" %><%= label_tag "case_product_#{product.id}", product.name %></div>
+            <% end %>
+          </fieldset>
+          <%= form.submit "Save case products", class: "button button-primary" %>
+        <% end %>
+      </details>
+    <% end %>
+  </section>
+<% end %>

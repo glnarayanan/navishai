@@ -4,6 +4,17 @@ class AuditEvent < ApplicationRecord
   SENSITIVE_KEY = /passw|email|secret|token|(?:\A|_)key(?:\z|_)|crypt|salt|certificate|otp|ssn|cvv|cvc/i
   MAX_METADATA_BYTES = 8.kilobytes
   EVENT_METADATA = {
+    "product.created" => {},
+    "product.updated" => { "previous_name" => String, "name" => String },
+    "knowledge.applicability_updated" => { "previous_mapping" => String, "mapping" => String },
+    "knowledge.applicability_reset" => { "previous_mapping" => String, "mapping" => String },
+    "case.products_updated" => { "previous_products" => String, "products" => String },
+    "knowledge.source_stale" => {},
+    "knowledge.source_retired" => {},
+    "knowledge.source_restored" => {},
+    "knowledge.sync_completed" => {},
+    "intercom.help_center_configured" => {},
+    "intercom.help_center_requested" => {},
     "authentication.failed" => { "method" => %w[local oidc break_glass] },
     "authentication.signed_out" => {},
     "authentication.succeeded" => { "method" => %w[local oidc break_glass] },

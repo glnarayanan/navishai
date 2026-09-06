@@ -100,3 +100,10 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 - Never store passwords, tokens, secret values, raw credentials, or unrestricted request parameters in audit metadata.
 - Mark planned controls as planned until executable tests prove them.
 - Treat database, deployment host, backup, and operator access as privileged. Release hardening must document key handling, backup access, restore checks, and incident response.
+
+## Synced knowledge
+
+| Threat | Control |
+|---|---|
+| Failed sync retires valid knowledge or one connection changes another's articles | Immutable connection origin, bounded resumable passes, complete enumeration before reconciliation, two confirmed absences, retained versions and human mappings. |
+| Article applicability bypasses case context | Product and Intercom mappings enforced in case search and evidence resolution; composite Workspace foreign keys. |

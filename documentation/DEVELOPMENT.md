@@ -207,3 +207,11 @@ go test ./...
 ```
 
 The Rails control plane exposes `GET /up`. The runner exposes `GET /livez` and `GET /readyz` on port 8081 by default.
+
+## Knowledge sync and applicability
+
+Enable Help Center sync on an Intercom connection, then choose **Sync Help Center now**. Scheduled jobs run daily at 00:45 in the scheduler timezone. Bounded batches resume from a durable pass; only completed enumeration can retire missing sources, after two confirmed absences. Immutable content versions retain citations. Availability is recorded separately. Human deletion is never reversed by sync. Manual snapshots remain separate from connection-owned articles.
+
+Products and Intercom applicability constrain case-scoped knowledge search and evidence admission. Connection defaults apply until a knowledge manager records an article override. Sync does not change those mappings. The originating connection remains immutable.
+
+DOCX uploads use the existing ZIP/XML libraries, retain scanned originals, and extract text without executing Office code. Legacy DOC requires the separately approved isolated conversion dependency; it is not silently treated as text.

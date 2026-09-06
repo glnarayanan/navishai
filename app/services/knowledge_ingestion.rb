@@ -22,9 +22,9 @@ class KnowledgeIngestion
   end
 
   def self.ingest_integration!(workspace:, source_kind:, title:, content:, external_id:,
-    source_updated_at:, retrieved_at: Time.current, expires_at: nil)
+    source_updated_at:, retrieved_at: Time.current, expires_at: nil, intercom_connection: nil, retrieved_from_url: nil)
     new(workspace:).ingest_integration!(
-      source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:
+      source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection:, retrieved_from_url:
     )
   end
 
@@ -131,16 +131,19 @@ class KnowledgeIngestion
     Array(prepared).each(&:purge!)
   end
 
-  def ingest_integration!(source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:)
-    raise InvalidSource, "Only Intercom Help Center snapshots use this contract." unless source_kind.to_s == "intercom_help_center"
+  def ingest_integration!(source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection: nil, retrieved_from_url: nil)
+    raise InvalidSource, "Choose a supported integration." unless source_kind.to_s == "intercom_help_center"
     raise InvalidSource, "Add the Intercom article ID." if external_id.blank?
 
+    connection = intercom_connection && @workspace.intercom_connections.find(intercom_connection.id)
+    raise InvalidSource, "Choose the correct source connection." if connection && source_kind.to_s != "intercom_help_center"
+    retrieved_from_url = canonical_url(retrieved_from_url) if retrieved_from_url.present?
     normalized_content = normalize_content(content)
     source = nil
     KnowledgeSource.transaction do
-      lock_locator!("intercom_help_center", external_id: external_id.to_s.strip)
+      lock_locator!(source_kind.to_s, connection_id: connection&.id, external_id: external_id.to_s.strip)
       source = @workspace.knowledge_sources.lock.find_or_initialize_by(
-        source_kind: :intercom_help_center, external_id: external_id.to_s.strip
+        source_kind: source_kind.to_s, intercom_connection_id: connection&.id, external_id: external_id.to_s.strip
       )
       if source.new_record?
         source.source_key = SecureRandom.uuid
@@ -149,7 +152,7 @@ class KnowledgeIngestion
         audit!("knowledge.source_created", source)
       end
       raise InvalidSource, "Deleted sources cannot accept new versions." if source.deleted?
-      append_version!(source:, content: normalized_content, retrieved_at:, source_updated_at:, expires_at:)
+      append_version!(source:, content: normalized_content, retrieved_at:, source_updated_at:, expires_at:, retrieved_from_url:, source_title: (title if connection))
     end
     source
   end
@@ -264,8 +267,8 @@ class KnowledgeIngestion
     end
 
     def append_version!(source:, content:, retrieved_at:, expires_at:, source_updated_at: nil,
-      retrieved_from_url: nil, stored_attachment: nil)
-      if same_version?(source.current_version, content, expires_at, source_updated_at, retrieved_from_url)
+      retrieved_from_url: nil, stored_attachment: nil, source_title: nil)
+      if same_version?(source.current_version, content, expires_at, source_updated_at, retrieved_from_url) && source.current_version.source_title == source_title
         return source.current_version
       end
 
@@ -275,7 +278,7 @@ class KnowledgeIngestion
         stored_attachment:,
         version_number: source.versions.maximum(:version_number).to_i + 1,
         content:, content_sha256: digest,
-        retrieved_from_url:, retrieved_at:, source_updated_at:, expires_at:,
+        retrieved_from_url:, retrieved_at:, source_updated_at:, expires_at:, source_title:,
         created_by_membership: @membership,
         created_by_user: @membership&.user
       )

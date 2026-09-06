@@ -36,6 +36,13 @@ class Workspace < ApplicationRecord
   has_many :conversation_message_attachments, dependent: :restrict_with_exception
   has_many :email_draft_attachments, dependent: :restrict_with_exception
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
+  has_many :knowledge_sync_passes, dependent: :restrict_with_exception
+  has_many :knowledge_sync_observations, dependent: :restrict_with_exception
+  has_many :products, dependent: :restrict_with_exception
+  has_many :knowledge_applicabilities, dependent: :restrict_with_exception
+  has_many :knowledge_applicability_products, dependent: :restrict_with_exception
+  has_many :knowledge_applicability_connections, dependent: :restrict_with_exception
+  has_many :support_case_products, dependent: :restrict_with_exception
   has_many :knowledge_sources, dependent: :restrict_with_exception
   has_many :knowledge_source_versions, dependent: :restrict_with_exception
   has_many :crew_templates, dependent: :restrict_with_exception

@@ -1510,6 +1510,21 @@ $$;
 
 
 --
+-- Name: protect_knowledge_origin(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_knowledge_origin() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.intercom_connection_id IS DISTINCT FROM NEW.intercom_connection_id THEN
+    RAISE EXCEPTION 'knowledge origin is immutable';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
 -- Name: protect_knowledge_source(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2941,7 +2956,7 @@ CREATE TABLE public.agent_profile_versions (
     CONSTRAINT agent_profile_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT agent_profile_versions_budget CHECK (((timeout_seconds >= 30) AND (timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
     CONSTRAINT agent_profile_versions_instructions CHECK (((octet_length(instructions) >= 1) AND (octet_length(instructions) <= 8000))),
-    CONSTRAINT agent_profile_versions_isolation_policy CHECK (((isolation_policy)::text = ANY ((ARRAY['strong_isolation_required'::character varying, 'host_trusted_allowed'::character varying])::text[]))),
+    CONSTRAINT agent_profile_versions_isolation_policy CHECK (((isolation_policy)::text = ANY (ARRAY[('strong_isolation_required'::character varying)::text, ('host_trusted_allowed'::character varying)::text]))),
     CONSTRAINT agent_profile_versions_number CHECK ((version_number > 0)),
     CONSTRAINT agent_profile_versions_review CHECK (((review_policy)::text = ANY (ARRAY[('required'::character varying)::text, ('on_policy_flag'::character varying)::text]))),
     CONSTRAINT agent_profile_versions_runtime CHECK ((((runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND (jsonb_typeof(fallback_profile_keys) = 'array'::text) AND (jsonb_array_length(fallback_profile_keys) <= 2) AND (fallback_profile_keys <@ '["workspace_default", "thorough", "fast"]'::jsonb))),
@@ -4059,7 +4074,7 @@ CREATE TABLE public.governed_policy_proposals (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT policy_proposals_reason CHECK (((octet_length(btrim((reason)::text)) >= 1) AND (octet_length(btrim((reason)::text)) <= 500))),
-    CONSTRAINT policy_proposals_scope CHECK (((scope_kind)::text = ANY ((ARRAY['support_case'::character varying, 'account'::character varying, 'agent_profile'::character varying])::text[])))
+    CONSTRAINT policy_proposals_scope CHECK (((scope_kind)::text = ANY (ARRAY[('support_case'::character varying)::text, ('account'::character varying)::text, ('agent_profile'::character varying)::text])))
 );
 
 
@@ -4102,7 +4117,7 @@ CREATE TABLE public.governed_policy_publications (
     expired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT policy_publications_shape CHECK ((((action)::text = ANY ((ARRAY['canary'::character varying, 'rollback'::character varying])::text[])) AND ((octet_length(btrim((reason)::text)) >= 1) AND (octet_length(btrim((reason)::text)) <= 500)) AND ((((action)::text = 'canary'::text) AND (governed_policy_preview_id IS NOT NULL)) OR (((action)::text = 'rollback'::text) AND (governed_policy_preview_id IS NULL) AND (supersedes_publication_id IS NOT NULL)))))
+    CONSTRAINT policy_publications_shape CHECK ((((action)::text = ANY (ARRAY[('canary'::character varying)::text, ('rollback'::character varying)::text])) AND ((octet_length(btrim((reason)::text)) >= 1) AND (octet_length(btrim((reason)::text)) <= 500)) AND ((((action)::text = 'canary'::text) AND (governed_policy_preview_id IS NOT NULL)) OR (((action)::text = 'rollback'::text) AND (governed_policy_preview_id IS NULL) AND (supersedes_publication_id IS NOT NULL)))))
 );
 
 
@@ -4668,7 +4683,8 @@ CREATE TABLE public.intercom_connections (
     last_reconciled_at timestamp(6) without time zone,
     last_error_code character varying,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    help_center_sync_enabled boolean DEFAULT false NOT NULL
 );
 
 
@@ -5055,6 +5071,104 @@ ALTER SEQUENCE public.intercom_webhook_deliveries_id_seq OWNED BY public.interco
 
 
 --
+-- Name: knowledge_applicabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_applicabilities (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    knowledge_source_id bigint,
+    intercom_connection_id bigint,
+    all_products boolean DEFAULT true NOT NULL,
+    all_connections boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_applicabilities_owner CHECK (((knowledge_source_id IS NULL) <> (intercom_connection_id IS NULL)))
+);
+
+
+--
+-- Name: knowledge_applicabilities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_applicabilities_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_applicabilities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_applicabilities_id_seq OWNED BY public.knowledge_applicabilities.id;
+
+
+--
+-- Name: knowledge_applicability_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_applicability_connections (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    knowledge_applicability_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL
+);
+
+
+--
+-- Name: knowledge_applicability_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_applicability_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_applicability_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_applicability_connections_id_seq OWNED BY public.knowledge_applicability_connections.id;
+
+
+--
+-- Name: knowledge_applicability_products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_applicability_products (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    knowledge_applicability_id bigint NOT NULL,
+    product_id bigint NOT NULL
+);
+
+
+--
+-- Name: knowledge_applicability_products_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_applicability_products_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_applicability_products_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_applicability_products_id_seq OWNED BY public.knowledge_applicability_products.id;
+
+
+--
 -- Name: knowledge_source_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5075,11 +5189,13 @@ CREATE TABLE public.knowledge_source_versions (
     search_document tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, COALESCE(content, ''::text))) STORED,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    source_title character varying,
     CONSTRAINT knowledge_source_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_source_versions_content_size CHECK (((octet_length(content) >= 1) AND (octet_length(content) <= 1048576))),
     CONSTRAINT knowledge_source_versions_number CHECK ((version_number > 0)),
     CONSTRAINT knowledge_source_versions_sha256 CHECK (((content_sha256)::text ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT knowledge_source_versions_url_length CHECK (((retrieved_from_url IS NULL) OR (((retrieved_from_url)::text ~ '^https://'::text) AND (length((retrieved_from_url)::text) <= 2048))))
+    CONSTRAINT knowledge_source_versions_url_length CHECK (((retrieved_from_url IS NULL) OR (((retrieved_from_url)::text ~ '^https://'::text) AND (length((retrieved_from_url)::text) <= 2048)))),
+    CONSTRAINT knowledge_versions_title CHECK (((source_title IS NULL) OR ((length((source_title)::text) >= 1) AND (length((source_title)::text) <= 200))))
 );
 
 
@@ -5120,11 +5236,13 @@ CREATE TABLE public.knowledge_sources (
     deleted_by_user_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    intercom_connection_id bigint,
     CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
     CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
     CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('url'::character varying)::text, ('upload'::character varying)::text, ('intercom_help_center'::character varying)::text]))),
-    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL))))
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL)))),
+    CONSTRAINT knowledge_sources_origin_kind CHECK (((intercom_connection_id IS NULL) OR ((source_kind)::text = 'intercom_help_center'::text)))
 );
 
 
@@ -5145,6 +5263,84 @@ CREATE SEQUENCE public.knowledge_sources_id_seq
 --
 
 ALTER SEQUENCE public.knowledge_sources_id_seq OWNED BY public.knowledge_sources.id;
+
+
+--
+-- Name: knowledge_sync_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_sync_observations (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    knowledge_source_id bigint NOT NULL,
+    last_seen_pass_id bigint NOT NULL,
+    observed_at timestamp(6) without time zone NOT NULL,
+    missing_passes integer DEFAULT 0 NOT NULL,
+    unavailable_at timestamp(6) without time zone,
+    retired_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_sync_observations_state CHECK ((((missing_passes >= 0) AND (missing_passes <= 2)) AND (((missing_passes = 0) AND (unavailable_at IS NULL) AND (retired_at IS NULL)) OR ((missing_passes = 1) AND (unavailable_at IS NOT NULL) AND (retired_at IS NULL)) OR ((missing_passes = 2) AND (unavailable_at IS NOT NULL) AND (retired_at IS NOT NULL)))))
+);
+
+
+--
+-- Name: knowledge_sync_observations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_sync_observations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_sync_observations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_sync_observations_id_seq OWNED BY public.knowledge_sync_observations.id;
+
+
+--
+-- Name: knowledge_sync_passes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_sync_passes (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    intercom_connection_id bigint NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    cursor character varying,
+    page_count integer DEFAULT 0 NOT NULL,
+    reconciliation_position bigint DEFAULT 0 NOT NULL,
+    enumerated boolean DEFAULT false NOT NULL,
+    failure_code character varying,
+    completed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_sync_passes_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'failed'::character varying, 'completed'::character varying])::text[])) AND ((page_count >= 0) AND (page_count <= 1000)) AND (reconciliation_position >= 0) AND ((cursor IS NULL) OR (octet_length((cursor)::text) <= 2048)) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z_]{1,64}$'::text)) AND (((status)::text = 'completed'::text) = (completed_at IS NOT NULL))))
+);
+
+
+--
+-- Name: knowledge_sync_passes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_sync_passes_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_sync_passes_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_sync_passes_id_seq OWNED BY public.knowledge_sync_passes.id;
 
 
 --
@@ -5783,6 +5979,39 @@ ALTER SEQUENCE public.outbound_webhook_endpoints_id_seq OWNED BY public.outbound
 
 
 --
+-- Name: products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.products (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying(100) NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT products_name_present CHECK ((length(TRIM(BOTH FROM name)) > 0))
+);
+
+
+--
+-- Name: products_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.products_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: products_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.products_id_seq OWNED BY public.products.id;
+
+
+--
 -- Name: public_web_extractions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6040,7 +6269,7 @@ CREATE TABLE public.runtime_installations (
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
     CONSTRAINT runtime_installations_approval_requires_test CHECK (((approved = false) OR (((runtime_test_status)::text = 'passed'::text) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
-    CONSTRAINT runtime_installations_configuration_identity CHECK ((((octet_length((effective_model)::text) >= 1) AND (octet_length((effective_model)::text) <= 200)) AND ((effective_model)::text !~ '[\r\n]'::text) AND ((configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT runtime_installations_configuration_identity CHECK (((octet_length((effective_model)::text) >= 1) AND (octet_length((effective_model)::text) <= 200) AND ((effective_model)::text !~ '[\r\n]'::text) AND ((configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT runtime_installations_detection_metadata CHECK (((jsonb_typeof(account_metadata) = 'object'::text) AND (jsonb_typeof(capabilities) = 'array'::text) AND (octet_length((account_metadata)::text) <= 8192) AND (jsonb_array_length(capabilities) <= 32) AND (octet_length((minimum_version)::text) <= 100) AND (octet_length((maximum_version)::text) <= 100) AND (octet_length(incompatibility_reason) <= 1000))),
     CONSTRAINT runtime_installations_executable CHECK (((executable_path ~~ '/%'::text) AND (octet_length(executable_path) <= 4096) AND ((executable_version)::text <> ''::text) AND (octet_length((executable_version)::text) <= 8192))),
     CONSTRAINT runtime_installations_execution_boundary CHECK ((((execution_mode)::text = ANY (ARRAY[('bounded'::character varying)::text, ('host_trusted'::character varying)::text, ('strong_isolated'::character varying)::text, ('legacy_unknown'::character varying)::text])) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
@@ -6050,7 +6279,7 @@ CREATE TABLE public.runtime_installations (
     CONSTRAINT runtime_installations_status CHECK ((((compatibility_status)::text = ANY (ARRAY[('compatible'::character varying)::text, ('warning'::character varying)::text, ('incompatible'::character varying)::text, ('unknown'::character varying)::text])) AND ((health_status)::text = ANY (ARRAY[('available'::character varying)::text, ('unhealthy'::character varying)::text, ('missing'::character varying)::text])))),
     CONSTRAINT runtime_installations_test_evidence CHECK ((((runtime_test_status)::text = ANY (ARRAY[('untested'::character varying)::text, ('passed'::character varying)::text, ('failed'::character varying)::text])) AND ((runtime_test_failure_code IS NULL) OR ((runtime_test_failure_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text)) AND ((runtime_tested_configuration_fingerprint IS NULL) OR ((runtime_tested_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text)) AND (runtime_test_input_units >= 0) AND (runtime_test_output_units >= 0))),
     CONSTRAINT runtime_installations_test_state CHECK (((((runtime_test_status)::text = 'untested'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NULL) AND (runtime_tested_configuration_fingerprint IS NULL) AND (runtime_test_input_units = 0) AND (runtime_test_output_units = 0) AND (runtime_test_usage_observed = false)) OR (((runtime_test_status)::text = 'passed'::text) AND (runtime_test_failure_code IS NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)) OR (((runtime_test_status)::text = 'failed'::text) AND (runtime_test_failure_code IS NOT NULL) AND (runtime_tested_at IS NOT NULL) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
-    CONSTRAINT runtime_installations_transport CHECK ((((transport)::text = ANY ((ARRAY['built_in_https'::character varying, 'managed_process'::character varying, 'legacy_unknown'::character varying])::text[])) AND (((transport)::text = 'legacy_unknown'::text) OR ((execution_mode)::text = 'legacy_unknown'::text) OR (((transport)::text = 'built_in_https'::text) AND ((execution_mode)::text = 'bounded'::text)) OR (((transport)::text = 'managed_process'::text) AND ((execution_mode)::text = ANY ((ARRAY['host_trusted'::character varying, 'strong_isolated'::character varying])::text[])))) AND (((transport)::text <> 'legacy_unknown'::text) OR (approved = false)) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
+    CONSTRAINT runtime_installations_transport CHECK ((((transport)::text = ANY (ARRAY[('built_in_https'::character varying)::text, ('managed_process'::character varying)::text, ('legacy_unknown'::character varying)::text])) AND (((transport)::text = 'legacy_unknown'::text) OR ((execution_mode)::text = 'legacy_unknown'::text) OR (((transport)::text = 'built_in_https'::text) AND ((execution_mode)::text = 'bounded'::text)) OR (((transport)::text = 'managed_process'::text) AND ((execution_mode)::text = ANY (ARRAY[('host_trusted'::character varying)::text, ('strong_isolated'::character varying)::text])))) AND (((transport)::text <> 'legacy_unknown'::text) OR (approved = false)) AND (((execution_mode)::text <> 'legacy_unknown'::text) OR (approved = false)))),
     CONSTRAINT runtime_installations_unit_budgets CHECK (((max_input_units >= 1) AND (max_input_units <= 10000000) AND ((max_output_units >= 1) AND (max_output_units <= 10000000))))
 );
 
@@ -6431,6 +6660,37 @@ CREATE SEQUENCE public.stored_attachments_id_seq
 --
 
 ALTER SEQUENCE public.stored_attachments_id_seq OWNED BY public.stored_attachments.id;
+
+
+--
+-- Name: support_case_products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.support_case_products (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    support_case_id bigint NOT NULL,
+    product_id bigint NOT NULL
+);
+
+
+--
+-- Name: support_case_products_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.support_case_products_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: support_case_products_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.support_case_products_id_seq OWNED BY public.support_case_products.id;
 
 
 --
@@ -7387,6 +7647,27 @@ ALTER TABLE ONLY public.intercom_webhook_deliveries ALTER COLUMN id SET DEFAULT 
 
 
 --
+-- Name: knowledge_applicabilities id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicabilities ALTER COLUMN id SET DEFAULT nextval('public.knowledge_applicabilities_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_applicability_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_connections ALTER COLUMN id SET DEFAULT nextval('public.knowledge_applicability_connections_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_applicability_products id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_products ALTER COLUMN id SET DEFAULT nextval('public.knowledge_applicability_products_id_seq'::regclass);
+
+
+--
 -- Name: knowledge_source_versions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -7398,6 +7679,20 @@ ALTER TABLE ONLY public.knowledge_source_versions ALTER COLUMN id SET DEFAULT ne
 --
 
 ALTER TABLE ONLY public.knowledge_sources ALTER COLUMN id SET DEFAULT nextval('public.knowledge_sources_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_sync_observations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_observations ALTER COLUMN id SET DEFAULT nextval('public.knowledge_sync_observations_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_sync_passes id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_passes ALTER COLUMN id SET DEFAULT nextval('public.knowledge_sync_passes_id_seq'::regclass);
 
 
 --
@@ -7496,6 +7791,13 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries ALTER COLUMN id SET DEFAULT 
 --
 
 ALTER TABLE ONLY public.outbound_webhook_endpoints ALTER COLUMN id SET DEFAULT nextval('public.outbound_webhook_endpoints_id_seq'::regclass);
+
+
+--
+-- Name: products id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products ALTER COLUMN id SET DEFAULT nextval('public.products_id_seq'::regclass);
 
 
 --
@@ -7601,6 +7903,13 @@ ALTER TABLE ONLY public.source_identity_keys ALTER COLUMN id SET DEFAULT nextval
 --
 
 ALTER TABLE ONLY public.stored_attachments ALTER COLUMN id SET DEFAULT nextval('public.stored_attachments_id_seq'::regclass);
+
+
+--
+-- Name: support_case_products id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_products ALTER COLUMN id SET DEFAULT nextval('public.support_case_products_id_seq'::regclass);
 
 
 --
@@ -8174,6 +8483,30 @@ ALTER TABLE ONLY public.intercom_webhook_deliveries
 
 
 --
+-- Name: knowledge_applicabilities knowledge_applicabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicabilities
+    ADD CONSTRAINT knowledge_applicabilities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_applicability_connections knowledge_applicability_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_connections
+    ADD CONSTRAINT knowledge_applicability_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_applicability_products knowledge_applicability_products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_products
+    ADD CONSTRAINT knowledge_applicability_products_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: knowledge_source_versions knowledge_source_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8187,6 +8520,22 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 ALTER TABLE ONLY public.knowledge_sources
     ADD CONSTRAINT knowledge_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_sync_observations knowledge_sync_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_observations
+    ADD CONSTRAINT knowledge_sync_observations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_sync_passes knowledge_sync_passes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_passes
+    ADD CONSTRAINT knowledge_sync_passes_pkey PRIMARY KEY (id);
 
 
 --
@@ -8299,6 +8648,14 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries
 
 ALTER TABLE ONLY public.outbound_webhook_endpoints
     ADD CONSTRAINT outbound_webhook_endpoints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT products_pkey PRIMARY KEY (id);
 
 
 --
@@ -8427,6 +8784,14 @@ ALTER TABLE ONLY public.source_identity_keys
 
 ALTER TABLE ONLY public.stored_attachments
     ADD CONSTRAINT stored_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: support_case_products support_case_products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_products
+    ADD CONSTRAINT support_case_products_pkey PRIMARY KEY (id);
 
 
 --
@@ -10138,6 +10503,62 @@ CREATE INDEX index_intercom_webhooks_on_visibility ON public.intercom_webhook_de
 
 
 --
+-- Name: index_knowledge_applicabilities_on_intercom_connection_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_applicabilities_on_intercom_connection_id ON public.knowledge_applicabilities USING btree (intercom_connection_id);
+
+
+--
+-- Name: index_knowledge_applicabilities_on_knowledge_source_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_applicabilities_on_knowledge_source_id ON public.knowledge_applicabilities USING btree (knowledge_source_id);
+
+
+--
+-- Name: index_knowledge_applicabilities_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_applicabilities_on_workspace_id ON public.knowledge_applicabilities USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_applicabilities_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_applicabilities_on_workspace_id_and_id ON public.knowledge_applicabilities USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_applicability_connections_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_applicability_connections_on_workspace_id ON public.knowledge_applicability_connections USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_applicability_connections_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_applicability_connections_unique ON public.knowledge_applicability_connections USING btree (knowledge_applicability_id, intercom_connection_id);
+
+
+--
+-- Name: index_knowledge_applicability_products_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_applicability_products_on_workspace_id ON public.knowledge_applicability_products USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_applicability_products_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_applicability_products_unique ON public.knowledge_applicability_products USING btree (knowledge_applicability_id, product_id);
+
+
+--
 -- Name: index_knowledge_source_versions_on_search_document; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10156,6 +10577,13 @@ CREATE INDEX index_knowledge_source_versions_on_workspace_id ON public.knowledge
 --
 
 CREATE UNIQUE INDEX index_knowledge_source_versions_on_workspace_id_and_id ON public.knowledge_source_versions USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_sources_on_connection_article; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_connection_article ON public.knowledge_sources USING btree (workspace_id, intercom_connection_id, external_id) WHERE (intercom_connection_id IS NOT NULL);
 
 
 --
@@ -10183,7 +10611,7 @@ CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_id_and_id ON public.kno
 -- Name: index_knowledge_sources_on_workspace_kind_external; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public.knowledge_sources USING btree (workspace_id, source_kind, external_id) WHERE (external_id IS NOT NULL);
+CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public.knowledge_sources USING btree (workspace_id, source_kind, external_id) WHERE ((external_id IS NOT NULL) AND (intercom_connection_id IS NULL));
 
 
 --
@@ -10191,6 +10619,48 @@ CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public
 --
 
 CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_url ON public.knowledge_sources USING btree (workspace_id, source_kind, canonical_url) WHERE (canonical_url IS NOT NULL);
+
+
+--
+-- Name: index_knowledge_sync_observations_on_knowledge_source_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sync_observations_on_knowledge_source_id ON public.knowledge_sync_observations USING btree (knowledge_source_id);
+
+
+--
+-- Name: index_knowledge_sync_observations_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_sync_observations_on_workspace_id ON public.knowledge_sync_observations USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_sync_observations_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sync_observations_on_workspace_id_and_id ON public.knowledge_sync_observations USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_sync_passes_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sync_passes_active ON public.knowledge_sync_passes USING btree (intercom_connection_id) WHERE (completed_at IS NULL);
+
+
+--
+-- Name: index_knowledge_sync_passes_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_sync_passes_on_workspace_id ON public.knowledge_sync_passes USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_sync_passes_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sync_passes_on_workspace_id_and_id ON public.knowledge_sync_passes USING btree (workspace_id, id);
 
 
 --
@@ -10761,6 +11231,27 @@ CREATE UNIQUE INDEX index_policy_subjects_unique_profile ON public.governed_poli
 
 
 --
+-- Name: index_products_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_products_on_workspace_id ON public.products USING btree (workspace_id);
+
+
+--
+-- Name: index_products_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_products_on_workspace_id_and_id ON public.products USING btree (workspace_id, id);
+
+
+--
+-- Name: index_products_on_workspace_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_products_on_workspace_name ON public.products USING btree (workspace_id, lower((name)::text));
+
+
+--
 -- Name: index_public_web_extractions_on_public_web_search_result_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11073,6 +11564,20 @@ CREATE INDEX index_stored_attachments_on_workspace_id ON public.stored_attachmen
 --
 
 CREATE UNIQUE INDEX index_stored_attachments_on_workspace_id_and_id ON public.stored_attachments USING btree (workspace_id, id);
+
+
+--
+-- Name: index_support_case_products_on_support_case_id_and_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_case_products_on_support_case_id_and_product_id ON public.support_case_products USING btree (support_case_id, product_id);
+
+
+--
+-- Name: index_support_case_products_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_case_products_on_workspace_id ON public.support_case_products USING btree (workspace_id);
 
 
 --
@@ -11962,6 +12467,13 @@ CREATE TRIGGER knowledge_source_versions_require_active_source BEFORE INSERT ON 
 --
 
 CREATE TRIGGER knowledge_sources_no_truncate BEFORE TRUNCATE ON public.knowledge_sources FOR EACH STATEMENT EXECUTE FUNCTION public.protect_knowledge_source();
+
+
+--
+-- Name: knowledge_sources knowledge_sources_origin; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_sources_origin BEFORE UPDATE ON public.knowledge_sources FOR EACH ROW EXECUTE FUNCTION public.protect_knowledge_origin();
 
 
 --
@@ -13329,6 +13841,22 @@ ALTER TABLE ONLY public.memory_records
 
 
 --
+-- Name: support_case_products fk_rails_116da4b7f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_products
+    ADD CONSTRAINT fk_rails_116da4b7f1 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: support_case_products fk_rails_132e560ee1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_products
+    ADD CONSTRAINT fk_rails_132e560ee1 FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
 -- Name: support_case_taggings fk_rails_1557a3d783; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13345,11 +13873,27 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: knowledge_applicability_products fk_rails_189f60d5cf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_products
+    ADD CONSTRAINT fk_rails_189f60d5cf FOREIGN KEY (workspace_id, product_id) REFERENCES public.products(workspace_id, id);
+
+
+--
 -- Name: crew_task_events fk_rails_189fd006fb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.crew_task_events
     ADD CONSTRAINT fk_rails_189fd006fb FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
+-- Name: knowledge_applicability_products fk_rails_18c1102e65; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_products
+    ADD CONSTRAINT fk_rails_18c1102e65 FOREIGN KEY (workspace_id, knowledge_applicability_id) REFERENCES public.knowledge_applicabilities(workspace_id, id);
 
 
 --
@@ -13449,6 +13993,14 @@ ALTER TABLE ONLY public.service_calendars
 
 
 --
+-- Name: support_case_products fk_rails_2b8bde7fba; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_case_products
+    ADD CONSTRAINT fk_rails_2b8bde7fba FOREIGN KEY (workspace_id, product_id) REFERENCES public.products(workspace_id, id);
+
+
+--
 -- Name: runtime_installations fk_rails_2d6bafe6cf; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13502,6 +14054,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 ALTER TABLE ONLY public.crew_tasks
     ADD CONSTRAINT fk_rails_3314bcee7d FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: products fk_rails_33d7228cf4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT fk_rails_33d7228cf4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -13662,6 +14222,14 @@ ALTER TABLE ONLY public.health_scorecards
 
 ALTER TABLE ONLY public.service_calendar_holidays
     ADD CONSTRAINT fk_rails_4308962f7b FOREIGN KEY (workspace_id, service_calendar_id) REFERENCES public.service_calendars(workspace_id, id);
+
+
+--
+-- Name: knowledge_sync_observations fk_rails_432d0248cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_observations
+    ADD CONSTRAINT fk_rails_432d0248cb FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -13841,6 +14409,14 @@ ALTER TABLE ONLY public.intercom_conversation_links
 
 
 --
+-- Name: knowledge_applicability_connections fk_rails_59220f7311; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_connections
+    ADD CONSTRAINT fk_rails_59220f7311 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: intercom_sync_operations fk_rails_5a9c8244a7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13854,6 +14430,14 @@ ALTER TABLE ONLY public.intercom_sync_operations
 
 ALTER TABLE ONLY public.intercom_outbound_deliveries
     ADD CONSTRAINT fk_rails_5b4607fe85 FOREIGN KEY (workspace_id, intercom_draft_id) REFERENCES public.intercom_drafts(workspace_id, id);
+
+
+--
+-- Name: knowledge_applicability_connections fk_rails_5c20820a29; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_connections
+    ADD CONSTRAINT fk_rails_5c20820a29 FOREIGN KEY (workspace_id, knowledge_applicability_id) REFERENCES public.knowledge_applicabilities(workspace_id, id);
 
 
 --
@@ -13918,6 +14502,14 @@ ALTER TABLE ONLY public.knowledge_sources
 
 ALTER TABLE ONLY public.source_identities
     ADD CONSTRAINT fk_rails_606ea51223 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: knowledge_applicability_connections fk_rails_60e8ac0fcd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_connections
+    ADD CONSTRAINT fk_rails_60e8ac0fcd FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
 
 
 --
@@ -14057,11 +14649,27 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: knowledge_applicabilities fk_rails_6ef60e00a3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicabilities
+    ADD CONSTRAINT fk_rails_6ef60e00a3 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
+
+
+--
 -- Name: support_cases fk_rails_6f0c83db70; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.support_cases
     ADD CONSTRAINT fk_rails_6f0c83db70 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: knowledge_sync_observations fk_rails_6fc11be116; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_observations
+    ADD CONSTRAINT fk_rails_6fc11be116 FOREIGN KEY (workspace_id, knowledge_source_id) REFERENCES public.knowledge_sources(workspace_id, id);
 
 
 --
@@ -14193,6 +14801,14 @@ ALTER TABLE ONLY public.email_drafts
 
 
 --
+-- Name: knowledge_applicabilities fk_rails_78d36804bc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicabilities
+    ADD CONSTRAINT fk_rails_78d36804bc FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: crew_artifacts fk_rails_7b0a9aadf7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14321,6 +14937,14 @@ ALTER TABLE ONLY public.email_threads
 
 
 --
+-- Name: knowledge_sync_observations fk_rails_8b3b34e272; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_observations
+    ADD CONSTRAINT fk_rails_8b3b34e272 FOREIGN KEY (workspace_id, last_seen_pass_id) REFERENCES public.knowledge_sync_passes(workspace_id, id);
+
+
+--
 -- Name: email_threads fk_rails_8d9401648e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14366,6 +14990,14 @@ ALTER TABLE ONLY public.health_scorecard_versions
 
 ALTER TABLE ONLY public.contact_merges
     ADD CONSTRAINT fk_rails_93b8e9788d FOREIGN KEY (unmerged_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: knowledge_sources fk_rails_957b648985; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_rails_957b648985 FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
 
 
 --
@@ -14545,6 +15177,14 @@ ALTER TABLE ONLY public.workspace_invitations
 
 
 --
+-- Name: knowledge_applicabilities fk_rails_aad42f62d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicabilities
+    ADD CONSTRAINT fk_rails_aad42f62d5 FOREIGN KEY (workspace_id, knowledge_source_id) REFERENCES public.knowledge_sources(workspace_id, id);
+
+
+--
 -- Name: stored_attachments fk_rails_ab39bdb694; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14654,6 +15294,14 @@ ALTER TABLE ONLY public.intercom_sync_operations
 
 ALTER TABLE ONLY public.outbound_email_deliveries
     ADD CONSTRAINT fk_rails_b701b64a91 FOREIGN KEY (workspace_id, actor_membership_id, actor_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: knowledge_sync_passes fk_rails_b71b5f79a4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_passes
+    ADD CONSTRAINT fk_rails_b71b5f79a4 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -14961,6 +15609,14 @@ ALTER TABLE ONLY public.knowledge_source_versions
 
 
 --
+-- Name: knowledge_applicability_products fk_rails_d46c3a828d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_applicability_products
+    ADD CONSTRAINT fk_rails_d46c3a828d FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: public_web_extractions fk_rails_d470a92618; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15022,6 +15678,14 @@ ALTER TABLE ONLY public.customer_success_intervention_outcome_reviews
 
 ALTER TABLE ONLY public.health_scorecard_backtests
     ADD CONSTRAINT fk_rails_e06550e89d FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: knowledge_sync_passes fk_rails_e0aac5a6ff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_passes
+    ADD CONSTRAINT fk_rails_e0aac5a6ff FOREIGN KEY (workspace_id, intercom_connection_id) REFERENCES public.intercom_connections(workspace_id, id);
 
 
 --
@@ -15391,6 +16055,8 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260906010000'),
+('20260906000000'),
 ('20260901020000'),
 ('20260901010000'),
 ('20260831143000'),

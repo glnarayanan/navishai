@@ -78,9 +78,10 @@ class KnowledgeSourcesController < ApplicationController
 
     def load_index
       workspace = Current.require_workspace!
-      @sources = workspace.knowledge_sources.includes(:current_version).order(deleted_at: :asc, title: :asc, id: :asc)
       @query = params[:q].to_s
-      @results = KnowledgeSearch.search(workspace:, query: @query)
+      @support_case = workspace.support_cases.find(params[:support_case_id]) if params[:support_case_id].present?
+      @sources = KnowledgeApplicabilityScope.new(workspace:, support_case: @support_case).sources.includes(:current_version, :knowledge_sync_observation).order(deleted_at: :asc, title: :asc, id: :asc)
+      @results = KnowledgeSearch.search(workspace:, query: @query, support_case: @support_case)
       @can_manage = Current.require_membership!.can_manage_work?
     end
 

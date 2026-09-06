@@ -1,0 +1,31 @@
+<% content_for :title, "Products · #{Current.workspace.name} — NavishAI" %>
+<main class="page-shell">
+  <div class="page-heading">
+    <h1>Products</h1>
+    <p>Use products to select relevant knowledge for each case. Articles can apply to more than one product.</p>
+  </div>
+  <% if @form_error %><p class="inline-error" role="alert"><%= @form_error %></p><% end %>
+  <section class="config-panel" aria-labelledby="products-title">
+    <h2 id="products-title">Workspace products</h2>
+    <% if @products.empty? %><p>No products yet. Knowledge currently applies to all products unless you set a narrower mapping.</p><% end %>
+    <% @products.each do |product| %>
+      <%= form_with model: [Current.workspace, product], class: "knowledge-form" do |form| %>
+        <div class="field">
+          <%= form.label :name, "Product name", for: "product_#{product.id}_name" %>
+          <%= form.text_field :name, id: "product_#{product.id}_name", required: true, maxlength: 100 %>
+        </div>
+        <%= form.submit "Rename product", class: "button button-quiet" %>
+      <% end %>
+    <% end %>
+  </section>
+  <section class="config-panel" aria-labelledby="add-product-title">
+    <h2 id="add-product-title">Add product</h2>
+    <%= form_with model: [Current.workspace, Product.new], class: "knowledge-form" do |form| %>
+      <div class="field">
+        <%= form.label :name, "Product name" %>
+        <%= form.text_field :name, required: true, maxlength: 100 %>
+      </div>
+      <%= form.submit "Add product", class: "button button-primary" %>
+    <% end %>
+  </section>
+</main>

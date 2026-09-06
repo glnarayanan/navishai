@@ -15,6 +15,10 @@
     </dl>
   </section>
 
+  <p><%= link_to "Products", workspace_products_path(Current.workspace) %></p>
+  <% @connections.each do |connection| %>
+    <%= render "help_center", connection: connection %>
+  <% end %>
   <div class="integration-layout">
     <section class="config-panel" aria-labelledby="configured-intercom-title">
       <h2 id="configured-intercom-title">Configured connections</h2>

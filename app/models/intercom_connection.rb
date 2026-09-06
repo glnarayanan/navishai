@@ -2,6 +2,9 @@ class IntercomConnection < ApplicationRecord
   CREDENTIAL_KEY_FORMAT = /\A[a-z0-9_]+\z/
 
   belongs_to :workspace
+  has_many :knowledge_sync_passes, dependent: :restrict_with_exception
+  has_many :knowledge_sources, dependent: :restrict_with_exception
+  has_one :knowledge_applicability, dependent: :restrict_with_exception
   has_many :intercom_conversation_links, dependent: :restrict_with_exception
   has_many :intercom_part_links, dependent: :restrict_with_exception
   has_many :intercom_tag_links, dependent: :restrict_with_exception

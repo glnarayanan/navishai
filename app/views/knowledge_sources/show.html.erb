@@ -1,11 +1,11 @@
-<% content_for :title, "#{@source.title} · Knowledge — NavishAI" %>
+<% content_for :title, "#{@source.display_title} · Knowledge — NavishAI" %>
 <% status, status_class = knowledge_source_status(@source) %>
 
 <main class="page-shell knowledge-shell page-family-record">
   <%= link_to "Back to knowledge", workspace_knowledge_sources_path(Current.workspace), class: "back-link" %>
   <div class="workspace-heading knowledge-source-heading">
     <div class="page-heading">
-      <h1><%= @source.title %></h1>
+      <h1><%= @source.display_title %></h1>
       <p><%= knowledge_source_kind_label(@source.source_kind) %> · <%= @source.versions.size %> immutable <%= "version".pluralize(@source.versions.size) %></p>
     </div>
     <span class="status-badge <%= status_class %>"><%= status %></span>
@@ -19,6 +19,8 @@
       body: "Add a checked version before relying on this source for new work." %>
   <% end %>
 
+  <%= render "knowledge_applicabilities/form", source: @source %>
+  <% if @source.intercom_connection %><p>Synced from Intercom Help Center · <%= @source.intercom_connection.name %></p><% end %>
   <% current = @source.current_version %>
   <section class="section-block knowledge-current" aria-labelledby="current-version-title">
     <div class="section-heading-row">
@@ -49,7 +51,7 @@
         <% if @source.upload? %>
           <div class="field">
             <%= form.label :upload, "Replacement document" %>
-            <%= form.file_field :upload, required: true, accept: ".txt,.md,.markdown,.html,.htm,.pdf,text/plain,text/markdown,text/html,application/pdf" %>
+            <%= form.file_field :upload, required: true, accept: ".txt,.md,.markdown,.html,.htm,.pdf,.docx,text/plain,text/markdown,text/html,application/pdf" %>
           </div>
         <% else %>
           <div class="field">

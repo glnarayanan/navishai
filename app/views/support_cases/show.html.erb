@@ -410,6 +410,8 @@
         </dl>
       </details>
 
+      <%= render "support_case_products/form", support_case: @support_case %>
+
       <details class="record-disclosure" id="tags" <%= "open" if @support_case.tags.any? %>>
         <summary>Tags</summary>
         <% if @support_case.tags.any? %>

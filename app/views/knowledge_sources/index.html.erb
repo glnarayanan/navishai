@@ -7,11 +7,14 @@
       <p>Keep approved support guidance current, searchable, and tied to the exact version used.</p>
     </div>
     <%= form_with url: workspace_knowledge_sources_path(Current.workspace), method: :get, class: "knowledge-search" do |form| %>
+      <%= form.hidden_field :support_case_id, value: @support_case.id if @support_case %>
       <%= form.label :q, "Search current knowledge", class: "visually-hidden" %>
       <%= form.search_field :q, value: @query, placeholder: "Search current knowledge", maxlength: 200 %>
       <%= form.submit "Search", class: "button button-secondary" %>
     <% end %>
   </div>
+
+  <% if @support_case %><p>Showing knowledge applicable to <%= link_to @support_case.conversation.subject, workspace_support_case_path(Current.workspace, @support_case) %>. <%= link_to "Browse all knowledge", workspace_knowledge_sources_path(Current.workspace) %></p><% end %>
 
   <section class="route-status" aria-label="Knowledge library status">
     <dl>
@@ -33,7 +36,7 @@
           <% @results.each do |result| %>
             <li>
               <div class="knowledge-result-heading">
-                <%= link_to result.source.title, workspace_knowledge_source_path(Current.workspace, result.source) %>
+                <%= link_to result.source.display_title, workspace_knowledge_source_path(Current.workspace, result.source) %>
                 <% if result.stale? %><span class="status-badge status-warning">Stale</span><% end %>
               </div>
               <p><%= result.excerpt %></p>
@@ -61,7 +64,7 @@
           <li>
             <%= link_to workspace_knowledge_source_path(Current.workspace, source), class: "knowledge-source-link" do %>
               <span class="knowledge-source-main">
-                <strong><%= source.title %></strong>
+                <strong><%= source.display_title %></strong>
                 <span><%= knowledge_source_kind_label(source.source_kind) %> · Version <%= source.current_version&.version_number || 0 %></span>
               </span>
               <span class="status-badge <%= status_class %>"><%= status %></span>

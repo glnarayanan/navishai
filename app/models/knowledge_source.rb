@@ -1,6 +1,10 @@
 class KnowledgeSource < ApplicationRecord
   SOURCE_KINDS = %w[manual url upload intercom_help_center].freeze
 
+  belongs_to :intercom_connection, optional: true
+  has_one :knowledge_sync_observation, dependent: :restrict_with_exception
+  has_one :knowledge_applicability, dependent: :restrict_with_exception
+
   belongs_to :workspace
   belongs_to :current_version, class_name: "KnowledgeSourceVersion", optional: true
   belongs_to :deleted_by_membership, class_name: "Membership", optional: true
@@ -17,14 +21,18 @@ class KnowledgeSource < ApplicationRecord
   validates :external_id, length: { maximum: 500 }, allow_nil: true
   validate :locator_matches_kind
 
-  scope :active, -> { where(deleted_at: nil) }
+  scope :active, -> { where(deleted_at: nil).where.not(id: KnowledgeSyncObservation.where.not(retired_at: nil).select(:knowledge_source_id)) }
 
   def deleted?
-    deleted_at.present?
+    deleted_at.present? || knowledge_sync_observation&.retired_at.present?
   end
 
   def stale?(at: Time.current)
-    current_version&.stale?(at: at) || false
+    (knowledge_sync_observation&.unavailable_at.present? && knowledge_sync_observation.unavailable_at <= at) || current_version&.stale?(at: at) || false
+  end
+
+  def display_title
+    current_version&.source_title.presence || title
   end
 
   def citation_uri(version = current_version)

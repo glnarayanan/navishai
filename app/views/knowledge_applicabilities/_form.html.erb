@@ -1,0 +1,52 @@
+<% owner = local_assigns[:source] || local_assigns[:connection] %>
+<% source = owner.is_a?(KnowledgeSource) %>
+<% origin = source ? owner.intercom_connection : owner %>
+<% override = owner.knowledge_applicability %>
+<% mapping = override || (source && origin&.knowledge_applicability) %>
+<% all_products = mapping ? mapping.all_products? : true %>
+<% all_connections = mapping ? mapping.all_connections? : origin.nil? %>
+<% product_ids = mapping ? mapping.product_ids : [] %>
+<% connection_ids = mapping ? mapping.connection_ids : [origin&.id].compact %>
+<% path = source ? workspace_knowledge_source_knowledge_applicability_path(Current.workspace, owner) : workspace_intercom_connection_knowledge_applicability_path(Current.workspace, owner) %>
+<% prefix = "applicability_#{source ? 'source' : 'connection'}_#{owner.id}" %>
+<section class="section-block" aria-labelledby="<%= prefix %>_title">
+  <h2 id="<%= prefix %>_title"><%= source ? "Knowledge applicability" : "Default article applicability" %></h2>
+  <% if source %>
+    <p><%= override ? "This source has a manual mapping. Sync preserves your choices." : "This source inherits its connection defaults, or applies everywhere when it has no connection." %></p>
+    <% if origin %><p>Imported from <strong><%= origin.name %></strong> (<%= origin.remote_workspace_id %>). Applicability does not change this origin.</p><% end %>
+  <% else %>
+    <p>These defaults apply to imported articles unless a human overrides an article's mapping. New cases inherit the selected products until assigned explicitly.</p>
+  <% end %>
+  <dl class="knowledge-metadata">
+    <div><dt>Products</dt><dd><%= all_products ? "All products" : Current.workspace.products.where(id: product_ids).order(:name).pluck(:name).join(", ") %></dd></div>
+    <div><dt>Intercom workspaces</dt><dd><%= all_connections ? "All connections, including native cases" : Current.workspace.intercom_connections.where(id: connection_ids).order(:name).pluck(:name).join(", ") %></dd></div>
+  </dl>
+  <% if source ? Current.require_membership!.can_manage_work? : Current.require_membership!.can_configure_integrations? %>
+    <details class="setup-disclosure">
+      <summary><%= source ? "Edit applicability" : "Edit article defaults" %></summary>
+      <%= form_with url: path, method: :patch, scope: :knowledge_applicability, class: "knowledge-form" do |form| %>
+        <fieldset>
+          <legend>Products</legend>
+          <div class="field checkbox-field"><%= form.check_box :all_products, checked: all_products, id: "#{prefix}_all_products" %><%= form.label :all_products, "All products", for: "#{prefix}_all_products" %></div>
+          <p>Clear All products to use only the selected products.</p>
+          <%= form.hidden_field :product_ids, multiple: true, value: "", id: nil %>
+          <% Current.workspace.products.order(:name, :id).each do |product| %>
+            <div class="field checkbox-field"><%= check_box_tag "knowledge_applicability[product_ids][]", product.id, product_ids.include?(product.id), id: "#{prefix}_product_#{product.id}" %><%= label_tag "#{prefix}_product_#{product.id}", product.name %></div>
+          <% end %>
+          <% if Current.require_membership!.can_configure_integrations? %><%= link_to "Manage products", workspace_products_path(Current.workspace) %><% end %>
+        </fieldset>
+        <fieldset>
+          <legend>Intercom workspaces</legend>
+          <div class="field checkbox-field"><%= form.check_box :all_connections, checked: all_connections, id: "#{prefix}_all_connections" %><%= form.label :all_connections, "All connections, including native cases", for: "#{prefix}_all_connections" %></div>
+          <p>Clear All connections to use only the selected Intercom workspaces.</p>
+          <%= form.hidden_field :connection_ids, multiple: true, value: "", id: nil %>
+          <% Current.workspace.intercom_connections.order(:name, :id).each do |connection| %>
+            <div class="field checkbox-field"><%= check_box_tag "knowledge_applicability[connection_ids][]", connection.id, connection_ids.include?(connection.id), id: "#{prefix}_connection_#{connection.id}" %><%= label_tag "#{prefix}_connection_#{connection.id}", "#{connection.name} (#{connection.remote_workspace_id})" %></div>
+          <% end %>
+        </fieldset>
+        <%= form.submit "Save applicability", class: "button button-primary" %>
+      <% end %>
+      <% if override %><%= button_to "Reset to defaults", path, method: :delete, class: "button button-quiet" %><% end %>
+    </details>
+  <% end %>
+</section>
