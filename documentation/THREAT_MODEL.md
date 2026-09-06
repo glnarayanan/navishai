@@ -107,3 +107,4 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 |---|---|
 | Failed sync retires valid knowledge or one connection changes another's articles | Immutable connection origin, bounded resumable passes, complete enumeration before reconciliation, two confirmed absences, retained versions and human mappings. |
 | Article applicability bypasses case context | Product and Intercom mappings enforced in case search and evidence resolution; composite Workspace foreign keys. |
+| Personal OAuth resources leak into shared knowledge or archives | Separate Workspace service and membership-owned credentials; explicit connector policy checked at initiation/callback/use; private bounded browsing; no automatic personal publication; archive credential removal and disabled restore. |

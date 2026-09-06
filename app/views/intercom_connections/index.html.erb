@@ -15,7 +15,7 @@
     </dl>
   </section>
 
-  <p><%= link_to "Products", workspace_products_path(Current.workspace) %></p>
+  <p><%= link_to "Products", workspace_products_path(Current.workspace) %> · <%= link_to "Connector accounts", workspace_workspace_connectors_path(Current.workspace) %></p>
   <% @connections.each do |connection| %>
     <%= render "help_center", connection: connection %>
   <% end %>

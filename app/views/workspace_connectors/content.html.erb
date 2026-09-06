@@ -1,0 +1,17 @@
+<% content_for :title, "My connected content — NavishAI" %>
+<main class="page-shell page-family-integration">
+  <div class="page-heading">
+    <h1>My <%= @connector.provider.capitalize %> content</h1>
+    <p>Up to 20 <%= @connector.provider == "notion" ? "pages shared with your Notion integration" : "conversations available to your Intercom account" %>. This preview is private to you and is not saved into shared knowledge.</p>
+    <%= link_to "Back to connections", workspace_workspace_connectors_path(Current.workspace), class: "button button-secondary" %>
+  </div>
+  <% if @items.empty? %>
+    <p role="status">No content is available. Check the pages or permissions granted to your integration.</p>
+  <% else %>
+    <ul>
+      <% @items.each do |item| %>
+        <li><strong><%= item.fetch(:title) %></strong><p><%= item.fetch(:id) %></p></li>
+      <% end %>
+    </ul>
+  <% end %>
+</main>

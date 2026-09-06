@@ -1,0 +1,70 @@
+<% content_for :title, "Connections · #{Current.workspace.name} — NavishAI" %>
+<main class="page-shell page-family-integration">
+  <div class="page-heading">
+    <h1>Connections</h1>
+    <p>Admins enable connectors for this Workspace. Your connected accounts belong to you.</p>
+  </div>
+  <% WorkspaceConnector::PROVIDERS.each do |provider| %>
+    <% connector = @connectors[provider] %>
+    <% connection = @connections[provider] %>
+    <section class="config-panel" aria-labelledby="<%= provider %>-title">
+      <h2 id="<%= provider %>-title"><%= provider.capitalize %></h2>
+      <p><%= connector&.enabled? ? "Enabled for this Workspace" : "Disabled by the Workspace Admin" %></p>
+      <% if Current.require_membership!.can_configure_integrations? %>
+        <%= form_with url: workspace_workspace_connector_path(Current.workspace, provider), method: :patch, scope: :workspace_connector, class: "knowledge-form" do |form| %>
+          <div class="field checkbox-field"><%= form.check_box :enabled, { checked: connector&.enabled?, id: "#{provider}-enabled" } %><%= form.label :enabled, "Enable #{provider.capitalize}", for: "#{provider}-enabled" %></div>
+          <div class="field"><%= form.label :service_token, "Workspace service token", for: "#{provider}-token" %><%= form.password_field :service_token, id: "#{provider}-token", autocomplete: "new-password", maxlength: 16384 %></div>
+          <p class="muted-copy">Only for a Workspace-owned integration. Leave blank to keep the existing token. Users connect their own accounts below.</p>
+          <% if connector&.service_token.present? %>
+            <div class="field checkbox-field"><%= form.check_box :remove_service_token, id: "#{provider}-remove-token" %><%= form.label :remove_service_token, "Remove saved Workspace token", for: "#{provider}-remove-token" %></div>
+          <% end %>
+          <%= form.submit "Save #{provider.capitalize} settings", class: "button button-secondary" %>
+        <% end %>
+      <% end %>
+      <% if provider == "notion" && Current.require_membership!.can_configure_integrations? %>
+        <h3>Shared knowledge</h3>
+        <p>Only the Workspace service token reads these pages. Personal account content stays private.</p>
+        <% NotionKnowledgeConnection.where(workspace: Current.workspace).order(:id).each do |knowledge_connection| %>
+          <% pass = knowledge_connection.knowledge_sync_passes.order(id: :desc).first %>
+          <article>
+            <h4><%= knowledge_connection.name %></h4>
+            <p><%= knowledge_connection.enabled? ? "Sync enabled" : "Sync paused" %> · <%= knowledge_connection.knowledge_sources.count %> pages</p>
+            <% if pass %><p role="status"><%= pass.status.humanize %> · <%= pass.page_count %> pages checked<%= " · #{pass.failure_code.humanize}" if pass.failure_code %></p><% end %>
+            <%= form_with model: knowledge_connection, url: workspace_notion_knowledge_connection_path(Current.workspace, knowledge_connection) do |form| %>
+              <%= form.hidden_field :enabled, value: !knowledge_connection.enabled? %>
+              <%= form.submit knowledge_connection.enabled? ? "Pause sync" : "Enable sync", class: "button button-secondary" %>
+            <% end %>
+            <%= button_to "Sync now", sync_workspace_notion_knowledge_connection_path(Current.workspace, knowledge_connection), disabled: !knowledge_connection.ready?, class: "button button-secondary" %>
+          </article>
+        <% end %>
+        <% if connector&.enabled? %>
+          <details class="setup-disclosure">
+            <summary>Add Notion pages</summary>
+            <%= form_with scope: :notion_knowledge_connection, url: workspace_notion_knowledge_connections_path(Current.workspace), class: "knowledge-form" do |form| %>
+              <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 100 %></div>
+              <div class="field"><%= form.label :root_page_ids, "Root page IDs" %><%= form.text_area :root_page_ids, required: true, aria: { describedby: "notion-roots-help" } %></div>
+              <p id="notion-roots-help">Enter 1 to 20 page UUIDs, separated by spaces or commas. Share these pages with the Workspace integration. Child pages and database entries are included.</p>
+              <%= form.submit "Add source", class: "button" %>
+            <% end %>
+          </details>
+        <% end %>
+      <% end %>
+      <h3>Your account</h3>
+      <% if connection %>
+        <% if connector&.enabled? %><%= link_to "Browse my #{provider.capitalize} content", content_workspace_workspace_connector_path(Current.workspace, provider), class: "button button-secondary" %><% end %>
+        <p>Connected to <%= connection.remote_workspace_id %> as <%= connection.remote_user_id %>.</p>
+        <% if connection.expires_at && connection.expires_at <= Time.current %><p role="status">Your authorization expired. Connect again to restore access.</p><% end %>
+        <%= button_to "Disconnect my #{provider.capitalize} account", disconnect_workspace_workspace_connector_path(Current.workspace, provider), method: :delete, class: "button button-secondary" %>
+      <% else %>
+        <p>You have not connected an account.</p>
+      <% end %>
+      <% if connector&.enabled? %>
+        <% if IntegrationOauth.new(provider).configured? %>
+          <%= button_to "Connect my #{provider.capitalize} account", connect_workspace_workspace_connector_path(Current.workspace, provider), class: "button" %>
+        <% else %>
+          <p role="status">Account connection needs deployment setup. Ask your operator to configure OAuth.</p>
+        <% end %>
+      <% end %>
+    </section>
+  <% end %>
+</main>

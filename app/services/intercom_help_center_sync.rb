@@ -50,7 +50,7 @@ class IntercomHelpCenterSync
 
   private
     def enabled?
-      @connection.reload.active? && @connection.help_center_sync_enabled? && !@workspace.reload.deletion_requested?
+      @connection.reload.active? && @connection.help_center_sync_enabled? && @connection.connector_enabled? && !@workspace.reload.deletion_requested?
     end
 
     def persist

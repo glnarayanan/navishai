@@ -36,6 +36,10 @@ class Workspace < ApplicationRecord
   has_many :conversation_message_attachments, dependent: :restrict_with_exception
   has_many :email_draft_attachments, dependent: :restrict_with_exception
   has_many :outbound_email_delivery_attachments, dependent: :restrict_with_exception
+  has_many :notion_knowledge_connections, dependent: :restrict_with_exception
+  has_many :workspace_connectors, dependent: :restrict_with_exception
+  has_many :integration_user_connections, dependent: :restrict_with_exception
+  has_many :integration_oauth_attempts, dependent: :restrict_with_exception
   has_many :knowledge_sync_passes, dependent: :restrict_with_exception
   has_many :knowledge_sync_observations, dependent: :restrict_with_exception
   has_many :products, dependent: :restrict_with_exception

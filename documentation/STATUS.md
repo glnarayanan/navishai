@@ -146,7 +146,7 @@ Listed in the order they unblock a pilot. None of these blocks owner review of t
 
 1. **Intercom Help Center synchronisation.** Replace manual article snapshots with read-only sync through the existing Intercom connection, reconciliation cursor, and signed-webhook boundary: one Knowledge source per published article keyed by remote article ID and updated time, stale-then-deleted handling for unpublished articles, bounded pages, bytes, and time, and review stops instead of silent truncation. Evidence: create, update, unpublish, delete, cursor resume, and cross-Workspace denial without any remote write.
 2. **Search: per-Workspace provider selection and native runtime search.** Let a Workspace choose an approved provider from the runner catalog (a provider is unavailable until the deployment enables it), and allow a runtime's native search only when the run's egress profile permits it and results are auditable, structured, and pass the same citation contract. Parallel remains unimplemented.
-3. **Provider-backed knowledge connections.** One connection kind chosen from pilot evidence (for example Notion), registered through the in-app connection flow and runner-held vault, importing pages as Knowledge source versions with the same provenance, freshness, and deletion rules as uploads. No generic connector SDK.
+3. **Provider-backed knowledge connections.** One connection kind chosen from pilot evidence (for example Notion), enabled by an Admin, with separate encrypted Workspace service credentials and user-authorised OAuth accounts, importing pages as Knowledge source versions with the same provenance, freshness, and deletion rules as uploads. No generic connector SDK.
 4. **Host-trusted execution redesign.** Replace the macOS host-trusted mode with a server-side companion boundary; until then the mode stays disabled by default and is recorded as an operator-accepted risk.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
@@ -185,3 +185,7 @@ DOCX intake is implemented using the existing bounded ZIP reader and XML parser,
 ### Help Center sync and applicability — 6 September 2026
 
 Implemented connection-owned article sync, bounded pass checkpoints, two-complete-pass retirement, immutable citation versions, and product/Intercom applicability with human overrides. Case search and evidence admission enforce mappings. Focused and browser checks cover this slice; the stacked PR must pass its own full CI before handoff. Notion, connector account setup, Workspace search selection, and personal AI accounts are not part of this slice.
+
+### Workspace connectors and Notion — 6 September 2026
+
+Implemented Admin connector enablement and encrypted Workspace credentials, session-bound personal OAuth with private bounded previews, and additive Notion page-root sync. Nested traversal failures cannot trigger absence reconciliation. Archives exclude connector credentials and personal OAuth state and restore connectors disabled. Fixture tests cover permissions, checkpoint recovery, traversal and archive round trips; live OAuth requires deployment-owned credentials. MCP execution, Workspace search selection and personal AI execution remain outside this slice.

@@ -13,6 +13,8 @@ class WorkspacePortability
   MAX_ATTACHMENT_BYTES = 50.megabytes
   USER_ATTRIBUTES = %w[id email_address verified_at].freeze
   ARCHIVE_KEYS = %w[format exported_at organization workspace users tables].freeze
+  PRIVATE_CONNECTION_TABLES = %w[integration_user_connections integration_oauth_attempts].freeze
+  DISCONNECTED_CONNECTOR_STATE = { "service_token" => nil, "service_remote_workspace_id" => nil, "enabled" => false }.freeze
   GLOBAL_KEY_COLUMNS = {
     "crew_artifacts" => "artifact_key",
     "crew_tasks" => "task_key",
@@ -670,6 +672,12 @@ class WorkspacePortability
       columns = ActiveRecord::Base.connection.columns(table).map(&:name).sort
       raise InvalidArchive, "#{table} rows are invalid." unless rows.is_a?(Array) && rows.all? { |row| row.is_a?(Hash) && row.keys.sort == columns }
       raise InvalidArchive, "#{table} contains another workspace." unless rows.all? { |row| row.fetch("workspace_id") == archive.dig("workspace", "id") }
+      if PRIVATE_CONNECTION_TABLES.include?(table) && rows.any?
+        raise InvalidArchive, "Workspace archives cannot contain personal connection credentials."
+      end
+      if table == "workspace_connectors" && rows.any? { |row| row.slice(*DISCONNECTED_CONNECTOR_STATE.keys) != DISCONNECTED_CONNECTOR_STATE }
+        raise InvalidArchive, "Workspace connectors must be disconnected in archives."
+      end
     end
     archive.fetch("users").each do |user|
       raise InvalidArchive, "Workspace archive user fields are invalid." unless user.is_a?(Hash) && user.keys.sort == USER_ATTRIBUTES.sort
@@ -1137,11 +1145,14 @@ class WorkspacePortability
   private_class_method :ensure_owner!
 
   def self.workspace_rows(table, workspace_id)
+    return [] if PRIVATE_CONNECTION_TABLES.include?(table)
+
     connection = ActiveRecord::Base.connection
     quoted_table = connection.quote_table_name(table)
     rows = connection.select_all(
       "SELECT * FROM #{quoted_table} WHERE workspace_id = #{connection.quote(workspace_id)} ORDER BY id"
     ).to_a
+    return rows.map { |row| row.merge(DISCONNECTED_CONNECTOR_STATE) } if table == "workspace_connectors"
     return rows unless table == "memory_index_entries"
 
     rows.map { |row| row.merge(PORTABLE_MEMORY_INDEX_STATE) }
