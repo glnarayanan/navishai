@@ -26,6 +26,8 @@ jobs:
         run: go vet ./...
 
       - name: Test runner
+        env:
+          NAVISHAI_REQUIRE_ISOLATION_TESTS: "1"
         run: go test ./...
 
       - name: Build runner
