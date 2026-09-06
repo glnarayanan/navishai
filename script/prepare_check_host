@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# Prepare an ephemeral Linux host so bin/ci can run and its evidence can be recorded.
+#
+# The primary path is .agents/setup, which installs the pinned toolchain through
+# mise and apt. Some remote environments block those hosts. This script falls back
+# to sources that only need Git access to github.com and the Ubuntu archive:
+#
+#   - Ruby 4.0.6 built from the ruby_4_0 branch when no pinned Ruby is installed
+#   - pgvector 0.8.6 built from its pinned revision against the installed PostgreSQL
+#   - the navishai_development and navishai_test databases with the vector extension
+#
+# It is idempotent and prints exactly which pins it could not honour so the
+# release-candidate record can list them as host omissions. Run it as the user
+# that will run bin/ci.
+set -euo pipefail
+
+RUBY_VERSION="$(tr -d '[:space:]' < .ruby-version)"
+RUBY_BRANCH="${NAVISHAI_RUBY_BRANCH:-ruby_${RUBY_VERSION%%.*}_$(cut -d. -f2 .ruby-version)}"
+RUBY_PREFIX="${NAVISHAI_RUBY_PREFIX:-/opt/ruby-${RUBY_VERSION}}"
+PGVECTOR_VERSION="0.8.6"
+PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
+DEV_DB="${DEV_DB:-navishai_development}"
+TEST_DB="${TEST_DB:-navishai_test}"
+APP_ROLE="${APP_ROLE:-$(id -un)}"
+DEVIATIONS=()
+
+log() { printf '[prepare] %s\n' "$*"; }
+as_root() { if [[ "$(id -u)" == "0" ]]; then "$@"; else sudo "$@"; fi; }
+as_postgres() { if [[ "$(id -u)" == "0" ]]; then runuser -u postgres -- "$@"; else sudo -u postgres "$@"; fi; }
+
+ensure_packages() {
+  local packages=(autoconf bison build-essential ca-certificates curl git libffi-dev libgmp-dev libpq-dev
+    libreadline-dev libssl-dev libyaml-dev pkg-config shared-mime-info zlib1g-dev postgresql-common)
+  local missing=()
+  for pkg in "${packages[@]}"; do
+    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
+  done
+  # Ubuntu 24.04 renamed the vips runtime package; accept either name by checking the library itself.
+  ldconfig -p | grep -q 'libvips.so.42' || missing+=("libvips42")
+  if ((${#missing[@]})); then
+    log "installing apt packages: ${missing[*]}"
+    as_root apt-get update -qq || true
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${missing[@]}"
+  fi
+}
+
+ensure_postgres() {
+  local major
+  major="$(pg_lsclusters --no-header | awk '{print $1}' | sort -n | tail -1)"
+  [[ -n "$major" ]] || { log "no PostgreSQL cluster found"; return 1; }
+  if [[ "$major" != "15" ]]; then
+    DEVIATIONS+=("PostgreSQL ${major} used instead of the pinned 15")
+  fi
+  dpkg-query -W "postgresql-server-dev-${major}" >/dev/null 2>&1 ||
+    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "postgresql-server-dev-${major}"
+  pg_lsclusters --no-header | while read -r ver name _ status _; do
+    [[ "$status" == "online" ]] || as_root pg_ctlcluster "$ver" "$name" start
+  done
+  for _ in $(seq 1 40); do pg_isready -q && break; sleep 0.25; done
+  PG_MAJOR="$major"
+}
+
+ensure_pgvector() {
+  local control="/usr/share/postgresql/${PG_MAJOR}/extension/vector.control"
+  if [[ -f "$control" ]] && grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
+    log "pgvector ${PGVECTOR_VERSION} already installed"
+    return 0
+  fi
+  local tmp; tmp="$(mktemp -d)"
+  log "building pgvector ${PGVECTOR_VERSION} from ${PGVECTOR_REF}"
+  git init -q "${tmp}/pgvector"
+  git -C "${tmp}/pgvector" fetch -q --depth 1 https://github.com/pgvector/pgvector.git "$PGVECTOR_REF"
+  git -C "${tmp}/pgvector" checkout -q --detach FETCH_HEAD
+  make -C "${tmp}/pgvector" OPTFLAGS="" >/dev/null
+  as_root make -C "${tmp}/pgvector" install >/dev/null
+  rm -rf "$tmp"
+}
+
+ensure_databases() {
+  as_postgres psql -v ON_ERROR_STOP=1 -q <<SQL
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN CREATE ROLE "${APP_ROLE}" SUPERUSER LOGIN;
+  ELSE ALTER ROLE "${APP_ROLE}" WITH SUPERUSER LOGIN; END IF;
+END \$\$;
+SQL
+  for db in "$DEV_DB" "$TEST_DB"; do
+    as_postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1 ||
+      as_postgres createdb -O "$APP_ROLE" "$db"
+    as_postgres psql -v ON_ERROR_STOP=1 -q -d "$db" \
+      -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "ALTER EXTENSION vector UPDATE TO '${PGVECTOR_VERSION}';"
+  done
+}
+
+ruby_matches() { "$1" -v 2>/dev/null | grep -q "^ruby ${RUBY_VERSION} "; }
+
+ensure_ruby() {
+  if ruby_matches "$(command -v ruby || true)"; then log "ruby ${RUBY_VERSION} already on PATH"; return 0; fi
+  if ruby_matches "${RUBY_PREFIX}/bin/ruby"; then log "ruby ${RUBY_VERSION} already at ${RUBY_PREFIX}"; return 0; fi
+  local tmp; tmp="$(mktemp -d)"
+  log "building ruby ${RUBY_VERSION} from branch ${RUBY_BRANCH} (this takes several minutes)"
+  git clone -q --depth 1 --branch "$RUBY_BRANCH" https://github.com/ruby/ruby.git "${tmp}/ruby"
+  local teeny; teeny="$(sed -n 's/^#define RUBY_VERSION_TEENY \([0-9]*\)$/\1/p' "${tmp}/ruby/version.h")"
+  local patch; patch="$(sed -n 's/^#define RUBY_PATCHLEVEL \(-\?[0-9]*\)$/\1/p' "${tmp}/ruby/version.h")"
+  local built="${RUBY_VERSION%.*}.${teeny}"
+  if [[ "$built" != "$RUBY_VERSION" || "$patch" != "0" ]]; then
+    DEVIATIONS+=("Ruby built from ${RUBY_BRANCH} at ${built} patch level ${patch} instead of the pinned ${RUBY_VERSION} release")
+  fi
+  (
+    cd "${tmp}/ruby"
+    ./autogen.sh >/dev/null
+    ./configure --prefix="$RUBY_PREFIX" --disable-install-doc --enable-shared >/dev/null
+    make -j"$(nproc)" >/dev/null
+    # make install downloads the bundled gems; keep the caller's proxy and CA settings.
+    as_root env PATH="$PATH" HTTPS_PROXY="${HTTPS_PROXY:-}" https_proxy="${https_proxy:-}" \
+      SSL_CERT_FILE="${SSL_CERT_FILE:-}" make install >/dev/null
+  )
+  rm -rf "$tmp"
+  ruby_matches "${RUBY_PREFIX}/bin/ruby" || { log "ruby build did not produce ${RUBY_VERSION}"; return 1; }
+}
+
+ensure_bundle() {
+  export PATH="${RUBY_PREFIX}/bin:${PATH}"
+  local bundler_version; bundler_version="$(tail -1 Gemfile.lock | tr -d '[:space:]')"
+  gem list -i bundler -v "$bundler_version" >/dev/null 2>&1 || gem install bundler -v "$bundler_version" --no-document >/dev/null
+  BUNDLE_FROZEN=true bundle install --quiet
+  bin/setup --skip-server >/dev/null
+}
+
+main() {
+  cd "$(dirname "$0")/.."
+  ensure_packages
+  ensure_postgres
+  ensure_pgvector
+  ensure_databases
+  ensure_ruby
+  ensure_bundle
+  log "ready: $("${RUBY_PREFIX}/bin/ruby" -v), $(go version 2>/dev/null || echo 'go missing'), PostgreSQL ${PG_MAJOR}, pgvector ${PGVECTOR_VERSION}"
+  log "add ${RUBY_PREFIX}/bin to PATH before running bin/ci"
+  if ((${#DEVIATIONS[@]})); then
+    log "record these host deviations in the release-candidate checkpoint:"
+    printf '  - %s\n' "${DEVIATIONS[@]}"
+  fi
+  if [[ ! -d /sys/kernel/security/landlock ]]; then
+    log "this kernel has no Landlock: the runner isolation suite skips by default and fails under bin/ci"
+  fi
+}
+
+main "$@"
