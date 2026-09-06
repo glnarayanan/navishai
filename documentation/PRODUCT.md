@@ -31,7 +31,7 @@ The initial buyer is a founder-led or small B2B SaaS company, with a credible pa
 - Typed, versioned resolution contracts, deterministic claim grounding with cite-or-refuse, human-edit attribution, Explain this outcome, and honest usage, budget, and cost rollups.
 - A source-backed Account dossier, typed business-evidence intake, deterministic account-health signals including Support evidence, renewal-risk investigation, human-owned interventions with observed outcome reviews, and a conversational scorecard designer.
 - A reliability and recovery cockpit, verified Workspace archive round trips, and governed policy change with preview, explicit canary, versioning, and rollback.
-- Knowledge sources from maintained text, URL snapshots, uploaded documents (text, Markdown, HTML, PDF, ZIP bundles), and Intercom Help Center.
+- Knowledge sources from maintained text, URL snapshots, uploaded documents (text, Markdown, HTML, PDF, DOCX, ZIP bundles), and Intercom Help Center.
 - In-app notifications, email notifications, and configurable signed outbound webhooks.
 - Docker Compose and native Linux as supported deployments; an experimental cloud-neutral Helm chart.
 - Workspace export/import, retention controls, backup/restore, upgrade preflight, malware scanning through a deployment-run scanner, and auditable security controls.
@@ -162,7 +162,7 @@ Derive observed input units, output units, search cost units, and budget consump
 - **Shared email.** Receive through a signed forwarding webhook with bounded size and skew; preserve threading identifiers and the original source; send plain text over SMTP only after a fresh authenticated human Send.
 - **Intercom.** Two-way sync of conversations, Contacts, companies, assignment, tags, and notes through signed webhooks plus cursor reconciliation; remote state stays a visible source fact; customer-facing writes need a fresh human action. Historical backfill uses GET requests only, a confirmed dry-run manifest, bounded resumable batches, identity review, and a preservation report.
 - **Attachments.** Bounded count, size, and total; byte-signature content detection; quarantine until a deployment-selected scanner returns clean; malware scanning through the ClamAV reference adapter or a replacement; authorised download; local storage today with S3-compatible storage deferred.
-- **Knowledge.** Approved sources are maintained text, HTTPS URL snapshots, uploaded documents (text, Markdown, HTML, PDF, and ZIP bundles of them, each scanned and reduced to a plain-text snapshot with the original retained), and Intercom Help Center articles. Track source, version, retrieval or sync time, expiry, and deletion; warn on stale or deleted material; current authoritative content beats memory. Help Center synchronisation and provider-backed knowledge connections are planned; see STATUS.md.
+- **Knowledge.** Approved sources are maintained text, HTTPS URL snapshots, uploaded documents (text, Markdown, HTML, PDF, DOCX, and ZIP bundles of them, each scanned and reduced to a plain-text snapshot with the original retained), and Intercom Help Center articles. Track source, version, retrieval or sync time, expiry, and deletion; warn on stale or deleted material; current authoritative content beats memory. Help Center synchronisation and provider-backed knowledge connections are planned; see STATUS.md.
 
 ## 10. Security, privacy, and enterprise readiness
 

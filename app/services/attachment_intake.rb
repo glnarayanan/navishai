@@ -121,6 +121,8 @@ class AttachmentIntake
     match = SIGNATURES.find { |(_, signature)| data.start_with?(signature) }
     return match.first if match
 
+    return KnowledgeWordDocument::CONTENT_TYPE if KnowledgeWordDocument.document?(data)
+
     text = data.dup.force_encoding(Encoding::UTF_8)
     "text/plain" if text.valid_encoding? && !text.match?(/[\x00-\x08\x0B\x0C\x0E-\x1F]/)
   end

@@ -10,6 +10,7 @@ class KnowledgeZipBundle
 
   SIGNATURE = "PK\x03\x04".b
   MAX_ENTRIES = 50
+  MAX_PACKAGE_ENTRIES = 200
   MAX_ENTRY_BYTES = StoredAttachment::MAX_BYTES
   MAX_TOTAL_BYTES = 20.megabytes
   MAX_ARCHIVE_BYTES = 20.megabytes
@@ -25,14 +26,15 @@ class KnowledgeZipBundle
     data.to_s.b.start_with?(SIGNATURE)
   end
 
-  def self.entries(data)
-    new(data.to_s.b).entries
+  def self.entries(data, package: false)
+    new(data.to_s.b, package:).entries
   end
 
-  def initialize(archive)
+  def initialize(archive, package: false)
     raise InvalidBundle, "The ZIP bundle exceeds the 20 MiB limit." if archive.bytesize > MAX_ARCHIVE_BYTES
     raise InvalidBundle, "The file is not a ZIP bundle." unless archive.start_with?(SIGNATURE)
 
+    @package = package
     @archive = archive
   end
 
@@ -44,8 +46,8 @@ class KnowledgeZipBundle
 
       raise InvalidBundle, "The ZIP bundle contains an unsupported path #{record[:name].inspect}." unless safe_name?(record[:name])
       raise InvalidBundle, "The ZIP bundle contains a symbolic link." if record[:symlink]
-      unless KnowledgeDocumentExtractor.supported_filename?(record[:name])
-        raise InvalidBundle, "#{record[:name]} is not a .txt, .md, .html, or .pdf file."
+      unless @package || KnowledgeDocumentExtractor.supported_filename?(record[:name])
+        raise InvalidBundle, "#{record[:name]} is not a .txt, .md, .html, .pdf, or .docx file."
       end
       raise InvalidBundle, "#{record[:name]} exceeds the 5 MiB entry limit." if record[:size] > MAX_ENTRY_BYTES
 
@@ -66,22 +68,38 @@ class KnowledgeZipBundle
       end_offset = @archive.rindex(END_OF_CENTRAL_DIRECTORY) if end_offset.nil?
       raise InvalidBundle, "The ZIP bundle is truncated." if end_offset.nil?
 
-      count, directory_size, directory_offset = @archive.byteslice(end_offset + 10, 10).unpack("vVV")
-      raise InvalidBundle, "The ZIP bundle contains more than #{MAX_ENTRIES} entries." if count > MAX_ENTRIES
+      ending = @archive.byteslice(end_offset, 22)
+      raise InvalidBundle, "The ZIP bundle is truncated." unless ending&.bytesize == 22
+      disk, directory_disk, disk_count, count, directory_size, directory_offset, comment_size = ending.byteslice(4, 18).unpack("vvvvVVv")
+      unless disk.zero? && directory_disk.zero? && disk_count == count && end_offset + 22 + comment_size == @archive.bytesize
+        raise InvalidBundle, "The ZIP bundle end record is unsupported."
+      end
+      max_entries = @package ? MAX_PACKAGE_ENTRIES : MAX_ENTRIES
+      raise InvalidBundle, "The ZIP bundle contains more than #{max_entries} entries." if count > max_entries
       raise InvalidBundle, "The ZIP bundle is truncated." if directory_offset + directory_size > end_offset
 
       records = []
+      names = {}
       offset = directory_offset
       count.times do
         raise InvalidBundle, "The ZIP bundle directory is malformed." unless @archive.byteslice(offset, 4) == CENTRAL_HEADER
 
         # made-by, needed, flags, method, time, date, crc, compressed, size, name, extra, comment, disk, internal, external, offset
-        fields = @archive.byteslice(offset + 4, 42).unpack("vvvvvvVVVvvvvvVV")
+        header = @archive.byteslice(offset + 4, 42)
+        raise InvalidBundle, "The ZIP bundle directory is truncated." unless header&.bytesize == 42
+        fields = header.unpack("vvvvvvVVVvvvvvVV")
         method, crc, compressed_size, size = fields[3], fields[6], fields[7], fields[8]
         name_length, extra_length, comment_length = fields[9], fields[10], fields[11]
         external_attributes, local_offset = fields[14], fields[15]
+        if offset + 46 + name_length + extra_length + comment_length > directory_offset + directory_size
+          raise InvalidBundle, "The ZIP bundle directory is truncated."
+        end
         name = @archive.byteslice(offset + 46, name_length).to_s.dup.force_encoding(Encoding::UTF_8)
         raise InvalidBundle, "The ZIP bundle contains an unsupported compression method." unless [ STORED, DEFLATED ].include?(method)
+
+        raise InvalidBundle, "The ZIP bundle contains duplicate paths." if names[name]
+        names[name] = true
+        raise InvalidBundle, "The ZIP bundle contains encrypted entries." unless (fields[2] & 1).zero?
 
         records << {
           name:, method:, crc:, compressed_size:, size:, local_offset:,
@@ -95,7 +113,7 @@ class KnowledgeZipBundle
 
     def read_entry(record)
       header = @archive.byteslice(record[:local_offset], 30)
-      raise InvalidBundle, "The ZIP bundle is malformed." unless header&.start_with?(SIGNATURE)
+      raise InvalidBundle, "The ZIP bundle is malformed." unless header&.bytesize == 30 && header.start_with?(SIGNATURE)
 
       name_length, extra_length = header.byteslice(26, 4).unpack("vv")
       start = record[:local_offset] + 30 + name_length + extra_length
@@ -125,6 +143,6 @@ class KnowledgeZipBundle
 
     def safe_name?(name)
       name.present? && name.valid_encoding? && !name.start_with?("/") && !name.match?(/\A[A-Za-z]:/) &&
-        name.split("/").none? { |segment| segment.blank? || segment == ".." } && !name.include?("\0") && name.bytesize <= 255
+        name.split("/").none? { |segment| segment.blank? || segment == ".." } && !name.include?("\0") && !name.include?("\\") && name.bytesize <= 255
     end
 end

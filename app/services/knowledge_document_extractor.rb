@@ -13,7 +13,7 @@ class KnowledgeDocumentExtractor
   TEXT_EXTENSIONS = %w[.txt .text .md .markdown].freeze
   HTML_EXTENSIONS = %w[.html .htm .xhtml].freeze
   PDF_EXTENSIONS = %w[.pdf].freeze
-  SUPPORTED_EXTENSIONS = (TEXT_EXTENSIONS + HTML_EXTENSIONS + PDF_EXTENSIONS).freeze
+  SUPPORTED_EXTENSIONS = (TEXT_EXTENSIONS + HTML_EXTENSIONS + PDF_EXTENSIONS + %w[.docx]).freeze
 
   Extracted = Data.define(:text, :format)
 
@@ -27,7 +27,13 @@ class KnowledgeDocumentExtractor
 
   def extract(data:, content_type:, filename:)
     extension = File.extname(filename.to_s).downcase
+    if extension == ".doc"
+      raise UnsupportedDocument, "Legacy .doc conversion is not configured. Save the document as .docx or PDF and upload it again."
+    end
     case content_type
+    when KnowledgeWordDocument::CONTENT_TYPE
+      raise UnsupportedDocument, "Word content must use a .docx filename." unless extension == ".docx"
+      Extracted.new(text: KnowledgeWordDocument.extract(data), format: "docx")
     when "application/pdf"
       raise UnsupportedDocument, "PDF content must use a .pdf filename." unless PDF_EXTENSIONS.include?(extension)
       Extracted.new(text: pdf_text(data), format: "pdf")
@@ -37,10 +43,10 @@ class KnowledgeDocumentExtractor
       elsif TEXT_EXTENSIONS.include?(extension) || extension.empty?
         Extracted.new(text: utf8(data).gsub(/\r\n?/, "\n"), format: extension.start_with?(".m") ? "markdown" : "text")
       else
-        raise UnsupportedDocument, "Upload a .txt, .md, .html, or .pdf file."
+        raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, or .docx file."
       end
     else
-      raise UnsupportedDocument, "Upload a .txt, .md, .html, or .pdf file."
+      raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, or .docx file."
     end
   end
 
