@@ -48,6 +48,23 @@ jobs:
       - name: Build bundled runner image
         run: docker build -f ops/docker/runner.Dockerfile -t navishai-runner:check .
 
+      - name: Smoke test legacy DOC conversion in runner image
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            --volume "$PWD/test/fixtures/files/knowledge-legacy.doc:/tmp/knowledge-legacy.doc:ro" \
+            navishai-runner:check -ec '
+              test -x /usr/local/bin/navishai-document
+              test -x /usr/local/bin/navishai-exec
+              test -x /usr/local/bin/navishai-netns-launch
+              grep -q "libreoffice-writer" /usr/share/navishai/runner-packages.txt
+              work=$(mktemp -d)
+              trap "rm -rf $work" EXIT
+              cp /tmp/knowledge-legacy.doc "$work/input.doc"
+              cd "$work"
+              /usr/local/bin/navishai-document
+              grep -q "NavishAI document conversion" input.txt
+            '
+
   scan_ruby:
     runs-on: ubuntu-latest
 
