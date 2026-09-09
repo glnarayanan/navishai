@@ -132,7 +132,7 @@ On this Linux 6.1.158 x86-64 orb: Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, and L
 | Native helper builds and genuine DOC conversion | `navishai-runner`, `navishai-exec`, `navishai-netns-launch`, and `navishai-document` build; `TestInstalledLibreOffice` passes through `navishai-exec` and removes its temporary directory |
 | Signed Rails–Go contract | `script/runner_contract` passes its scripted run and genuine legacy DOC conversion |
 | Image smoke | Added to the manual workflow: it checks Writer and all three helpers, then converts `test/fixtures/files/knowledge-legacy.doc` in the built image. Omitted locally because this orb has no Docker daemon. |
-| `bin/ci` | Incomplete: its one sequential local run reported failure after 5m52s without identifying a failing step. The later full Rails suite and focused browser, native, isolation, and contract checks above pass; the remaining full workflow needs an authorised Docker-capable run. |
+| Clean `bin/ci` | Pass: all 13 declared steps completed with exit 0 after removing `tmp/navishai-runner`, `tmp/navishai-exec`, `tmp/navishai-netns-launch`, and `tmp/navishai-document`. The runner build now compiles all four binaries before the genuine DOC test. |
 
 ### 6 September 2026
 
