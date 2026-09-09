@@ -49,7 +49,7 @@ class KnowledgeDocumentExtractor
       raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, .docx, or .doc file."
     end
   rescue RunnerClient::Error
-    raise UnsupportedDocument, "The isolated Word converter could not read this .doc file. Ask an Admin to check the runner converter, or upload a .docx or PDF copy."
+    raise UnsupportedDocument, "We could not read this .doc file. Upload a .docx or PDF copy, or contact your admin."
   end
 
   private

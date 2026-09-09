@@ -42,8 +42,8 @@ class KnowledgeLegacyDocumentSystemTest < ApplicationSystemTestCase
     fill_in "Title", with: "Unavailable converter"
     attach_file "Document upload", Rails.root.join("test/fixtures/files/knowledge-legacy.doc")
     click_button "Add knowledge source"
-    assert_text "The isolated Word converter could not read this .doc file."
-    assert_text "upload a .docx or PDF copy"
+    assert_text "We could not read this .doc file."
+    assert_text "Upload a .docx or PDF copy, or contact your admin."
     assert_no_text "private details"
     assert_no_horizontal_overflow
     page.execute_script("arguments[0].scrollIntoView({behavior: 'instant', block: 'center'})", find(".inline-error"))

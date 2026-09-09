@@ -55,7 +55,7 @@ class KnowledgeLegacyDocumentTest < ActiveSupport::TestCase
     KnowledgeDocumentGateway.define_singleton_method(:new) { fake }
     assert_no_difference [ "KnowledgeSource.count", "ActiveStorage::Blob.count" ] do
       error = assert_raises(KnowledgeIngestion::InvalidSource) { upload }
-      assert_includes error.message, "isolated Word converter"
+      assert_includes error.message, "Upload a .docx or PDF copy"
       assert_not_includes error.message, "private runner details"
     end
   end
