@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <LibreOfficeKit/LibreOfficeKit.h>
 #include <LibreOfficeKit/LibreOfficeKitInit.h>
 #include <limits.h>
