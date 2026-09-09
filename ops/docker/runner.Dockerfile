@@ -1,14 +1,20 @@
 # syntax=docker/dockerfile:1.7
 FROM golang:1.27.0-bookworm@sha256:484ef6066fa69acb059fdfeda7ba2b8f7391f2ef6abc6f9b8411e669ebd56466 AS build
 WORKDIR /src
+RUN apt-get update -qq && apt-get install --no-install-recommends -y libreofficekit-dev \
+  && rm -rf /var/lib/apt/lists/*
 COPY go.mod ./
 COPY runner runner
 RUN go build -trimpath -o /out/navishai-runner ./runner/cmd/navishai-runner \
   && go build -trimpath -o /out/navishai-exec ./runner/cmd/navishai-exec \
-  && cc -std=c11 -O2 -Wall -Wextra -Werror -o /out/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c
+  && cc -std=c11 -O2 -Wall -Wextra -Werror -o /out/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c \
+  && cc -O2 -Wall -Wextra -Werror -o /out/navishai-document runner/cmd/navishai-document/main.c -ldl
 
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
-RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates \
+RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates libreoffice-writer \
+  && test -x /usr/lib/libreoffice/program/soffice.bin \
+  && mkdir -p /usr/share/navishai \
+  && dpkg-query -W > /usr/share/navishai/runner-packages.txt \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 1000 --create-home --shell /usr/sbin/nologin navishai
 COPY --from=build /out/* /usr/local/bin/

@@ -30,7 +30,7 @@ as_postgres() { if [[ "$(id -u)" == "0" ]]; then runuser -u postgres -- "$@"; el
 
 ensure_packages() {
   local packages=(autoconf bison build-essential ca-certificates curl git libffi-dev libgmp-dev libpq-dev
-    libreadline-dev libssl-dev libyaml-dev pkg-config shared-mime-info zlib1g-dev postgresql-common)
+    libreadline-dev libssl-dev libyaml-dev pkg-config shared-mime-info zlib1g-dev postgresql-common libreoffice-writer libreofficekit-dev)
   local missing=()
   for pkg in "${packages[@]}"; do
     dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")

@@ -19,6 +19,7 @@ type Limits struct {
 	WallTime    time.Duration
 	CPUSeconds  uint64
 	MemoryBytes uint64
+	FileBytes   uint64
 	OpenFiles   uint64
 	Processes   uint64
 	OutputBytes int

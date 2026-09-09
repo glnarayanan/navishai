@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/glnarayanan/navishai/runner/internal/adapters/cursor"
 	"github.com/glnarayanan/navishai/runner/internal/adapters/grok"
 	"github.com/glnarayanan/navishai/runner/internal/admission"
+	"github.com/glnarayanan/navishai/runner/internal/documents"
 	"github.com/glnarayanan/navishai/runner/internal/events"
 	"github.com/glnarayanan/navishai/runner/internal/execution"
 	"github.com/glnarayanan/navishai/runner/internal/personalaccounts"
@@ -86,6 +88,30 @@ func main() {
 		mux.Handle("/", handler)
 		handler = mux
 	}
+	documentRoot := os.Getenv("NAVISHAI_DOCUMENT_WORK_ROOT")
+	if documentRoot == "" {
+		documentRoot, _ = filepath.Abs(statePath + ".documents")
+	}
+	var documentExtractor documents.Extractor
+	documentExcludedRoots := append(append([]string{}, executionConfig.Supervisor.RuntimeReadRoots...), executionConfig.Supervisor.AllowedExecutableRoots...)
+	documentExcludedRoots = append(documentExcludedRoots, executionConfig.Supervisor.AllowedHomeRoots...)
+	for _, adapter := range executionConfig.Adapters {
+		documentExcludedRoots = append(documentExcludedRoots, adapter.HomeDir)
+	}
+	documentExcludedRoots = append(documentExcludedRoots, os.Getenv("NAVISHAI_PERSONAL_ACCOUNTS_ROOT"))
+	if converter, err := documents.New(documentRoot, executionConfig.Supervisor.HelperPath, documentExcludedRoots...); err == nil {
+		documentExtractor = converter
+	} else {
+		log.Print("Document converter unavailable on this runner")
+	}
+	documentHandler, err := documents.NewHandler(secret, documentExtractor)
+	if err != nil {
+		log.Fatalf("configure document protocol: %v", err)
+	}
+	documentMux := http.NewServeMux()
+	documentMux.Handle(documents.Path, documentHandler)
+	documentMux.Handle("/", handler)
+	handler = documentMux
 	allowPrivateControlPlaneHTTP := os.Getenv("NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP") == "true"
 	eventSink, err := events.New(controlPlaneAddress, secret, allowPrivateControlPlaneHTTP, time.Now)
 	if err != nil {

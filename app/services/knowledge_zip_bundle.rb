@@ -47,7 +47,7 @@ class KnowledgeZipBundle
       raise InvalidBundle, "The ZIP bundle contains an unsupported path #{record[:name].inspect}." unless safe_name?(record[:name])
       raise InvalidBundle, "The ZIP bundle contains a symbolic link." if record[:symlink]
       unless @package || KnowledgeDocumentExtractor.supported_filename?(record[:name])
-        raise InvalidBundle, "#{record[:name]} is not a .txt, .md, .html, .pdf, or .docx file."
+        raise InvalidBundle, "#{record[:name]} is not a .txt, .md, .html, .pdf, .docx, or .doc file."
       end
       raise InvalidBundle, "#{record[:name]} exceeds the 5 MiB entry limit." if record[:size] > MAX_ENTRY_BYTES
 

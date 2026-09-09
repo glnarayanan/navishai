@@ -12,6 +12,7 @@ import (
 type Limits struct {
 	CPUSeconds  uint64
 	MemoryBytes uint64
+	FileBytes   uint64
 	OpenFiles   uint64
 	Processes   uint64
 }
@@ -28,6 +29,11 @@ func Apply(limits Limits, denyNetwork, allowNetwork bool, readRoots, writeRoots 
 		rlimitProcesses:       limits.Processes,
 	} {
 		if err := syscall.Setrlimit(resource, &syscall.Rlimit{Cur: limit, Max: limit}); err != nil {
+			return err
+		}
+	}
+	if limits.FileBytes > 0 {
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &syscall.Rlimit{Cur: limits.FileBytes, Max: limits.FileBytes}); err != nil {
 			return err
 		}
 	}
@@ -102,6 +108,13 @@ func restrictFilesystem(readRoots, writeRoots []string) error {
 			return fmt.Errorf("open %q: %w", path, err)
 		}
 		defer syscall.Close(pathFD)
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(pathFD, &stat); err != nil {
+			return err
+		}
+		if stat.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+			access &= accessReadFile | accessWriteFile | accessTruncate
+		}
 		attribute := pathBeneathAttribute{AllowedAccess: access & handled, ParentFD: int32(pathFD)}
 		_, _, callErr := syscall.RawSyscall6(landlockAddRule, fd, landlockRulePath, uintptr(unsafe.Pointer(&attribute)), 0, 0, 0)
 		if callErr != 0 {

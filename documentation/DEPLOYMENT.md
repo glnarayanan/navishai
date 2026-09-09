@@ -38,6 +38,10 @@ The checked-in runner execution policy starts with all live adapters disabled. `
 
 ## Native Linux
 
+The runner image bundles LibreOffice Writer for legacy `.doc` imports. Native Debian/Ubuntu runner hosts need `apt-get install --no-install-recommends libreoffice-writer`. Keep that package and its dependencies current with distribution security updates; rebuild the runner image for container updates. The image's `/usr/share/navishai/runner-packages.txt` records the installed OS package versions separately from the Ruby SBOM.
+
+Conversion uses the fixed `navishai-document` helper through `navishai-exec` on Linux amd64. The helper calls LibreOfficeKit directly, keeping all socket operations denied. Install build-only `libreofficekit-dev`, then compile with `cc -O2 -Wall -Wextra -Werror -o navishai-document runner/cmd/navishai-document/main.c -ldl` and install the helper beside `navishai-exec`. It has no network access or provider credentials and uses a fresh profile with macros and link updates disabled. The private conversion directory defaults to `NAVISHAI_RUNNER_STATE_PATH` with `.documents` appended; `NAVISHAI_DOCUMENT_WORK_ROOT` can override it. Keep it outside runtime-readable roots and credential homes, writable only by the runner user. Conversion is bounded and temporary files are removed after each request. A missing converter or unsupported isolation host makes DOC imports unavailable without disabling other imports or runner work.
+
 The supported layout is:
 
 - `/opt/navishai/current`: an immutable release tree with bundled gems and compiled assets

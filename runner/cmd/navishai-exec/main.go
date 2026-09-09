@@ -64,7 +64,16 @@ func configuredLimits() (isolation.Limits, error) {
 		}
 		values[index] = value
 	}
+	fileBytes := uint64(0)
+	if value := os.Getenv("NAVISHAI_LIMIT_FILE_BYTES"); value != "" {
+		parsed, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return isolation.Limits{}, err
+		}
+		fileBytes = parsed
+	}
 	return isolation.Limits{
+		FileBytes:  fileBytes,
 		CPUSeconds: values[0], MemoryBytes: values[1], OpenFiles: values[2], Processes: values[3],
 	}, nil
 }
