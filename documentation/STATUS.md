@@ -177,3 +177,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 6 September 2026 | Approve the `pdf-reader` gem for PDF extraction; read ZIP bundles with a bounded standard-library reader rather than an archive gem. |
 | 6 September 2026 | The landing page omits the template's pricing and testimonial sections until those exist and uses a content-fitted product preview instead of a fixed 16:9 media stage. |
 | 6 September 2026 | Consolidate the build brief, roadmap, and release-candidate record into PRODUCT.md and this file. |
+
+### DOCX intake — 6 September 2026
+
+DOCX intake is implemented using the existing bounded ZIP reader and XML parser, preserving scanning, quarantine, original attachments, and existing text, Markdown, HTML, PDF, and ZIP intake. Macro-bearing, encrypted, malformed, oversized, and unsupported embedded-content packages are rejected. Legacy DOC conversion remains pending approval of an isolated converter dependency. This checkpoint is unmerged.

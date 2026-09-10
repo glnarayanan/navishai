@@ -60,6 +60,7 @@ class KnowledgeSourcesController < ApplicationController
     end
 
     def zip_bundle?(upload)
+      return false if upload.respond_to?(:original_filename) && File.extname(upload.original_filename.to_s).downcase == ".docx"
       return false unless upload.respond_to?(:read) && upload.respond_to?(:rewind)
 
       signature = upload.read(4).to_s.b

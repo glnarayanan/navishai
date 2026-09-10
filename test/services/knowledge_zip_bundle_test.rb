@@ -34,6 +34,21 @@ class KnowledgeZipBundleTest < ActiveSupport::TestCase
     end
   end
 
+  test "rejects encrypted entries, duplicate package parts, and truncated directory records" do
+    encrypted = build_zip([ { name: "note.txt", data: "secret" } ])
+    directory = encrypted.index("PK\x01\x02".b)
+    encrypted[directory + 8, 2] = [ 1 ].pack("v")
+    assert_raises(KnowledgeZipBundle::InvalidBundle) { KnowledgeZipBundle.entries(encrypted) }
+
+    duplicate = build_zip([ { name: "word/document.xml", data: "first" }, { name: "word/document.xml", data: "second" } ])
+    assert_raises(KnowledgeZipBundle::InvalidBundle) { KnowledgeZipBundle.entries(duplicate, package: true) }
+    assert_raises(KnowledgeZipBundle::InvalidBundle) { KnowledgeZipBundle.entries("PK\x03\x04PK\x05\x06".b) }
+
+    package = build_zip((1..51).map { |index| { name: "word/part#{index}.xml", data: "content" } })
+    assert_equal 51, KnowledgeZipBundle.entries(package, package: true).size
+    assert_raises(KnowledgeZipBundle::InvalidBundle) { KnowledgeZipBundle.entries(package) }
+  end
+
   test "refuses size lies, corrupt data, and too many entries" do
     lie = build_zip([ { name: "lie.txt", data: "short", declared_size: 4_000 } ])
     assert_raises(KnowledgeZipBundle::InvalidBundle) { KnowledgeZipBundle.entries(lie) }
