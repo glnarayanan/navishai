@@ -168,7 +168,7 @@ func assertDisabledToolsPolicyFailure(t *testing.T, output string) {
 			return nil
 		},
 	)
-	if err != nil || result.Status != "failed" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
+	if err != nil || result.Status != "failed" || result.Output != "" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
 		events[1].EventType != "run.failed" || events[1].Data["retryable"] != false {
 		t.Fatalf("Codex item event was not rejected as a non-retryable policy failure: result=%#v events=%#v err=%v", result, events, err)
 	}
