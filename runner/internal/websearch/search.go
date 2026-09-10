@@ -11,14 +11,17 @@ import (
 )
 
 const Path = "/v1/tools/web-search"
+const CatalogPath = "/v1/tools/web-search/catalog"
 
 var (
 	ErrInvalidRequest = errors.New("invalid web search request")
 	workspacePattern  = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	providerPattern   = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 	keyPattern        = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
 )
 
 type Request struct {
+	ProviderKey     string `json:"provider_key,omitempty"`
 	ProtocolVersion string `json:"protocol_version"`
 	WorkspaceKey    string `json:"workspace_key"`
 	RequestKey      string `json:"request_key"`
@@ -55,7 +58,7 @@ func (request Request) Validate(protocolVersion string) error {
 	query := strings.TrimSpace(request.Query)
 	if request.ProtocolVersion != protocolVersion || !workspacePattern.MatchString(request.WorkspaceKey) ||
 		!keyPattern.MatchString(request.RequestKey) || query != request.Query || len(query) < 2 || len(query) > 500 ||
-		request.MaxResults < 1 || request.MaxResults > 10 {
+		request.MaxResults < 1 || request.MaxResults > 10 || (request.ProviderKey != "" && !providerPattern.MatchString(request.ProviderKey)) {
 		return ErrInvalidRequest
 	}
 	return nil

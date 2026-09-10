@@ -23,6 +23,7 @@ Rails.application.routes.draw do
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
       post :reconcile, on: :member
     end
+    resource :search_settings, controller: "workspace_search_settings", only: %i[edit update]
     resources :notion_knowledge_connections, only: %i[create update] do
       post :sync, on: :member
     end

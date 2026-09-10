@@ -770,6 +770,7 @@ class WorkspacePortabilityTest < ActiveSupport::TestCase
       "retrieved_at" => Time.zone.parse("2026-08-27 14:05:00").iso8601(6), "results" => []
     }
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) { |**| response }
     search = PublicWebResearch.perform!(
       workspace: source, membership: owner, task: search_task, query: "public status history",

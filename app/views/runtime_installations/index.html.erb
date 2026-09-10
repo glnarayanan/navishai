@@ -8,6 +8,7 @@
     </div>
     <% if @can_configure %>
       <div class="runtime-heading-actions">
+        <%= link_to "Search provider", edit_workspace_search_settings_path(Current.workspace), class: "button button-secondary button-compact" %>
         <% if @configured_providers.any? || @standalone_installations.any? %>
           <%= button_to "Refresh status", detect_workspace_runtime_installations_path(Current.workspace),
             class: "button button-secondary button-compact" %>

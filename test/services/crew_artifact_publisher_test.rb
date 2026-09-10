@@ -156,6 +156,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       } ]
     }
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) { |**| response }
     search = PublicWebResearch.perform!(
       workspace: @workspace, membership: @owner, task: @investigation,
@@ -373,6 +374,7 @@ class CrewArtifactPublisherTest < ActiveSupport::TestCase
       } ]
     }
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) { |**| response }
     search = PublicWebResearch.perform!(
       workspace: @workspace, membership: @owner, task: @investigation,

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters/claude"
@@ -244,11 +245,11 @@ func newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret []byte, store
 	if err != nil {
 		return nil, fmt.Errorf("open web search state: %w", err)
 	}
-	searchProvider, err := configureSearchProvider(os.Getenv)
+	searchProviders, err := configureSearchProviders(os.Getenv)
 	if err != nil {
 		return nil, err
 	}
-	searchHandler, err := websearch.NewHandler(secret, searchProvider, searchStore, now)
+	searchHandler, err := websearch.NewRegistryHandler(secret, searchProviders, os.Getenv("NAVISHAI_WEB_SEARCH_PROVIDER"), searchStore, now)
 	if err != nil {
 		return nil, fmt.Errorf("create web search handler: %w", err)
 	}
@@ -265,6 +266,7 @@ func newManagedHandlerWithRuntimeTesterAndStoreAndDiscovery(secret []byte, store
 	mux.Handle("POST "+providerconfig.RemovePath, providerHandler)
 	mux.Handle("POST "+providerconfig.PurgePath, providerHandler)
 	mux.Handle("POST "+websearch.Path, searchHandler)
+	mux.Handle("POST "+websearch.CatalogPath, searchHandler)
 	return mux, nil
 }
 
@@ -305,4 +307,34 @@ func configureSearchProvider(getenv func(string) string) (websearch.Provider, er
 	default:
 		return nil, fmt.Errorf("unsupported web search provider %q", providerKey)
 	}
+}
+
+func configureSearchProviders(getenv func(string) string) ([]websearch.Provider, error) {
+	keys := []string{}
+	if configured := getenv("NAVISHAI_WEB_SEARCH_PROVIDERS"); configured != "" {
+		keys = strings.Split(configured, ",")
+	}
+	if key := getenv("NAVISHAI_WEB_SEARCH_PROVIDER"); key != "" {
+		keys = append(keys, key)
+	}
+	providers := []websearch.Provider{}
+	seen := map[string]bool{}
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		provider, err := configureSearchProvider(func(name string) string {
+			if name == "NAVISHAI_WEB_SEARCH_PROVIDER" {
+				return key
+			}
+			return getenv(name)
+		})
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, provider)
+	}
+	return providers, nil
 }

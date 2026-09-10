@@ -18,6 +18,8 @@ class PublicWebSearch < ApplicationRecord
   validates :cost_units, numericality: {
     only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: RunnerProtocol::BIGINT_MAX
   }
+  attr_readonly :requested_provider_key
+  validates :requested_provider_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validates :provider_key, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validates :failure_code, format: { with: RunnerProtocol::POLICY_KEY_PATTERN }, allow_nil: true
   validate :assignment_is_consistent

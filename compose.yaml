@@ -86,6 +86,7 @@ services:
       NAVISHAI_RUNNER_TLS_KEY_FILE: /run/navishai/tls.key
       # Optional public-web search: searxng (self-hosted), exa, or tavily. Keys stay on the runner.
       NAVISHAI_WEB_SEARCH_PROVIDER: ${NAVISHAI_WEB_SEARCH_PROVIDER:-}
+      NAVISHAI_WEB_SEARCH_PROVIDERS: ${NAVISHAI_WEB_SEARCH_PROVIDERS:-}
       NAVISHAI_SEARXNG_URL: ${NAVISHAI_SEARXNG_URL:-}
       NAVISHAI_EXA_API_KEY: ${NAVISHAI_EXA_API_KEY:-}
       NAVISHAI_TAVILY_API_KEY: ${NAVISHAI_TAVILY_API_KEY:-}

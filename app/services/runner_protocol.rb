@@ -8,6 +8,7 @@ module RunnerProtocol
   RUNTIME_DETECTION_VERSION = "v2"
   RUNTIME_DETECTION_PATH = "/v2/runtimes/detect"
   RUNTIME_TEST_PATH = "/v1/runtimes/test"
+  WEB_SEARCH_CATALOG_PATH = "/v1/tools/web-search/catalog"
   WEB_SEARCH_PATH = "/v1/tools/web-search"
   MAX_BODY_BYTES = 256.kilobytes
   BIGINT_MAX = 9_223_372_036_854_775_807
@@ -279,25 +280,49 @@ module RunnerProtocol
     end
   end
 
+  class WebSearchCatalogResponse
+    attr_reader :attributes
+
+    def self.parse(body, workspace_key:)
+      raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
+
+      new(JSON.parse(body), workspace_key:)
+    rescue JSON::ParserError
+      raise MalformedMessage, "response body is not valid JSON"
+    end
+
+    def initialize(attributes, workspace_key:)
+      keys = attributes.is_a?(Hash) && attributes["provider_keys"]
+      unless attributes.is_a?(Hash) && attributes.keys.sort == %w[default_provider_key protocol_version provider_keys workspace_key] &&
+          attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
+          keys.is_a?(Array) && keys.length <= 100 && keys.uniq == keys &&
+          keys.all? { |key| key.is_a?(String) && key.match?(POLICY_KEY_PATTERN) } &&
+          (attributes["default_provider_key"] == "" || keys.include?(attributes["default_provider_key"]))
+        raise MalformedMessage, "web search catalog is invalid"
+      end
+      @attributes = attributes.deep_dup.freeze
+    end
+  end
+
   class WebSearchResponse
     KEYS = %w[protocol_version workspace_key request_key query provider_key policy_decision cost_units retrieved_at results].freeze
     RESULT_KEYS = %w[rank title url excerpt published_at].freeze
 
     attr_reader :attributes
 
-    def self.parse(body, workspace_key:, request_key:, query:)
+    def self.parse(body, workspace_key:, request_key:, query:, provider_key: nil)
       raise MalformedMessage, "response body is too large" if body.bytesize > MAX_BODY_BYTES
 
-      new(JSON.parse(body), workspace_key:, request_key:, query:)
+      new(JSON.parse(body), workspace_key:, request_key:, query:, provider_key:)
     rescue JSON::ParserError
       raise MalformedMessage, "response body is not valid JSON"
     end
 
-    def initialize(attributes, workspace_key:, request_key:, query:)
+    def initialize(attributes, workspace_key:, request_key:, query:, provider_key: nil)
       unless attributes.is_a?(Hash) && attributes.keys.sort == KEYS.sort &&
           attributes["protocol_version"] == VERSION && attributes["workspace_key"] == workspace_key &&
           attributes["request_key"] == request_key && attributes["query"] == query &&
-          attributes["provider_key"].is_a?(String) && attributes["provider_key"].match?(POLICY_KEY_PATTERN) &&
+          (provider_key.nil? || attributes["provider_key"] == provider_key) && attributes["provider_key"].is_a?(String) && attributes["provider_key"].match?(POLICY_KEY_PATTERN) &&
           attributes["policy_decision"] == "allowed" && attributes["cost_units"].is_a?(Integer) &&
           attributes["cost_units"].between?(0, BIGINT_MAX) &&
           valid_time?(attributes["retrieved_at"]) && valid_results?(attributes["results"])

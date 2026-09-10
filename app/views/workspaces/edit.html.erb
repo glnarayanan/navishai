@@ -23,6 +23,9 @@
       </div>
     </div>
     <div class="settings-link-list">
+      <%= link_to edit_workspace_search_settings_path(@workspace), class: "settings-link" do %>
+        <span><strong>Public-web search</strong><small>Choose the authorised search provider for this workspace.</small></span><span aria-hidden="true">→</span>
+      <% end %>
       <%= link_to workspace_workspace_invitations_path(@workspace), class: "settings-link" do %>
         <span><strong>People and access</strong><small>Invite teammates and choose their roles.</small></span><span aria-hidden="true">→</span>
       <% end %>

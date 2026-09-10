@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -14,13 +15,24 @@ import (
 )
 
 type Handler struct {
-	secret   []byte
-	provider Provider
-	store    *Store
-	now      func() time.Time
+	secret     []byte
+	providers  map[string]Provider
+	defaultKey string
+	store      *Store
+	now        func() time.Time
 }
 
 func NewHandler(secret []byte, provider Provider, store *Store, now func() time.Time) (*Handler, error) {
+	providers := []Provider{}
+	defaultKey := ""
+	if provider != nil {
+		providers = append(providers, provider)
+		defaultKey = provider.Key()
+	}
+	return NewRegistryHandler(secret, providers, defaultKey, store, now)
+}
+
+func NewRegistryHandler(secret []byte, providers []Provider, defaultKey string, store *Store, now func() time.Time) (*Handler, error) {
 	if err := protocol.ValidateSecret(secret); err != nil {
 		return nil, err
 	}
@@ -30,7 +42,20 @@ func NewHandler(secret []byte, provider Provider, store *Store, now func() time.
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{secret: secret, provider: provider, store: store, now: now}, nil
+	registry := map[string]Provider{}
+	for _, provider := range providers {
+		if provider == nil || !providerPattern.MatchString(provider.Key()) {
+			return nil, ErrInvalidRequest
+		}
+		if _, exists := registry[provider.Key()]; exists {
+			return nil, ErrInvalidRequest
+		}
+		registry[provider.Key()] = provider
+	}
+	if defaultKey != "" && registry[defaultKey] == nil {
+		return nil, ErrInvalidRequest
+	}
+	return &Handler{secret: secret, providers: registry, defaultKey: defaultKey, store: store, now: now}, nil
 }
 
 func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
@@ -57,17 +82,40 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		handler.writeError(response, http.StatusUnsupportedMediaType, "unsupported_media_type", "Web search requests must use application/json.")
 		return
 	}
+	if request.URL.Path == CatalogPath {
+		var input struct {
+			ProtocolVersion string `json:"protocol_version"`
+			WorkspaceKey    string `json:"workspace_key"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(body))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&input) != nil || input.ProtocolVersion != protocol.Version || !workspacePattern.MatchString(input.WorkspaceKey) || !errors.Is(decoder.Decode(&struct{}{}), io.EOF) {
+			handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Invalid catalog request.")
+			return
+		}
+		keys := make([]string, 0, len(handler.providers))
+		for key := range handler.providers {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		_ = json.NewEncoder(response).Encode(map[string]any{"protocol_version": protocol.Version, "workspace_key": input.WorkspaceKey, "default_provider_key": handler.defaultKey, "provider_keys": keys})
+		return
+	}
 	input, err := decodeRequest(body)
 	if err != nil || input.Validate(protocol.Version) != nil {
 		handler.writeError(response, http.StatusUnprocessableEntity, "invalid_request", "Web search request does not match protocol v1.")
 		return
 	}
-	if handler.provider == nil {
-		handler.writeError(response, http.StatusServiceUnavailable, "provider_unavailable", "No public-web search provider is configured.")
-		return
-	}
 	result, replayed, err := handler.store.Resolve(input.RequestKey, protocol.Digest(body), func() (Response, error) {
-		results, cost, err := handler.provider.Search(request.Context(), input.Query, input.MaxResults)
+		key := input.ProviderKey
+		if key == "" {
+			key = handler.defaultKey
+		}
+		provider := handler.providers[key]
+		if provider == nil {
+			return Response{}, errors.New("provider unavailable")
+		}
+		results, cost, err := provider.Search(request.Context(), input.Query, input.MaxResults)
 		if err != nil {
 			return Response{}, err
 		}
@@ -77,7 +125,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		}
 		return Response{
 			ProtocolVersion: protocol.Version, WorkspaceKey: input.WorkspaceKey, RequestKey: input.RequestKey,
-			Query: input.Query, ProviderKey: handler.provider.Key(), PolicyDecision: "allowed", CostUnits: cost,
+			Query: input.Query, ProviderKey: provider.Key(), PolicyDecision: "allowed", CostUnits: cost,
 			RetrievedAt: handler.now().UTC(), Results: results,
 		}, nil
 	})

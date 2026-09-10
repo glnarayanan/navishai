@@ -150,6 +150,7 @@ class UsageCostCaptureTest < ActiveSupport::TestCase
       "results" => []
     }
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) { |**| response }
 
     search = PublicWebResearch.perform!(
@@ -164,6 +165,7 @@ class UsageCostCaptureTest < ActiveSupport::TestCase
     assert_equal 500_000, snapshot.amount_micros
 
     failure = Object.new
+    failure.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     failure.define_singleton_method(:web_search!) { |**| raise RunnerClient::Unavailable, "offline" }
     assert_raises(RunnerClient::Unavailable) do
       PublicWebResearch.perform!(
@@ -187,6 +189,7 @@ class UsageCostCaptureTest < ActiveSupport::TestCase
       "retrieved_at" => @clock.iso8601, "results" => []
     }
     client = Object.new
+    client.define_singleton_method(:web_search_catalog!) { |**| { "default_provider_key" => "searxng", "provider_keys" => [ "searxng" ] } }
     client.define_singleton_method(:web_search!) { |**| response }
 
     search = PublicWebResearch.perform!(
