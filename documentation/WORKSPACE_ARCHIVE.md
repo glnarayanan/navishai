@@ -8,7 +8,7 @@ NavishAI exports one Workspace as a gzip-compressed tar archive with format key 
 - the email, verification time, and source ID of each User referenced by those rows;
 - each stored attachment's verified bytes, SHA-256 digest, and source attachment ID.
 
-The archive excludes password digests, sessions, Rails credentials, environment variables, model CLI credentials, SMTP passwords, Intercom tokens, outbound-webhook signing secrets, and Supermemory private state. Credential keys and non-secret integration settings remain because they are Workspace configuration. PostgreSQL Memory records are authoritative. Import gives the restored Workspace fresh endpoint and ledger IDs and rebuilds external Memory entries instead of copying engine-private IDs.
+The archive excludes password digests, sessions, Rails credentials, environment variables, model CLI credentials, SMTP passwords, Intercom and Notion service/OAuth tokens, OAuth attempts, outbound-webhook signing secrets, and Supermemory private state. Credential keys and non-secret integration settings remain because they are Workspace configuration. Imported connectors and personal AI accounts are disconnected; personal account UUIDs and historical run references are remapped, and personal runtime approvals are cleared. PostgreSQL Memory records are authoritative. Import gives the restored Workspace fresh endpoint and ledger IDs and rebuilds external Memory entries instead of copying engine-private IDs.
 
 Only an Owner can download a full Workspace export. NavishAI records table, row, and attachment counts in the audit event without copying archive content. Treat the file as customer data: encrypt it at rest, limit access, and remove it under the same retention policy as its source Workspace.
 

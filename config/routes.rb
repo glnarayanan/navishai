@@ -27,6 +27,9 @@ Rails.application.routes.draw do
     resources :notion_knowledge_connections, only: %i[create update] do
       post :sync, on: :member
     end
+    resources :personal_provider_accounts, only: %i[index create show destroy] do
+      post :refresh, on: :member
+    end
     resources :products, only: %i[index create update]
     resources :workspace_connectors, path: "connectors", param: :provider, only: %i[index update] do
       member do

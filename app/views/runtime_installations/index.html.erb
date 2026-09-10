@@ -18,6 +18,10 @@
     <% end %>
   </div>
 
+  <% if Current.require_membership!.can_write? %>
+    <p><%= link_to "My AI accounts", workspace_personal_provider_accounts_path(Current.workspace), class: "button button-secondary" %></p>
+  <% end %>
+
   <aside class="provider-key-note" role="note">
     <strong>API keys stay private.</strong>
     <span>Keys are encrypted in your self-hosted provider vault and are never shown again.</span>

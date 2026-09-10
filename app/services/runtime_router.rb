@@ -6,17 +6,17 @@ class RuntimeRouter
     :execution_mode, :isolation_policy
   )
 
-  def self.resolve!(workspace:, profile_version:, additional_data_classes: [])
-    new(workspace:).resolve!(profile_version:, additional_data_classes:)
+  def self.resolve!(workspace:, profile_version:, additional_data_classes: [], personal_account: nil)
+    new(workspace:).resolve!(profile_version:, additional_data_classes:, personal_account:)
   end
 
   def initialize(workspace:)
     @workspace = workspace
   end
 
-  def resolve!(profile_version:, additional_data_classes: [])
+  def resolve!(profile_version:, additional_data_classes: [], personal_account: nil)
     version = @workspace.agent_profile_versions.includes(:agent_profile).find(profile_version.id)
-    profiles = [ version.runtime_profile_key, *version.fallback_profile_keys ]
+    profiles = personal_account ? [ version.runtime_profile_key ] : [ version.runtime_profile_key, *version.fallback_profile_keys ]
     unless (additional_data_classes - RuntimeInstallation::DATA_CLASSES.keys).empty?
       raise ArgumentError, "additional data class is invalid"
     end
@@ -24,7 +24,14 @@ class RuntimeRouter
     required_capabilities = [ "structured_output" ]
     required_capabilities << "tool_calling" if version.allowed_tools.any?
     rejections = []
-    installations = @workspace.runtime_installations.ordered.lock.to_a
+    scope = @workspace.runtime_installations
+    if personal_account
+      raise NoCompatibleRuntime, "Your selected AI account is not ready or approved." unless personal_account.workspace_id == @workspace.id && personal_account.usable?
+      scope = scope.where(personal_provider_account_id: personal_account.id)
+    else
+      scope = scope.shared
+    end
+    installations = scope.ordered.lock.to_a
 
     profiles.each_with_index do |profile_key, index|
       installations.each do |installation|

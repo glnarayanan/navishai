@@ -1,5 +1,6 @@
 <% adapter_key = provider&.fetch("adapter_key") || installation.adapter_key %>
 <% provider_name = provider&.fetch("name") || adapter_key.humanize %>
+<% provider_name = "#{provider_name} · #{installation.personal_provider_account.membership.user.email_address}" if installation&.personal_provider_account %>
 <% configured_model = provider&.fetch("model").presence || installation&.effective_model.presence %>
 <% model_required_for_runtime = provider && provider.fetch("configured") && (provider.fetch("model_required") || provider.fetch("auth_mode") == "api_key") %>
 <% incomplete_model_configuration = model_required_for_runtime && provider.fetch("model").blank? %>
@@ -132,7 +133,9 @@
 
   <% if @can_configure %>
     <div class="provider-actions" aria-label="Actions for <%= provider_name %>">
-      <% if installation && test_disabled_reason.nil? %>
+      <% if installation&.personal_provider_account %>
+        <p class="field-hint">The account owner can check this connection in My AI accounts.</p>
+      <% elsif installation && test_disabled_reason.nil? %>
         <%= button_to installation.runtime_tested_at ? "Test again" : "Test connection",
           test_workspace_runtime_installation_path(Current.workspace, installation),
           class: "button #{test_action_primary ? "button-primary" : "button-secondary"} button-compact" %>

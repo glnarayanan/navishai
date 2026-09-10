@@ -75,18 +75,24 @@ type AgentPolicy struct {
 }
 
 type RuntimeRouting struct {
-	DetectionKey             string   `json:"detection_key"`
-	AdapterKey               string   `json:"adapter_key"`
-	ProfileKey               string   `json:"profile_key"`
-	ConfigurationFingerprint string   `json:"configuration_fingerprint"`
-	EffectiveModel           string   `json:"effective_model"`
-	SelectionReason          string   `json:"selection_reason"`
-	SelectionDetail          string   `json:"selection_detail"`
-	ExecutionMode            string   `json:"execution_mode"`
-	IsolationPolicy          string   `json:"isolation_policy"`
-	DataClasses              []string `json:"data_classes"`
-	MaxInputUnits            int      `json:"max_input_units"`
-	MaxOutputUnits           int      `json:"max_output_units"`
+	PersonalAccount          *PersonalAccount `json:"personal_account,omitempty"`
+	DetectionKey             string           `json:"detection_key"`
+	AdapterKey               string           `json:"adapter_key"`
+	ProfileKey               string           `json:"profile_key"`
+	ConfigurationFingerprint string           `json:"configuration_fingerprint"`
+	EffectiveModel           string           `json:"effective_model"`
+	SelectionReason          string           `json:"selection_reason"`
+	SelectionDetail          string           `json:"selection_detail"`
+	ExecutionMode            string           `json:"execution_mode"`
+	IsolationPolicy          string           `json:"isolation_policy"`
+	DataClasses              []string         `json:"data_classes"`
+	MaxInputUnits            int              `json:"max_input_units"`
+	MaxOutputUnits           int              `json:"max_output_units"`
+}
+
+type PersonalAccount struct {
+	AccountKey   string `json:"account_key"`
+	MembershipID int64  `json:"membership_id"`
 }
 
 type AdmissionResponse struct {
@@ -181,6 +187,9 @@ func (request AdmissionRequest) validate(expectedVersion string, requireExecutio
 		return ErrInvalidRequest
 	}
 	routing := request.Routing
+	if account := routing.PersonalAccount; account != nil && (!uuidPattern.MatchString(account.AccountKey) || account.MembershipID < 1 || routing.ExecutionMode != ExecutionModeStrongIsolated || routing.AdapterKey != "codex_subscription" || len(agent.FallbackProfileKeys) != 0 || routing.SelectionReason != "primary") {
+		return ErrInvalidRequest
+	}
 	if len(routing.DetectionKey) != 64 || !isLowerHex(routing.DetectionKey) ||
 		len(routing.ConfigurationFingerprint) != 64 || !isLowerHex(routing.ConfigurationFingerprint) ||
 		!byteLength(routing.EffectiveModel, 1, 200) || strings.ContainsAny(routing.EffectiveModel, "\r\n\x00") ||

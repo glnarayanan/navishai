@@ -62,6 +62,35 @@ class ReliabilityRecoveryTest < ActiveSupport::TestCase
     end
   end
 
+  test "personal retry preserves the original owner's account and rejects another manager" do
+    account = PersonalProviderAccount.create!(workspace: @workspace, membership: @owner, state: "connected")
+    @workspace.runtime_installations.find_by!(adapter_key: "scripted").update!(personal_provider_account: account)
+    failed = ExecutionRecovery.request!(workspace: @workspace, membership: @owner, task: @task,
+      request_key: "personal:first", personal_account_id: account.id, client: accepting_client)
+    ledger = ExecutionLedger.new(workspace: @workspace)
+    ingest(ledger, failed, 2, "run.started", adapter: "scripted", scenario: "failure", attempt: 1)
+    ingest(ledger, failed, 3, "run.failed", code: "fixture_failure", retryable: true)
+    manager = @workspace.memberships.create!(role: :manager,
+      user: User.create!(email_address: "personal-retry-manager@example.com", password: "password12345", verified_at: Time.current))
+
+    assert_no_difference "ExecutionRun.count" do
+      error = assert_raises(ReliabilityRecovery::InvalidAction) do
+        ReliabilityRecovery.retry_run!(workspace: @workspace, membership: manager, run: failed, client: accepting_client)
+      end
+      assert_includes error.message, "original requester"
+      account.update!(state: "disconnected")
+      error = assert_raises(ReliabilityRecovery::InvalidAction) do
+        ReliabilityRecovery.retry_run!(workspace: @workspace, membership: @owner, run: failed, client: accepting_client)
+      end
+      assert_includes error.message, "unavailable"
+    end
+    account.update!(state: "connected")
+    retry_run = ReliabilityRecovery.retry_run!(workspace: @workspace, membership: @owner, run: failed, client: accepting_client)
+    assert_equal account.account_key, retry_run.selected_personal_account_key
+    assert_equal @owner.id, retry_run.requested_by_membership_id
+    assert_equal failed.runtime_installation_id, retry_run.runtime_installation_id
+  end
+
   test "refuses a nonretryable or foreign run and refreshes manager authority" do
     run = ExecutionRecovery.request!(
       workspace: @workspace, membership: @owner, task: @task,

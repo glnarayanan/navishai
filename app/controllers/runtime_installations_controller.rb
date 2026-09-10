@@ -66,7 +66,10 @@ class RuntimeInstallationsController < ApplicationController
 
     def load_installations
       workspace = Current.require_workspace!
-      @installations = workspace.runtime_installations.includes(:approved_by_user).ordered
+      @installations = workspace.runtime_installations.includes(:approved_by_user, personal_provider_account: { membership: :user }).ordered
+      unless Current.require_membership!.can_configure_agents?
+        @installations = @installations.select { |item| !item.personal_provider_account || item.personal_provider_account.membership_id == Current.require_membership!.id }
+      end
       @can_configure = Current.require_membership!.can_configure_agents?
       load_provider_catalog(workspace)
     end
@@ -81,7 +84,7 @@ class RuntimeInstallationsController < ApplicationController
       end
       catalog_keys = @provider_catalog.map { |provider| provider.fetch("adapter_key") }
       @standalone_installations = @installations.reject do |installation|
-        catalog_keys.include?(installation.adapter_key) || installation.health_status == "missing"
+        (!installation.personal_provider_account_id && catalog_keys.include?(installation.adapter_key)) || installation.health_status == "missing"
       end
     rescue RunnerClient::Error => error
       load_persisted_installations(include_missing: false)
@@ -102,7 +105,7 @@ class RuntimeInstallationsController < ApplicationController
 
     def current_installation_for(provider)
       RuntimeInstallation.current_for_provider(
-        @installations.select { |installation| installation.adapter_key == provider.fetch("adapter_key") },
+        @installations.select { |installation| !installation.personal_provider_account_id && installation.adapter_key == provider.fetch("adapter_key") },
         provider
       )
     end

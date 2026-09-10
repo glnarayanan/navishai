@@ -20,6 +20,7 @@ class RuntimeInstallation < ApplicationRecord
   }.freeze
   SENSITIVE_METADATA_KEY = /passw|secret|token|credential|cookie|authorization|private|session/i
 
+  belongs_to :personal_provider_account, optional: true
   belongs_to :workspace
   belongs_to :approved_by_membership, class_name: "Membership", optional: true
   belongs_to :approved_by_user, class_name: "User", optional: true
@@ -58,6 +59,8 @@ class RuntimeInstallation < ApplicationRecord
   validate :runtime_test_evidence_is_complete
   validate :transport_and_execution_mode_are_compatible
   validate :legacy_execution_boundary_is_not_approved
+
+  scope :shared, -> { where(personal_provider_account_id: nil) }
 
   scope :ordered, -> { order(:adapter_key, :id) }
 

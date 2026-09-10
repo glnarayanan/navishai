@@ -67,6 +67,7 @@ class Workspace < ApplicationRecord
   has_many :governed_policy_subjects, dependent: :restrict_with_exception
   has_many :governed_policy_previews, dependent: :restrict_with_exception
   has_many :governed_policy_publications, dependent: :restrict_with_exception
+  has_many :personal_provider_accounts, dependent: :restrict_with_exception
   has_many :runtime_installations, dependent: :restrict_with_exception
   has_many :public_web_searches, dependent: :restrict_with_exception
   has_many :public_web_search_results, dependent: :restrict_with_exception

@@ -1,0 +1,23 @@
+<% content_for :title, "Connect my AI account · #{Current.workspace.name} — NavishAI" %>
+<main class="page-shell provider-form-shell page-family-config">
+  <%= link_to "← My AI accounts", workspace_personal_provider_accounts_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading"><div><h1>Your Codex account</h1></div></div>
+  <% if @account.usable? %>
+    <p role="status">Your account is ready. Choose it when requesting a specialist run.</p>
+  <% elsif @account.connected? %>
+    <p role="status">Sign-in and the connection test passed. An Admin must approve this account before you can run specialists with it.</p>
+  <% elsif @result["challenge"] && @account.pending? %>
+    <p>Open the provider page and enter this code to connect your account.</p>
+    <p><strong><%= @result.fetch("challenge").fetch("user_code") %></strong></p>
+    <%= link_to "Open Codex sign-in", @result.fetch("challenge").fetch("verification_url"), target: "_blank", rel: "noopener noreferrer", class: "button button-primary" %>
+    <% if @account.expires_at %><p class="field-hint">This request expires <%= @account.expires_at.to_fs(:long) %>.</p><% end %>
+  <% elsif @account.starting? || @account.pending? %>
+    <p role="status">The server is preparing or checking your sign-in. Check again in a moment.</p>
+  <% else %>
+    <p role="status"><%= @account.failed? ? "Sign-in or the connection test failed. Start a new connection to try again." : "This account is disconnected." %></p>
+  <% end %>
+  <% unless @account.disconnected? %>
+    <%= button_to "Check sign-in", refresh_workspace_personal_provider_account_path(Current.workspace, @account), class: "button button-secondary" %>
+    <%= button_to "Disconnect my account", workspace_personal_provider_account_path(Current.workspace, @account), method: :delete, class: "button button-secondary" %>
+  <% end %>
+</main>

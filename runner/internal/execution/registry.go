@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/adapters"
+	"github.com/glnarayanan/navishai/runner/internal/personalaccounts"
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/providerapi"
 	"github.com/glnarayanan/navishai/runner/internal/providerconfig"
@@ -28,6 +29,8 @@ var ErrPolicyDenied = errors.New("runner execution policy denied the request")
 const runtimeTestSentinel = "NAVISHAI_RUNTIME_TEST_OK"
 
 type Registry struct {
+	personalAccounts         *personalaccounts.Store
+	personalRunner           *supervisor.Supervisor
 	config                   Config
 	catalog                  runtimecatalog.WorkspaceCatalog
 	providers                *providerconfig.Store
@@ -89,6 +92,9 @@ func newRegistry(config Config, catalog runtimecatalog.WorkspaceCatalog, provide
 func (registry *Registry) Execute(ctx context.Context, request protocol.AdmissionRequest, emit func(protocol.CanonicalEvent) error) error {
 	if request.Validate() != nil || emit == nil {
 		return ErrPolicyDenied
+	}
+	if request.Routing.PersonalAccount != nil {
+		return registry.executePersonalAccount(ctx, request, emit)
 	}
 	if request.Routing.AdapterKey == "scripted" {
 		if !boundedExecutionBoundary(request) {

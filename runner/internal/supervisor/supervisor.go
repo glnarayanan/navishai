@@ -76,6 +76,7 @@ type Request struct {
 	Arguments        []string
 	WorkingDir       string
 	HomeDir          string
+	WritableHome     bool
 	Input            []byte
 	Credentials      map[string]string
 	EgressProfileKey string
@@ -478,7 +479,14 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 	if err != nil {
 		return preparedRequest{}, ErrInvalidRequest
 	}
-	writeRoots, err := json.Marshal([]string{workingDir})
+	writeRootValues := []string{workingDir}
+	if request.WritableHome {
+		if request.HomeDir == "" {
+			return preparedRequest{}, ErrInvalidRequest
+		}
+		writeRootValues = append(writeRootValues, homeDir)
+	}
+	writeRoots, err := json.Marshal(writeRootValues)
 	if err != nil {
 		return preparedRequest{}, ErrInvalidRequest
 	}

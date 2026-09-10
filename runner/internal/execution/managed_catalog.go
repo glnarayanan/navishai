@@ -19,13 +19,14 @@ import (
 )
 
 type ManagedCatalog struct {
-	config               Config
-	providers            *providerconfig.Store
-	identityKey          []byte
-	now                  func() time.Time
-	scripted             []runtimecatalog.Installation
-	supported            func() bool
-	hostTrustedSupported func() bool
+	personalAccountsEnabled bool
+	config                  Config
+	providers               *providerconfig.Store
+	identityKey             []byte
+	now                     func() time.Time
+	scripted                []runtimecatalog.Installation
+	supported               func() bool
+	hostTrustedSupported    func() bool
 }
 
 func NewManagedCatalog(config Config, providers *providerconfig.Store, identityKey []byte, now func() time.Time) (*ManagedCatalog, error) {
@@ -160,6 +161,9 @@ func (catalog *ManagedCatalog) ProviderAvailability(request *http.Request, works
 					ExecutableVersion: installation.ExecutableVersion,
 				}
 			case protocol.ExecutionModeStrongIsolated:
+				if catalog.personalAccountsEnabled && adapterKey == codex.AdapterKey {
+					return providerconfig.Availability{SupportedExecutionModes: availableModes, HealthStatus: "unavailable", UnavailableReason: "Personal accounts are enabled. Each user must connect an account and obtain runtime approval."}
+				}
 				if !catalog.strongIsolationAvailable() {
 					return providerconfig.Availability{
 						SupportedExecutionModes: availableModes, HealthStatus: "unavailable",
@@ -249,6 +253,9 @@ func (catalog *ManagedCatalog) definition(adapterKey, workspaceKey string, confi
 		return runtimecatalog.Definition{}, false
 	}
 	connection, configured := catalog.providers.Get(workspaceKey, adapterKey)
+	if catalog.personalAccountsEnabled && adapterKey == codex.AdapterKey && (!configured || connection.ExecutionMode == protocol.ExecutionModeStrongIsolated) {
+		return runtimecatalog.Definition{}, false
+	}
 	if configuredOnly && !configured {
 		return runtimecatalog.Definition{}, false
 	}
@@ -338,7 +345,9 @@ func (catalog *ManagedCatalog) supportedExecutionModes(adapterKey string) []stri
 			continue
 		}
 		if mode == protocol.ExecutionModeStrongIsolated {
-			continue
+			if !catalog.personalAccountsEnabled || adapterKey != codex.AdapterKey || !catalog.strongIsolationAvailable() {
+				continue
+			}
 		}
 		result = append(result, mode)
 	}

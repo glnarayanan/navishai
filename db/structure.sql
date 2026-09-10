@@ -1189,6 +1189,33 @@ $$;
 
 
 --
+-- Name: protect_execution_personal_account(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_execution_personal_account() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE account personal_provider_accounts;
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    IF (OLD.requested_by_membership_id, OLD.selected_personal_account_key) IS DISTINCT FROM (NEW.requested_by_membership_id, NEW.selected_personal_account_key) THEN
+      RAISE EXCEPTION 'execution requester and personal account are immutable';
+    END IF;
+  ELSE
+    SELECT a.* INTO account FROM runtime_installations r JOIN personal_provider_accounts a ON a.id = r.personal_provider_account_id WHERE r.id = NEW.runtime_installation_id;
+    IF account.id IS NOT NULL THEN
+      IF NEW.selected_personal_account_key IS DISTINCT FROM account.account_key OR NEW.requested_by_membership_id IS DISTINCT FROM account.membership_id OR NEW.workspace_id <> account.workspace_id THEN
+        RAISE EXCEPTION 'execution personal account does not match requester and runtime';
+      END IF;
+    ELSIF NEW.selected_personal_account_key IS NOT NULL THEN
+      RAISE EXCEPTION 'shared execution cannot claim a personal account';
+    END IF;
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
 -- Name: protect_execution_routing_snapshot(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1832,6 +1859,21 @@ BEGIN
   RAISE EXCEPTION 'outbound webhook delivery snapshots are immutable';
 END;
 $$;
+
+
+--
+-- Name: protect_personal_provider_identity(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_personal_provider_identity() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (OLD.workspace_id, OLD.membership_id, OLD.account_key) IS DISTINCT FROM (NEW.workspace_id, NEW.membership_id, NEW.account_key) THEN
+    RAISE EXCEPTION 'personal provider account identity is immutable';
+  END IF;
+  RETURN NEW;
+END; $$;
 
 
 --
@@ -4006,6 +4048,8 @@ CREATE TABLE public.execution_runs (
     usage_rate_version_id bigint,
     governed_policy_publication_id bigint,
     resolution_contract_version_id bigint,
+    requested_by_membership_id bigint,
+    selected_personal_account_key uuid,
     CONSTRAINT execution_runs_admission_error CHECK (((last_admission_error IS NULL) OR ((octet_length((last_admission_error)::text) >= 1) AND (octet_length((last_admission_error)::text) <= 100)))),
     CONSTRAINT execution_runs_bounds CHECK (((octet_length((request_key)::text) >= 1) AND (octet_length((request_key)::text) <= 128) AND (attempt_number > 0) AND (current_sequence >= 0) AND (admission_attempt_count >= 0) AND (input_units >= 0) AND (output_units >= 0))),
     CONSTRAINT execution_runs_disclosure_budgets CHECK (((jsonb_typeof(disclosed_data_classes) = 'array'::text) AND (jsonb_array_length(disclosed_data_classes) <= 8) AND (disclosed_data_classes <@ '["case_content", "customer_identity", "account_context", "approved_knowledge", "public_web_query", "retrieved_memory"]'::jsonb) AND ((max_input_units >= 1) AND (max_input_units <= 10000000)) AND ((max_output_units >= 1) AND (max_output_units <= 10000000)))),
@@ -4016,6 +4060,7 @@ CREATE TABLE public.execution_runs (
     CONSTRAINT execution_runs_memory_context CHECK ((((memory_context_status)::text = ANY (ARRAY[('not_applicable'::character varying)::text, ('available'::character varying)::text, ('degraded'::character varying)::text])) AND ((((memory_context_status)::text = 'degraded'::text) AND (memory_context_detail IS NOT NULL)) OR (((memory_context_status)::text <> 'degraded'::text) AND (memory_context_detail IS NULL))))),
     CONSTRAINT execution_runs_memory_context_detail CHECK (((memory_context_detail IS NULL) OR ((octet_length((memory_context_detail)::text) >= 1) AND (octet_length((memory_context_detail)::text) <= 100)))),
     CONSTRAINT execution_runs_output CHECK (((output IS NULL) OR (octet_length(output) <= 102400))),
+    CONSTRAINT execution_runs_personal_requester CHECK (((selected_personal_account_key IS NULL) OR (requested_by_membership_id IS NOT NULL))),
     CONSTRAINT execution_runs_runtime_configuration_snapshot CHECK ((((selected_runtime_configuration_fingerprint)::text ~ '^[0-9a-f]{64}$'::text) AND ((octet_length((selected_effective_model)::text) >= 1) AND (octet_length((selected_effective_model)::text) <= 200)) AND ((selected_effective_model)::text !~ '[\r\n]'::text))),
     CONSTRAINT execution_runs_runtime_selection CHECK ((((selected_runtime_detection_key)::text ~ '^[0-9a-f]{64}$'::text) AND ((selected_adapter_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text) AND ((selected_runtime_profile_key)::text = ANY (ARRAY[('workspace_default'::character varying)::text, ('thorough'::character varying)::text, ('fast'::character varying)::text])) AND ((runtime_selection_reason)::text = ANY (ARRAY[('primary'::character varying)::text, ('fallback'::character varying)::text])))),
     CONSTRAINT execution_runs_runtime_selection_detail CHECK (((octet_length((runtime_selection_detail)::text) >= 1) AND (octet_length((runtime_selection_detail)::text) <= 500))),
@@ -6127,6 +6172,42 @@ ALTER SEQUENCE public.outbound_webhook_endpoints_id_seq OWNED BY public.outbound
 
 
 --
+-- Name: personal_provider_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.personal_provider_accounts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    account_key uuid NOT NULL,
+    state character varying DEFAULT 'starting'::character varying NOT NULL,
+    expires_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT personal_accounts_state CHECK (((state)::text = ANY ((ARRAY['starting'::character varying, 'pending'::character varying, 'connected'::character varying, 'failed'::character varying, 'disconnected'::character varying])::text[])))
+);
+
+
+--
+-- Name: personal_provider_accounts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.personal_provider_accounts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: personal_provider_accounts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.personal_provider_accounts_id_seq OWNED BY public.personal_provider_accounts.id;
+
+
+--
 -- Name: products; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6417,6 +6498,7 @@ CREATE TABLE public.runtime_installations (
     runtime_test_usage_observed boolean DEFAULT false NOT NULL,
     execution_mode character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
     transport character varying DEFAULT 'legacy_unknown'::character varying NOT NULL,
+    personal_provider_account_id bigint,
     CONSTRAINT runtime_installations_approval CHECK ((((approved = false) AND (approved_by_membership_id IS NULL) AND (approved_by_user_id IS NULL) AND (approved_at IS NULL)) OR ((approved = true) AND (approved_by_membership_id IS NOT NULL) AND (approved_by_user_id IS NOT NULL) AND (approved_at IS NOT NULL)))),
     CONSTRAINT runtime_installations_approval_requires_test CHECK (((approved = false) OR (((runtime_test_status)::text = 'passed'::text) AND ((runtime_tested_configuration_fingerprint)::text = (configuration_fingerprint)::text)))),
     CONSTRAINT runtime_installations_budgets CHECK (((max_timeout_seconds >= 30) AND (max_timeout_seconds <= 900) AND ((max_steps >= 1) AND (max_steps <= 20)) AND ((max_tool_calls >= 0) AND (max_tool_calls <= 50)))),
@@ -8004,6 +8086,13 @@ ALTER TABLE ONLY public.outbound_webhook_endpoints ALTER COLUMN id SET DEFAULT n
 
 
 --
+-- Name: personal_provider_accounts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.personal_provider_accounts ALTER COLUMN id SET DEFAULT nextval('public.personal_provider_accounts_id_seq'::regclass);
+
+
+--
 -- Name: products id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -8889,6 +8978,14 @@ ALTER TABLE ONLY public.outbound_webhook_deliveries
 
 ALTER TABLE ONLY public.outbound_webhook_endpoints
     ADD CONSTRAINT outbound_webhook_endpoints_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: personal_provider_accounts personal_provider_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.personal_provider_accounts
+    ADD CONSTRAINT personal_provider_accounts_pkey PRIMARY KEY (id);
 
 
 --
@@ -11473,6 +11570,27 @@ CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.works
 
 
 --
+-- Name: index_personal_provider_accounts_on_account_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_personal_provider_accounts_on_account_key ON public.personal_provider_accounts USING btree (account_key);
+
+
+--
+-- Name: index_personal_provider_accounts_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_personal_provider_accounts_on_workspace_id ON public.personal_provider_accounts USING btree (workspace_id);
+
+
+--
+-- Name: index_personal_provider_accounts_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_personal_provider_accounts_on_workspace_id_and_id ON public.personal_provider_accounts USING btree (workspace_id, id);
+
+
+--
 -- Name: index_policy_previews_proposal_identity; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -11687,6 +11805,13 @@ CREATE UNIQUE INDEX index_resolution_contract_versions_on_workspace_id_and_id ON
 --
 
 CREATE UNIQUE INDEX index_resolution_contract_versions_tenant_chain ON public.resolution_contract_versions USING btree (workspace_id, resolution_contract_family_id, id);
+
+
+--
+-- Name: index_runtime_installations_on_personal_provider_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_runtime_installations_on_personal_provider_account_id ON public.runtime_installations USING btree (personal_provider_account_id);
 
 
 --
@@ -12180,6 +12305,13 @@ CREATE UNIQUE INDEX index_workspaces_on_runner_key ON public.workspaces USING bt
 
 
 --
+-- Name: personal_accounts_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX personal_accounts_identity ON public.personal_provider_accounts USING btree (workspace_id, account_key, membership_id);
+
+
+--
 -- Name: account_health_assessments account_health_assessments_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12541,6 +12673,13 @@ CREATE TRIGGER execution_memory_selections_append_only BEFORE DELETE OR UPDATE O
 --
 
 CREATE TRIGGER execution_memory_selections_no_truncate BEFORE TRUNCATE ON public.execution_memory_selections FOR EACH STATEMENT EXECUTE FUNCTION public.protect_execution_memory_selection();
+
+
+--
+-- Name: execution_runs execution_personal_account; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER execution_personal_account BEFORE INSERT OR UPDATE ON public.execution_runs FOR EACH ROW EXECUTE FUNCTION public.protect_execution_personal_account();
 
 
 --
@@ -12971,6 +13110,13 @@ CREATE TRIGGER outbound_webhook_deliveries_protect BEFORE DELETE OR UPDATE ON pu
 
 
 --
+-- Name: personal_provider_accounts personal_provider_identity; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER personal_provider_identity BEFORE UPDATE ON public.personal_provider_accounts FOR EACH ROW EXECUTE FUNCTION public.protect_personal_provider_identity();
+
+
+--
 -- Name: public_web_extractions public_web_extractions_no_truncate; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -13185,6 +13331,14 @@ CREATE TRIGGER workspace_tombstones_protect BEFORE DELETE OR UPDATE ON public.wo
 --
 
 CREATE TRIGGER workspaces_protect_runner_key BEFORE UPDATE ON public.workspaces FOR EACH ROW EXECUTE FUNCTION public.protect_workspace_runner_key();
+
+
+--
+-- Name: execution_runs execution_runs_personal_identity; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT execution_runs_personal_identity FOREIGN KEY (workspace_id, selected_personal_account_key, requested_by_membership_id) REFERENCES public.personal_provider_accounts(workspace_id, account_key, membership_id);
 
 
 --
@@ -14204,6 +14358,14 @@ ALTER TABLE ONLY public.support_case_products
 
 
 --
+-- Name: personal_provider_accounts fk_rails_1444e811e2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.personal_provider_accounts
+    ADD CONSTRAINT fk_rails_1444e811e2 FOREIGN KEY (workspace_id, membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
 -- Name: support_case_taggings fk_rails_1557a3d783; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14337,6 +14499,14 @@ ALTER TABLE ONLY public.intercom_webhook_deliveries
 
 ALTER TABLE ONLY public.service_calendars
     ADD CONSTRAINT fk_rails_28a2d1884f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: execution_runs fk_rails_29f9b8aea0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_runs
+    ADD CONSTRAINT fk_rails_29f9b8aea0 FOREIGN KEY (workspace_id, requested_by_membership_id) REFERENCES public.memberships(workspace_id, id);
 
 
 --
@@ -15708,6 +15878,14 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: personal_provider_accounts fk_rails_b8dd135c1c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.personal_provider_accounts
+    ADD CONSTRAINT fk_rails_b8dd135c1c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: intercom_drafts fk_rails_b8e2a27ef3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16332,6 +16510,14 @@ ALTER TABLE ONLY public.email_message_links
 
 
 --
+-- Name: runtime_installations fk_rails_fbdd11bced; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.runtime_installations
+    ADD CONSTRAINT fk_rails_fbdd11bced FOREIGN KEY (workspace_id, personal_provider_account_id) REFERENCES public.personal_provider_accounts(workspace_id, id);
+
+
+--
 -- Name: resolution_contract_versions fk_rails_fcad053a4a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16499,6 +16685,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260906060000'),
+('20260906050000'),
 ('20260906041000'),
 ('20260906040000'),
 ('20260906020000'),

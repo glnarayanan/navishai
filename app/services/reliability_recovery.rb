@@ -19,9 +19,17 @@ class ReliabilityRecovery
     end
     raise InvalidAction, "The task is no longer in progress." unless current.crew_task.in_progress?
 
+    if current.selected_personal_account_key
+      unless current.requested_by_membership_id == actor.id
+        raise InvalidAction, "Only the original requester can retry a run using their personal AI account."
+      end
+      account = PersonalProviderAccount.find_by(workspace:, membership: actor, account_key: current.selected_personal_account_key)
+      raise InvalidAction, "The original personal AI account is unavailable. Reconnect it before retrying." unless account&.usable?
+    end
+
     ExecutionRecovery.request!(
       workspace:, membership: actor, task: current.crew_task,
-      request_key: "operations:retry:#{current.run_key}", client:
+      request_key: "operations:retry:#{current.run_key}", client:, personal_account_id: account&.id
     )
   rescue ExecutionRecovery::InvalidAction => error
     raise InvalidAction, error.message

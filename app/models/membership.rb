@@ -23,6 +23,9 @@ class Membership < ApplicationRecord
   before_destroy :retain_an_owner
   before_update :retain_an_owner_after_role_change, if: -> { role_changed? && role_was == "owner" }
 
+  before_destroy :disconnect_personal_accounts
+  before_update :disconnect_personal_accounts, if: -> { role_changed? && viewer? }
+
   def can_write?
     !viewer?
   end
@@ -57,6 +60,10 @@ class Membership < ApplicationRecord
   end
 
   private
+    def disconnect_personal_accounts
+      PersonalProviderConnection.disconnect_membership!(membership: self) if PersonalProviderAccount.exists?(membership_id: id)
+    end
+
     def retain_an_owner
       prevent_last_owner_change if owner?
     end

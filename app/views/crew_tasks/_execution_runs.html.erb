@@ -192,9 +192,16 @@
     <% end %>
 
     <% if @membership.can_write? && @task.in_progress? && @active_run.nil? %>
-      <%= button_to latest_run ? "Run specialist again" : "Run specialist",
-        crew_task_runs_path(@task),
-        params: { request_key: "web:#{SecureRandom.uuid}" }, class: "button button-primary run-action" %>
+      <%= form_with url: crew_task_runs_path(@task) do |form| %>
+        <%= form.hidden_field :request_key, value: "web:#{SecureRandom.uuid}" %>
+        <% accounts = PersonalProviderAccount.where(workspace: Current.workspace, membership: @membership).includes(:runtime_installation).select(&:usable?) %>
+        <% if accounts.any? %>
+          <%= form.label :personal_account_id, "AI account" %>
+          <%= form.select :personal_account_id, options_for_select([["Workspace provider", ""]] + accounts.map { |account| ["My Codex account · #{account.created_at.to_fs(:short)}", account.id] }) %>
+          <p class="field-hint">A personal account never falls back to another person's credentials.</p>
+        <% end %>
+        <%= form.button latest_run ? "Run specialist again" : "Run specialist", class: "button button-primary run-action" %>
+      <% end %>
     <% elsif @active_run %>
       <p class="execution-footnote">A new attempt stays blocked until this run reaches a confirmed terminal state.</p>
     <% end %>

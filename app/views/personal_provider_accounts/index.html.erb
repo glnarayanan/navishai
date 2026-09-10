@@ -1,0 +1,20 @@
+<% content_for :title, "My AI accounts · #{Current.workspace.name} — NavishAI" %>
+<main class="page-shell provider-form-shell page-family-config">
+  <div class="page-heading"><div><h1>My AI accounts</h1><p>Connect your own account for specialist runs on the deployed server. Your credentials are private to you.</p></div></div>
+  <%= button_to "Connect Codex", workspace_personal_provider_accounts_path(Current.workspace), class: "button button-primary" %>
+  <p class="field-hint">An Admin must enable the provider. After sign-in and the connection test, an Admin approves the account before you can use it.</p>
+  <% if @accounts.empty? %>
+    <section class="empty-state"><h2>No personal accounts connected</h2><p>Specialists continue to use the Workspace provider until you deliberately choose an approved personal account.</p></section>
+  <% else %>
+    <div class="runtime-list">
+      <% @accounts.each do |account| %>
+        <article class="panel"><h2>Codex</h2><p><%= account.usable? ? "Ready to use" : account.connected? ? "Connected · awaiting Admin approval" : account.state.humanize %></p>
+          <%= link_to "Check account", workspace_personal_provider_account_path(Current.workspace, account), class: "button button-secondary" %>
+          <% unless account.disconnected? %>
+            <%= button_to "Disconnect my account", workspace_personal_provider_account_path(Current.workspace, account), method: :delete, class: "button button-secondary" %>
+          <% end %>
+        </article>
+      <% end %>
+    </div>
+  <% end %>
+</main>
