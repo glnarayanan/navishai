@@ -13,7 +13,7 @@ class KnowledgeDocumentExtractor
   TEXT_EXTENSIONS = %w[.txt .text .md .markdown].freeze
   HTML_EXTENSIONS = %w[.html .htm .xhtml].freeze
   PDF_EXTENSIONS = %w[.pdf].freeze
-  SUPPORTED_EXTENSIONS = (TEXT_EXTENSIONS + HTML_EXTENSIONS + PDF_EXTENSIONS + %w[.docx]).freeze
+  SUPPORTED_EXTENSIONS = (TEXT_EXTENSIONS + HTML_EXTENSIONS + PDF_EXTENSIONS + %w[.docx .doc]).freeze
 
   Extracted = Data.define(:text, :format)
 
@@ -21,16 +21,16 @@ class KnowledgeDocumentExtractor
     SUPPORTED_EXTENSIONS.include?(File.extname(filename.to_s).downcase)
   end
 
-  def self.extract(data:, content_type:, filename:)
-    new.extract(data:, content_type:, filename:)
+  def self.extract(data:, content_type:, filename:, workspace_key: nil)
+    new.extract(data:, content_type:, filename:, workspace_key:)
   end
 
-  def extract(data:, content_type:, filename:)
+  def extract(data:, content_type:, filename:, workspace_key: nil)
     extension = File.extname(filename.to_s).downcase
-    if extension == ".doc"
-      raise UnsupportedDocument, "Legacy .doc conversion is not configured. Save the document as .docx or PDF and upload it again."
-    end
     case content_type
+    when "application/msword"
+      raise UnsupportedDocument, "Legacy Word content must use a .doc filename." unless extension == ".doc"
+      Extracted.new(text: KnowledgeDocumentGateway.new.extract_doc(data:, workspace_key:), format: "doc")
     when KnowledgeWordDocument::CONTENT_TYPE
       raise UnsupportedDocument, "Word content must use a .docx filename." unless extension == ".docx"
       Extracted.new(text: KnowledgeWordDocument.extract(data), format: "docx")
@@ -43,11 +43,13 @@ class KnowledgeDocumentExtractor
       elsif TEXT_EXTENSIONS.include?(extension) || extension.empty?
         Extracted.new(text: utf8(data).gsub(/\r\n?/, "\n"), format: extension.start_with?(".m") ? "markdown" : "text")
       else
-        raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, or .docx file."
+        raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, .docx, or .doc file."
       end
     else
-      raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, or .docx file."
+      raise UnsupportedDocument, "Upload a .txt, .md, .html, .pdf, .docx, or .doc file."
     end
+  rescue RunnerClient::Error
+    raise UnsupportedDocument, "We could not read this .doc file. Upload a .docx or PDF copy, or contact your admin."
   end
 
   private

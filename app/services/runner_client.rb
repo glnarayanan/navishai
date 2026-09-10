@@ -201,7 +201,7 @@ class RunnerClient
     raise ClientConfigurationError, "runner CA file could not be loaded: #{error.message}"
   end
 
-  def perform(request, read_timeout: 10)
+  def perform(request, read_timeout: 10, max_response_bytes: RunnerProtocol::MAX_BODY_BYTES)
     http = Net::HTTP.new(@base_uri.host, @base_uri.port, nil)
     http.use_ssl = @base_uri.scheme == "https"
     if http.use_ssl?
@@ -217,12 +217,12 @@ class RunnerClient
     http.start do
       http.request(request) do |response|
         code = response.code.to_i
-        if response.content_length && response.content_length > RunnerProtocol::MAX_BODY_BYTES
+        if response.content_length && response.content_length > max_response_bytes
           raise MalformedResponse, "runner response is too large"
         end
         response.read_body do |chunk|
           body << chunk.b
-          raise MalformedResponse, "runner response is too large" if body.bytesize > RunnerProtocol::MAX_BODY_BYTES
+          raise MalformedResponse, "runner response is too large" if body.bytesize > max_response_bytes
         end
       end
     end

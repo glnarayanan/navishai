@@ -214,7 +214,7 @@ Enable Help Center sync on an Intercom connection, then choose **Sync Help Cente
 
 Products and Intercom applicability constrain case-scoped knowledge search and evidence admission. Connection defaults apply until a knowledge manager records an article override. Sync does not change those mappings. The originating connection remains immutable.
 
-DOCX uploads use the existing ZIP/XML libraries, retain scanned originals, and extract text without executing Office code. Legacy DOC requires the separately approved isolated conversion dependency; it is not silently treated as text.
+DOCX uploads use the existing ZIP/XML libraries, retain scanned originals, and extract text without executing Office code. Legacy DOC uses bundled LibreOffice Writer in the Linux runner after malware scanning. Install `libreoffice-writer` and the build-only `libreofficekit-dev` headers on native development hosts; `.agents/setup` and `script/prepare_check_host` include it. Rails sends a signed, Workspace- and digest-bound request and never starts a converter process. `bin/ci` verifies extraction of the repository's generated legacy Word fixture using the real converter and execution helper.
 
 ## Workspace connectors and personal connections
 

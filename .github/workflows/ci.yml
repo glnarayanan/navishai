@@ -36,6 +36,35 @@ jobs:
           go build -o /tmp/navishai-exec ./runner/cmd/navishai-exec
           cc -std=c11 -O2 -Wall -Wextra -Werror -o /tmp/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c
 
+      - name: Test bundled document converter
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y libreoffice-writer libreofficekit-dev
+          mkdir -p /tmp/navishai-document-bin
+          cp /tmp/navishai-exec /tmp/navishai-document-bin/
+          cc -O2 -Wall -Wextra -Werror -o /tmp/navishai-document-bin/navishai-document runner/cmd/navishai-document/main.c -ldl
+          NAVISHAI_TEST_DOC_FIXTURE="$PWD/test/fixtures/files/knowledge-legacy.doc" NAVISHAI_TEST_EXEC_HELPER=/tmp/navishai-document-bin/navishai-exec go test ./runner/internal/documents -run TestInstalledLibreOffice -count=1
+
+      - name: Build bundled runner image
+        run: docker build -f ops/docker/runner.Dockerfile -t navishai-runner:check .
+
+      - name: Smoke test legacy DOC conversion in runner image
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            --volume "$PWD/test/fixtures/files/knowledge-legacy.doc:/tmp/knowledge-legacy.doc:ro" \
+            navishai-runner:check -ec '
+              test -x /usr/local/bin/navishai-document
+              test -x /usr/local/bin/navishai-exec
+              test -x /usr/local/bin/navishai-netns-launch
+              grep -q "libreoffice-writer" /usr/share/navishai/runner-packages.txt
+              work=$(mktemp -d)
+              trap "rm -rf $work" EXIT
+              cp /tmp/knowledge-legacy.doc "$work/input.doc"
+              cd "$work"
+              /usr/local/bin/navishai-document
+              grep -q "NavishAI document conversion" input.txt
+            '
+
   scan_ruby:
     runs-on: ubuntu-latest
 

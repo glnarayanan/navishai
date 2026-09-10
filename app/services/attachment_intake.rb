@@ -12,6 +12,7 @@ class AttachmentIntake
   end
 
   SIGNATURES = [
+    [ "application/msword", "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1".b ],
     [ "application/pdf", "%PDF-".b ],
     [ "image/png", "\x89PNG\r\n\x1A\n".b ],
     [ "image/jpeg", "\xFF\xD8\xFF".b ],

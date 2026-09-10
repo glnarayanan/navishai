@@ -43,7 +43,7 @@ class KnowledgeWordDocumentTest < ActiveSupport::TestCase
     error = assert_raises(KnowledgeDocumentExtractor::UnsupportedDocument) do
       KnowledgeDocumentExtractor.extract(data: "old word", content_type: "text/plain", filename: "guide.doc")
     end
-    assert_includes error.message, "Save the document as .docx or PDF"
+    assert_includes error.message, "Upload a .txt"
   end
 
   test "Word upload remains quarantined without scanning and passes through clean scanning" do

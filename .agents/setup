@@ -38,6 +38,8 @@ ensure_apt_packages() {
     git
     libffi-dev
     libgmp-dev
+    libreoffice-writer
+    libreofficekit-dev
     libpq-dev
     libreadline-dev
     libssl-dev

@@ -86,3 +86,9 @@ rescue RunnerClient::Conflict
 end
 
 puts "Rails and Go runner scripted execution and provider catalog contract passed"
+
+document_text = KnowledgeDocumentGateway.new.extract_doc(
+  data: File.binread(Rails.root.join("test/fixtures/files/knowledge-legacy.doc")), workspace_key: workspace.runner_key
+)
+abort "runner did not extract the legacy Word fixture" unless document_text.include?("NavishAI document conversion")
+puts "Rails and Go runner legacy Word conversion contract passed"

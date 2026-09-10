@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 7 September 2026
+**Updated:** 9 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -38,6 +38,7 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 | S3-compatible object storage | Deferred | `config/storage.yml` | Owner deferral on 6 September 2026; only the local disk service is configured and tested. |
 | Knowledge: maintained text, URL snapshots, versions, freshness, expiry, full-text search, citations | Done | `KnowledgeIngestion`, `KnowledgeUrlFetcher`, `KnowledgeSearch`, `KnowledgeSource(Version)` | SSRF-safe fetch, immutable versions, stale and deleted warnings. |
 | Knowledge document uploads: text, Markdown, HTML, PDF, DOCX, ZIP bundles | Built | `KnowledgeDocumentExtractor`, `KnowledgeZipBundle`, `pdf-reader` | One source per bundled document; bounded pages, bytes, entries; CRC-verified archive reader. |
+| Knowledge legacy DOC uploads | Built | `KnowledgeDocumentGateway`, `runner/internal/documents`, `navishai-document` | Clean scan precedes signed, Workspace- and digest-bound LibreOfficeKit conversion; the scanned original stays attached and extracted text is bounded to 1 MiB. |
 | Intercom Help Center as a synchronised knowledge source | Built | `IntercomHelpCenterSync`, `KnowledgeSyncPass`, `KnowledgeSyncObservation` | Bounded resumable scans; immutable origin and versions; two complete absence confirmations retire a source. Republish restores visibility and preserves history. |
 | Notion knowledge and personal connector accounts | Built | `WorkspaceConnector`, `IntegrationOauth`, `NotionKnowledgeSync` | Admin enablement and encrypted Workspace credentials; separate personal OAuth browsing. Shared Notion roots use complete-pass reconciliation. Personal content is not automatically shared. |
 | Product and Intercom applicability | Built | `KnowledgeApplicabilityScope`, `Product`, `KnowledgeApplicability` | Dynamic connection defaults, human overrides, case product assignment, scoped retrieval and citation admission. |
@@ -118,6 +119,21 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 9 September 2026 legacy DOC checkpoint
+
+On this Linux 6.1.158 x86-64 orb: Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, and LibreOffice 7.4.7.2. The Debian Bookworm packages `libreoffice-core`, `libreoffice-writer`, and build-only `libreofficekit-dev` were all `4:7.4.7-1+deb12u14` from source package `libreoffice`. This host has no PostgreSQL 16 APT package, so setup used its documented `PG_MAJOR=15` override; that is a host deviation, not a production-pin change.
+
+| Check | Result |
+|---|---|
+| Focused legacy Rails service and gateway tests | 13 tests, 88 assertions, pass |
+| Full Rails suite | 961 tests, 6,990 assertions, pass |
+| Focused legacy DOC system test | 1 test, 10 assertions, pass; desktop and 320-pixel screenshots inspected |
+| Document and mandatory supervisor isolation tests | Pass with `NAVISHAI_REQUIRE_ISOLATION_TESTS=1` |
+| Native helper builds and genuine DOC conversion | `navishai-runner`, `navishai-exec`, `navishai-netns-launch`, and `navishai-document` build; `TestInstalledLibreOffice` passes through `navishai-exec` and removes its temporary directory |
+| Signed Rails–Go contract | `script/runner_contract` passes its scripted run and genuine legacy DOC conversion |
+| Image smoke | Added to the manual workflow: it checks Writer and all three helpers, then converts `test/fixtures/files/knowledge-legacy.doc` in the built image. Omitted locally because this orb has no Docker daemon. |
+| Clean `bin/ci` | Pass: all 13 declared steps completed with exit 0 after removing `tmp/navishai-runner`, `tmp/navishai-exec`, `tmp/navishai-netns-launch`, and `tmp/navishai-document`. The runner build now compiles all four binaries before the genuine DOC test. |
+
 ### 6 September 2026
 
 Branch `claude/docs-build-contracts-review-nx2rly` from main `5e35f5e3d3d536f0006bdfc0af47474f0dbcf459`, on a fresh Linux 6.18 x86-64 host prepared by `script/prepare_check_host`: Ruby 4.0.6 built from the `ruby_4_0` branch at 4.0.6 patch level 0, Go 1.27.0, PostgreSQL 16.15 with pgvector 0.8.6 from the pinned source revision, Chromium 141 with a matching ChromeDriver.
@@ -168,7 +184,7 @@ Listed in the order they unblock a pilot. None of these blocks owner review of t
 
 1. **Merge and deploy the built stack.** DOCX, Intercom sync and applicability, connectors and Notion, Workspace search selection, and personal Codex accounts are unmerged source changes. The implementation and verification evidence does not establish a live deployment.
 2. **Native runtime search.** Admin authority is settled. A runtime adapter still needs structured URL/excerpt/date evidence that satisfies the existing citation contract and its allowed egress profile. Codex query events alone do not satisfy it; native search stays unavailable. Parallel remains unimplemented.
-3. **Legacy DOC intake.** An isolated conversion package needs explicit dependency approval. DOCX, PDF, Markdown, HTML, text and ZIP intake remain available.
+3. **Legacy DOC image proof.** Native Linux conversion, isolation, the signed route, and focused browser states passed on 9 September 2026. Run the new manual workflow on a Docker-capable host to execute the built-image smoke; DOCX, PDF, Markdown, HTML, text and ZIP intake remain available.
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
@@ -202,4 +218,4 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 
 ### Approved implementation scope — 6 September 2026
 
-The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake; and a web companion whose execution stays on deployed Linux. Personal content must not become shared knowledge automatically. The legacy DOC converter dependency is awaiting an explicit decision. Native search requires structured result evidence before enabling an adapter. Implementation remains unmerged. The checkpoint section records tests separately from deployment and live-provider proof.
+The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake; and a web companion whose execution stays on deployed Linux. Personal content must not become shared knowledge automatically. On 7 September 2026 the owner approved LibreOffice bundled into the package for isolated legacy DOC conversion. Native search requires structured result evidence before enabling an adapter. Implementation remains unmerged. The checkpoint section records tests separately from deployment and live-provider proof.

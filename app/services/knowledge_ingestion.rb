@@ -187,7 +187,7 @@ class KnowledgeIngestion
           raise InvalidSource, "The uploaded file must pass the configured malware scan."
         end
         extracted = KnowledgeDocumentExtractor.extract(
-          data: item.blob.download, content_type: item.content_type, filename: item.filename
+          data: item.blob.download, content_type: item.content_type, filename: item.filename, workspace_key: @workspace.runner_key
         )
 
         [ prepared, normalize_content(extracted.text) ]

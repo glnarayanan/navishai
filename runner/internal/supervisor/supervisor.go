@@ -45,6 +45,7 @@ type Limits struct {
 	WallTime    time.Duration
 	CPUSeconds  uint64
 	MemoryBytes uint64
+	FileBytes   uint64
 	OpenFiles   uint64
 	Processes   uint64
 	OutputBytes int
@@ -144,7 +145,7 @@ func New(config Config) (*Supervisor, error) {
 			return nil, err
 		}
 	}
-	runtimeReadRoots, err := realRoots(config.RuntimeReadRoots)
+	runtimeReadRoots, err := resolveRoots(config.RuntimeReadRoots, true)
 	if err != nil {
 		return nil, err
 	}
@@ -449,6 +450,7 @@ func (supervisor *Supervisor) prepare(request Request) (preparedRequest, error) 
 	}
 	environment := []string{
 		"HOME=" + homeDir, "LANG=C.UTF-8",
+		"NAVISHAI_LIMIT_FILE_BYTES=" + strconv.FormatUint(supervisor.limits.FileBytes, 10),
 		"NAVISHAI_LIMIT_CPU_SECONDS=" + strconv.FormatUint(supervisor.limits.CPUSeconds, 10),
 		"NAVISHAI_LIMIT_MEMORY_BYTES=" + strconv.FormatUint(supervisor.limits.MemoryBytes, 10),
 		"NAVISHAI_LIMIT_OPEN_FILES=" + strconv.FormatUint(supervisor.limits.OpenFiles, 10),
@@ -538,7 +540,9 @@ func processResult(command *exec.Cmd, output *boundedOutput, timedOut, canceled 
 	}
 }
 
-func realRoots(values []string) ([]string, error) {
+func realRoots(values []string) ([]string, error) { return resolveRoots(values, false) }
+
+func resolveRoots(values []string, allowFiles bool) ([]string, error) {
 	if len(values) == 0 {
 		return nil, ErrInvalidRequest
 	}
@@ -549,7 +553,7 @@ func realRoots(values []string) ([]string, error) {
 			return nil, ErrInvalidRequest
 		}
 		info, err := os.Stat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil || (!info.IsDir() && !(allowFiles && (info.Mode().IsRegular() || info.Mode()&os.ModeCharDevice != 0))) {
 			return nil, ErrInvalidRequest
 		}
 		result = append(result, filepath.Clean(path))
