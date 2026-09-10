@@ -143,6 +143,10 @@ func TestExecuteRejectsToolEventsWhenToolsAreDisabled(t *testing.T) {
 	}
 }
 
+func TestExecuteRejectsNativeSearchEventsWhenToolsAreDisabled(t *testing.T) {
+	assertDisabledToolsPolicyFailure(t, nativeSearchJSONL)
+}
+
 func TestExecuteRejectsStartedToolWhenToolsAreDisabled(t *testing.T) {
 	assertDisabledToolsPolicyFailure(t, startedToolJSONL)
 }
@@ -164,7 +168,7 @@ func assertDisabledToolsPolicyFailure(t *testing.T, output string) {
 			return nil
 		},
 	)
-	if err != nil || result.Status != "failed" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
+	if err != nil || result.Status != "failed" || result.Output != "" || result.FailureCode != "codex_policy_denied" || len(events) != 2 ||
 		events[1].EventType != "run.failed" || events[1].Data["retryable"] != false {
 		t.Fatalf("Codex item event was not rejected as a non-retryable policy failure: result=%#v events=%#v err=%v", result, events, err)
 	}
@@ -286,6 +290,12 @@ const startedToolJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4f
 
 const unknownItemJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4fe4-a640-421e3ba79921"}
 {"type":"item.completed","item":{"id":"item_0","type":"future_tool","status":"completed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Cited answer."}}
+{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":24}}
+`
+
+const nativeSearchJSONL = `{"type":"thread.started","thread_id":"3d07f334-88ef-4fe4-a640-421e3ba79921"}
+{"type":"item.completed","item":{"id":"item_0","type":"web_search","query":"NavishAI evidence","action":{"type":"search","query":"NavishAI evidence"}}}
 {"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Cited answer."}}
 {"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":24}}
 `
