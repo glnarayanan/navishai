@@ -41,6 +41,6 @@ class KnowledgeSourceVersion < ApplicationRecord
 
     def url_matches_source
       errors.add(:retrieved_from_url, "is required for a URL source") if knowledge_source&.url? && retrieved_from_url.blank?
-      errors.add(:retrieved_from_url, "is not allowed for this source") if knowledge_source && !knowledge_source.url? && retrieved_from_url.present?
+      errors.add(:retrieved_from_url, "is not allowed for this source") if knowledge_source && !knowledge_source.url? && !knowledge_source.intercom_help_center? && retrieved_from_url.present?
     end
 end

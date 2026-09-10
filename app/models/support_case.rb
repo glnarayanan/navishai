@@ -9,6 +9,8 @@ class SupportCase < ApplicationRecord
   has_many :status_changes, class_name: "SupportCaseStatusChange", dependent: :restrict_with_exception
   has_many :support_case_taggings, dependent: :restrict_with_exception
   has_many :tags, through: :support_case_taggings
+  has_many :support_case_products, dependent: :restrict_with_exception
+  has_many :products, through: :support_case_products
   has_many :case_notes, dependent: :restrict_with_exception
   has_one :case_sla, dependent: :restrict_with_exception
   has_many :crew_tasks, dependent: :restrict_with_exception

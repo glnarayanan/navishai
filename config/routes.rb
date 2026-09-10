@@ -22,7 +22,13 @@ Rails.application.routes.draw do
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
       post :reconcile, on: :member
     end
+    resources :products, only: %i[index create update]
     resources :intercom_connections, path: "intercom", only: %i[ index create update ] do
+      resource :knowledge_applicability, only: %i[update destroy], controller: "knowledge_applicabilities"
+      member do
+        patch :help_center
+        post :sync_help_center
+      end
       post :reconcile, on: :member
       post :backfill_preview, on: :member
       post "backfill/:manifest_id/confirm", action: :backfill_confirm, on: :member, as: :backfill_confirm
@@ -31,7 +37,9 @@ Rails.application.routes.draw do
         on: :member, as: :backfill_resolve_identity
     end
     resources :attachments, only: :show, controller: "attachment_downloads"
-    resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ]
+    resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ] do
+      resource :knowledge_applicability, only: %i[update destroy], controller: "knowledge_applicabilities"
+    end
     resources :memory_records, path: "memory", only: %i[ index show destroy ] do
       get :export, on: :collection
       post :import, on: :collection
@@ -108,6 +116,7 @@ Rails.application.routes.draw do
     post "account-imports", to: "account_imports#create", as: :account_imports
     post "account-api-inputs", to: "account_imports#create_api", as: :account_api_inputs
     resources :support_cases, path: "cases", only: %i[ index show ] do
+      resource :product_mapping, only: :update, controller: "support_case_products"
       resources :crew_tasks, path: "crew-work", only: %i[ index show create ] do
         post :command, on: :member
         resources :public_web_searches, path: "public-web-searches", only: :create

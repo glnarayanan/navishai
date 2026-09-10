@@ -1,7 +1,7 @@
 class KnowledgeSearch
   Result = Data.define(:source, :version, :rank, :excerpt, :citation_uri) do
     def stale?
-      version.stale?
+      source.stale?
     end
 
     def deleted?
@@ -9,7 +9,7 @@ class KnowledgeSearch
     end
   end
 
-  def self.search(workspace:, query:, limit: 25)
+  def self.search(workspace:, query:, limit: 25, support_case: nil)
     normalized = query.to_s.squish
     return [] if normalized.blank?
 
@@ -17,6 +17,7 @@ class KnowledgeSearch
       .joins(:knowledge_source)
       .preload(:knowledge_source)
       .merge(KnowledgeSource.active)
+      .where(knowledge_source_id: KnowledgeApplicabilityScope.new(workspace:, support_case:).sources.select(:id))
       .where("knowledge_source_versions.id = knowledge_sources.current_version_id")
       .where(
         "search_document @@ websearch_to_tsquery('english', :query) OR " \

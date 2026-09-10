@@ -10,11 +10,22 @@ class IntercomClient
   class ConfigurationError < Error; end
   class Unavailable < Error; end
   class Rejected < Error; end
+  class NotFound < Rejected; end
 
   def initialize(connection:, transport: Net::HTTP, attachment_fetcher: IntercomAttachmentFetcher.new)
     @connection = connection
     @transport = transport
     @attachment_fetcher = attachment_fetcher
+  end
+
+  def articles(starting_after: nil)
+    query = { per_page: 50 }
+    query[:starting_after] = starting_after if starting_after.present?
+    request(:get, "/articles?#{URI.encode_www_form(query)}")
+  end
+
+  def article(id)
+    request(:get, "/articles/#{path_segment(id)}")
   end
 
   def conversation(id)
@@ -95,6 +106,7 @@ class IntercomClient
 
       response = perform(uri, http_request)
       payload = response.body
+      raise NotFound, "Intercom record not found" if response.code.to_i == 404
       raise Rejected, "Intercom rejected the request (#{response.code})" if response.code.to_i.between?(400, 499)
       raise Unavailable, "Intercom is unavailable (#{response.code})" unless response.code.to_i.between?(200, 299)
 

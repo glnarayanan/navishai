@@ -62,18 +62,28 @@ class CrewEvidenceResolver
       source = match && @workspace.knowledge_sources.find_by(source_key: match[1])
       version = source && source.versions.find_by(version_number: match[2].to_i)
       return unavailable unless version&.citation_uri == locator
+      return unavailable unless KnowledgeApplicabilityScope.new(workspace: @workspace, support_case: @task.support_case).include?(source)
 
       status = if source.deleted?
         "deleted"
       elsif source.title == EXPIRED_TEXT || version.content == EXPIRED_TEXT || version.content_sha256 == EXPIRED_DIGEST
         "expired"
+      elsif source.knowledge_sync_observation&.unavailable_at.present?
+        "stale"
       else
         "available"
       end
 
+      observation = source.knowledge_sync_observation
+      observed_at = if status == "available" && version.id == source.current_version.id
+        observation&.observed_at || version.retrieved_at
+      else
+        version.retrieved_at
+      end
+
       {
         status: status,
-        observed_at: version.retrieved_at,
+        observed_at: observed_at,
         valid_until: version.expires_at
       }
     end

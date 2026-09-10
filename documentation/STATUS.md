@@ -181,3 +181,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 ### DOCX intake — 6 September 2026
 
 DOCX intake is implemented using the existing bounded ZIP reader and XML parser, preserving scanning, quarantine, original attachments, and existing text, Markdown, HTML, PDF, and ZIP intake. Macro-bearing, encrypted, malformed, oversized, and unsupported embedded-content packages are rejected. Legacy DOC conversion remains pending approval of an isolated converter dependency. This checkpoint is unmerged.
+
+### Help Center sync and applicability — 6 September 2026
+
+Implemented connection-owned article sync, bounded pass checkpoints, two-complete-pass retirement, immutable citation versions, and product/Intercom applicability with human overrides. Case search and evidence admission enforce mappings. Focused and browser checks cover this slice; the stacked PR must pass its own full CI before handoff. Notion, connector account setup, Workspace search selection, and personal AI accounts are not part of this slice.
