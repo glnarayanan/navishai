@@ -1748,6 +1748,21 @@ $$;
 
 
 --
+-- Name: protect_notion_knowledge_origin(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_notion_knowledge_origin() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF OLD.notion_knowledge_connection_id IS DISTINCT FROM NEW.notion_knowledge_connection_id THEN
+    RAISE EXCEPTION 'knowledge origin is immutable';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
 -- Name: protect_operational_check(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4449,6 +4464,81 @@ ALTER SEQUENCE public.installation_states_id_seq OWNED BY public.installation_st
 
 
 --
+-- Name: integration_oauth_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integration_oauth_attempts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    workspace_connector_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    state_digest character varying NOT NULL,
+    expires_at timestamp(6) without time zone NOT NULL,
+    consumed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: integration_oauth_attempts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.integration_oauth_attempts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: integration_oauth_attempts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.integration_oauth_attempts_id_seq OWNED BY public.integration_oauth_attempts.id;
+
+
+--
+-- Name: integration_user_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integration_user_connections (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    workspace_connector_id bigint NOT NULL,
+    membership_id bigint NOT NULL,
+    remote_user_id character varying NOT NULL,
+    remote_workspace_id character varying NOT NULL,
+    access_token text NOT NULL,
+    refresh_token text,
+    expires_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: integration_user_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.integration_user_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: integration_user_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.integration_user_connections_id_seq OWNED BY public.integration_user_connections.id;
+
+
+--
 -- Name: intercom_backfill_batches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5237,11 +5327,13 @@ CREATE TABLE public.knowledge_sources (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     intercom_connection_id bigint,
+    notion_knowledge_connection_id bigint,
     CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
     CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
-    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('url'::character varying)::text, ('upload'::character varying)::text, ('intercom_help_center'::character varying)::text]))),
-    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = 'intercom_help_center'::text) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL)))),
+    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'url'::character varying, 'upload'::character varying, 'intercom_help_center'::character varying, 'notion_page'::character varying])::text[]))),
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['intercom_help_center'::character varying, 'notion_page'::character varying])::text[])) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'upload'::character varying])::text[])) AND (canonical_url IS NULL) AND (external_id IS NULL)))),
+    CONSTRAINT knowledge_sources_notion_origin CHECK (((notion_knowledge_connection_id IS NULL) OR (((source_kind)::text = 'notion_page'::text) AND (intercom_connection_id IS NULL)))),
     CONSTRAINT knowledge_sources_origin_kind CHECK (((intercom_connection_id IS NULL) OR ((source_kind)::text = 'intercom_help_center'::text)))
 );
 
@@ -5310,7 +5402,7 @@ ALTER SEQUENCE public.knowledge_sync_observations_id_seq OWNED BY public.knowled
 CREATE TABLE public.knowledge_sync_passes (
     id bigint NOT NULL,
     workspace_id bigint NOT NULL,
-    intercom_connection_id bigint NOT NULL,
+    intercom_connection_id bigint,
     status character varying DEFAULT 'pending'::character varying NOT NULL,
     cursor character varying,
     page_count integer DEFAULT 0 NOT NULL,
@@ -5320,6 +5412,10 @@ CREATE TABLE public.knowledge_sync_passes (
     completed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    notion_knowledge_connection_id bigint,
+    frontier jsonb DEFAULT '[]'::jsonb NOT NULL,
+    visited jsonb DEFAULT '[]'::jsonb NOT NULL,
+    CONSTRAINT knowledge_sync_pass_origin CHECK (((intercom_connection_id IS NULL) <> (notion_knowledge_connection_id IS NULL))),
     CONSTRAINT knowledge_sync_passes_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'failed'::character varying, 'completed'::character varying])::text[])) AND ((page_count >= 0) AND (page_count <= 1000)) AND (reconciliation_position >= 0) AND ((cursor IS NULL) OR (octet_length((cursor)::text) <= 2048)) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z_]{1,64}$'::text)) AND (((status)::text = 'completed'::text) = (completed_at IS NOT NULL))))
 );
 
@@ -5680,6 +5776,42 @@ CREATE SEQUENCE public.notifications_id_seq
 --
 
 ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+
+
+--
+-- Name: notion_knowledge_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notion_knowledge_connections (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    workspace_connector_id bigint NOT NULL,
+    name character varying NOT NULL,
+    root_page_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT notion_knowledge_roots CHECK (((jsonb_typeof(root_page_ids) = 'array'::text) AND ((jsonb_array_length(root_page_ids) >= 1) AND (jsonb_array_length(root_page_ids) <= 20))))
+);
+
+
+--
+-- Name: notion_knowledge_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.notion_knowledge_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: notion_knowledge_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.notion_knowledge_connections_id_seq OWNED BY public.notion_knowledge_connections.id;
 
 
 --
@@ -7000,6 +7132,42 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
+-- Name: workspace_connectors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_connectors (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    provider character varying NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    service_token text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    service_remote_workspace_id character varying,
+    CONSTRAINT workspace_connectors_provider CHECK (((provider)::text = ANY ((ARRAY['intercom'::character varying, 'notion'::character varying])::text[])))
+);
+
+
+--
+-- Name: workspace_connectors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_connectors_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: workspace_connectors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.workspace_connectors_id_seq OWNED BY public.workspace_connectors.id;
+
+
+--
 -- Name: workspace_content_expiry_runs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7549,6 +7717,20 @@ ALTER TABLE ONLY public.installation_states ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: integration_oauth_attempts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts ALTER COLUMN id SET DEFAULT nextval('public.integration_oauth_attempts_id_seq'::regclass);
+
+
+--
+-- Name: integration_user_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_user_connections ALTER COLUMN id SET DEFAULT nextval('public.integration_user_connections_id_seq'::regclass);
+
+
+--
 -- Name: intercom_backfill_batches id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -7742,6 +7924,13 @@ ALTER TABLE ONLY public.memory_tombstones ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
+
+
+--
+-- Name: notion_knowledge_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notion_knowledge_connections ALTER COLUMN id SET DEFAULT nextval('public.notion_knowledge_connections_id_seq'::regclass);
 
 
 --
@@ -7966,6 +8155,13 @@ ALTER TABLE ONLY public.usage_rate_versions ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_id_seq'::regclass);
+
+
+--
+-- Name: workspace_connectors id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_connectors ALTER COLUMN id SET DEFAULT nextval('public.workspace_connectors_id_seq'::regclass);
 
 
 --
@@ -8371,6 +8567,22 @@ ALTER TABLE ONLY public.installation_states
 
 
 --
+-- Name: integration_oauth_attempts integration_oauth_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts
+    ADD CONSTRAINT integration_oauth_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: integration_user_connections integration_user_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_user_connections
+    ADD CONSTRAINT integration_user_connections_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: intercom_backfill_batches intercom_backfill_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8592,6 +8804,14 @@ ALTER TABLE ONLY public.memory_tombstones
 
 ALTER TABLE ONLY public.notifications
     ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notion_knowledge_connections notion_knowledge_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notion_knowledge_connections
+    ADD CONSTRAINT notion_knowledge_connections_pkey PRIMARY KEY (id);
 
 
 --
@@ -8859,6 +9079,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: workspace_connectors workspace_connectors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_connectors
+    ADD CONSTRAINT workspace_connectors_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: workspace_content_expiry_runs workspace_content_expiry_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8988,6 +9216,13 @@ CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_2a2dabc074 ON public
 --
 
 CREATE UNIQUE INDEX idx_on_shared_email_inbox_id_message_id_746c45d92b ON public.outbound_email_deliveries USING btree (shared_email_inbox_id, message_id);
+
+
+--
+-- Name: idx_on_workspace_connector_id_membership_id_30ca455257; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_connector_id_membership_id_30ca455257 ON public.integration_user_connections USING btree (workspace_connector_id, membership_id);
 
 
 --
@@ -10139,6 +10374,34 @@ CREATE UNIQUE INDEX index_installation_states_on_singleton ON public.installatio
 
 
 --
+-- Name: index_integration_oauth_attempts_on_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_integration_oauth_attempts_on_session_id ON public.integration_oauth_attempts USING btree (session_id);
+
+
+--
+-- Name: index_integration_oauth_attempts_on_state_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_integration_oauth_attempts_on_state_digest ON public.integration_oauth_attempts USING btree (state_digest);
+
+
+--
+-- Name: index_integration_oauth_attempts_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_integration_oauth_attempts_on_workspace_id ON public.integration_oauth_attempts USING btree (workspace_id);
+
+
+--
+-- Name: index_integration_user_connections_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_integration_user_connections_on_workspace_id ON public.integration_user_connections USING btree (workspace_id);
+
+
+--
 -- Name: index_intercom_backfill_batches_boundary; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10587,6 +10850,13 @@ CREATE UNIQUE INDEX index_knowledge_sources_on_connection_article ON public.know
 
 
 --
+-- Name: index_knowledge_sources_on_notion_page; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sources_on_notion_page ON public.knowledge_sources USING btree (notion_knowledge_connection_id, external_id) WHERE (notion_knowledge_connection_id IS NOT NULL);
+
+
+--
 -- Name: index_knowledge_sources_on_source_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10611,7 +10881,7 @@ CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_id_and_id ON public.kno
 -- Name: index_knowledge_sources_on_workspace_kind_external; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public.knowledge_sources USING btree (workspace_id, source_kind, external_id) WHERE ((external_id IS NOT NULL) AND (intercom_connection_id IS NULL));
+CREATE UNIQUE INDEX index_knowledge_sources_on_workspace_kind_external ON public.knowledge_sources USING btree (workspace_id, source_kind, external_id) WHERE ((external_id IS NOT NULL) AND (intercom_connection_id IS NULL) AND (notion_knowledge_connection_id IS NULL));
 
 
 --
@@ -10647,6 +10917,13 @@ CREATE UNIQUE INDEX index_knowledge_sync_observations_on_workspace_id_and_id ON 
 --
 
 CREATE UNIQUE INDEX index_knowledge_sync_passes_active ON public.knowledge_sync_passes USING btree (intercom_connection_id) WHERE (completed_at IS NULL);
+
+
+--
+-- Name: index_knowledge_sync_passes_notion_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_sync_passes_notion_active ON public.knowledge_sync_passes USING btree (notion_knowledge_connection_id) WHERE (completed_at IS NULL);
 
 
 --
@@ -11025,6 +11302,20 @@ CREATE UNIQUE INDEX index_notifications_on_workspace_and_id ON public.notificati
 --
 
 CREATE INDEX index_notifications_on_workspace_id ON public.notifications USING btree (workspace_id);
+
+
+--
+-- Name: index_notion_knowledge_connections_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notion_knowledge_connections_on_workspace_id ON public.notion_knowledge_connections USING btree (workspace_id);
+
+
+--
+-- Name: index_notion_knowledge_connections_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notion_knowledge_connections_on_workspace_id_and_id ON public.notion_knowledge_connections USING btree (workspace_id, id);
 
 
 --
@@ -11739,6 +12030,27 @@ CREATE UNIQUE INDEX index_users_on_lower_email_address ON public.users USING btr
 --
 
 CREATE UNIQUE INDEX index_users_on_unique_break_glass ON public.users USING btree (break_glass) WHERE break_glass;
+
+
+--
+-- Name: index_workspace_connectors_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_workspace_connectors_on_workspace_id ON public.workspace_connectors USING btree (workspace_id);
+
+
+--
+-- Name: index_workspace_connectors_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_workspace_connectors_on_workspace_id_and_id ON public.workspace_connectors USING btree (workspace_id, id);
+
+
+--
+-- Name: index_workspace_connectors_on_workspace_id_and_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_workspace_connectors_on_workspace_id_and_provider ON public.workspace_connectors USING btree (workspace_id, provider);
 
 
 --
@@ -12467,6 +12779,13 @@ CREATE TRIGGER knowledge_source_versions_require_active_source BEFORE INSERT ON 
 --
 
 CREATE TRIGGER knowledge_sources_no_truncate BEFORE TRUNCATE ON public.knowledge_sources FOR EACH STATEMENT EXECUTE FUNCTION public.protect_knowledge_source();
+
+
+--
+-- Name: knowledge_sources knowledge_sources_notion_origin; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_sources_notion_origin BEFORE UPDATE ON public.knowledge_sources FOR EACH ROW EXECUTE FUNCTION public.protect_notion_knowledge_origin();
 
 
 --
@@ -14369,6 +14688,14 @@ ALTER TABLE ONLY public.memory_records
 
 
 --
+-- Name: integration_oauth_attempts fk_rails_5364f119a8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts
+    ADD CONSTRAINT fk_rails_5364f119a8 FOREIGN KEY (workspace_id, workspace_connector_id) REFERENCES public.workspace_connectors(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: health_scorecard_design_turns fk_rails_53922c0c70; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14561,6 +14888,14 @@ ALTER TABLE ONLY public.contacts
 
 
 --
+-- Name: knowledge_sync_passes fk_rails_64666e89d3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sync_passes
+    ADD CONSTRAINT fk_rails_64666e89d3 FOREIGN KEY (workspace_id, notion_knowledge_connection_id) REFERENCES public.notion_knowledge_connections(workspace_id, id);
+
+
+--
 -- Name: contacts fk_rails_64c9be5440; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14713,6 +15048,14 @@ ALTER TABLE ONLY public.memory_tombstones
 
 
 --
+-- Name: integration_user_connections fk_rails_723b7b724c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_user_connections
+    ADD CONSTRAINT fk_rails_723b7b724c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: stored_attachments fk_rails_728f214969; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14841,6 +15184,14 @@ ALTER TABLE ONLY public.conversation_messages
 
 
 --
+-- Name: integration_oauth_attempts fk_rails_7cf3786d67; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts
+    ADD CONSTRAINT fk_rails_7cf3786d67 FOREIGN KEY (workspace_id, membership_id) REFERENCES public.memberships(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: intercom_tag_links fk_rails_7d6d79490f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14902,6 +15253,14 @@ ALTER TABLE ONLY public.workspace_tombstones
 
 ALTER TABLE ONLY public.execution_memory_selections
     ADD CONSTRAINT fk_rails_87dc9e2226 FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_connectors fk_rails_885558a971; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_connectors
+    ADD CONSTRAINT fk_rails_885558a971 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -15233,6 +15592,14 @@ ALTER TABLE ONLY public.intercom_part_links
 
 
 --
+-- Name: integration_oauth_attempts fk_rails_afca122577; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts
+    ADD CONSTRAINT fk_rails_afca122577 FOREIGN KEY (session_id) REFERENCES public.sessions(id) ON DELETE CASCADE;
+
+
+--
 -- Name: source_identities fk_rails_b04720ccd3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15361,6 +15728,14 @@ ALTER TABLE ONLY public.memory_tombstones
 
 
 --
+-- Name: knowledge_sources fk_rails_bcd8a59540; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_sources
+    ADD CONSTRAINT fk_rails_bcd8a59540 FOREIGN KEY (workspace_id, notion_knowledge_connection_id) REFERENCES public.notion_knowledge_connections(workspace_id, id);
+
+
+--
 -- Name: account_health_inputs fk_rails_bd914d14d2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15417,6 +15792,14 @@ ALTER TABLE ONLY public.intercom_conversation_links
 
 
 --
+-- Name: integration_oauth_attempts fk_rails_c5e0463307; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_oauth_attempts
+    ADD CONSTRAINT fk_rails_c5e0463307 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: account_health_inputs fk_rails_c62df8f1a3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15430,6 +15813,14 @@ ALTER TABLE ONLY public.account_health_inputs
 
 ALTER TABLE ONLY public.health_scorecard_design_turns
     ADD CONSTRAINT fk_rails_c6843b5d52 FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
+-- Name: notion_knowledge_connections fk_rails_c6a658f24f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notion_knowledge_connections
+    ADD CONSTRAINT fk_rails_c6a658f24f FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
 
 
 --
@@ -15590,6 +15981,14 @@ ALTER TABLE ONLY public.inbound_email_deliveries
 
 ALTER TABLE ONLY public.outbound_webhook_deliveries
     ADD CONSTRAINT fk_rails_d25dea0cdd FOREIGN KEY (outbound_webhook_endpoint_id) REFERENCES public.outbound_webhook_endpoints(id);
+
+
+--
+-- Name: integration_user_connections fk_rails_d296247610; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_user_connections
+    ADD CONSTRAINT fk_rails_d296247610 FOREIGN KEY (workspace_id, workspace_connector_id) REFERENCES public.workspace_connectors(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -15833,6 +16232,22 @@ ALTER TABLE ONLY public.outbound_email_deliveries
 
 
 --
+-- Name: integration_user_connections fk_rails_f5152a70b4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_user_connections
+    ADD CONSTRAINT fk_rails_f5152a70b4 FOREIGN KEY (workspace_id, membership_id) REFERENCES public.memberships(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: notion_knowledge_connections fk_rails_f62cc8af4b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notion_knowledge_connections
+    ADD CONSTRAINT fk_rails_f62cc8af4b FOREIGN KEY (workspace_id, workspace_connector_id) REFERENCES public.workspace_connectors(workspace_id, id);
+
+
+--
 -- Name: intercom_part_links fk_rails_f74cdd9944; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16055,6 +16470,9 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260906060000'),
+('20260906041000'),
+('20260906040000'),
 ('20260906010000'),
 ('20260906000000'),
 ('20260901020000'),

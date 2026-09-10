@@ -1,6 +1,7 @@
 class KnowledgeSource < ApplicationRecord
-  SOURCE_KINDS = %w[manual url upload intercom_help_center].freeze
+  SOURCE_KINDS = %w[manual url upload intercom_help_center notion_page].freeze
 
+  belongs_to :notion_knowledge_connection, optional: true
   belongs_to :intercom_connection, optional: true
   has_one :knowledge_sync_observation, dependent: :restrict_with_exception
   has_one :knowledge_applicability, dependent: :restrict_with_exception
@@ -42,8 +43,8 @@ class KnowledgeSource < ApplicationRecord
   private
     def locator_matches_kind
       errors.add(:canonical_url, "is required") if url? && canonical_url.blank?
-      errors.add(:external_id, "is required") if intercom_help_center? && external_id.blank?
+      errors.add(:external_id, "is required") if (intercom_help_center? || notion_page?) && external_id.blank?
       errors.add(:canonical_url, "is not allowed") if !url? && canonical_url.present?
-      errors.add(:external_id, "is not allowed") if !intercom_help_center? && external_id.present?
+      errors.add(:external_id, "is not allowed") if !intercom_help_center? && !notion_page? && external_id.present?
     end
 end

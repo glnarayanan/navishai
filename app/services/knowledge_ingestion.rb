@@ -22,9 +22,9 @@ class KnowledgeIngestion
   end
 
   def self.ingest_integration!(workspace:, source_kind:, title:, content:, external_id:,
-    source_updated_at:, retrieved_at: Time.current, expires_at: nil, intercom_connection: nil, retrieved_from_url: nil)
+    source_updated_at:, retrieved_at: Time.current, expires_at: nil, intercom_connection: nil, notion_knowledge_connection: nil, retrieved_from_url: nil)
     new(workspace:).ingest_integration!(
-      source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection:, retrieved_from_url:
+      source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection:, notion_knowledge_connection:, retrieved_from_url:
     )
   end
 
@@ -131,19 +131,21 @@ class KnowledgeIngestion
     Array(prepared).each(&:purge!)
   end
 
-  def ingest_integration!(source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection: nil, retrieved_from_url: nil)
-    raise InvalidSource, "Choose a supported integration." unless source_kind.to_s == "intercom_help_center"
+  def ingest_integration!(source_kind:, title:, content:, external_id:, source_updated_at:, retrieved_at:, expires_at:, intercom_connection: nil, notion_knowledge_connection: nil, retrieved_from_url: nil)
+    raise InvalidSource, "Choose a supported integration." unless %w[intercom_help_center notion_page].include?(source_kind.to_s)
     raise InvalidSource, "Add the Intercom article ID." if external_id.blank?
 
     connection = intercom_connection && @workspace.intercom_connections.find(intercom_connection.id)
-    raise InvalidSource, "Choose the correct source connection." if connection && source_kind.to_s != "intercom_help_center"
+    notion = notion_knowledge_connection && @workspace.notion_knowledge_connections.find(notion_knowledge_connection.id)
+    raise InvalidSource, "Choose the correct source connection." if (connection && source_kind.to_s != "intercom_help_center") || (notion && source_kind.to_s != "notion_page")
+    raise InvalidSource, "A Notion connection is required." if source_kind.to_s == "notion_page" && !notion
     retrieved_from_url = canonical_url(retrieved_from_url) if retrieved_from_url.present?
     normalized_content = normalize_content(content)
     source = nil
     KnowledgeSource.transaction do
-      lock_locator!(source_kind.to_s, connection_id: connection&.id, external_id: external_id.to_s.strip)
+      lock_locator!(source_kind.to_s, connection_id: connection&.id || notion&.id, external_id: external_id.to_s.strip)
       source = @workspace.knowledge_sources.lock.find_or_initialize_by(
-        source_kind: source_kind.to_s, intercom_connection_id: connection&.id, external_id: external_id.to_s.strip
+        source_kind: source_kind.to_s, intercom_connection_id: connection&.id, notion_knowledge_connection_id: notion&.id, external_id: external_id.to_s.strip
       )
       if source.new_record?
         source.source_key = SecureRandom.uuid
@@ -152,7 +154,7 @@ class KnowledgeIngestion
         audit!("knowledge.source_created", source)
       end
       raise InvalidSource, "Deleted sources cannot accept new versions." if source.deleted?
-      append_version!(source:, content: normalized_content, retrieved_at:, source_updated_at:, expires_at:, retrieved_from_url:, source_title: (title if connection))
+      append_version!(source:, content: normalized_content, retrieved_at:, source_updated_at:, expires_at:, retrieved_from_url:, source_title: (title if connection || notion))
     end
     source
   end

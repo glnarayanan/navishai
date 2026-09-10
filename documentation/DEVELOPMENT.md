@@ -215,3 +215,11 @@ Enable Help Center sync on an Intercom connection, then choose **Sync Help Cente
 Products and Intercom applicability constrain case-scoped knowledge search and evidence admission. Connection defaults apply until a knowledge manager records an article override. Sync does not change those mappings. The originating connection remains immutable.
 
 DOCX uploads use the existing ZIP/XML libraries, retain scanned originals, and extract text without executing Office code. Legacy DOC requires the separately approved isolated conversion dependency; it is not silently treated as text.
+
+## Workspace connectors and personal connections
+
+Owners/Admins enable Intercom and Notion in **Connector accounts**, optionally storing a Workspace service token. Configure `NAVISHAI_INTEGRATION_ENCRYPTION_KEY` and `NAVISHAI_INTEGRATION_ENCRYPTION_SALT` with independent deployment-owned random values; Rails encrypts tokens and refuses credential writes without encryption configuration. Back up these keys separately with the deployment secrets. A Workspace Intercom service token is verified against its remote workspace before use. Existing Intercom credential references remain supported where no explicit connector policy disables them.
+
+For personal OAuth, configure `NAVISHAI_INTERCOM_OAUTH_CLIENT_ID`, `NAVISHAI_INTERCOM_OAUTH_CLIENT_SECRET`, `NAVISHAI_INTERCOM_OAUTH_REDIRECT_URI`, and corresponding `NAVISHAI_NOTION_OAUTH_*` values. Register HTTPS callbacks `/oauth/intercom/callback` and `/oauth/notion/callback` on the deployment host. Callback state is one-use, session-, member- and Workspace-bound. Users can browse a bounded private preview with their own credential; it does not become shared knowledge. MCP execution is not part of this OAuth implementation.
+
+Shared Notion knowledge uses the Admin's Workspace service token and explicitly configured page roots. A daily 01:00 job traverses bounded content and resumes durable passes. Unknown block types produce visible omission text; failed scans never retire content. Archives exclude credentials and OAuth attempts; restored connectors require reconfiguration and personal accounts require reconnection.

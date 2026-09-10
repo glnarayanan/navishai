@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  get "oauth/:provider/callback", to: "workspace_connectors#oauth_return", as: :integration_oauth_callback
   namespace :webhooks do
     post "shared-email/:webhook_key", to: "shared_email#create", as: :shared_email
     post "intercom/:webhook_key", to: "intercom#create", as: :intercom
@@ -22,7 +23,18 @@ Rails.application.routes.draw do
     resources :shared_email_inboxes, path: "email-inboxes", only: %i[ index create update ] do
       post :reconcile, on: :member
     end
+    resources :notion_knowledge_connections, only: %i[create update] do
+      post :sync, on: :member
+    end
     resources :products, only: %i[index create update]
+    resources :workspace_connectors, path: "connectors", param: :provider, only: %i[index update] do
+      member do
+        post :connect
+        get :callback
+        get :content
+        delete :disconnect
+      end
+    end
     resources :intercom_connections, path: "intercom", only: %i[ index create update ] do
       resource :knowledge_applicability, only: %i[update destroy], controller: "knowledge_applicabilities"
       member do

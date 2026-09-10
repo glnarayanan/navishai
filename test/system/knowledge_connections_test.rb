@@ -42,4 +42,51 @@ class KnowledgeConnectionsTest < ApplicationSystemTestCase
       assert_no_text "saved checkpoint"
     end
   end
+
+  test "Workspace connector settings keep personal accounts separate and hide admin controls from members" do
+    workspace = workspaces(:acme_support)
+    sign_in users(:owner)
+    visit workspace_workspace_connectors_path(workspace)
+    within "section[aria-labelledby='notion-title']" do
+      assert_text "Disabled by the Workspace Admin"
+      assert_no_button "Connect my Notion account"
+      check "Enable Notion"
+      fill_in "Workspace service token", with: "test-workspace-secret"
+      click_button "Save Notion settings"
+    end
+    assert_text "Connector settings saved."
+    within "section[aria-labelledby='notion-title']" do
+      assert_equal "", find_field("Workspace service token").value
+      find("summary", text: "Add Notion pages").click
+      fill_in "Source name", with: "Team handbook"
+      fill_in "Root page IDs", with: "11111111-1111-1111-1111-111111111111"
+      click_button "Add source"
+    end
+    assert_text "Notion knowledge source added."
+    assert_text "Team handbook"
+    assert_text "Your account"
+    assert_no_horizontal_overflow
+    capture_region Rails.root.join("tmp/connectors-desktop.png"), from: "section[aria-labelledby='notion-title']", through: "section[aria-labelledby='notion-title']"
+    visit current_url
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 320, height: 844, deviceScaleFactor: 1, mobile: false)
+    assert_equal 320, page.evaluate_script("window.innerWidth")
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+    within "section[aria-labelledby='notion-title']" do
+      find("summary", text: "Add Notion pages").click
+      find_field("Source name").send_keys(:tab)
+      assert_selector "textarea:focus"
+      assert_no_horizontal_overflow
+    end
+    capture_region Rails.root.join("tmp/connectors-mobile.png"), from: "section[aria-labelledby='notion-title']", through: "section[aria-labelledby='notion-title']"
+    workspace.memberships.create!(user: users(:teammate), role: :member)
+    open_workspace_nav
+    click_button "Sign out"
+    sign_in users(:teammate)
+    visit workspace_workspace_connectors_path(workspace)
+    assert_text "Enabled for this Workspace"
+    assert_no_field "Workspace service token"
+    assert_no_button "Save Notion settings"
+    assert_no_text "Shared knowledge"
+  end
 end

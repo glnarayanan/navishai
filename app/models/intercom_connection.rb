@@ -29,8 +29,14 @@ class IntercomConnection < ApplicationRecord
 
   scope :active, -> { where(active: true) }
 
+  def connector_enabled?
+    policy = WorkspaceConnector.find_by(workspace_id: workspace_id, provider: "intercom")
+    policy.nil? || policy.enabled?
+  end
+
   def access_token
-    credential(:access_token, "ACCESS_TOKEN")
+    return unless connector_enabled?
+    WorkspaceConnector.intercom_token(workspace: workspace, remote_workspace_id: remote_workspace_id).presence || credential(:access_token, "ACCESS_TOKEN")
   end
 
   def client_secret
@@ -38,7 +44,7 @@ class IntercomConnection < ApplicationRecord
   end
 
   def ready?
-    active? && access_token.present? && client_secret.to_s.bytesize >= 32
+    active? && connector_enabled? && access_token.present? && client_secret.to_s.bytesize >= 32
   end
 
   private
