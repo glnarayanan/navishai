@@ -15,6 +15,14 @@ class DeploymentSecurityTest < ActiveSupport::TestCase
     end
   end
 
+  test "Compose passes pending-memory state to both Rails processes" do
+    services = YAML.safe_load_file(COMPOSE_PATH, aliases: true).fetch("services")
+
+    %w[web jobs].each do |name|
+      assert_equal "${NAVISHAI_MEMORY_PENDING:-}", services.fetch(name).fetch("environment").fetch("NAVISHAI_MEMORY_PENDING")
+    end
+  end
+
   test "Helm workloads disable API tokens and use the runtime seccomp profile" do
     HELM_POD_TEMPLATES.each do |name|
       template = Rails.root.join("ops/helm/navishai/templates/#{name}.yaml").read
