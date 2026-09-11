@@ -292,11 +292,17 @@ EOF
   chmod 0600 "$etc/runner/server.key"
 }
 
+validate_resume_state() {
+  [[ ! -e "$etc/env" ]] && return
+  [[ -L "$prefix/current" && -f "$etc/runner/ca.crt" && -f "$etc/runner/server.crt" && -f "$etc/runner/server.key" ]] || die "incomplete setup state detected; restore the managed release and runner TLS before rerunning setup"
+}
+
 setup() {
   need_root
   [[ $# -eq 1 ]] || die "usage: navishai setup BUNDLE.tar"
   lock
   validate_answers
+  validate_resume_state
   stage_bundle "$1"
   prepare_setup_host
   preflight
