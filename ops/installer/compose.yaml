@@ -1,0 +1,21 @@
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set NAVISHAI_APP_HOST}
+    volumes:
+      - ./ops/installer/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+
+volumes:
+  caddy_data:
+  caddy_config:

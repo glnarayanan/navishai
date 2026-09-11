@@ -22,7 +22,7 @@ On an ephemeral host that cannot reach the mise or ruby-lang download hosts, run
 
 ## First Owner and recovery access
 
-Set `NAVISHAI_BOOTSTRAP_TOKEN` to a random value of at least 32 bytes before the first start. Open `/setup/new` from the deployment host and enter that token to create the first organisation, workspace, and Owner. Setup closes for good after it succeeds.
+Set `NAVISHAI_BOOTSTRAP_TOKEN` to a random value of at least 32 bytes and `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT` to a future ISO 8601 UTC time before the first start. Open `/setup/new` from the deployment host and enter that token to create the first organisation, workspace, and Owner. Setup closes for good after it succeeds. An expired, missing, or malformed expiry disables setup; renewal is safe only before any User, Organisation, or installation state exists.
 
 Create or reset the one local break-glass Admin with:
 

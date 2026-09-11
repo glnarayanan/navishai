@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+destination="${1:-}"
+[[ -n "$destination" ]] || { echo "usage: script/candidate_bundle OUTPUT.tar" >&2; exit 2; }
+revision="${2:-HEAD}"
+command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
+docker=(docker)
+if ! docker info >/dev/null 2>&1; then
+  sudo -n docker info >/dev/null 2>&1 || { echo "Docker access is required; add this user to the docker group or permit passwordless sudo." >&2; exit 1; }
+  docker=(sudo docker)
+fi
+"${docker[@]}" compose version >/dev/null || { echo "Docker Compose v2 is required" >&2; exit 1; }
+
+root="$(git rev-parse --show-toplevel)"
+commit="$(git -C "$root" rev-parse --verify "$revision^{commit}")"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+source="$work/source"
+mkdir -p "$source"
+git -C "$root" archive --format=tar "$commit" | tar -xf - -C "$source"
+
+required=(
+  compose.yaml ops/compose/backup ops/compose/lib.sh ops/compose/restore ops/compose/upgrade_preflight
+  ops/compose/verify_backup ops/installer/Caddyfile ops/installer/bootstrap ops/installer/compose.yaml
+  ops/installer/navishai ops/runner/execution.example.json script/generate_runner_tls Dockerfile
+  ops/docker/runner.Dockerfile ops/docker/supermemory.Dockerfile
+)
+for file in "${required[@]}"; do
+  [[ -f "$source/$file" ]] || { echo "release revision is missing required payload: $file" >&2; exit 1; }
+done
+
+cat >"$work/build.env" <<'EOF'
+NAVISHAI_APP_HOST=build.invalid
+NAVISHAI_DATABASE_PASSWORD=build-only-placeholder
+NAVISHAI_RUNNER_SHARED_SECRET=build-only-placeholder
+NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET=build-only-placeholder
+NAVISHAI_SECRET_KEY_BASE=build-only-placeholder
+NAVISHAI_SUPERMEMORY_API_KEY=build-only-placeholder
+EOF
+"${docker[@]}" compose --env-file "$work/build.env" -f "$source/compose.yaml" build
+mkdir -p "$work/release"
+cp "$source/compose.yaml" "$work/release/compose.yaml"
+mkdir -p "$work/release/ops/compose" "$work/release/ops/installer" "$work/release/ops/runner" "$work/release/script"
+for file in backup lib.sh restore upgrade_preflight verify_backup; do
+  cp "$source/ops/compose/$file" "$work/release/ops/compose/$file"
+done
+for file in Caddyfile bootstrap compose.yaml navishai; do
+  cp "$source/ops/installer/$file" "$work/release/ops/installer/$file"
+done
+cp "$source/script/generate_runner_tls" "$work/release/script/generate_runner_tls"
+cp "$source/ops/runner/execution.example.json" "$work/release/ops/runner/execution.example.json"
+printf '%s\n' "$commit" >"$work/release/SOURCE_COMMIT"
+"${docker[@]}" image save navishai-rails:local navishai-runner:local navishai-supermemory:0.0.8 >"$work/images.tar"
+(cd "$work" && find images.tar release -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+tar --sort=name --mtime='UTC 2026-09-10' --owner=0 --group=0 --numeric-owner \
+  -C "$work" -cf "$destination" SHA256SUMS images.tar release
+echo "Candidate bundle written to $destination"

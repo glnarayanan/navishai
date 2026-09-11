@@ -85,6 +85,6 @@ Rails.application.configure do
   config.active_record.attributes_for_inspect = [ :id ]
 
   # Reject unconfigured Host headers while allowing local infrastructure health checks.
-  config.hosts = [ app_host ]
+  config.hosts = [ app_host, "app-net" ]
   config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 end

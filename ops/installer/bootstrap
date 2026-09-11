@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Bootstrap installs only approved Docker prerequisites after explicit consent.
+
+installer_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bundle="${1:-}"
+root="${NAVISHAI_BOOTSTRAP_ROOT:-}"
+apt="${NAVISHAI_APT_GET:-apt-get}"
+
+die() { echo "navishai bootstrap: $*" >&2; exit 1; }
+[[ -n "$bundle" ]] || die "usage: bootstrap CANDIDATE.tar"
+[[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
+
+. "${NAVISHAI_OS_RELEASE:-/etc/os-release}"
+[[ $(uname -m) == x86_64 && ( $ID == debian && $VERSION_ID == 12 || $ID == ubuntu && $VERSION_ID == 24.04 ) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04 on x86-64"
+
+missing=()
+command -v docker >/dev/null || missing+=(docker)
+docker compose version >/dev/null 2>&1 || missing+=(docker-compose-plugin)
+if (( ${#missing[@]} )); then
+  echo "Proposed changes: add Docker's signed apt source, install ${missing[*]}, and enable Docker service."
+  echo "No firewall, SSH, unrelated service, or package removal change is proposed."
+  if [[ ${NAVISHAI_BOOTSTRAP_ACCEPT:-} != yes ]]; then
+    { : </dev/tty; } 2>/dev/null || die "rerun with NAVISHAI_BOOTSTRAP_ACCEPT=yes after review"
+    read -r -p 'Install these prerequisites? [yes/no] ' consent </dev/tty
+    [[ $consent == yes ]] || die "no host changes made"
+  fi
+  [[ ${NAVISHAI_BOOTSTRAP_TEST_ROOT:-} == 1 || ${EUID:-$(id -u)} -eq 0 ]] || die "rerun bootstrap with sudo before installing prerequisites"
+  for conflict in docker.io docker-compose docker-compose-v2 podman-docker containerd runc; do
+    dpkg-query -W -f='${db:Status-Status}' "$conflict" 2>/dev/null | grep -qx installed && die "remove conflicting package $conflict manually before bootstrap"
+  done
+  [[ ! -e "$root/etc/apt/keyrings/docker.asc" && ! -L "$root/etc/apt/keyrings/docker.asc" && ! -e "$root/etc/apt/sources.list.d/docker.list" && ! -L "$root/etc/apt/sources.list.d/docker.list" ]] || die "existing Docker apt source or key found; verify it manually before installing Compose"
+  "$apt" update
+  "$apt" install -y --no-remove ca-certificates curl
+  install -m 0755 -d "$root/etc/apt/keyrings" "$root/etc/apt/sources.list.d"
+  curl -fsSL "https://download.docker.com/linux/$ID/gpg" -o "$root/etc/apt/keyrings/docker.asc"
+  chmod a+r "$root/etc/apt/keyrings/docker.asc"
+  printf 'deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' "$ID" "${VERSION_CODENAME:-$(. /etc/os-release; echo "$VERSION_CODENAME")}" >"$root/etc/apt/sources.list.d/docker.list"
+  "$apt" update
+  "$apt" install -y --no-remove ca-certificates curl docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  systemctl enable --now docker
+  docker info >/dev/null || die "Docker daemon is not ready after installation"
+  docker compose version >/dev/null || die "Docker Compose installation failed"
+fi
+
+exec "$installer_dir/navishai" setup "$bundle"

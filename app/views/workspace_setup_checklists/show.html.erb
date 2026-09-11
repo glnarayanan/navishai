@@ -1,0 +1,23 @@
+<% content_for :title, "Setup checklist · #{@workspace.name} — NavishAI" %>
+<main class="page-shell page-family-integration">
+  <div class="page-heading">
+    <h1>Setup checklist</h1>
+    <p>Complete only the services this workspace needs. Configured does not mean tested or ready.</p>
+  </div>
+  <section class="config-panel" aria-labelledby="setup-checklist-title">
+    <h2 id="setup-checklist-title">Workspace services</h2>
+    <ul class="memory-correction-list" role="list">
+      <% @items.each do |item| %>
+        <li>
+          <div>
+            <strong><%= item.name %></strong>
+            <span><%= item.detail %></span>
+          </div>
+          <%= link_to item.path, class: "button button-quiet", aria: { label: "Open #{item.name}" } do %>
+            <span class="status-badge status-<%= item.state %>"><%= item.state.humanize %></span>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
+  </section>
+</main>

@@ -24,9 +24,15 @@ docker compose build
 docker compose up -d
 ```
 
+For a first Owner, also set `NAVISHAI_BOOTSTRAP_TOKEN` to a random value of at least 32 bytes and `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT` to a future ISO 8601 UTC time before starting Rails. The setup page accepts the token once. After the first Owner is created, remove both values from `.env` and recreate `web` and `jobs`. An expired, missing, or malformed expiry disables setup; renewal is safe only while the installation has no users, organisations, or installation state.
+
 Compose binds Rails to port 3000 by default. Set `NAVISHAI_HTTP_PORT` to change the host port. Rails, jobs, and Supermemory share one container network namespace so Rails can use Supermemory's supported loopback HTTP endpoint. They remain separate processes and images. The runner has its own container and receives no Docker socket. The non-root application containers drop Linux capabilities and cannot gain new privileges. The control network is internal. Put the reverse proxy on the edge side and send the original HTTPS host. Rails rejects every Host other than `NAVISHAI_APP_HOST`; only `/up` skips that check for local health probes.
 
 Supermemory needs its first-boot local model setup. Start it, complete that setup according to its local prompt, then place its generated key in `NAVISHAI_SUPERMEMORY_API_KEY` and recreate `web` and `jobs`. A placeholder value may be used for the first Supermemory boot. The Lite build has a 10,000-document licence cap.
+
+The current disposable-host installer record is in [INSTALLER_ACCEPTANCE_EVIDENCE.md](./INSTALLER_ACCEPTANCE_EVIDENCE.md). It does not prove public ACME, live providers, ClamAV, or an application/schema upgrade.
+
+The local-candidate installer answer file requires `NAVISHAI_APP_HOST` and supports `NAVISHAI_SUPERMEMORY_API_KEY_FILE` only as a secret reference. It must name an owner-readable, regular, non-symlink file with no group or other permissions and one safe printable token value. The installer never sources answer files. This reference stores the key but does not configure Supermemory or clear the installer’s memory-pending state. `navishai setup` validates a public DNS hostname, then prints the selected hostname, ports 80 and 443, private configuration, installer metadata, persistent Docker volumes, and service changes before it writes host state. An interactive admin must confirm; a noninteractive run must set `NAVISHAI_SETUP_ACCEPT=yes` after reviewing that summary. On infrastructure startup, it prints the HTTPS first-Owner address and the explicit token-reveal command without printing the token. A rerun accepts only the same verified release and retains the existing environment and runner TLS. This is local-candidate behavior, not a published installer or proof of public HTTPS.
 
 Keep `.env` and `ops/secrets/runner` outside source control. Back up both through the host's secret and backup systems. To rotate runner TLS, stop `web`, `jobs`, and `runner`, remove the three generated runner TLS files, run `script/generate_runner_tls`, then restart those services. Rotating the shared secret also requires one coordinated stop and restart.
 

@@ -11,8 +11,10 @@ x-rails-environment: &rails-environment
   NAVISHAI_RUNNER_ADDRESS: https://runner:8081
   NAVISHAI_RUNNER_CA_FILE: /run/navishai/runner-ca.crt
   NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
+  NAVISHAI_BOOTSTRAP_TOKEN: ${NAVISHAI_BOOTSTRAP_TOKEN:-}
+  NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT: ${NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
   NAVISHAI_SUPERMEMORY_ADDRESS: http://127.0.0.1:6767
-  NAVISHAI_SUPERMEMORY_API_KEY: ${NAVISHAI_SUPERMEMORY_API_KEY:?set NAVISHAI_SUPERMEMORY_API_KEY}
+  NAVISHAI_SUPERMEMORY_API_KEY: ${NAVISHAI_SUPERMEMORY_API_KEY:-}
   NAVISHAI_OIDC_ISSUER: ${NAVISHAI_OIDC_ISSUER:-}
   NAVISHAI_OIDC_CLIENT_ID: ${NAVISHAI_OIDC_CLIENT_ID:-}
   NAVISHAI_OIDC_CLIENT_SECRET: ${NAVISHAI_OIDC_CLIENT_SECRET:-}
@@ -45,7 +47,7 @@ x-rails-service: &rails-service
       condition: service_healthy
     runner:
       condition: service_started
-    supermemory:
+    app-net:
       condition: service_started
 
 services:
@@ -80,7 +82,7 @@ services:
       NAVISHAI_PERSONAL_ACCOUNTS_ROOT: ${NAVISHAI_PERSONAL_ACCOUNTS_ROOT:-}
       NAVISHAI_RUNNER_STATE_PATH: /var/lib/navishai/admissions.json
       NAVISHAI_RUNNER_EXECUTION_CONFIG: /etc/navishai/execution.json
-      NAVISHAI_CONTROL_PLANE_ADDRESS: http://supermemory:3000
+      NAVISHAI_CONTROL_PLANE_ADDRESS: http://app-net:3000
       NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP: "true"
       PATH: /opt/navishai/runtimes:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       NAVISHAI_RUNNER_TLS_CERT_FILE: /run/navishai/tls.crt
@@ -101,6 +103,16 @@ services:
       - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.key:/run/navishai/tls.key:ro
     networks: [control]
 
+  app-net:
+    image: debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
+    restart: unless-stopped
+    read_only: true
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: ["/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 2147483647 & wait $!; done"]
+    networks: [control, edge]
+
   supermemory:
     build:
       context: .
@@ -111,14 +123,12 @@ services:
     security_opt: [no-new-privileges:true]
     volumes:
       - supermemory_data:/var/lib/supermemory
-    ports:
-      - "${NAVISHAI_HTTP_PORT:-3000}:3000"
-    networks: [control, edge]
+    network_mode: service:app-net
 
   web:
     <<: *rails-service
     command: ["bin/rails", "server", "-b", "0.0.0.0"]
-    network_mode: service:supermemory
+    network_mode: service:app-net
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/up"]
       interval: 10s
@@ -128,7 +138,7 @@ services:
   jobs:
     <<: *rails-service
     command: ["bin/jobs"]
-    network_mode: service:supermemory
+    network_mode: service:app-net
     depends_on:
       web:
         condition: service_healthy

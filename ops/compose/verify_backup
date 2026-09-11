@@ -10,10 +10,30 @@ archive="${1:-}"
 [[ -n "$archive" ]] || { printf 'Usage: %s BACKUP_DIRECTORY\n' "$0" >&2; exit 1; }
 require_archive "$archive"
 
+environment_file="${COMPOSE_ENV_FILES:-$root/.env}"
+expected_environment_sha="$(sed -n 's/^environment_sha256=//p' "$archive/manifest")"
+if [[ -f "$environment_file" ]]; then
+  [[ "$expected_environment_sha" == "$(sha256sum "$environment_file" | cut -d' ' -f1)" ]] || {
+    printf 'Backup environment fingerprint does not match this installation.\n' >&2
+    exit 1
+  }
+elif [[ "$expected_environment_sha" != "absent" ]]; then
+  printf 'Backup requires an environment file that is not present.\n' >&2
+  exit 1
+fi
+
 [[ "$(sed -n 's/^format=//p' "$archive/manifest")" == "navishai-backup-v1" ]] || {
   printf 'Unsupported or missing backup format.\n' >&2
   exit 1
 }
+managed_release_id="$(sed -n 's/^managed_release_id=//p' "$archive/manifest")"
+managed_images_sha="$(sed -n 's/^managed_images_sha256=//p' "$archive/manifest")"
+if [[ -n "$managed_release_id$managed_images_sha" ]]; then
+  [[ "$managed_release_id" =~ ^[0-9a-f]{64}$ && "$managed_images_sha" =~ ^[0-9a-f]{64}$ ]] || {
+    printf 'Managed backup release metadata is invalid.\n' >&2
+    exit 1
+  }
+fi
 
 (cd "$archive" && sha256sum --check --strict SHA256SUMS)
 archived_postgres_image="$(grep -E '^pgvector/pgvector:' "$archive/images.txt" || true)"

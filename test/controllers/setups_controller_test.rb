@@ -3,7 +3,9 @@ require "test_helper"
 class SetupsControllerTest < ActionDispatch::IntegrationTest
   setup do
     @original_token = ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
+    @original_expiry = ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"]
     ENV["NAVISHAI_BOOTSTRAP_TOKEN"] = "b" * 32
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.hour.from_now.iso8601
     InstallationState.delete_all
     WorkspaceInvitation.delete_all
     Session.delete_all
@@ -22,6 +24,7 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
 
   teardown do
     ENV["NAVISHAI_BOOTSTRAP_TOKEN"] = @original_token
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = @original_expiry
   end
 
   test "shows first-run setup while bootstrap is available" do
@@ -77,6 +80,14 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to new_setup_path
     assert_not User.exists?
     assert_not InstallationState.exists?
+  end
+
+  test "expired deployment token does not expose setup" do
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
+
+    get new_setup_path
+
+    assert_response :not_found
   end
 
   test "landing links to first-time setup while bootstrap is available" do

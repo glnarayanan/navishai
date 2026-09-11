@@ -6,3 +6,9 @@ storage/*
 tmp/*
 !.keep
 config/master.key
+.env
+.env.*
+ops/secrets/
+ops/runtime-state/
+ops/runtime-executables/
+backups/
