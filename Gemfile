@@ -59,3 +59,7 @@ group :test do
 end
 
 gem "pdf-reader", "~> 2.16"
+
+# Keep BigDecimal on its maintained 4.x line. ttfunk 1.8.0 (via pdf-reader) caps it
+# at 3.x, so Bundler holds ttfunk at 1.7.0 until a ttfunk release accepts 4.x.
+gem "bigdecimal", ">= 4.0", require: false
