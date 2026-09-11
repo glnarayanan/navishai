@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 10 September 2026
+**Updated:** 11 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -230,6 +230,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 6 September 2026 | Approve the `pdf-reader` gem for PDF extraction; read ZIP bundles with a bounded standard-library reader rather than an archive gem. |
 | 6 September 2026 | The landing page omits the template's pricing and testimonial sections until those exist and uses a content-fitted product preview instead of a fixed 16:9 media stage. |
 | 6 September 2026 | Consolidate the build brief, roadmap, and release-candidate record into PRODUCT.md and this file. |
+| 11 September 2026 | Move the Go development, module, host-preparation, and runner build pins from 1.27.0 to 1.27.1. Historical verification records retain the versions actually tested. |
 
 ### Approved implementation scope — 6 September 2026
 

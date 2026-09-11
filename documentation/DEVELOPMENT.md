@@ -1,6 +1,6 @@
 # Development
 
-NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 16 with pgvector 0.8.6, and Go 1.27.0.
+NavishAI uses Ruby 4.0.6, Rails 8.1.3.1, PostgreSQL 16 with pgvector 0.8.6, and Go 1.27.1.
 
 ## First setup
 
