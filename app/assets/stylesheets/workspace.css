@@ -975,6 +975,18 @@
   --status-surface: var(--success-soft);
 }
 
+.status-tested {
+  --status-color: var(--success-foreground);
+  --status-surface: var(--success-soft);
+}
+
+.setup-checklist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .status-attention {
   --reliability-state: var(--warning);
   --status-color: var(--warning-foreground);

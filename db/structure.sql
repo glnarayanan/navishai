@@ -5935,7 +5935,7 @@ CREATE TABLE public.operational_checks (
     CONSTRAINT operational_checks_archive_format CHECK (((archive_format IS NULL) OR ((octet_length((archive_format)::text) >= 1) AND (octet_length((archive_format)::text) <= 100)))),
     CONSTRAINT operational_checks_counts CHECK ((((table_count IS NULL) OR (table_count >= 0)) AND ((record_count IS NULL) OR (record_count >= 0)) AND ((attachment_count IS NULL) OR (attachment_count >= 0)) AND ((memory_count IS NULL) OR (memory_count >= 0)))),
     CONSTRAINT operational_checks_digests CHECK ((((evidence_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((source_commit)::text ~ '^[0-9a-f]{40}$'::text))),
-    CONSTRAINT operational_checks_kind CHECK (((check_kind)::text = ANY (ARRAY[('archive_verification'::character varying)::text, ('backup_verification'::character varying)::text, ('restore_rehearsal'::character varying)::text, ('upgrade_preflight'::character varying)::text]))),
+    CONSTRAINT operational_checks_kind CHECK (((check_kind)::text = ANY (ARRAY[('archive_verification'::character varying)::text, ('attachment_scanner'::character varying)::text, ('backup_verification'::character varying)::text, ('restore_rehearsal'::character varying)::text, ('upgrade_preflight'::character varying)::text]))),
     CONSTRAINT operational_checks_result CHECK (((result)::text = ANY (ARRAY[('passed'::character varying)::text, ('failed'::character varying)::text, ('unavailable'::character varying)::text]))),
     CONSTRAINT operational_checks_result_code CHECK (((result_code)::text ~ '^[a-z][a-z0-9_]{0,99}$'::text))
 );
@@ -16684,6 +16684,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260911120000'),
 ('20260906060000'),
 ('20260906050000'),
 ('20260906041000'),

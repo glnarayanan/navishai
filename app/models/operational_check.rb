@@ -1,5 +1,5 @@
 class OperationalCheck < ApplicationRecord
-  CHECK_KINDS = %w[archive_verification backup_verification restore_rehearsal upgrade_preflight].freeze
+  CHECK_KINDS = %w[archive_verification attachment_scanner backup_verification restore_rehearsal upgrade_preflight].freeze
   RESULTS = %w[passed failed unavailable].freeze
   RESULT_CODE_FORMAT = /\A[a-z][a-z0-9_]{0,99}\z/
   SHA256_FORMAT = /\A[0-9a-f]{64}\z/

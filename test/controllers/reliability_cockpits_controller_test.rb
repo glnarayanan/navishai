@@ -122,7 +122,7 @@ class ReliabilityCockpitsControllerTest < ActionDispatch::IntegrationTest
         incompatibility_reason: "", health_status: "available", checked_at: Time.current
       )
       OperationalCheck.create!(
-        workspace: @workspace, check_kind: OperationalCheck::CHECK_KINDS[index % 4],
+        workspace: @workspace, check_kind: OperationalCheck::CHECK_KINDS[index % OperationalCheck::CHECK_KINDS.size],
         result: :passed, result_code: "verified", evidence_digest: Digest::SHA256.hexdigest("check-#{index}"),
         source_commit: "c" * 40, checked_at: Time.current - index.minutes
       )
@@ -141,7 +141,8 @@ class ReliabilityCockpitsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "#memory .reliability-group-copy", text: /51 failed/
-    assert_select ".reliability-item", count: 48
+    # Bounded detail plus one row per operational check kind.
+    assert_select ".reliability-item", count: 44 + OperationalCheck::CHECK_KINDS.size
     assert_operator queries.size, :<=, 90
     assert_operator elapsed, :<, 5
   end
