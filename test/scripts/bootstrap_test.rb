@@ -44,6 +44,67 @@ class BootstrapTest < ActiveSupport::TestCase
     end
   end
 
+  def test_https_candidate_download_verifies_before_setup
+    Dir.mktmpdir do |root|
+      body = "verified candidate"
+      checksum = File.join(root, "candidate.sha256")
+      File.write(checksum, Digest::SHA256.hexdigest(body))
+      FileUtils.chmod(0o600, checksum)
+      destination = File.join(root, "downloaded.tar")
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar",
+        "FAKE_DOCKER" => "present", "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum,
+        "NAVISHAI_CANDIDATE_DESTINATION" => destination, "FAKE_CURL_BODY" => body)
+
+      assert status.success?, stderr
+      assert_equal body, File.read(destination)
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    end
+  end
+
+  def test_https_candidate_checksum_failure_does_not_execute_setup
+    Dir.mktmpdir do |root|
+      checksum = File.join(root, "candidate.sha256")
+      File.write(checksum, "#{'0' * 64}\n")
+      FileUtils.chmod(0o600, checksum)
+      destination = File.join(root, "downloaded.tar")
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar",
+        "FAKE_DOCKER" => "present", "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum,
+        "NAVISHAI_CANDIDATE_DESTINATION" => destination, "FAKE_CURL_BODY" => "corrupt")
+
+      assert_not status.success?
+      assert_includes stderr, "checksum did not match"
+      refute File.exist?(destination)
+      refute File.read(File.join(root, "commands.log")).include?("setup ")
+    end
+  end
+
+  def test_candidate_download_rejects_non_https_before_docker_or_setup
+    Dir.mktmpdir do |root|
+      _stdout, stderr, status = run_bootstrap(root, "http://releases.example/candidate.tar", "FAKE_DOCKER" => "present")
+
+      assert_not status.success?
+      assert_includes stderr, "must use HTTPS"
+      refute_path_exists File.join(root, "commands.log")
+    end
+  end
+
+  def test_https_candidate_rejects_malformed_checksum_before_download
+    Dir.mktmpdir do |root|
+      checksum = File.join(root, "candidate.sha256")
+      File.write(checksum, "not-a-checksum\n")
+      FileUtils.chmod(0o600, checksum)
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar",
+        "FAKE_DOCKER" => "present", "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum)
+
+      assert_not status.success?
+      assert_includes stderr, "must be a SHA-256"
+      refute_path_exists File.join(root, "commands.log")
+    end
+  end
+
   def test_clean_install_orders_prerequisites_docker_readiness_and_setup
     Dir.mktmpdir do |root|
       bundle = File.join(root, "candidate.tar")
@@ -204,7 +265,7 @@ class BootstrapTest < ActiveSupport::TestCase
     File.write(File.join(bin, "uname"), "#!/bin/sh\necho x86_64\n")
     File.write(File.join(bin, "docker"), "#!/bin/sh\nstate=\"$NAVISHAI_BOOTSTRAP_ROOT/docker-installed\"\nif [ \"$1\" = info ]; then echo \"docker info\" >>\"$BOOTSTRAP_LOG\"; [ \"${FAKE_DOCKER_INFO_FAIL:-0}\" = 1 ] && exit 1; exit 0; fi\nif [ \"$1\" = compose ]; then echo \"docker compose version\" >>\"$BOOTSTRAP_LOG\"; [ \"${FAKE_DOCKER_COMPOSE_FAIL:-0}\" = 1 ] && exit 1; [ \"${FAKE_DOCKER:-missing}\" = docker-only ] && exit 1; [ -f \"$state\" ] || [ \"${FAKE_DOCKER:-missing}\" = present ] || exit 1; exit 0; fi\n[ \"${FAKE_DOCKER:-missing}\" = missing ] && [ ! -f \"$state\" ] && exit 1\nexit 0\n")
     File.write(File.join(bin, "apt"), "#!/bin/sh\necho \"apt $*\" >>\"$BOOTSTRAP_LOG\"\ncase \" $* \" in *\" ca-certificates curl \"*) [ \"${FAKE_APT_FAIL_STAGE:-}\" = prerequisites ] && exit 1;; esac\n[ \"${FAKE_APT_FAIL_STAGE:-}\" = update ] && [ \"$1\" = update ] && exit 1\ncase \" $* \" in *\" docker-ce \"*) [ \"${FAKE_APT_FAIL_STAGE:-}\" = docker ] && exit 1; : >\"$NAVISHAI_BOOTSTRAP_ROOT/docker-installed\";; esac\nexit 0\n")
-    File.write(File.join(bin, "curl"), "#!/bin/sh\necho curl >>\"$BOOTSTRAP_LOG\"\nwhile [ \"$#\" -gt 0 ]; do [ \"$1\" = -o ] && { printf key >\"$2\"; break; }; shift; done\n")
+    File.write(File.join(bin, "curl"), "#!/bin/sh\necho curl >>\"$BOOTSTRAP_LOG\"\nwhile [ \"$#\" -gt 0 ]; do case \"$1\" in -o|--output) printf '%s' \"${FAKE_CURL_BODY:-key}\" >\"$2\"; break;; esac; shift; done\n")
     File.write(File.join(bin, "dpkg-query"), "#!/bin/sh\nexit 1\n")
     File.write(File.join(bin, "systemctl"), "#!/bin/sh\necho systemctl >>\"$BOOTSTRAP_LOG\"\n")
     FileUtils.chmod(0o755, File.join(bin, "uname"))
