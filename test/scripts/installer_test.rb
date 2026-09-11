@@ -1186,20 +1186,41 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
-  def test_configure_scanner_preserves_environment_and_keeps_quarantine_warning
+  def test_configure_scanner_preserves_environment_and_retries_after_start_failure
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
       File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
       answers = "#{root}/answers"
       File.write(answers, "NAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n")
       FileUtils.chmod(0o600, answers)
-      stdout, stderr, status = run_installer(root, "configure", "scanner", "NAVISHAI_ANSWERS_FILE" => answers)
-      assert status.success?, stderr
-      assert_includes stdout, "Files remain quarantined"
+      _stdout, _stderr, first = run_installer(root, "configure", "scanner", "NAVISHAI_ANSWERS_FILE" => answers, "DOCKER_FAIL_MATCH" => "up -d --wait web jobs")
+      assert_not first.success?
       environment = File.read("#{root}/etc/navishai/env")
       assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
       assert_includes environment, "NAVISHAI_ATTACHMENT_SCANNER=clamd\n"
       assert_includes environment, "NAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n"
+
+      stdout, stderr, second = run_installer(root, "configure", "scanner", "NAVISHAI_ANSWERS_FILE" => answers)
+      assert second.success?, stderr
+      assert_includes stdout, "not yet reachable or tested"
+      assert_includes stdout, "Files remain quarantined"
+    end
+  end
+
+  def test_configure_scanner_rejects_invalid_address_without_mutating_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      environment_path = "#{root}/etc/navishai/env"
+      File.write(environment_path, "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=http://scanner.internal\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "scanner", "NAVISHAI_ANSWERS_FILE" => answers)
+      assert_not status.success?
+      assert_includes stderr, "ClamAV address must"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read(environment_path)
+      assert_empty docker_log(root)
     end
   end
 

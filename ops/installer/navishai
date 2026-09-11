@@ -108,7 +108,7 @@ validate_answers() {
         ;;
       NAVISHAI_SYSTEM_SMTP_FROM) configured_smtp_from="$(validate_mailbox "$value")" ;;
       NAVISHAI_ATTACHMENT_SCANNER) [[ $value == clamd ]] || die "only the clamd attachment scanner is supported" ;;
-      NAVISHAI_CLAMD_ADDRESS) configured_scanner_address="$(validate_env_value "$value")" ;;
+      NAVISHAI_CLAMD_ADDRESS) configured_scanner_address="$(validate_clamd_address "$value")" ;;
       *) die "answer file contains an unsupported field: $key" ;;
     esac
   done <"$NAVISHAI_ANSWERS_FILE"
@@ -128,6 +128,13 @@ validate_env_value() {
   local value="$1"
   [[ -n $value && $value != *$'\n'* && $value != *$'\r'* && $value =~ ^[[:graph:]]+$ && $value != *'$'* && $value != *'#'* && $value != *'"'* && $value != *"'"* ]] || die "configuration value contains unsupported characters"
   printf '%s\n' "$value"
+}
+
+validate_clamd_address() {
+  local address
+  address="$(validate_env_value "$1")"
+  [[ $address =~ ^tcp://[^/[:space:]]+:[0-9]{1,5}$ || $address =~ ^unix:///[^[:space:]]+$ ]] || die "ClamAV address must be tcp://host:port or unix:///path"
+  printf '%s\n' "$address"
 }
 
 validate_smtp_address() {
@@ -446,7 +453,7 @@ configure_scanner() {
   chmod 0640 "$temporary"
   mv -f "$temporary" "$etc/env"
   compose up -d --wait web jobs
-  echo "ClamAV is configured. Files remain quarantined until a clean scanner result; test daemon reachability from the application."
+  echo "ClamAV is configured, not yet reachable or tested. Files remain quarantined until a clean scanner result."
 }
 reveal_owner_token() {
   need_root
