@@ -623,6 +623,22 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_release_publish_interruption_leaves_no_visible_release_and_retries
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, _stderr, status = run_setup(root, bundle, "NAVISHAI_TEST_FAIL_BEFORE_RELEASE_PUBLISH" => "1")
+
+      assert_not status.success?
+      assert_empty Dir.glob("#{root}/opt/navishai/releases/[!.]*")
+      refute_path_exists "#{root}/opt/navishai/current"
+      refute_path_exists "#{root}/etc/navishai/env"
+      _stdout, retry_stderr, retry_status = run_setup(root, bundle)
+      assert retry_status.success?, retry_stderr
+      assert_path_exists File.realpath("#{root}/opt/navishai/current")
+    end
+  end
+
   def test_normalizes_a_valid_public_hostname_before_writing_environment
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)

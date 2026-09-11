@@ -207,12 +207,10 @@ install_bundle() {
   if [[ ! -e "$release" ]]; then
     temporary_release="$prefix/releases/.${verified_bundle_identity}.tmp"
     rm -rf "$temporary_release"
-    mkdir "$temporary_release" || return
-    mv "$staging/release" "$temporary_release/release" || return
+    mv "$staging/release" "$temporary_release" || return
     mv "$staging/images.tar" "$temporary_release/images.tar" || return
-    mv "$temporary_release/release" "$release" || return
-    mv "$temporary_release/images.tar" "$release/images.tar" || return
-    rmdir "$temporary_release" || return
+    [[ ${NAVISHAI_TEST_FAIL_BEFORE_RELEASE_PUBLISH:-} != 1 ]] || return 1
+    mv "$temporary_release" "$release" || return
   fi
   docker image load -i "$release/images.tar" || return
   ln -sfn "$release" "$prefix/current" || return
@@ -300,7 +298,7 @@ EOF
 
 validate_resume_state() {
   [[ ! -e "$etc/env" ]] && return
-  [[ -L "$prefix/current" && -f "$etc/runner/ca.crt" && -f "$etc/runner/server.crt" && -f "$etc/runner/server.key" ]] || die "incomplete setup state detected; restore the managed release and runner TLS before rerunning setup"
+  [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" && -f "$etc/runner/ca.crt" && -f "$etc/runner/server.crt" && -f "$etc/runner/server.key" ]] || die "incomplete setup state detected; restore the managed release and runner TLS before rerunning setup"
 }
 
 setup() {
