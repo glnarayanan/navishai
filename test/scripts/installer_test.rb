@@ -1094,6 +1094,56 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_configure_system_mail_rejects_an_insecure_password_reference_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      password = "#{root}/smtp-password"
+      File.write(password, "smtp-secret")
+      FileUtils.chmod(0o644, password)
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE=#{password}\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert_not status.success?
+      assert_includes stderr, "secret reference must not be readable"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read("#{root}/etc/navishai/env")
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_configure_system_mail_keeps_the_new_configuration_after_restart_failure_and_retries
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      password = "#{root}/smtp-password"
+      File.write(password, "smtp-secret")
+      FileUtils.chmod(0o600, password)
+      answers = "#{root}/answers"
+      File.write(answers, <<~ANSWERS)
+        NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test
+        NAVISHAI_SYSTEM_SMTP_PORT=587
+        NAVISHAI_SYSTEM_SMTP_USER_NAME=mailer
+        NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE=#{password}
+        NAVISHAI_SYSTEM_SMTP_FROM=notifications@example.test
+      ANSWERS
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, first_stderr, first_status = run_installer(root, "configure", "system-mail",
+        "NAVISHAI_ANSWERS_FILE" => answers, "DOCKER_FAIL_MATCH" => "up -d --wait web jobs")
+
+      assert_not first_status.success?
+      assert_includes File.read("#{root}/etc/navishai/env"), "NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test\n"
+
+      _stdout, second_stderr, second_status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert second_status.success?, second_stderr
+      assert_includes docker_log(root), "up -d --wait web jobs"
+    end
+  end
+
   private
 
   def run_installer(root, *arguments)
