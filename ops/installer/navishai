@@ -129,15 +129,18 @@ preflight() {
 }
 
 preflight_ports() {
-  local port listeners container labels
+  local port listeners containers container labels binding
   command -v ss >/dev/null || die "ss is required to inspect HTTPS ports"
   for port in 80 443; do
     listeners="$(ss -ltnH "( sport = :$port )")"
     [[ -z $listeners ]] && continue
     [[ -e "$prefix/current" ]] || die "port $port is in use; stop the service using it, then rerun setup"
-    container="$(docker ps --filter "publish=$port" --format '{{.ID}}')"
-    [[ -n $container ]] || die "port $port is in use by a non-Docker service; stop it, then rerun setup"
+    containers="$(docker ps --filter "publish=$port" --format '{{.ID}}')" || die "cannot inspect port $port ownership; retry setup"
+    [[ $(wc -w <<<"$containers") == 1 ]] || die "port $port ownership is ambiguous; stop the conflicting service, then rerun setup"
+    container="$containers"
     labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")"
+    binding="$(docker inspect --format "{{range \$p, \$bindings := .HostConfig.PortBindings}}{{range \$bindings}}{{if eq .HostPort \"$port\"}}{{\$p}}{{end}}{{end}}{{end}}" "$container")" || die "cannot inspect port $port ownership; retry setup"
+    [[ -n $binding ]] || die "port $port is in use by a non-Docker service; stop it, then rerun setup"
     [[ $labels == "$project caddy" ]] || die "port $port is in use by another container; stop it, then rerun setup"
   done
 }
