@@ -122,6 +122,29 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  [ nil, "ca.crt", "server.crt", "server.key" ].each do |missing|
+    define_method("test_rejects_incomplete_resume_state_#{missing || 'current'}") do
+      Dir.mktmpdir do |root|
+        bundle = build_bundle(root)
+        FileUtils.mkdir_p("#{root}/etc/navishai/runner")
+        File.write("#{root}/etc/navishai/env", "preserved-secret=value\n")
+        %w[ca.crt server.crt server.key].each { |name| File.write("#{root}/etc/navishai/runner/#{name}", "tls-#{name}\n") unless name == missing }
+        unless missing.nil?
+          release = "#{root}/opt/navishai/releases/#{'a' * 64}"
+          FileUtils.mkdir_p(release)
+          File.symlink(release, "#{root}/opt/navishai/current")
+        end
+
+        _stdout, stderr, status = run_setup(root, bundle)
+
+        assert_not status.success?
+        assert_includes stderr, "incomplete setup state detected"
+        assert_equal "preserved-secret=value\n", File.read("#{root}/etc/navishai/env")
+        refute_includes docker_log(root), "image load"
+      end
+    end
+  end
+
   def test_free_https_ports_allow_a_clean_setup
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
@@ -579,6 +602,40 @@ class InstallerTest < ActiveSupport::TestCase
       assert_not status.success?
       assert_includes stderr, "HTTPS could not be verified"
       assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_unverified"
+    end
+  end
+
+  def test_setup_image_load_failure_keeps_release_complete_for_safe_retry
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, _stderr, status = run_setup(root, bundle, "DOCKER_FAIL_MATCH" => "image load -i")
+
+      assert_not status.success?
+      refute_path_exists "#{root}/opt/navishai/current"
+      refute_path_exists "#{root}/etc/navishai/env"
+      release = Dir.glob("#{root}/opt/navishai/releases/*").first
+      assert_path_exists "#{release}/images.tar"
+      assert_path_exists "#{release}/SOURCE_COMMIT"
+      _stdout, retry_stderr, retry_status = run_setup(root, bundle)
+      assert retry_status.success?, retry_stderr
+      assert_equal release, File.realpath("#{root}/opt/navishai/current")
+    end
+  end
+
+  def test_release_publish_interruption_leaves_no_visible_release_and_retries
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, _stderr, status = run_setup(root, bundle, "NAVISHAI_TEST_FAIL_BEFORE_RELEASE_PUBLISH" => "1")
+
+      assert_not status.success?
+      assert_empty Dir.glob("#{root}/opt/navishai/releases/[!.]*")
+      refute_path_exists "#{root}/opt/navishai/current"
+      refute_path_exists "#{root}/etc/navishai/env"
+      _stdout, retry_stderr, retry_status = run_setup(root, bundle)
+      assert retry_status.success?, retry_stderr
+      assert_path_exists File.realpath("#{root}/opt/navishai/current")
     end
   end
 
