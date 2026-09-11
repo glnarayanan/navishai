@@ -781,7 +781,7 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
-  def test_upgrade_accepts_changed_images_after_loading_them_before_stopping_writers
+  def test_upgrade_rejects_changed_images_before_stopping_services_or_promoting_target
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       target = build_bundle(root, "release/ops/compose/backup" => "target-backup\n", "images.tar" => "changed images\n")
@@ -797,14 +797,15 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_CONFIG_JSON" => { services: { postgres: { image: "pgvector/pgvector:0.8.6-pg16@sha256:#{'a' * 64}" } } }.to_json,
         "DOCKER_POSTGRES_VERSION" => "160000")
 
-      assert status.success?, stderr
-      assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
-      log = docker_log(root)
-      assert_operator log.index("image load"), :<, log.index("stop caddy")
+      assert_not status.success?
+      assert_includes stderr, "changed-image upgrades are temporarily unavailable"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      refute_includes docker_log(root), "stop caddy"
+      refute_includes docker_log(root), "image load"
     end
   end
 
-  def test_upgrade_accepts_changed_service_references_with_the_same_image_archive
+  def test_upgrade_rejects_changed_service_reference_with_the_same_image_archive
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       target = build_bundle(root, "release/ops/compose/backup" => "target-backup\n")
@@ -821,8 +822,11 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_TARGET_CONFIG_JSON" => { services: { postgres: { image: postgres }, web: { image: "navishai-rails:new" } } }.to_json,
         "DOCKER_CURRENT_CONFIG_JSON" => { services: { postgres: { image: postgres }, web: { image: "navishai-rails:local" } } }.to_json)
 
-      assert status.success?, stderr
-      assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
+      assert_not status.success?
+      assert_includes stderr, "target service image references differ"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      refute_includes docker_log(root), "stop caddy"
+      refute_includes docker_log(root), "image load"
     end
   end
 
@@ -847,7 +851,7 @@ class InstallerTest < ActiveSupport::TestCase
       assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
       assert_equal "target-backup\n", File.read("#{root}/opt/navishai/current/ops/compose/backup")
       log = docker_log(root)
-      assert_operator log.index("image load"), :<, log.index("stop caddy")
+      assert_operator log.index("stop caddy"), :<, log.index("image load")
       assert_operator log.index("run --rm web bin/rails db:prepare"), :<, log.index("up -d --wait web jobs caddy")
       refute_includes log, "up -d --wait supermemory web jobs caddy"
     end
@@ -896,10 +900,13 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_POSTGRES_VERSION" => "160000", "DOCKER_FAIL_MATCH" => "image load -i")
 
       assert_not status.success?
-      assert_includes stderr, "target image load failed before writers stopped"
+      assert_includes stderr, "upgrade target_load failed"
       assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      state = File.read("#{root}/var/lib/navishai/install.json")
+      assert_includes state, "upgrade_target_load_restore_required"
+      refute_includes state, "upgrade_completed"
       log = docker_log(root)
-      refute_includes log, "stop caddy"
+      assert_operator log.rindex("stop caddy jobs web runner supermemory"), :>, log.index("image load -i")
     end
   end
 
@@ -1155,33 +1162,10 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
-  def test_configure_memory_replaces_pending_state_from_a_protected_key_file
+  def test_configure_memory_replaces_pending_state_and_retries_after_start_failure
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
-      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\nNAVISHAI_SUPERMEMORY_API_KEY=memory-pending-placeholder\nNAVISHAI_MEMORY_PENDING=1\n")
-      key = "#{root}/memory-key"
-      File.write(key, "sm_private")
-      FileUtils.chmod(0o600, key)
-      answers = "#{root}/answers"
-      File.write(answers, "NAVISHAI_SUPERMEMORY_API_KEY_FILE=#{key}\n")
-      FileUtils.chmod(0o600, answers)
-
-      stdout, stderr, status = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers)
-
-      assert status.success?, stderr
-      assert_includes stdout, "Confirm scoped indexing"
-      environment = File.read("#{root}/etc/navishai/env")
-      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
-      assert_includes environment, "NAVISHAI_SUPERMEMORY_API_KEY=sm_private\n"
-      refute_includes environment, "NAVISHAI_MEMORY_PENDING=1\n"
-      assert_includes docker_log(root), "up -d --wait supermemory web jobs"
-    end
-  end
-
-  def test_configure_memory_keeps_the_key_after_start_failure_for_retry
-    Dir.mktmpdir do |root|
-      FileUtils.mkdir_p("#{root}/etc/navishai")
-      File.write("#{root}/etc/navishai/env", "NAVISHAI_MEMORY_PENDING=1\n")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\nNAVISHAI_MEMORY_PENDING=1\n")
       key = "#{root}/memory-key"
       File.write(key, "sm_private")
       FileUtils.chmod(0o600, key)
@@ -1191,10 +1175,14 @@ class InstallerTest < ActiveSupport::TestCase
 
       _stdout, _stderr, first = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers, "DOCKER_FAIL_MATCH" => "up -d --wait supermemory web jobs")
       assert_not first.success?
-      assert_includes File.read("#{root}/etc/navishai/env"), "NAVISHAI_SUPERMEMORY_API_KEY=sm_private\n"
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
+      assert_includes environment, "NAVISHAI_SUPERMEMORY_API_KEY=sm_private\n"
+      refute_includes environment, "NAVISHAI_MEMORY_PENDING=1\n"
 
-      _stdout, stderr, second = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers)
+      stdout, stderr, second = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers)
       assert second.success?, stderr
+      assert_includes stdout, "Confirm scoped indexing"
     end
   end
 

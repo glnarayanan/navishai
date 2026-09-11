@@ -51,8 +51,6 @@ The isolated project upgraded with explicit confirmation using target `09242280â
 
 This was a comment-only helper payload delta with reused images. It proves promotion mechanics and retained-state behavior only; it does not prove changed installer behavior, an application-image upgrade, database-schema compatibility, or a public release upgrade.
 
-An isolated fake-Docker changed-image smoke built checksum-valid initial and changed-image bundles. It forced target-start and `db:prepare` failures, and in both cases loaded the target image before stopping writers, retained the old `current` release, and recorded the matching restore-required state. Its success case observed old `current` during target readiness, then target `current` only after readiness and `upgrade_completed`. It did not run a real Compose workload, database migration, attachment round trip, or vault read; the existing Rails production image lacked the test-only `debug/prelude` dependency for that native test command.
-
 ## Remaining limits
 
 The latest vault/attachment roundtrip did not repeat every earlier artifact and runner-ledger query; those checks passed in prior restore evidence. Public ACME, live provider behavior, real scanner behavior, non-synthetic customer data, and a full application/schema upgrade remain unproved.
