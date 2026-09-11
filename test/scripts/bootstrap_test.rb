@@ -149,6 +149,37 @@ class BootstrapTest < ActiveSupport::TestCase
     end
   end
 
+  def test_stalled_https_transfer_stops_after_the_stall_window_and_resumes_on_rerun
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:, stall_full_after: 10_000)
+      checksum, destination = trusted_candidate(root, body)
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      _stdout, stderr, first = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, destination).merge("NAVISHAI_CANDIDATE_STALL_SECONDS" => "1"))
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_not first.success?
+      assert_includes stderr, "rerun bootstrap to resume"
+      assert_operator elapsed, :<, 20
+      assert File.exist?("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+
+      resumed_from = File.size("#{destination}.part")
+      _stdout, stderr, second = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, destination).merge("NAVISHAI_CANDIDATE_STALL_SECONDS" => "1"))
+
+      assert second.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_includes server.requests.map { |request| request[:range] }, "bytes=#{resumed_from}-" if resumed_from.positive?
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
   def test_corrupt_partial_download_is_removed_after_checksum_rejection_and_rerun_downloads_again
     Dir.mktmpdir do |root|
       body = SecureRandom.random_bytes(100_000)

@@ -13,7 +13,8 @@ die() { echo "navishai bootstrap: $*" >&2; exit 1; }
 
 candidate_matches() { [[ $(sha256sum "$1" | cut -d' ' -f1) == "$expected" ]]; }
 download_candidate() {
-  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 1800 --retry 2 "$@" --output "$partial" "$bundle"
+  # Abort a transfer that stalls below 1 KiB/s for the stall window instead of capping total time; large archives on slow links resume on rerun.
+  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --speed-limit 1024 --speed-time "${NAVISHAI_CANDIDATE_STALL_SECONDS:-120}" --retry 2 "$@" --output "$partial" "$bundle"
 }
 fetch_candidate() {
   local checksum_file expected destination partial mode curl_status

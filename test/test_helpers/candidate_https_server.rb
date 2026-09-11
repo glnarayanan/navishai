@@ -1,16 +1,18 @@
 # A minimal HTTPS fixture for bootstrap download tests. It serves one candidate
 # body with optional byte-range support, an optional abrupt cut on the first
-# full transfer, and an optional redirect, using only the Ruby standard library.
+# full transfer or a stall on every full transfer, and an optional redirect, using only the Ruby standard
+# library.
 require "openssl"
 require "socket"
 
 class CandidateHttpsServer
   attr_reader :requests, :ca_path
 
-  def initialize(directory, body:, ranges: true, cut_first_full_after: nil, redirect: nil)
+  def initialize(directory, body:, ranges: true, cut_first_full_after: nil, stall_full_after: nil, redirect: nil)
     @body = body
     @ranges = ranges
     @cut_first_full_after = cut_first_full_after
+    @stall_full_after = stall_full_after
     @redirect = redirect
     @requests = []
     @requests_mutex = Mutex.new
@@ -22,6 +24,7 @@ class CandidateHttpsServer
     context.key = key
     @tcp = TCPServer.new("127.0.0.1", 0)
     @ssl = OpenSSL::SSL::SSLServer.new(@tcp, context)
+    @workers = []
     @thread = Thread.new do
       loop do
         socket = begin
@@ -29,7 +32,7 @@ class CandidateHttpsServer
         rescue StandardError
           break
         end
-        serve(socket)
+        @workers << Thread.new(socket) { |connection| serve(connection) }
       end
     end
   end
@@ -45,6 +48,7 @@ class CandidateHttpsServer
 
   def stop
     @thread.kill
+    @workers.each(&:kill)
     @ssl.close
   rescue StandardError
     nil
@@ -115,6 +119,12 @@ class CandidateHttpsServer
         socket.write @body.byteslice(0, @cut_first_full_after)
         socket.flush
         socket.io.close
+        return
+      end
+      if @stall_full_after && range.nil?
+        socket.write @body.byteslice(0, @stall_full_after)
+        socket.flush
+        sleep 5
         return
       end
       socket.write @body
