@@ -307,10 +307,16 @@ setup() {
   compose up -d --wait postgres runner app-net
   compose run --rm web bin/rails db:prepare
   compose up -d --wait web jobs caddy
-  progress infrastructure_started
   local setup_host
   setup_host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
-  echo "Infrastructure is ready at https://$setup_host."
+  local https_status
+  if https_status="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' "https://$setup_host/up")" && [[ $https_status == 200 ]]; then
+    progress https_verified
+    echo "Infrastructure and HTTPS are ready at https://$setup_host."
+  else
+    progress https_unverified
+    die "services started, but HTTPS could not be verified at https://$setup_host/up; check DNS, the certificate, and HTTPS connectivity, then rerun setup"
+  fi
   echo "Create the first Owner at https://$setup_host/setup. In a trusted terminal, run: navishai reveal-owner-token --confirm-reveal"
   if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
     echo "Open setup if you have not created the first Owner. Memory configuration remains incomplete: Supermemory Local 0.0.8 needs approved first-boot provider configuration."
