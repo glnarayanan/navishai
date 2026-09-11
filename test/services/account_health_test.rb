@@ -7,6 +7,7 @@ class AccountHealthTest < ActiveSupport::TestCase
     @account = @workspace.accounts.create!(name: "Renewal Test")
     CrewConfiguration.install_defaults!(workspace: @workspace)
     @at = Time.zone.parse("2026-08-24 12:00:00")
+    travel_to @at
   end
 
   test "imports typed CSV inputs idempotently and calculates an explainable renewal risk snapshot" do
