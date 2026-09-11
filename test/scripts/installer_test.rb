@@ -122,6 +122,63 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_free_https_ports_allow_a_clean_setup
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle)
+
+      assert status.success?, stderr
+      assert_includes docker_log(root), "image load"
+    end
+  end
+
+  def test_foreign_https_listener_rejects_before_install_mutation
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle, "FAKE_PORT_80" => "LISTEN\n")
+
+      assert_not status.success?
+      assert_includes stderr, "port 80 is in use"
+      refute_path_exists "#{root}/etc/navishai/env"
+      refute_path_exists "#{root}/opt/navishai/current"
+      refute_includes docker_log(root), "image load"
+    end
+  end
+
+  def test_managed_caddy_bindings_allow_setup_resume
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      _stdout, stderr, status = run_setup(root, bundle)
+      assert status.success?, stderr
+      File.write("#{root}/docker.log", "")
+
+      _stdout, stderr, status = run_setup(root, bundle,
+        "FAKE_PORT_80" => "LISTEN\n", "FAKE_PORT_443" => "LISTEN\n",
+        "FAKE_PORT_CONTAINER" => "caddy-id", "FAKE_PORT_LABELS" => "navishai caddy", "FAKE_PORT_BINDING" => "80")
+
+      assert status.success?, stderr
+      assert_includes docker_log(root), "ps --filter publish=80"
+    end
+  end
+
+  def test_caddy_with_another_host_port_does_not_excuse_foreign_port_80
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      _stdout, stderr, status = run_setup(root, bundle)
+      assert status.success?, stderr
+      File.write("#{root}/docker.log", "")
+
+      _stdout, stderr, status = run_setup(root, bundle,
+        "FAKE_PORT_80" => "LISTEN\n", "FAKE_PORT_CONTAINER" => "caddy-id", "FAKE_PORT_LABELS" => "navishai caddy")
+
+      assert_not status.success?
+      assert_includes stderr, "non-Docker service"
+      refute_includes docker_log(root), "image load"
+    end
+  end
+
   [ "install.invalid", "INSTALL.TEST.", "localhost" ].each do |host|
     define_method("test_rejects_reserved_hostname_#{host.tr('.', '_')}") do
       Dir.mktmpdir do |root|
@@ -915,6 +972,13 @@ class InstallerTest < ActiveSupport::TestCase
           case "$*" in
             *"/opt/navishai/current/"*) printf '%s\n' "${DOCKER_CURRENT_CONFIG_JSON:-${DOCKER_CONFIG_JSON:-}}" ;;
             *) printf '%s\n' "${DOCKER_TARGET_CONFIG_JSON:-${DOCKER_CONFIG_JSON:-}}" ;;
+          esac
+          ;;
+        *"ps --filter publish="*) printf '%s' "${FAKE_PORT_CONTAINER:-}" ;;
+        *"inspect --format"*)
+          case "$*" in
+            *"Config.Labels"*) printf '%s' "${FAKE_PORT_LABELS:-}" ;;
+            *) printf '%s' "${FAKE_PORT_BINDING:-}" ;;
           esac
           ;;
         *"SHOW server_version_num"*) printf '%s\n' "${DOCKER_POSTGRES_VERSION:-160000}" ;;
