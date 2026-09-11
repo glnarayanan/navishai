@@ -1178,6 +1178,26 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_configure_memory_keeps_the_key_after_start_failure_for_retry
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_MEMORY_PENDING=1\n")
+      key = "#{root}/memory-key"
+      File.write(key, "sm_private")
+      FileUtils.chmod(0o600, key)
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SUPERMEMORY_API_KEY_FILE=#{key}\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, _stderr, first = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers, "DOCKER_FAIL_MATCH" => "up -d --wait supermemory web jobs")
+      assert_not first.success?
+      assert_includes File.read("#{root}/etc/navishai/env"), "NAVISHAI_SUPERMEMORY_API_KEY=sm_private\n"
+
+      _stdout, stderr, second = run_installer(root, "configure", "memory", "NAVISHAI_ANSWERS_FILE" => answers)
+      assert second.success?, stderr
+    end
+  end
+
   private
 
   def run_installer(root, *arguments)
