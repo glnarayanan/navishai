@@ -781,7 +781,7 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
-  def test_upgrade_rejects_changed_images_before_stopping_services_or_promoting_target
+  def test_upgrade_accepts_changed_images_after_loading_them_before_stopping_writers
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       target = build_bundle(root, "release/ops/compose/backup" => "target-backup\n", "images.tar" => "changed images\n")
@@ -797,15 +797,14 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_CONFIG_JSON" => { services: { postgres: { image: "pgvector/pgvector:0.8.6-pg16@sha256:#{'a' * 64}" } } }.to_json,
         "DOCKER_POSTGRES_VERSION" => "160000")
 
-      assert_not status.success?
-      assert_includes stderr, "changed-image upgrades are temporarily unavailable"
-      assert_equal current, File.realpath("#{root}/opt/navishai/current")
-      refute_includes docker_log(root), "stop caddy"
-      refute_includes docker_log(root), "image load"
+      assert status.success?, stderr
+      assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
+      log = docker_log(root)
+      assert_operator log.index("image load"), :<, log.index("stop caddy")
     end
   end
 
-  def test_upgrade_rejects_changed_service_reference_with_the_same_image_archive
+  def test_upgrade_accepts_changed_service_references_with_the_same_image_archive
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       target = build_bundle(root, "release/ops/compose/backup" => "target-backup\n")
@@ -822,11 +821,8 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_TARGET_CONFIG_JSON" => { services: { postgres: { image: postgres }, web: { image: "navishai-rails:new" } } }.to_json,
         "DOCKER_CURRENT_CONFIG_JSON" => { services: { postgres: { image: postgres }, web: { image: "navishai-rails:local" } } }.to_json)
 
-      assert_not status.success?
-      assert_includes stderr, "target service image references differ"
-      assert_equal current, File.realpath("#{root}/opt/navishai/current")
-      refute_includes docker_log(root), "stop caddy"
-      refute_includes docker_log(root), "image load"
+      assert status.success?, stderr
+      assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
     end
   end
 
@@ -851,7 +847,7 @@ class InstallerTest < ActiveSupport::TestCase
       assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
       assert_equal "target-backup\n", File.read("#{root}/opt/navishai/current/ops/compose/backup")
       log = docker_log(root)
-      assert_operator log.index("stop caddy"), :<, log.index("image load")
+      assert_operator log.index("image load"), :<, log.index("stop caddy")
       assert_operator log.index("run --rm web bin/rails db:prepare"), :<, log.index("up -d --wait web jobs caddy")
       refute_includes log, "up -d --wait supermemory web jobs caddy"
     end
@@ -900,13 +896,10 @@ class InstallerTest < ActiveSupport::TestCase
         "DOCKER_POSTGRES_VERSION" => "160000", "DOCKER_FAIL_MATCH" => "image load -i")
 
       assert_not status.success?
-      assert_includes stderr, "upgrade target_load failed"
+      assert_includes stderr, "target image load failed before writers stopped"
       assert_equal current, File.realpath("#{root}/opt/navishai/current")
-      state = File.read("#{root}/var/lib/navishai/install.json")
-      assert_includes state, "upgrade_target_load_restore_required"
-      refute_includes state, "upgrade_completed"
       log = docker_log(root)
-      assert_operator log.rindex("stop caddy jobs web runner supermemory"), :>, log.index("image load -i")
+      refute_includes log, "stop caddy"
     end
   end
 
