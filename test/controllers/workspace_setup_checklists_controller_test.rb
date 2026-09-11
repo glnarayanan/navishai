@@ -15,7 +15,7 @@ class WorkspaceSetupChecklistsControllerTest < ActionDispatch::IntegrationTest
     assert_select "strong", "Attachments"
     assert_select "strong", "System email"
     assert_select "a[aria-label='Open AI providers']"
-    assert_select "span", { text: "Not checked", count: 1 }
+    assert_select "span", { text: "Skipped", count: 5 }
   end
 
   test "forbids a Member from opening the checklist" do
