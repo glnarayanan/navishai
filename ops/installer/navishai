@@ -396,7 +396,27 @@ setup() {
   compose up -d supermemory web jobs
 }
 
-status() { need_root; [[ -f "$etc/env" ]] || die "not installed"; compose ps; [[ -f "$state/install.json" ]] && cat "$state/install.json"; grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env" && echo "memory: pending configuration"; }
+status() {
+  need_root
+  [[ -f "$etc/env" ]] || die "not installed"
+  compose ps
+  [[ ! -f "$state/install.json" ]] || cat "$state/install.json"
+  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
+    echo "memory: pending configuration"
+  else
+    echo "memory: key configured; scoped indexing and retrieval are not verified by this command"
+  fi
+  if grep -q '^NAVISHAI_SYSTEM_SMTP_ADDRESS=' "$etc/env"; then
+    echo "system mail: configured, untested"
+  else
+    echo "system mail: not configured"
+  fi
+  if grep -qx 'NAVISHAI_ATTACHMENT_SCANNER=clamd' "$etc/env"; then
+    echo "attachment scanner: clamd configured, untested; files stay quarantined until a clean result"
+  else
+    echo "attachment scanner: not configured; every attachment stays quarantined"
+  fi
+}
 doctor() { need_root; preflight; status; }
 replace_env_values() {
   local temporary key
