@@ -922,6 +922,8 @@ class InstallerTest < ActiveSupport::TestCase
       esac
     SH
     FileUtils.chmod(0o755, "#{bin}/docker")
+    File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) printf '%s' \"${FAKE_PORT_80:-}\";; *:443*) printf '%s' \"${FAKE_PORT_443:-}\";; esac\n")
+    FileUtils.chmod(0o755, "#{bin}/ss")
     extra_environment.merge(
       "NAVISHAI_MANAGED_ROOT" => root,
       "NAVISHAI_TEST_ALLOW_UNPRIVILEGED" => "1",

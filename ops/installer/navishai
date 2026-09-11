@@ -124,7 +124,22 @@ preflight() {
   [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && $VERSION_ID == 24.04) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04"
   command -v docker >/dev/null || die "Docker Engine is required"
   docker compose version >/dev/null || die "Docker Compose v2 is required"
+  preflight_ports
   [[ $(free -m | awk '/Mem:/ {print $2}') -ge 7168 ]] || echo "navishai: warning: this host has less than the 8 GiB test-host budget" >&2
+}
+
+preflight_ports() {
+  local port listeners container labels
+  command -v ss >/dev/null || die "ss is required to inspect HTTPS ports"
+  for port in 80 443; do
+    listeners="$(ss -ltnH "( sport = :$port )")"
+    [[ -z $listeners ]] && continue
+    [[ -e "$prefix/current" ]] || die "port $port is in use; stop the service using it, then rerun setup"
+    container="$(docker ps --filter "publish=$port" --format '{{.ID}}')"
+    [[ -n $container ]] || die "port $port is in use by a non-Docker service; stop it, then rerun setup"
+    labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")"
+    [[ $labels == "$project caddy" ]] || die "port $port is in use by another container; stop it, then rerun setup"
+  done
 }
 
 disk_check() {
