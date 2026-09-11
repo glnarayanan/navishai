@@ -1186,6 +1186,23 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_configure_scanner_preserves_environment_and_keeps_quarantine_warning
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n")
+      FileUtils.chmod(0o600, answers)
+      stdout, stderr, status = run_installer(root, "configure", "scanner", "NAVISHAI_ANSWERS_FILE" => answers)
+      assert status.success?, stderr
+      assert_includes stdout, "Files remain quarantined"
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
+      assert_includes environment, "NAVISHAI_ATTACHMENT_SCANNER=clamd\n"
+      assert_includes environment, "NAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n"
+    end
+  end
+
   private
 
   def run_installer(root, *arguments)

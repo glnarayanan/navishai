@@ -10,6 +10,26 @@ apt="${NAVISHAI_APT_GET:-apt-get}"
 
 die() { echo "navishai bootstrap: $*" >&2; exit 1; }
 [[ -n "$bundle" ]] || die "usage: bootstrap CANDIDATE.tar"
+
+fetch_candidate() {
+  local checksum_file expected destination partial
+  [[ $bundle == https://* ]] || return
+  checksum_file="${NAVISHAI_CANDIDATE_SHA256_FILE:-}"
+  [[ -f $checksum_file && ! -L $checksum_file && $(stat -c %u "$checksum_file") -eq ${EUID:-$(id -u)} ]] || die "provide an owned trusted candidate checksum file"
+  [[ $((8#$(stat -c %a "$checksum_file"))) -le 0600 ]] || die "candidate checksum file must not be readable by group or others"
+  expected="$(tr -d '[:space:]' <"$checksum_file")"
+  [[ $expected =~ ^[0-9a-f]{64}$ ]] || die "candidate checksum must be a SHA-256 value"
+  destination="${NAVISHAI_CANDIDATE_DESTINATION:-${root:-/var/lib/navishai}/candidate.tar}"
+  [[ ! -L $destination ]] || die "candidate destination must not be a symlink"
+  mkdir -p "$(dirname "$destination")"
+  partial="${destination}.part"
+  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 1800 --retry 2 --continue-at - --output "$partial" "$bundle" || die "candidate download failed; rerun bootstrap to resume"
+  [[ $(sha256sum "$partial" | cut -d' ' -f1) == "$expected" ]] || die "candidate checksum did not match trusted value"
+  mv -f "$partial" "$destination"
+  bundle="$destination"
+}
+
+fetch_candidate
 [[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
 
 . "${NAVISHAI_OS_RELEASE:-/etc/os-release}"
