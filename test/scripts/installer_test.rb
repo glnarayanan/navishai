@@ -593,6 +593,36 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_https_verification_waits_for_certificate_issuance_within_the_bounded_window
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      stdout, stderr, status = run_setup(root, bundle, "FAKE_HTTPS_FAIL_COUNT" => "2",
+        "NAVISHAI_HTTPS_WAIT_SECONDS" => "30", "NAVISHAI_TEST_HTTPS_INTERVAL" => "0")
+
+      assert status.success?, stderr
+      assert_includes stderr, "waiting for HTTPS"
+      assert_includes stdout, "Infrastructure and HTTPS are ready"
+      assert_equal 3, docker_log(root).lines.count { |line| line.include?("https://install.example/up") }
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_verified"
+    end
+  end
+
+  def test_https_verification_gives_up_after_the_bounded_window_without_a_200
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle, "FAKE_HTTPS_STATUS" => "302",
+        "NAVISHAI_HTTPS_WAIT_SECONDS" => "1", "NAVISHAI_TEST_HTTPS_INTERVAL" => "0")
+
+      assert_not status.success?
+      assert_includes stderr, "waiting for HTTPS"
+      assert_includes stderr, "HTTPS could not be verified"
+      assert_operator docker_log(root).lines.count { |line| line.include?("https://install.example/up") }, :>=, 2
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_unverified"
+    end
+  end
+
   def test_https_redirect_does_not_count_as_readiness
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
@@ -670,6 +700,58 @@ class InstallerTest < ActiveSupport::TestCase
       token = File.read("#{root}/etc/navishai/env")[/^NAVISHAI_BOOTSTRAP_TOKEN=(.+)$/, 1]
       assert_not_nil token
       refute_includes File.read(transcript), token
+    end
+  end
+
+  def test_renew_owner_token_rotates_the_token_and_expiry_only_when_rails_allows_renewal
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\nNAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n")
+
+      stdout, stderr, status = run_installer(root, "renew-owner-token")
+
+      assert status.success?, stderr
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
+      refute_includes environment, "old-token"
+      refute_includes environment, "2026-01-01T00:00:00Z"
+      token = environment[/^NAVISHAI_BOOTSTRAP_TOKEN=(\S+)$/, 1]
+      assert_match(/\A[0-9a-f]{64}\z/, token)
+      assert_operator Time.iso8601(environment[/^NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=(\S+)$/, 1]), :>, 23.hours.from_now
+      refute_includes stdout, token
+      assert_includes stdout, "reveal-owner-token --confirm-reveal"
+      log = docker_log(root)
+      assert_operator log.index("navishai:first_owner:renewable"), :<, log.index("up -d --wait web jobs")
+    end
+  end
+
+  def test_renew_owner_token_refuses_after_first_owner_setup_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      original = "NAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n"
+      File.write("#{root}/etc/navishai/env", original)
+
+      _stdout, stderr, status = run_installer(root, "renew-owner-token", "DOCKER_FAIL_MATCH" => "navishai:first_owner:renewable")
+
+      assert_not status.success?
+      assert_includes stderr, "cannot be renewed"
+      assert_equal original, File.read("#{root}/etc/navishai/env")
+      refute_includes docker_log(root), "up -d"
+    end
+  end
+
+  def test_renew_owner_token_keeps_the_new_token_after_restart_failure_and_retries
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n")
+
+      _stdout, _stderr, first = run_installer(root, "renew-owner-token", "DOCKER_FAIL_MATCH" => "up -d --wait web jobs")
+
+      assert_not first.success?
+      refute_includes File.read("#{root}/etc/navishai/env"), "old-token"
+
+      _stdout, stderr, second = run_installer(root, "renew-owner-token")
+      assert second.success?, stderr
     end
   end
 
@@ -1169,6 +1251,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       stdout, stderr, pending = run_installer(root, "status")
       assert pending.success?, stderr
+      assert_includes stdout, "release: none selected"
       assert_includes stdout, "memory: pending configuration"
       assert_includes stdout, "system mail: not configured"
       assert_includes stdout, "attachment scanner: not configured"
@@ -1176,8 +1259,15 @@ class InstallerTest < ActiveSupport::TestCase
 
       File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_SYSTEM_SMTP_PASSWORD=mail-secret\nNAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n")
 
+      release_id = "a" * 64
+      FileUtils.mkdir_p("#{root}/opt/navishai/releases/#{release_id}")
+      File.write("#{root}/opt/navishai/releases/#{release_id}/SOURCE_COMMIT", "#{'b' * 40}\n")
+      File.symlink("#{root}/opt/navishai/releases/#{release_id}", "#{root}/opt/navishai/current")
+
       stdout, stderr, configured = run_installer(root, "status")
       assert configured.success?, stderr
+      assert_includes stdout, "release: #{release_id}"
+      assert_includes stdout, "source commit: #{'b' * 40}"
       assert_includes stdout, "memory: key configured"
       assert_includes stdout, "system mail: configured, untested"
       assert_includes stdout, "attachment scanner: clamd configured, untested"
@@ -1299,7 +1389,16 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/docker")
     File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) printf '%s' \"${FAKE_PORT_80:-}\";; *:443*) printf '%s' \"${FAKE_PORT_443:-}\";; esac\n")
     FileUtils.chmod(0o755, "#{bin}/ss")
-    File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ] || exit 1\nprintf '%s' \"${FAKE_HTTPS_STATUS:-200}\"\n")
+    File.write("#{bin}/curl", <<~SH)
+      #!/bin/sh
+      printf '%s\\n' "$*" >>"$DOCKER_TEST_LOG"
+      count="$(cat "$NAVISHAI_MANAGED_ROOT/curl-count" 2>/dev/null || echo 0)"
+      count=$((count + 1))
+      printf '%s' "$count" >"$NAVISHAI_MANAGED_ROOT/curl-count"
+      [ "${FAKE_HTTPS_FAIL:-}" != 1 ] || exit 1
+      [ "$count" -gt "${FAKE_HTTPS_FAIL_COUNT:-0}" ] || exit 1
+      printf '%s' "${FAKE_HTTPS_STATUS:-200}"
+    SH
     FileUtils.chmod(0o755, "#{bin}/curl")
     File.write("#{bin}/stat", <<~SH)
       #!/bin/sh
@@ -1322,7 +1421,7 @@ class InstallerTest < ActiveSupport::TestCase
     answers = "#{root}/answers"
     File.write(answers, "NAVISHAI_APP_HOST=install.example\n")
     FileUtils.chmod(0o600, answers)
-    run_installer(root, "setup", bundle, { "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes" }.merge(environment))
+    run_installer(root, "setup", bundle, { "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes", "NAVISHAI_HTTPS_WAIT_SECONDS" => "0" }.merge(environment))
   end
 
   def docker_log(root)

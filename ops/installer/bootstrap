@@ -13,7 +13,8 @@ die() { echo "navishai bootstrap: $*" >&2; exit 1; }
 
 candidate_matches() { [[ $(sha256sum "$1" | cut -d' ' -f1) == "$expected" ]]; }
 download_candidate() {
-  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 1800 --retry 2 "$@" --output "$partial" "$bundle"
+  # Abort a transfer that stalls below 1 KiB/s for the stall window instead of capping total time; large archives on slow links resume on rerun.
+  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --speed-limit 1024 --speed-time "${NAVISHAI_CANDIDATE_STALL_SECONDS:-120}" --retry 2 "$@" --output "$partial" "$bundle"
 }
 fetch_candidate() {
   local checksum_file expected destination partial mode curl_status
@@ -36,7 +37,7 @@ fetch_candidate() {
     bundle="$destination"
     return 0
   fi
-  mkdir -p "$(dirname "$destination")"
+  mkdir -p "$(dirname "$destination")" 2>/dev/null && [[ -w "$(dirname "$destination")" ]] || die "cannot store the candidate under $(dirname "$destination"); rerun bootstrap with sudo, or set NAVISHAI_CANDIDATE_DESTINATION to a writable path"
   # Resume a partial transfer; when the server cannot serve byte ranges, curl exits 33 and the transfer restarts.
   download_candidate --continue-at - && curl_status=0 || curl_status=$?
   if [[ $curl_status -eq 33 ]]; then
@@ -52,11 +53,12 @@ fetch_candidate() {
   bundle="$destination"
 }
 
-fetch_candidate
-[[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
-
+# Reject an unsupported host before transferring a candidate archive.
 . "${NAVISHAI_OS_RELEASE:-/etc/os-release}"
 [[ $(uname -m) == x86_64 && ( $ID == debian && $VERSION_ID == 12 || $ID == ubuntu && $VERSION_ID == 24.04 ) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04 on x86-64"
+
+fetch_candidate
+[[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
 
 missing=()
 command -v docker >/dev/null || missing+=(docker)

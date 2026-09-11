@@ -37,6 +37,16 @@ class FirstOwnerBootstrapTest < ActiveSupport::TestCase
     assert_not FirstOwnerBootstrap.valid_token?("b" * 32)
   end
 
+  test "stays renewable only until the first Owner exists" do
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
+    assert FirstOwnerBootstrap.renewable?
+    assert_not FirstOwnerBootstrap.available?
+
+    Organization.create!(name: "Existing", slug: "existing")
+
+    assert_not FirstOwnerBootstrap.renewable?
+  end
+
   test "fails closed when token expiry is missing or malformed" do
     ENV.delete("NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT")
     assert_not FirstOwnerBootstrap.available?

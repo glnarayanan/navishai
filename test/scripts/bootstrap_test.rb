@@ -20,6 +20,23 @@ class BootstrapTest < ActiveSupport::TestCase
     end
   end
 
+  def test_unsupported_host_stops_before_downloading_a_candidate
+    Dir.mktmpdir do |root|
+      release = File.join(root, "os-release")
+      File.write(release, "ID=alpine\nVERSION_ID=3.20\n")
+      checksum, destination = trusted_candidate(root, "candidate")
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar",
+        "NAVISHAI_OS_RELEASE" => release, "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum, "NAVISHAI_CANDIDATE_DESTINATION" => destination)
+
+      assert_not status.success?
+      assert_includes stderr, "supported hosts"
+      refute_path_exists File.join(root, "commands.log")
+      refute File.exist?(destination)
+      refute File.exist?("#{destination}.part")
+    end
+  end
+
   def test_missing_prerequisites_decline_without_mutation
     Dir.mktmpdir do |root|
       bundle = File.join(root, "candidate.tar")
@@ -126,6 +143,37 @@ class BootstrapTest < ActiveSupport::TestCase
       assert_equal body, File.binread(destination)
       refute File.exist?("#{destination}.part")
       assert_equal [ nil, "bytes=40000-" ], server.requests.map { |request| request[:range] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_stalled_https_transfer_stops_after_the_stall_window_and_resumes_on_rerun
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:, stall_full_after: 10_000)
+      checksum, destination = trusted_candidate(root, body)
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      _stdout, stderr, first = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, destination).merge("NAVISHAI_CANDIDATE_STALL_SECONDS" => "1"))
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_not first.success?
+      assert_includes stderr, "rerun bootstrap to resume"
+      assert_operator elapsed, :<, 20
+      assert File.exist?("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+
+      resumed_from = File.size("#{destination}.part")
+      _stdout, stderr, second = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, destination).merge("NAVISHAI_CANDIDATE_STALL_SECONDS" => "1"))
+
+      assert second.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_includes server.requests.map { |request| request[:range] }, "bytes=#{resumed_from}-" if resumed_from.positive?
       assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
     ensure
       server&.stop
@@ -267,6 +315,26 @@ class BootstrapTest < ActiveSupport::TestCase
       assert_includes stderr, "curl is required"
       refute_path_exists File.join(root, "missing-parent")
       refute_path_exists File.join(root, "commands.log")
+    end
+  end
+
+  def test_unwritable_candidate_destination_explains_sudo_before_any_download
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(1_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, = trusted_candidate(root, body)
+      blocker = File.join(root, "blocker")
+      File.write(blocker, "not a directory")
+
+      _stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, File.join(blocker, "candidate.tar")))
+
+      assert_not status.success?
+      assert_includes stderr, "rerun bootstrap with sudo"
+      assert_empty server.requests
+      refute_path_exists File.join(root, "commands.log")
+    ensure
+      server&.stop
     end
   end
 

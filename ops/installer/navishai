@@ -361,6 +361,20 @@ validate_resume_state() {
   [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" && -f "$etc/runner/ca.crt" && -f "$etc/runner/server.crt" && -f "$etc/runner/server.key" ]] || die "incomplete setup state detected; restore the managed release and runner TLS before rerunning setup"
 }
 
+verify_https() {
+  local host="$1" https_status interval deadline
+  interval=5
+  [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 && -n ${NAVISHAI_TEST_HTTPS_INTERVAL:-} ]] && interval="$NAVISHAI_TEST_HTTPS_INTERVAL"
+  deadline=$((SECONDS + ${NAVISHAI_HTTPS_WAIT_SECONDS:-120}))
+  # Certificate issuance is asynchronous after Caddy starts, so allow a bounded wait for an exact 200.
+  while :; do
+    https_status="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' "https://$host/up")" && [[ $https_status == 200 ]] && return 0
+    (( SECONDS < deadline )) || return 1
+    echo "navishai: waiting for HTTPS at https://$host/up; certificate issuance can take a minute" >&2
+    sleep "$interval"
+  done
+}
+
 setup() {
   need_root
   [[ $# -eq 1 ]] || die "usage: navishai setup BUNDLE.tar"
@@ -379,8 +393,7 @@ setup() {
   compose up -d --wait web jobs caddy
   local setup_host
   setup_host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
-  local https_status
-  if https_status="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' "https://$setup_host/up")" && [[ $https_status == 200 ]]; then
+  if verify_https "$setup_host"; then
     progress https_verified
     echo "Infrastructure and HTTPS are ready at https://$setup_host."
   else
@@ -399,6 +412,12 @@ setup() {
 status() {
   need_root
   [[ -f "$etc/env" ]] || die "not installed"
+  if [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" ]]; then
+    echo "release: $(basename "$(readlink -f "$prefix/current")")"
+    echo "source commit: $(cat "$prefix/current/SOURCE_COMMIT" 2>/dev/null || echo unknown)"
+  else
+    echo "release: none selected; restore the managed release before relying on this installation"
+  fi
   compose ps
   [[ ! -f "$state/install.json" ]] || cat "$state/install.json"
   if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
@@ -474,6 +493,21 @@ configure_scanner() {
   mv -f "$temporary" "$etc/env"
   compose up -d --wait web jobs
   echo "ClamAV is configured, not yet reachable or tested. Files remain quarantined until a clean scanner result."
+}
+renew_owner_token() {
+  local temporary
+  need_root
+  [[ $# -eq 0 ]] || die "usage: navishai renew-owner-token"
+  lock
+  [[ -f "$etc/env" ]] || die "not installed"
+  compose run --rm web bin/rails navishai:first_owner:renewable || die "first-Owner setup is already complete or the installation has state; the token cannot be renewed"
+  temporary="$(mktemp "$etc/env.XXXXXX")"
+  grep -Ev '^NAVISHAI_BOOTSTRAP_TOKEN=|^NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=' "$etc/env" >"$temporary" || true
+  printf 'NAVISHAI_BOOTSTRAP_TOKEN=%s\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=%s\n' "$(random)" "$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)" >>"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$etc/env"
+  compose up -d --wait web jobs
+  echo "A new first-Owner token is valid for 24 hours. In a trusted terminal, run: navishai reveal-owner-token --confirm-reveal"
 }
 reveal_owner_token() {
   need_root
@@ -577,9 +611,10 @@ case "${1:-}" in
   status) status ;;
   doctor) doctor ;;
   configure) shift; case "${1:-}" in system-mail) [[ $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;; memory) [[ $# -eq 1 ]] || die "usage: navishai configure memory"; configure_memory ;; scanner) [[ $# -eq 1 ]] || die "usage: navishai configure scanner"; configure_scanner ;; *) die "usage: navishai configure {system-mail|memory|scanner}" ;; esac ;;
+  renew-owner-token) shift; renew_owner_token "$@" ;;
   reveal-owner-token) shift; reveal_owner_token "$@" ;;
   backup) shift; backup "$@" ;;
   restore) shift; restore "$@" ;;
   upgrade) shift; upgrade "$@" ;;
-  *) echo "usage: navishai {setup|status|doctor|configure|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
+  *) echo "usage: navishai {setup|status|doctor|configure|renew-owner-token|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
 esac
