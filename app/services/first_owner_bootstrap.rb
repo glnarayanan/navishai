@@ -4,8 +4,13 @@ class FirstOwnerBootstrap
   LOCK_KEY = "navishai-first-owner-bootstrap"
 
   def self.available?
-    token_active? &&
-      !InstallationState.exists? && !User.exists? && !Organization.exists?
+    token_active? && renewable?
+  end
+
+  # A deployment may issue a fresh bootstrap token only while nothing has been
+  # bootstrapped; after the first Owner exists the token is never renewable.
+  def self.renewable?
+    !InstallationState.exists? && !User.exists? && !Organization.exists?
   end
 
   def self.valid_token?(candidate)
@@ -31,7 +36,7 @@ class FirstOwnerBootstrap
   def self.call(organization_name:, organization_slug:, workspace_name:, workspace_slug:, email_address:, password:, password_confirmation:)
     ApplicationRecord.transaction do
       ApplicationRecord.connection.execute("SELECT pg_advisory_xact_lock(hashtext('#{LOCK_KEY}'))")
-      raise Unavailable if InstallationState.exists? || User.exists? || Organization.exists?
+      raise Unavailable unless renewable?
 
       organization = Organization.create!(name: organization_name, slug: organization_slug)
       workspace = organization.workspaces.create!(name: workspace_name, slug: workspace_slug)

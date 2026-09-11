@@ -488,6 +488,21 @@ configure_scanner() {
   compose up -d --wait web jobs
   echo "ClamAV is configured, not yet reachable or tested. Files remain quarantined until a clean scanner result."
 }
+renew_owner_token() {
+  local temporary
+  need_root
+  [[ $# -eq 0 ]] || die "usage: navishai renew-owner-token"
+  lock
+  [[ -f "$etc/env" ]] || die "not installed"
+  compose run --rm web bin/rails navishai:first_owner:renewable || die "first-Owner setup is already complete or the installation has state; the token cannot be renewed"
+  temporary="$(mktemp "$etc/env.XXXXXX")"
+  grep -Ev '^NAVISHAI_BOOTSTRAP_TOKEN=|^NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=' "$etc/env" >"$temporary" || true
+  printf 'NAVISHAI_BOOTSTRAP_TOKEN=%s\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=%s\n' "$(random)" "$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)" >>"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$etc/env"
+  compose up -d --wait web jobs
+  echo "A new first-Owner token is valid for 24 hours. In a trusted terminal, run: navishai reveal-owner-token --confirm-reveal"
+}
 reveal_owner_token() {
   need_root
   [[ $# -eq 1 && $1 == --confirm-reveal ]] || die "usage: navishai reveal-owner-token --confirm-reveal"
@@ -590,9 +605,10 @@ case "${1:-}" in
   status) status ;;
   doctor) doctor ;;
   configure) shift; case "${1:-}" in system-mail) [[ $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;; memory) [[ $# -eq 1 ]] || die "usage: navishai configure memory"; configure_memory ;; scanner) [[ $# -eq 1 ]] || die "usage: navishai configure scanner"; configure_scanner ;; *) die "usage: navishai configure {system-mail|memory|scanner}" ;; esac ;;
+  renew-owner-token) shift; renew_owner_token "$@" ;;
   reveal-owner-token) shift; reveal_owner_token "$@" ;;
   backup) shift; backup "$@" ;;
   restore) shift; restore "$@" ;;
   upgrade) shift; upgrade "$@" ;;
-  *) echo "usage: navishai {setup|status|doctor|configure|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
+  *) echo "usage: navishai {setup|status|doctor|configure|renew-owner-token|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
 esac

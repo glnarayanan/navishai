@@ -703,6 +703,58 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_renew_owner_token_rotates_the_token_and_expiry_only_when_rails_allows_renewal
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\nNAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n")
+
+      stdout, stderr, status = run_installer(root, "renew-owner-token")
+
+      assert status.success?, stderr
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
+      refute_includes environment, "old-token"
+      refute_includes environment, "2026-01-01T00:00:00Z"
+      token = environment[/^NAVISHAI_BOOTSTRAP_TOKEN=(\S+)$/, 1]
+      assert_match(/\A[0-9a-f]{64}\z/, token)
+      assert_operator Time.iso8601(environment[/^NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=(\S+)$/, 1]), :>, 23.hours.from_now
+      refute_includes stdout, token
+      assert_includes stdout, "reveal-owner-token --confirm-reveal"
+      log = docker_log(root)
+      assert_operator log.index("navishai:first_owner:renewable"), :<, log.index("up -d --wait web jobs")
+    end
+  end
+
+  def test_renew_owner_token_refuses_after_first_owner_setup_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      original = "NAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n"
+      File.write("#{root}/etc/navishai/env", original)
+
+      _stdout, stderr, status = run_installer(root, "renew-owner-token", "DOCKER_FAIL_MATCH" => "navishai:first_owner:renewable")
+
+      assert_not status.success?
+      assert_includes stderr, "cannot be renewed"
+      assert_equal original, File.read("#{root}/etc/navishai/env")
+      refute_includes docker_log(root), "up -d"
+    end
+  end
+
+  def test_renew_owner_token_keeps_the_new_token_after_restart_failure_and_retries
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_BOOTSTRAP_TOKEN=old-token\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=2026-01-01T00:00:00Z\n")
+
+      _stdout, _stderr, first = run_installer(root, "renew-owner-token", "DOCKER_FAIL_MATCH" => "up -d --wait web jobs")
+
+      assert_not first.success?
+      refute_includes File.read("#{root}/etc/navishai/env"), "old-token"
+
+      _stdout, stderr, second = run_installer(root, "renew-owner-token")
+      assert second.success?, stderr
+    end
+  end
+
   def test_reveal_owner_token_requires_explicit_confirmation
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
