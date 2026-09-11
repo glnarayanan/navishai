@@ -71,9 +71,8 @@ ensure_apt_packages() {
     libxslt1-dev
     libyaml-dev
     pkg-config
-    postgresql
-    postgresql-contrib
     "postgresql-${PG_MAJOR}"
+    "postgresql-contrib-${PG_MAJOR}"
     "postgresql-server-dev-${PG_MAJOR}"
     shared-mime-info
     zlib1g-dev
