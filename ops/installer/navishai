@@ -189,20 +189,26 @@ preflight() {
 }
 
 preflight_ports() {
-  local port listeners containers container labels binding
+  local port problem
   command -v ss >/dev/null || die "ss is required to inspect HTTPS ports"
   for port in 80 443; do
-    listeners="$(ss -ltnH "( sport = :$port )")"
-    [[ -z $listeners ]] && continue
-    [[ -e "$prefix/current" ]] || die "port $port is in use; stop the service using it, then rerun setup"
-    containers="$(docker ps --filter "publish=$port" --format '{{.ID}}')" || die "cannot inspect port $port ownership; retry setup"
-    [[ $(wc -w <<<"$containers") == 1 ]] || die "port $port ownership is ambiguous; stop the conflicting service, then rerun setup"
-    container="$containers"
-    labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")" || die "cannot inspect port $port ownership; retry setup"
-    binding="$(docker inspect --format "{{range \$p, \$bindings := .HostConfig.PortBindings}}{{range \$bindings}}{{if eq .HostPort \"$port\"}}{{\$p}}{{end}}{{end}}{{end}}" "$container")" || die "cannot inspect port $port ownership; retry setup"
-    [[ -n $binding ]] || die "port $port is in use by a non-Docker service; stop it, then rerun setup"
-    [[ $labels == "$project caddy" ]] || die "port $port is in use by another container; stop it, then rerun setup"
+    problem="$(port_conflict "$port")"
+    [[ -z $problem ]] || die "$problem"
   done
+}
+# Prints why a public port cannot be used, or nothing when it is free or owned by this installation's Caddy.
+port_conflict() {
+  local port="$1" listeners containers container labels binding
+  listeners="$(ss -ltnH "( sport = :$port )")"
+  [[ -n $listeners ]] || return 0
+  [[ -e "$prefix/current" ]] || { echo "port $port is in use; stop the service using it, then rerun setup"; return 0; }
+  containers="$(docker ps --filter "publish=$port" --format '{{.ID}}')" || { echo "cannot inspect port $port ownership; retry setup"; return 0; }
+  [[ $(wc -w <<<"$containers") == 1 ]] || { echo "port $port ownership is ambiguous; stop the conflicting service, then rerun setup"; return 0; }
+  container="$containers"
+  labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")" || { echo "cannot inspect port $port ownership; retry setup"; return 0; }
+  binding="$(docker inspect --format "{{range \$p, \$bindings := .HostConfig.PortBindings}}{{range \$bindings}}{{if eq .HostPort \"$port\"}}{{\$p}}{{end}}{{end}}{{end}}" "$container")" || { echo "cannot inspect port $port ownership; retry setup"; return 0; }
+  [[ -n $binding ]] || { echo "port $port is in use by a non-Docker service; stop it, then rerun setup"; return 0; }
+  [[ $labels == "$project caddy" ]] || echo "port $port is in use by another container; stop it, then rerun setup"
 }
 
 disk_check() {
@@ -436,7 +442,105 @@ status() {
     echo "attachment scanner: not configured; every attachment stays quarantined"
   fi
 }
-doctor() { need_root; preflight; status; }
+# Read-only diagnostics: every finding is collected with a recovery action; nothing is repaired or probed for cost.
+doctor_findings=()
+doctor_failed=0
+finding() {
+  local status="$1" key="$2" message="$3" action="${4:-}"
+  doctor_findings+=("$status"$'\t'"$key"$'\t'"$message"$'\t'"$action")
+  [[ $status != failure ]] || doctor_failed=1
+}
+json_string() { local value="$1"; value="${value//\\/\\\\}"; value="${value//\"/\\\"}"; printf '"%s"' "$value"; }
+doctor() {
+  local output="text" step release free_root free_docker docker_root problem port host
+  need_root
+  case "${1:-}" in
+    "") ;;
+    --json) output="json" ;;
+    *) die "usage: navishai doctor [--json]" ;;
+  esac
+  [[ $# -le 1 ]] || die "usage: navishai doctor [--json]"
+  if [[ $(uname -m) == x86_64 ]]; then finding ok architecture "x86-64 host"; else finding failure architecture "only x86-64 hosts are supported" "install on a supported x86-64 host"; fi
+  . /etc/os-release
+  if [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && $VERSION_ID == 24.04) ]]; then finding ok os "$ID $VERSION_ID is a supported host"; else finding failure os "$ID $VERSION_ID is not a supported host" "use Debian 12 or Ubuntu 24.04"; fi
+  if command -v docker >/dev/null; then
+    finding ok docker "Docker Engine is installed"
+    if docker compose version >/dev/null 2>&1; then finding ok compose "Docker Compose v2 is installed"; else finding failure compose "Docker Compose v2 is missing" "rerun bootstrap to install the Compose plugin"; fi
+    if docker info >/dev/null 2>&1; then finding ok docker_daemon "Docker daemon is running"; else finding failure docker_daemon "Docker daemon is not reachable" "run systemctl enable --now docker, then rerun navishai doctor"; fi
+  else
+    finding failure docker "Docker Engine is missing" "rerun bootstrap to install Docker"
+  fi
+  if command -v ss >/dev/null; then
+    for port in 80 443; do
+      problem="$(port_conflict "$port")"
+      if [[ -z $problem ]]; then finding ok "port_$port" "port $port is free or owned by this installation"; else finding failure "port_$port" "$problem" "free port $port, then rerun navishai setup"; fi
+    done
+  else
+    finding warning ports "ss is unavailable; ports 80 and 443 were not inspected" "install iproute2"
+  fi
+  if [[ $(free -m | awk '/Mem:/ {print $2}') -ge 7168 ]]; then finding ok memory "at least the 8 GiB test-host budget"; else finding warning memory "less than the 8 GiB test-host budget" "expect slower startup; this is a measured test budget, not a support minimum"; fi
+  free_root="$(df -Pk / | awk 'NR==2 {print $4}')"
+  if [[ $free_root -ge 2097152 ]]; then finding ok disk_root "root filesystem has $((free_root / 1024)) MiB free"; else finding warning disk_root "root filesystem has only $((free_root / 1024)) MiB free" "free at least 2 GiB before backup or upgrade"; fi
+  if command -v docker >/dev/null && docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" && [[ -n $docker_root && -d $docker_root ]]; then
+    free_docker="$(df -Pk "$docker_root" | awk 'NR==2 {print $4}')"
+    if [[ $free_docker -ge 2097152 ]]; then finding ok disk_docker "Docker root has $((free_docker / 1024)) MiB free"; else finding warning disk_docker "Docker root has only $((free_docker / 1024)) MiB free" "free at least 2 GiB before loading a candidate"; fi
+  fi
+  if [[ -f "$etc/env" ]]; then
+    host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+    finding ok installation "installed for https://$host"
+    if [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" ]]; then
+      release="$(basename "$(readlink -f "$prefix/current")")"
+      finding ok release "current release $release"
+      if [[ -f "$prefix/current/images.tar" ]]; then finding ok release_images "retained image archive present"; else finding failure release_images "current release has no retained image archive" "managed restore and upgrade need the retained archive; reinstall the same release from its candidate"; fi
+    else
+      finding failure release "no valid current release" "restore the managed release before rerunning setup"
+    fi
+    if [[ -f "$etc/runner/ca.crt" && -f "$etc/runner/server.crt" && -f "$etc/runner/server.key" ]]; then finding ok runner_tls "runner TLS files present"; else finding failure runner_tls "runner TLS files are missing" "restore $etc/runner from the secret backup before rerunning setup"; fi
+    if [[ -f "$state/install.json" ]]; then
+      step="$(sed -n 's/.*"step":"\([a-z_]*\)".*/\1/p' "$state/install.json")"
+      case "$step" in
+        https_verified|upgrade_completed|restore_completed) finding ok install_step "last recorded step: $step" ;;
+        https_unverified) finding failure install_step "HTTPS was never verified" "check DNS for $host, the certificate, and connectivity, then rerun navishai setup" ;;
+        *_restore_required) finding failure install_step "last recorded step: $step" "restore from the verified backup with navishai restore before retrying" ;;
+        "") finding warning install_step "install record has no step" "rerun navishai setup with the same candidate" ;;
+        *) finding warning install_step "setup stopped at step $step" "rerun navishai setup with the same candidate" ;;
+      esac
+    else
+      finding warning install_step "no install record" "rerun navishai setup with the same candidate"
+    fi
+    if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then finding warning memory_service "memory is pending configuration" "complete the isolated Supermemory first boot, then run navishai configure memory"; else finding ok memory_service "memory key configured; scoped indexing is not verified here"; fi
+    if grep -q '^NAVISHAI_SYSTEM_SMTP_ADDRESS=' "$etc/env"; then finding ok system_mail "system mail configured, untested"; else finding warning system_mail "system mail not configured" "run navishai configure system-mail to enable invitations and reset mail"; fi
+    if grep -qx 'NAVISHAI_ATTACHMENT_SCANNER=clamd' "$etc/env"; then finding ok scanner "clamd configured, untested; files stay quarantined until a clean result"; else finding warning scanner "no attachment scanner; every attachment stays quarantined" "run navishai configure scanner when a ClamAV daemon is available"; fi
+  else
+    finding failure installation "NavishAI is not installed" "run navishai setup CANDIDATE.tar"
+  fi
+  doctor_report "$output"
+  return "$doctor_failed"
+}
+doctor_report() {
+  local output="$1" entry status key message action first=1 result="healthy"
+  [[ $doctor_failed -eq 0 ]] || result="attention"
+  for entry in "${doctor_findings[@]}"; do
+    IFS=$'\t' read -r status key message action <<<"$entry"
+    [[ $status == warning && $result == healthy ]] && result="warnings"
+  done
+  if [[ $output == json ]]; then
+    printf '{"schema":1,"result":%s,"findings":[' "$(json_string "$result")"
+    for entry in "${doctor_findings[@]}"; do
+      IFS=$'\t' read -r status key message action <<<"$entry"
+      [[ $first -eq 1 ]] || printf ','
+      first=0
+      printf '{"key":%s,"status":%s,"message":%s,"action":%s}' "$(json_string "$key")" "$(json_string "$status")" "$(json_string "$message")" "$(json_string "$action")"
+    done
+    printf ']}\n'
+    return 0
+  fi
+  for entry in "${doctor_findings[@]}"; do
+    IFS=$'\t' read -r status key message action <<<"$entry"
+    if [[ -n $action ]]; then printf '%s: %s: %s; %s\n' "$status" "$key" "$message" "$action"; else printf '%s: %s: %s\n' "$status" "$key" "$message"; fi
+  done
+  echo "result: $result"
+}
 replace_env_values() {
   local temporary key
   temporary="$(mktemp "$etc/env.XXXXXX")"
@@ -609,7 +713,7 @@ upgrade_failure() {
 case "${1:-}" in
   setup) shift; setup "$@" ;;
   status) status ;;
-  doctor) doctor ;;
+  doctor) shift; doctor "$@" ;;
   configure) shift; case "${1:-}" in system-mail) [[ $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;; memory) [[ $# -eq 1 ]] || die "usage: navishai configure memory"; configure_memory ;; scanner) [[ $# -eq 1 ]] || die "usage: navishai configure scanner"; configure_scanner ;; *) die "usage: navishai configure {system-mail|memory|scanner}" ;; esac ;;
   renew-owner-token) shift; renew_owner_token "$@" ;;
   reveal-owner-token) shift; reveal_owner_token "$@" ;;

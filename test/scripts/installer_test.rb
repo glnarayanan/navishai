@@ -1277,6 +1277,72 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_doctor_reports_every_finding_with_a_recovery_action_without_repairing_anything
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      FileUtils.mkdir_p("#{root}/var/lib/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_MEMORY_PENDING=1\n")
+      File.write("#{root}/var/lib/navishai/install.json", "{\"schema\":1,\"release\":\"pending\",\"step\":\"https_unverified\"}\n")
+
+      stdout, stderr, status = run_installer(root, "doctor", "--json", "FAKE_PORT_80" => "LISTEN\n")
+
+      assert_not status.success?
+      assert_empty stderr
+      report = JSON.parse(stdout)
+      assert_equal 1, report["schema"]
+      assert_equal "attention", report["result"]
+      findings = report["findings"].index_by { |finding| finding["key"] }
+      assert_equal "failure", findings["port_80"]["status"]
+      assert_includes findings["port_80"]["message"], "port 80 is in use"
+      assert_equal "failure", findings["install_step"]["status"]
+      assert_includes findings["install_step"]["action"], "rerun navishai setup"
+      assert_equal "failure", findings["release"]["status"]
+      assert_equal "failure", findings["runner_tls"]["status"]
+      assert_equal "warning", findings["memory_service"]["status"]
+      assert_includes findings["memory_service"]["action"], "navishai configure memory"
+      assert_equal "warning", findings["system_mail"]["status"]
+      assert_equal "warning", findings["scanner"]["status"]
+      refute_includes stdout, "db-secret"
+      refute_match(/up -d|run --rm|image load|restart/, docker_log(root))
+    end
+  end
+
+  def test_doctor_reports_healthy_text_and_exits_zero_for_a_complete_installation
+    Dir.mktmpdir do |root|
+      release_id = "c" * 64
+      FileUtils.mkdir_p("#{root}/etc/navishai/runner")
+      FileUtils.mkdir_p("#{root}/var/lib/navishai")
+      FileUtils.mkdir_p("#{root}/opt/navishai/releases/#{release_id}")
+      File.write("#{root}/opt/navishai/releases/#{release_id}/images.tar", "images")
+      File.symlink("#{root}/opt/navishai/releases/#{release_id}", "#{root}/opt/navishai/current")
+      %w[ca.crt server.crt server.key].each { |name| File.write("#{root}/etc/navishai/runner/#{name}", name) }
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_ATTACHMENT_SCANNER=clamd\n")
+      File.write("#{root}/var/lib/navishai/install.json", "{\"schema\":1,\"release\":\"#{'d' * 40}\",\"step\":\"https_verified\"}\n")
+
+      stdout, stderr, status = run_installer(root, "doctor")
+
+      assert status.success?, stderr
+      assert_includes stdout, "ok: release: current release #{release_id}"
+      assert_includes stdout, "ok: install_step: last recorded step: https_verified"
+      assert_includes stdout, "result: healthy"
+      refute_includes stdout, "sm_private"
+    end
+  end
+
+  def test_doctor_tells_an_uninstalled_host_to_run_setup_and_rejects_unknown_options
+    Dir.mktmpdir do |root|
+      stdout, _stderr, status = run_installer(root, "doctor")
+
+      assert_not status.success?
+      assert_includes stdout, "failure: installation: NavishAI is not installed; run navishai setup CANDIDATE.tar"
+      assert_includes stdout, "result: attention"
+
+      _stdout, stderr, rejected = run_installer(root, "doctor", "--fix")
+      assert_not rejected.success?
+      assert_includes stderr, "usage: navishai doctor [--json]"
+    end
+  end
+
   def test_configure_memory_replaces_pending_state_and_retries_after_start_failure
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
