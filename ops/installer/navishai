@@ -9,6 +9,11 @@ project="${NAVISHAI_COMPOSE_PROJECT:-navishai}"
 verified_bundle_staging=""
 answer_memory_key=""
 selected_host=""
+configured_smtp_address=""
+configured_smtp_port=""
+configured_smtp_user_name=""
+configured_smtp_password=""
+configured_smtp_from=""
 
 die() { echo "navishai: $*" >&2; exit 1; }
 need_root() { [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 || ${EUID:-$(id -u)} -eq 0 ]] || die "run with sudo"; }
@@ -92,9 +97,53 @@ validate_answers() {
         [[ -n $secret_value && $secret_value != *$'\n'* && $secret_value != *$'\r'* && $secret_value =~ ^[[:graph:]]+$ && $secret_value != *'$'* && $secret_value != *'#'* && $secret_value != *'"'* && $secret_value != *"'"* ]] || die "secret reference contains unsupported characters"
         answer_memory_key="$secret_value"
         ;;
+      NAVISHAI_SYSTEM_SMTP_ADDRESS) configured_smtp_address="$(validate_smtp_address "$value")" ;;
+      NAVISHAI_SYSTEM_SMTP_PORT) configured_smtp_port="$(validate_smtp_port "$value")" ;;
+      NAVISHAI_SYSTEM_SMTP_USER_NAME) configured_smtp_user_name="$(validate_env_value "$value")" ;;
+      NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE)
+        secret_value="$(read_secret_reference "$value")"
+        configured_smtp_password="$secret_value"
+        ;;
+      NAVISHAI_SYSTEM_SMTP_FROM) configured_smtp_from="$(validate_mailbox "$value")" ;;
       *) die "answer file contains an unsupported field: $key" ;;
     esac
   done <"$NAVISHAI_ANSWERS_FILE"
+}
+
+read_secret_reference() {
+  local secret_file="$1" mode secret_value
+  [[ -f $secret_file && ! -L $secret_file && $(stat -c %u "$secret_file") -eq ${EUID:-$(id -u)} ]] || die "secret reference must be an owned regular file"
+  mode=$((8#$(stat -c %a "$secret_file")))
+  (( (mode & 0077) == 0 )) || die "secret reference must not be readable by group or others"
+  od -An -t x1 "$secret_file" | grep -q '00' && die "secret reference contains unsupported characters"
+  secret_value="$(<"$secret_file")"
+  validate_env_value "$secret_value"
+}
+
+validate_env_value() {
+  local value="$1"
+  [[ -n $value && $value != *$'\n'* && $value != *$'\r'* && $value =~ ^[[:graph:]]+$ && $value != *'$'* && $value != *'#'* && $value != *'"'* && $value != *"'"* ]] || die "configuration value contains unsupported characters"
+  printf '%s\n' "$value"
+}
+
+validate_smtp_address() {
+  local address
+  address="$(validate_env_value "$1")"
+  [[ $address =~ ^[A-Za-z0-9.-]+$ && $address != .* && $address != *..* ]] || die "SMTP address must be a hostname or IP address"
+  printf '%s\n' "$address"
+}
+
+validate_smtp_port() {
+  local port="$1"
+  [[ $port =~ ^[0-9]+$ && $port -ge 1 && $port -le 65535 ]] || die "SMTP port must be between 1 and 65535"
+  printf '%s\n' "$port"
+}
+
+validate_mailbox() {
+  local mailbox
+  mailbox="$(validate_env_value "$1")"
+  [[ $mailbox =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "system mail sender must be an email address"
+  printf '%s\n' "$mailbox"
 }
 
 validate_hostname() {
@@ -338,6 +387,33 @@ setup() {
 
 status() { need_root; [[ -f "$etc/env" ]] || die "not installed"; compose ps; [[ -f "$state/install.json" ]] && cat "$state/install.json"; grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env" && echo "memory: pending configuration"; }
 doctor() { need_root; preflight; status; }
+replace_env_values() {
+  local temporary key
+  temporary="$(mktemp "$etc/env.XXXXXX")"
+  cp "$etc/env" "$temporary"
+  for key in NAVISHAI_SYSTEM_SMTP_ADDRESS NAVISHAI_SYSTEM_SMTP_PORT NAVISHAI_SYSTEM_SMTP_USER_NAME NAVISHAI_SYSTEM_SMTP_PASSWORD NAVISHAI_SYSTEM_SMTP_FROM; do
+    sed -i "/^${key}=/d" "$temporary"
+  done
+  {
+    printf 'NAVISHAI_SYSTEM_SMTP_ADDRESS=%s\n' "$configured_smtp_address"
+    printf 'NAVISHAI_SYSTEM_SMTP_PORT=%s\n' "$configured_smtp_port"
+    printf 'NAVISHAI_SYSTEM_SMTP_USER_NAME=%s\n' "$configured_smtp_user_name"
+    printf 'NAVISHAI_SYSTEM_SMTP_PASSWORD=%s\n' "$configured_smtp_password"
+    printf 'NAVISHAI_SYSTEM_SMTP_FROM=%s\n' "$configured_smtp_from"
+  } >>"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$etc/env"
+}
+configure_system_mail() {
+  need_root
+  lock
+  [[ -f "$etc/env" ]] || die "not installed"
+  validate_answers
+  [[ -n $configured_smtp_address && -n $configured_smtp_port && -n $configured_smtp_user_name && -n $configured_smtp_password && -n $configured_smtp_from ]] || die "provide all system SMTP values in a protected answer file"
+  replace_env_values
+  compose up -d --wait web jobs
+  echo "System SMTP is configured with required STARTTLS. SMTP acceptance has not been tested."
+}
 reveal_owner_token() {
   need_root
   [[ $# -eq 1 && $1 == --confirm-reveal ]] || die "usage: navishai reveal-owner-token --confirm-reveal"
@@ -439,9 +515,10 @@ case "${1:-}" in
   setup) shift; setup "$@" ;;
   status) status ;;
   doctor) doctor ;;
+  configure) shift; [[ ${1:-} == system-mail && $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;;
   reveal-owner-token) shift; reveal_owner_token "$@" ;;
   backup) shift; backup "$@" ;;
   restore) shift; restore "$@" ;;
   upgrade) shift; upgrade "$@" ;;
-  *) echo "usage: navishai {setup|status|doctor|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
+  *) echo "usage: navishai {setup|status|doctor|configure|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
 esac
