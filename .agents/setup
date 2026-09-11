@@ -30,6 +30,29 @@ have_pkg() {
   dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
 }
 
+ensure_postgresql_apt_source() {
+  local keyring="/usr/share/keyrings/postgresql-apt.gpg"
+  local source="/etc/apt/sources.list.d/pgdg.list"
+  local expected_fingerprint="B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+  local downloaded fingerprint
+
+  if [[ -f "$source" ]] && grep -Fqx "deb [signed-by=${keyring}] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" "$source" && [[ -f "$keyring" ]]; then
+    return
+  fi
+
+  downloaded="$(mktemp)"
+  curl --fail --silent --show-error --proto '=https' https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$downloaded"
+  fingerprint="$(gpg --show-keys --with-colons "$downloaded" | awk -F: '$1 == "fpr" { print $10; exit }')"
+  [[ "$fingerprint" == "$expected_fingerprint" ]] || {
+    rm -f "$downloaded"
+    log "PostgreSQL apt signing key fingerprint did not match"
+    return 1
+  }
+  gpg --dearmor <"$downloaded" | sudo tee "$keyring" >/dev/null
+  rm -f "$downloaded"
+  printf 'deb [signed-by=%s] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main\n' "$keyring" | sudo tee "$source" >/dev/null
+}
+
 ensure_apt_packages() {
   local packages=(
     build-essential
@@ -50,6 +73,7 @@ ensure_apt_packages() {
     pkg-config
     postgresql
     postgresql-contrib
+    "postgresql-${PG_MAJOR}"
     "postgresql-server-dev-${PG_MAJOR}"
     shared-mime-info
     zlib1g-dev
@@ -65,6 +89,7 @@ ensure_apt_packages() {
     log "apt packages already installed"
     return 0
   fi
+  ensure_postgresql_apt_source
   log "installing apt packages: ${missing[*]}"
   sudo apt-get update
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
@@ -154,6 +179,10 @@ ensure_postgres() {
     return 1
   fi
 
+  if ! pg_lsclusters --no-header | awk '{ print $1, $2 }' | grep -qx "${PG_MAJOR} main"; then
+    sudo pg_createcluster "$PG_MAJOR" main --start
+  fi
+
   local ver name port status
   while read -r ver name port status _; do
     [[ -n "${ver:-}" ]] || continue
@@ -162,7 +191,14 @@ ensure_postgres() {
     fi
   done < <(pg_lsclusters --no-header)
 
-  sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+  export PGHOST=/var/run/postgresql
+  export PGPORT="$(pg_lsclusters --no-header | awk -v version="$PG_MAJOR" '$1 == version && $2 == "main" { print $3; exit }')"
+  [[ -n "$PGPORT" ]] || {
+    log "PostgreSQL ${PG_MAJOR} main has no port"
+    return 1
+  }
+
+  sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 <<SQL
 ALTER SYSTEM SET fsync = off;
 ALTER SYSTEM SET synchronous_commit = off;
 ALTER SYSTEM SET full_page_writes = off;
@@ -197,8 +233,8 @@ ensure_pgvector() {
   git init -q "${tmp}/pgvector"
   git -C "${tmp}/pgvector" fetch -q --depth 1 https://github.com/pgvector/pgvector.git "$PGVECTOR_REF"
   git -C "${tmp}/pgvector" checkout -q --detach FETCH_HEAD
-  make -C "${tmp}/pgvector" OPTFLAGS=""
-  sudo make -C "${tmp}/pgvector" install
+  make -C "${tmp}/pgvector" PG_CONFIG="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" OPTFLAGS=""
+  sudo make -C "${tmp}/pgvector" PG_CONFIG="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" install
   rm -rf "$tmp"
 
   if ! grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
@@ -208,7 +244,7 @@ ensure_pgvector() {
 }
 
 ensure_databases() {
-  sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
+  sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
@@ -222,10 +258,10 @@ SQL
 
   local db
   for db in "$DEV_DB" "$TEST_DB"; do
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1; then
-      sudo -u postgres createdb -O "$APP_ROLE" "$db"
+    if ! sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1; then
+      sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" createdb -O "$APP_ROLE" "$db"
     fi
-    sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$db" <<SQL
+    sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 -d "$db" <<SQL
 CREATE EXTENSION IF NOT EXISTS vector;
 ALTER EXTENSION vector UPDATE TO '${PGVECTOR_VERSION}';
 SQL
