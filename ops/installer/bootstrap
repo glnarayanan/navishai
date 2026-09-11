@@ -52,11 +52,12 @@ fetch_candidate() {
   bundle="$destination"
 }
 
-fetch_candidate
-[[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
-
+# Reject an unsupported host before transferring a candidate archive.
 . "${NAVISHAI_OS_RELEASE:-/etc/os-release}"
 [[ $(uname -m) == x86_64 && ( $ID == debian && $VERSION_ID == 12 || $ID == ubuntu && $VERSION_ID == 24.04 ) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04 on x86-64"
+
+fetch_candidate
+[[ -f "$bundle" ]] || die "candidate bundle not found: $bundle"
 
 missing=()
 command -v docker >/dev/null || missing+=(docker)

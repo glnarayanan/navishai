@@ -20,6 +20,23 @@ class BootstrapTest < ActiveSupport::TestCase
     end
   end
 
+  def test_unsupported_host_stops_before_downloading_a_candidate
+    Dir.mktmpdir do |root|
+      release = File.join(root, "os-release")
+      File.write(release, "ID=alpine\nVERSION_ID=3.20\n")
+      checksum, destination = trusted_candidate(root, "candidate")
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar",
+        "NAVISHAI_OS_RELEASE" => release, "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum, "NAVISHAI_CANDIDATE_DESTINATION" => destination)
+
+      assert_not status.success?
+      assert_includes stderr, "supported hosts"
+      refute_path_exists File.join(root, "commands.log")
+      refute File.exist?(destination)
+      refute File.exist?("#{destination}.part")
+    end
+  end
+
   def test_missing_prerequisites_decline_without_mutation
     Dir.mktmpdir do |root|
       bundle = File.join(root, "candidate.tar")
