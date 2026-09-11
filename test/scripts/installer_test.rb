@@ -179,6 +179,20 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_https_port_inspection_failure_rejects_resume
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      _stdout, stderr, status = run_setup(root, bundle)
+      assert status.success?, stderr
+
+      _stdout, stderr, status = run_setup(root, bundle,
+        "FAKE_PORT_80" => "LISTEN\n", "FAKE_PORT_CONTAINER" => "caddy-id", "DOCKER_FAIL_MATCH" => "inspect --format")
+
+      assert_not status.success?
+      assert_includes stderr, "cannot inspect port 80 ownership"
+    end
+  end
+
   [ "install.invalid", "INSTALL.TEST.", "localhost" ].each do |host|
     define_method("test_rejects_reserved_hostname_#{host.tr('.', '_')}") do
       Dir.mktmpdir do |root|

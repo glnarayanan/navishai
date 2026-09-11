@@ -138,7 +138,7 @@ preflight_ports() {
     containers="$(docker ps --filter "publish=$port" --format '{{.ID}}')" || die "cannot inspect port $port ownership; retry setup"
     [[ $(wc -w <<<"$containers") == 1 ]] || die "port $port ownership is ambiguous; stop the conflicting service, then rerun setup"
     container="$containers"
-    labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")"
+    labels="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }} {{ index .Config.Labels "com.docker.compose.service" }}' "$container")" || die "cannot inspect port $port ownership; retry setup"
     binding="$(docker inspect --format "{{range \$p, \$bindings := .HostConfig.PortBindings}}{{range \$bindings}}{{if eq .HostPort \"$port\"}}{{\$p}}{{end}}{{end}}{{end}}" "$container")" || die "cannot inspect port $port ownership; retry setup"
     [[ -n $binding ]] || die "port $port is in use by a non-Docker service; stop it, then rerun setup"
     [[ $labels == "$project caddy" ]] || die "port $port is in use by another container; stop it, then rerun setup"
