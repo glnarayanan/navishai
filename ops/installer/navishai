@@ -428,6 +428,21 @@ configure_system_mail() {
   compose up -d --wait web jobs
   echo "System SMTP is configured with required STARTTLS. SMTP acceptance has not been tested."
 }
+configure_memory() {
+  local temporary
+  need_root
+  lock
+  [[ -f "$etc/env" ]] || die "not installed"
+  validate_answers
+  [[ -n $answer_memory_key ]] || die "provide NAVISHAI_SUPERMEMORY_API_KEY_FILE in a protected answer file"
+  temporary="$(mktemp "$etc/env.XXXXXX")"
+  grep -Ev '^NAVISHAI_SUPERMEMORY_API_KEY=|^NAVISHAI_MEMORY_PENDING=' "$etc/env" >"$temporary" || true
+  printf 'NAVISHAI_SUPERMEMORY_API_KEY=%s\n' "$answer_memory_key" >>"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$etc/env"
+  compose up -d --wait supermemory web jobs
+  echo "Memory key is configured. Confirm scoped indexing and retrieval before treating Memory as ready."
+}
 reveal_owner_token() {
   need_root
   [[ $# -eq 1 && $1 == --confirm-reveal ]] || die "usage: navishai reveal-owner-token --confirm-reveal"
@@ -530,7 +545,7 @@ case "${1:-}" in
   setup) shift; setup "$@" ;;
   status) status ;;
   doctor) doctor ;;
-  configure) shift; [[ ${1:-} == system-mail && $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;;
+  configure) shift; case "${1:-}" in system-mail) [[ $# -eq 1 ]] || die "usage: navishai configure system-mail"; configure_system_mail ;; memory) [[ $# -eq 1 ]] || die "usage: navishai configure memory"; configure_memory ;; *) die "usage: navishai configure {system-mail|memory}" ;; esac ;;
   reveal-owner-token) shift; reveal_owner_token "$@" ;;
   backup) shift; backup "$@" ;;
   restore) shift; restore "$@" ;;
