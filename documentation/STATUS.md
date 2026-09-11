@@ -232,6 +232,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 6 September 2026 | Consolidate the build brief, roadmap, and release-candidate record into PRODUCT.md and this file. |
 | 11 September 2026 | Move the Go development, module, host-preparation, and runner build pins from 1.27.0 to 1.27.1. Historical verification records retain the versions actually tested. |
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
+| 11 September 2026 | Cap the existing transitive `json` gem below 3.0. Active Support 8.1.3.1 passes `JSON.parse` options positionally, which json 3.0 rejects, so every jsonb attribute read raised `ArgumentError`. Remove the cap once a Rails release supports json 3. |
 
 ### Approved implementation scope — 6 September 2026
 
