@@ -1,6 +1,8 @@
 require "active_support/core_ext/integer/time"
 
 Rails.application.configure do
+  require Rails.root.join("app/services/system_mail_configuration")
+  require Rails.root.join("app/services/system_mail_unavailable_delivery")
   app_host = ENV.fetch("NAVISHAI_APP_HOST")
 
   # Settings specified here will take precedence over those in config/application.rb.
@@ -65,14 +67,14 @@ Rails.application.configure do
     protocol: "https"
   }
 
-  # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.
-  # config.action_mailer.smtp_settings = {
-  #   user_name: Rails.application.credentials.dig(:smtp, :user_name),
-  #   password: Rails.application.credentials.dig(:smtp, :password),
-  #   address: "smtp.example.com",
-  #   port: 587,
-  #   authentication: :plain
-  # }
+  if (smtp_settings = SystemMailConfiguration.smtp_settings)
+    config.action_mailer.delivery_method = :smtp
+    config.action_mailer.smtp_settings = smtp_settings
+    config.action_mailer.default_options = { from: SystemMailConfiguration.from_address }
+  else
+    ActionMailer::Base.add_delivery_method :system_mail_unavailable, SystemMailUnavailableDelivery
+    config.action_mailer.delivery_method = :system_mail_unavailable
+  end
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).

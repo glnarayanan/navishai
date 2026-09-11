@@ -23,6 +23,12 @@ The local-CA browser flow completed first Owner and workspace setup: one user, o
 
 Supported runtime discovery, test, approval, same-task handoff, and signed callback sequence produced an investigation artifact. The restored artifact had schema 2, contract state `complete`, task 3, run 8, body `Synthetic local investigation completed.`, and a `crew.artifact_published` audit event. This used a deterministic scripted harness, not a live provider.
 
+## System mail
+
+The fixed-path `navishai configure system-mail` command passed native fake-Docker tests. It accepts only protected owner-readable answer and password files, validates all five values before mutation, replaces only the system-mail settings, retains unrelated managed environment values, and leaves a valid replacement in place if the web/jobs restart fails so the same command can retry.
+
+Cold-production tests prove a real application mailer message uses `NAVISHAI_SYSTEM_SMTP_FROM` when it has no explicit sender. Separate `Mail::SMTP` protocol tests prove a trusted connection upgrades with required STARTTLS before authentication and rejects a server without STARTTLS before sending `AUTH`. They prove transport negotiation and SMTP acceptance only. They do not prove an inbox received mail or use a live SMTP provider.
+
 ## Backup and restore
 
 Pending-memory backup and strict verification both exited 0. The backup excluded the runner runtime bind subtree and preserved a disposable Supermemory sentinel while leaving Supermemory stopped.

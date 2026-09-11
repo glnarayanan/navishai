@@ -20,6 +20,10 @@ class WorkspaceSetupChecklist
     end
 
     def memory
+      if ENV["NAVISHAI_MEMORY_PENDING"] == "1"
+        return Item.new("Memory", "skipped", "Memory setup is deferred. Complete the pinned Supermemory first-boot key step, then resume setup.", workspace_memory_records_path(@workspace))
+      end
+
       failed = @workspace.memory_index_entries.where(status: %w[failed unknown]).exists?
       state = failed ? "blocked" : @workspace.memory_records.exists? ? "configured" : "skipped"
       Item.new("Memory", state, failed ? "Indexing needs attention; source records remain saved." : "Memory readiness needs indexed workspace records.", workspace_memory_records_path(@workspace))
@@ -31,11 +35,18 @@ class WorkspaceSetupChecklist
     end
 
     def attachments
-      Item.new("Attachments", "not checked", "Scanner readiness is a deployment check. Files stay quarantined until a scanner returns a clean result.", workspace_knowledge_sources_path(@workspace))
+      scanner = AttachmentScanner.from_environment
+      state = scanner.is_a?(AttachmentScanner::Clamd) ? "configured" : "skipped"
+      detail = state == "configured" ? "ClamAV is configured but has not been tested. Files stay quarantined until a scanner returns a clean result." : "Configure ClamAV to scan attachments. Until then, files stay quarantined."
+      Item.new("Attachments", state, detail, workspace_knowledge_sources_path(@workspace))
+    rescue AttachmentScanner::ConfigurationError
+      Item.new("Attachments", "invalid", "Attachment scanner settings are invalid. Files stay quarantined until a scanner returns a clean result.", workspace_knowledge_sources_path(@workspace))
     end
 
     def system_mail
-      Item.new("System email", "not checked", "SMTP is a deployment setting and has not been tested here.", edit_workspace_path(@workspace))
+      state = SystemMailConfiguration.status
+      detail = state == :configured ? "Deployment SMTP is configured but has not been tested." : state == :invalid ? "Deployment SMTP settings are incomplete or invalid." : "Set deployment SMTP for invitations and reset mail; this is separate from shared-inbox SMTP."
+      Item.new("System email", state.to_s, detail, edit_workspace_path(@workspace))
     end
 
     def connectors

@@ -1,4 +1,12 @@
 #!/usr/bin/env ruby
+environment_file = File.expand_path("../.env.local", __dir__)
+if File.file?(environment_file)
+  File.foreach(environment_file) do |line|
+    key, value = line.strip.split("=", 2)
+    ENV[key] = value if %w[PGHOST PGPORT].include?(key) && value && !ENV.key?(key)
+  end
+end
+
 APP_PATH = File.expand_path("../config/application", __dir__)
 require_relative "../config/boot"
 require "rails/commands"

@@ -1044,6 +1044,124 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_configure_system_mail_replaces_only_system_smtp_values_from_private_references
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\nNAVISHAI_SYSTEM_SMTP_ADDRESS=old.example\n")
+      password = "#{root}/smtp-password"
+      File.write(password, "smtp-secret")
+      FileUtils.chmod(0o600, password)
+      answers = "#{root}/answers"
+      File.write(answers, <<~ANSWERS)
+        NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test
+        NAVISHAI_SYSTEM_SMTP_PORT=587
+        NAVISHAI_SYSTEM_SMTP_USER_NAME=mailer
+        NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE=#{password}
+        NAVISHAI_SYSTEM_SMTP_FROM=notifications@example.test
+      ANSWERS
+      FileUtils.chmod(0o600, answers)
+
+      stdout, stderr, status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert status.success?, stderr
+      assert_includes stdout, "required STARTTLS"
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_DATABASE_PASSWORD=preserved\n"
+      assert_includes environment, "NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test\n"
+      assert_includes environment, "NAVISHAI_SYSTEM_SMTP_PORT=587\n"
+      assert_includes environment, "NAVISHAI_SYSTEM_SMTP_USER_NAME=mailer\n"
+      assert_includes environment, "NAVISHAI_SYSTEM_SMTP_PASSWORD=smtp-secret\n"
+      assert_includes environment, "NAVISHAI_SYSTEM_SMTP_FROM=notifications@example.test\n"
+      assert_equal 0o640, File.stat("#{root}/etc/navishai/env").mode & 0o777
+      assert_includes docker_log(root), "up -d --wait web jobs"
+    end
+  end
+
+  def test_configure_system_mail_rejects_invalid_input_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SYSTEM_SMTP_PORT=70000\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert_not status.success?
+      assert_includes stderr, "SMTP port must be between"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read("#{root}/etc/navishai/env")
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_configure_system_mail_rejects_an_insecure_password_reference_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      password = "#{root}/smtp-password"
+      File.write(password, "smtp-secret")
+      FileUtils.chmod(0o644, password)
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE=#{password}\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert_not status.success?
+      assert_includes stderr, "secret reference must not be readable"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read("#{root}/etc/navishai/env")
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_configure_system_mail_rejects_an_answer_file_owned_by_another_user_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "system-mail",
+        "NAVISHAI_ANSWERS_FILE" => answers, "FAKE_UNOWNED_ANSWER" => answers)
+
+      assert_not status.success?
+      assert_includes stderr, "answer file must be owned"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read("#{root}/etc/navishai/env")
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_configure_system_mail_keeps_the_new_configuration_after_restart_failure_and_retries
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      password = "#{root}/smtp-password"
+      File.write(password, "smtp-secret")
+      FileUtils.chmod(0o600, password)
+      answers = "#{root}/answers"
+      File.write(answers, <<~ANSWERS)
+        NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test
+        NAVISHAI_SYSTEM_SMTP_PORT=587
+        NAVISHAI_SYSTEM_SMTP_USER_NAME=mailer
+        NAVISHAI_SYSTEM_SMTP_PASSWORD_FILE=#{password}
+        NAVISHAI_SYSTEM_SMTP_FROM=notifications@example.test
+      ANSWERS
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, first_stderr, first_status = run_installer(root, "configure", "system-mail",
+        "NAVISHAI_ANSWERS_FILE" => answers, "DOCKER_FAIL_MATCH" => "up -d --wait web jobs")
+
+      assert_not first_status.success?
+      assert_includes File.read("#{root}/etc/navishai/env"), "NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test\n"
+
+      _stdout, second_stderr, second_status = run_installer(root, "configure", "system-mail", "NAVISHAI_ANSWERS_FILE" => answers)
+
+      assert second_status.success?, second_stderr
+      assert_includes docker_log(root), "up -d --wait web jobs"
+    end
+  end
+
   private
 
   def run_installer(root, *arguments)
@@ -1096,6 +1214,15 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/ss")
     File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ] || exit 1\nprintf '%s' \"${FAKE_HTTPS_STATUS:-200}\"\n")
     FileUtils.chmod(0o755, "#{bin}/curl")
+    File.write("#{bin}/stat", <<~SH)
+      #!/bin/sh
+      if [ "$1" = -c ] && [ "$2" = %u ] && [ "$3" = "${FAKE_UNOWNED_ANSWER:-}" ]; then
+        printf '%s\n' 65534
+      else
+        /usr/bin/stat "$@"
+      fi
+    SH
+    FileUtils.chmod(0o755, "#{bin}/stat")
     extra_environment.merge(
       "NAVISHAI_MANAGED_ROOT" => root,
       "NAVISHAI_TEST_ALLOW_UNPRIVILEGED" => "1",
