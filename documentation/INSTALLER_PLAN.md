@@ -1,6 +1,6 @@
 # Guided VPS installation plan
 
-**Status:** Proposed build contract; no installer is implemented by this document
+**Status:** Build contract; implementation state and evidence per slice are recorded in the guided-installer table of [STATUS.md](./STATUS.md)
 **Date:** 10 September 2026
 **Owner request:** Before live product tests, make deployment and setup simple enough that an IT admin can SSH into a VPS, run one command, and follow a guided setup. Execute this plan outside the planning thread.
 

@@ -11,23 +11,43 @@ apt="${NAVISHAI_APT_GET:-apt-get}"
 die() { echo "navishai bootstrap: $*" >&2; exit 1; }
 [[ -n "$bundle" ]] || die "usage: bootstrap CANDIDATE.tar"
 
+candidate_matches() { [[ $(sha256sum "$1" | cut -d' ' -f1) == "$expected" ]]; }
+download_candidate() {
+  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 1800 --retry 2 "$@" --output "$partial" "$bundle"
+}
 fetch_candidate() {
-  local checksum_file expected destination partial
+  local checksum_file expected destination partial mode curl_status
   if [[ $bundle == *://* && $bundle != https://* ]]; then
     die "candidate downloads must use HTTPS"
   fi
   [[ $bundle == https://* ]] || return 0
   checksum_file="${NAVISHAI_CANDIDATE_SHA256_FILE:-}"
   [[ -f $checksum_file && ! -L $checksum_file && $(stat -c %u "$checksum_file") -eq ${EUID:-$(id -u)} ]] || die "provide an owned trusted candidate checksum file"
-  [[ $((8#$(stat -c %a "$checksum_file"))) -le 0600 ]] || die "candidate checksum file must not be readable by group or others"
+  mode=$((8#$(stat -c %a "$checksum_file")))
+  (( (mode & 0077) == 0 )) || die "candidate checksum file must not be readable by group or others"
   expected="$(tr -d '[:space:]' <"$checksum_file")"
   [[ $expected =~ ^[0-9a-f]{64}$ ]] || die "candidate checksum must be a SHA-256 value"
-  destination="${NAVISHAI_CANDIDATE_DESTINATION:-${root:-/var/lib/navishai}/candidate.tar}"
-  [[ ! -L $destination ]] || die "candidate destination must not be a symlink"
-  mkdir -p "$(dirname "$destination")"
+  command -v curl >/dev/null || die "curl is required to download a candidate; install it with apt-get install curl, or download the candidate yourself and pass its path"
+  destination="${NAVISHAI_CANDIDATE_DESTINATION:-${root}/var/lib/navishai/candidate.tar}"
   partial="${destination}.part"
-  curl --fail --location --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 1800 --retry 2 --continue-at - --output "$partial" "$bundle" || die "candidate download failed; rerun bootstrap to resume"
-  [[ $(sha256sum "$partial" | cut -d' ' -f1) == "$expected" ]] || die "candidate checksum did not match trusted value"
+  [[ ! -L $destination && ! -L $partial ]] || die "candidate destination must not be a symlink"
+  if [[ -f $destination ]] && candidate_matches "$destination"; then
+    echo "Reusing the verified candidate at $destination."
+    bundle="$destination"
+    return 0
+  fi
+  mkdir -p "$(dirname "$destination")"
+  # Resume a partial transfer; when the server cannot serve byte ranges, curl exits 33 and the transfer restarts.
+  download_candidate --continue-at - && curl_status=0 || curl_status=$?
+  if [[ $curl_status -eq 33 ]]; then
+    rm -f "$partial"
+    download_candidate && curl_status=0 || curl_status=$?
+  fi
+  [[ $curl_status -eq 0 ]] || die "candidate download failed; rerun bootstrap to resume"
+  if ! candidate_matches "$partial"; then
+    rm -f "$partial"
+    die "candidate checksum did not match trusted value; the partial download was removed, so rerun bootstrap to download again"
+  fi
   mv -f "$partial" "$destination"
   bundle="$destination"
 }

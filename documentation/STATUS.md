@@ -8,13 +8,15 @@ NavishAI is build-complete and pilot-ready for owner review. That describes the 
 
 ## Installer evidence, September 2026
 
-The unmerged installer has native fake-Docker coverage for bundle validation, locks, answer files, consent-gated setup, safe same-release resume, no-token terminal handoff to first-Owner setup, and protected system-SMTP configuration, plus backup/restore helpers and upgrade success and failure phases. `navishai configure system-mail` replaces only the five system-mail fields from a protected password-file reference and restarts web/jobs; it does not send mail or configure shared-inbox SMTP. Local SMTP tests prove required trusted STARTTLS before authentication and reject a server without STARTTLS before `AUTH`. Disposable Docker evidence covers local-CA first Owner and browser setup, runner ownership, signed callback and artifact flow, pending-memory service suppression, isolated restore of an attachment, memory sentinel, and vault readability metadata, including the managed backup-metadata restore path. A helper-only upgrade retained those records but reused application images, so it proves command, promotion, and retention behavior—not application-image or schema-change compatibility. The restore proof does not validate provider credentials or ClamAV. Public ACME, release signing, changed-image upgrade recovery, and a safe pinned-Supermemory first-boot provisioning path remain incomplete. The pinned opaque `server-v0.0.8` binary has no documented noninteractive bearer-key bootstrap or key export interface; current upstream guidance also requires an external provider credential for its TTY first boot. The only evidenced safe path is an isolated human capture followed by protected key entry. The explicit `reveal-owner-token --confirm-reveal` command warns about terminal recording. Production cache, queue, and cable databases use Ruby schemas while primary uses SQL.
+The guided installer merged in PRs #101 (`fd076df`) and #102 (`eec396b`); dependency pins moved in PR #103. Native fake-Docker coverage proves bundle validation, locks, answer files, consent-gated setup, safe same-release resume, no-token terminal handoff to first-Owner setup, protected system-SMTP, memory-key, and scanner configuration, fixed-path backup/restore helpers, and upgrade success and failure phases. `navishai configure system-mail` replaces only the five system-mail fields from a protected password-file reference and restarts web/jobs; it does not send mail or configure shared-inbox SMTP. Local SMTP tests prove required trusted STARTTLS before authentication and reject a server without STARTTLS before `AUTH`. Disposable Docker evidence covers local-CA first Owner and browser setup, runner ownership, signed callback and artifact flow, pending-memory service suppression, isolated restore of an attachment, memory sentinel, and vault readability metadata, including the managed backup-metadata restore path. A helper-only upgrade retained those records but reused application images, so it proves command, promotion, and retention behavior, not application-image or schema-change compatibility. The restore proof does not validate provider credentials or ClamAV. Changed-image upgrades remain rejected on main by design. Public ACME, release signing, a clean supported-host run of the exact candidate, and a safe pinned-Supermemory first-boot provisioning path remain incomplete. The pinned opaque `server-v0.0.8` binary has no documented noninteractive bearer-key bootstrap or key export interface; current upstream guidance also requires an external provider credential for its TTY first boot. The only evidenced safe path is an isolated human capture followed by protected key entry. The explicit `reveal-owner-token --confirm-reveal` command warns about terminal recording. Production cache, queue, and cable databases use Ruby schemas while primary uses SQL.
 
-See [installer acceptance evidence](./INSTALLER_ACCEPTANCE_EVIDENCE.md) for the disposable-host record and its limits.
+On 11 September 2026 the HTTPS candidate acquisition path gained real-transfer proof against a standard-library HTTPS fixture: interrupted transfer then byte-range resume, corrupt-partial removal and fresh download, stale full-size partial rejected by checksum after a 416 reply, restart when a server cannot serve ranges, HTTPS-to-HTTP redirect refusal, HTTPS redirect acceptance, verified-candidate reuse, and a missing-curl stop before any download state. This is integrity against an operator-supplied digest, not publisher authentication. `navishai status` now exits 0 on a valid installation and reports memory, system-mail, and scanner state without secrets.
+
+See [installer acceptance evidence](./INSTALLER_ACCEPTANCE_EVIDENCE.md) for the disposable-host record and its limits, and the guided-installer table below for the I0–I5 reconciliation.
 
 ## 1. Capability matrix
 
-Status values: **Built** (implemented on the unmerged stack; evidence below), **Done** (implemented, tested, merged), **Partial** (part of the requirement exists; the gap is named), **Deferred** (owner decision to postpone), **Planned** (specified, not started), **External** (needs a host, credential, legal, signing, or market step outside the repository).
+Status values: **Built** (implemented, tested, and merged; live-provider or deployed validation is still external), **Done** (implemented, tested, merged), **Partial** (part of the requirement exists; the gap is named), **Deferred** (owner decision to postpone), **Planned** (specified, not started), **External** (needs a host, credential, legal, signing, or market step outside the repository).
 
 ### Foundation and security
 
@@ -28,6 +30,19 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 | Append-only audit, secure headers, filtered parameters, rate limits | Done | `AuditEvent`, `Auditing`, `SecurityRateLimits`, CSP initializer | PostgreSQL rejects audit updates and deletes. |
 | Application shell, design language, standard states | Done | `app/views/layouts`, `app/assets/stylesheets`, [DESIGN.md](./DESIGN.md) | Desktop, tablet, 390-pixel, and 320-pixel browser coverage; keyboard focus, reduced motion, CSP without inline styles. |
 | Threat model tied to implemented controls | Done | [THREAT_MODEL.md](./THREAT_MODEL.md) | Includes contract bypass, forged claims, human-edit attribution, cost tampering, dossier leakage, evidence-ingest forgery, intervention authority, recovery, backfill, policy preview, canary, rollback, provider credentials, hosted search keys, document intake, and host-trusted mode. |
+
+### Guided installer
+
+Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 against merged code and dated evidence. "Native" means fake-Docker or fixture tests in this repository; "disposable" means the orb record in [INSTALLER_ACCEPTANCE_EVIDENCE.md](./INSTALLER_ACCEPTANCE_EVIDENCE.md).
+
+| Slice | Status | Where | Notes |
+|---|---|---|---|
+| I0 default installation path | Partial | `compose.yaml`, `ops/installer/compose.yaml`, `ops/docker/supermemory.Dockerfile` | Runner boundary, bootstrap-token wiring, and Caddy TLS approach are proven on a disposable host with a local CA. Pinned Supermemory first boot still needs an approved provisioning path; measured host figures are test measurements, not a support minimum. |
+| I1 reproducible bundle | Built | `script/candidate_bundle`, `ops/installer/navishai` (`stage_bundle`), `ops/installer/bootstrap` | Canonical payload list, checksum manifest, path-escape and entry-type rejection, HTTPS acquisition with resume and cleanup are native-tested. No signing identity, verification-key distribution, or public endpoint exists. |
+| I2 resumable terminal setup and HTTPS | Built | `ops/installer/bootstrap`, `ops/installer/navishai` (`setup`) | Native: consent, answer files, occupied ports, same-release resume, HTTPS-only readiness with no HTTP fallback, publish interruption, image-load failure. Disposable: local-CA install only. Public ACME, real reboot, SSH loss, and a clean supported-host run of the exact candidate remain external. |
+| I3 Owner handoff and checklist | Built | `FirstOwnerBootstrap`, `WorkspaceSetupChecklist`, `navishai configure {system-mail,memory,scanner}` | Expiry and once-only claim, terminal-only token reveal, and skipped/configured states are tested; configured is never shown as tested. Scanner has no reachability or synthetic-scan action yet; memory stays pending until scoped indexing/retrieval is proven after `configure memory`. |
+| I4 day-two commands | Partial | `ops/installer/navishai` (`status`, `doctor`, `backup`, `restore`, `upgrade`) | Fixed-path backup/restore and exact release-identity restore are native and disposable tested. `upgrade` accepts only an identical image set; changed-image promotion is deliberately rejected until compatibility is proven. `doctor` is preflight plus status, without JSON output. |
+| I5 fresh-host acceptance | External | — | Requires a clean supported Ubuntu 24.04 and Debian 12 host, the exact candidate, public DNS/ACME, external ingress isolation checks, and an admin who did not build the installer. Not started; nothing here is inferred from mocked tests. |
 
 ### Native helpdesk
 
@@ -125,6 +140,21 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 11 September 2026 installer rebaseline
+
+From `24e1ae5ab11b392603559dd57322e1e8d8f2ea1a` plus the fixes on this branch, on a Linux 6.18 x86-64 check host prepared by `script/prepare_check_host`: Ruby 4.0.6, Go 1.27.1, PostgreSQL 16.15 with pgvector 0.8.6, the committed `Gemfile.lock`. This is a native rebaseline of the current dependency set, not a host installation.
+
+| Check | Result |
+|---|---|
+| Full Rails suite | 1,075 tests, 7,752 assertions, pass on the finished branch. On the unmodified baseline two `AccountHealthTest` cases failed because the import path recalculated at the real clock while fixture renewal dates had passed; freezing the test clock at its fixed instant resolved both without touching application code. |
+| Bootstrap, installer, candidate bundle, and clamd adapter tests | 107 tests, 726 assertions, pass, including 8 new HTTPS fixture cases and the status regression |
+| System mail, production environment, and checklist controller tests | 9 tests, 51 assertions, pass |
+| RuboCop, Brakeman, gem audit, Importmap audit | 615 files, no offences; no warnings; no vulnerabilities |
+| Go vet, gofmt, Go tests without the isolation requirement | Pass |
+| Shell syntax and whitespace | `bash -n` on both installer scripts and `git diff --check` pass |
+| Browser suite | Omitted: the host has ChromeDriver 147 but Chromium 141 and cannot reach the driver download service |
+| Runner isolation suite, runner contract, legacy DOC conversion, live Compose paths | Omitted: no Landlock on this kernel and no Docker daemon; not claimed green |
+
 ### 9 September 2026 legacy DOC checkpoint
 
 On this Linux 6.1.158 x86-64 orb: Ruby 4.0.6, Go 1.27.0, PostgreSQL 15.19, and LibreOffice 7.4.7.2. The Debian Bookworm packages `libreoffice-core`, `libreoffice-writer`, and build-only `libreofficekit-dev` were all `4:7.4.7-1+deb12u14` from source package `libreoffice`. This host has no PostgreSQL 16 APT package, so setup used its documented `PG_MAJOR=15` override; that is a host deviation, not a production-pin change.
@@ -173,9 +203,9 @@ From `fbf65f0b3c268f650a2489035236d7fb82e9467d` on Linux 6.1 x86-64 with Ruby 4.
 
 The build ran as a v1 stack of about 40 PRs (foundation, helpdesk, agent work, runtimes, memory, Intercom and Customer Success, operations) followed by next-phase milestones M0 rebaseline, M1 proofed resolutions and explainability, M2 dossier, M3 Support-to-renewal loop, M4 operational ownership and portability, M5 governed policy change, and M6 integrated proof (merged 28 August 2026 in PR #82, re-proven from code on 6 September 2026). M7 knowledge and research intake is the open milestone; its remaining items are in section 3. Per-milestone commit evidence up to M6 is preserved in the Git history of the retired roadmap file.
 
-### 6–7 September 2026 unmerged knowledge and personal-account stack
+### 6–7 September 2026 knowledge and personal-account stack
 
-Five stacked source branches cover DOCX intake, Intercom sync and applicability, connector policy/OAuth and Notion, Workspace search selection, and the personal Codex web companion. No production dependency was added. These are built and tested changes, not a merge, release, deployment, or live-provider authentication claim.
+Five stacked source branches, since merged as PRs #90–#94, cover DOCX intake, Intercom sync and applicability, connector policy/OAuth and Notion, Workspace search selection, and the personal Codex web companion. No production dependency was added. The checkpoints below were recorded before merge; they are not a release, deployment, or live-provider authentication claim.
 
 The combined stack passed 954 Rails tests with 6,918 assertions on ssdnodes (Ruby 4.0.6, Go 1.27.0, PostgreSQL 18.6, pgvector 0.8.6). Two subsequently added deletion tests passed there with 41 assertions. Ruby/Go style, gem/importmap audits, Brakeman, mandatory Linux isolation tests, runner builds, the signed Rails–Go contract, seeds, and the 89-component SBOM check passed.
 
@@ -183,7 +213,7 @@ Running several browser suites concurrently overloaded the host and produced thr
 
 A separate isolated PostgreSQL 16.10 server with pgvector 0.8.6 successfully loaded the final schema, rolled all seven new migrations down and up, applied each PR layer, and freshly loaded all four PostgreSQL 16-generated schema dumps. The deployed PostgreSQL version was not changed. Risk-based review used two internal review lenses and independent finding validation; findings were fixed and regression-tested. The external cross-provider pass was skipped because a non-Claude route could not be verified. No live OAuth or subscription credentials were consumed.
 
-Stack checkpoints (all unmerged):
+Stack checkpoints at their pre-merge feature commits:
 
 | Branch | Feature commit | Rails tests / assertions | Browser tests / assertions | Check execution |
 |---|---|---|---|---|
@@ -197,7 +227,7 @@ Stack checkpoints (all unmerged):
 
 Listed in the order they unblock a pilot. None of these blocks owner review of the current source.
 
-1. **Merge and deploy the built stack.** DOCX, Intercom sync and applicability, connectors and Notion, Workspace search selection, and personal Codex accounts are unmerged source changes. The implementation and verification evidence does not establish a live deployment.
+1. **Finish guided-installer acceptance.** The installer is merged and natively tested, not released or deployed. Remaining local engineering: an authorized scanner reachability and synthetic-scan action so the checklist can distinguish configured, reachable, clean synthetic scan, and real daemon acceptance (owner decision on the surface); proof of scoped memory indexing and retrieval after `navishai configure memory`; and a scoped changed-image upgrade contract proven on a genuinely changed application image before the production rejection is relaxed. Remaining external outcomes: clean supported-host acceptance with real reboot and SSH loss, public DNS/ACME and renewal, external ingress isolation, an approved signing identity with trusted verification-key distribution and artifact hosting, and live ClamAV, SMTP, provider, and Supermemory validation.
 2. **Native runtime search.** **Current no-go recorded 10 September 2026.** The four approved subscription protocols lack one or more required evidence fields: machine-readable run-bound HTTPS URL, bounded source excerpt, retrieval time, optional publication date, and rejectable terminal semantics. [The protocol record](./NATIVE_RUNTIME_SEARCH_PROTOCOL.md) pins each checked source revision and documents the limit. `web_search="disabled"` remains fixed, and parser tests reject a Codex query/action-only item as a non-retryable policy denial. Query events, action URLs, generated prose, inferred URLs, and opaque output cannot become citations or satisfy grounding. This applies only to the checked current protocols; a future adapter still needs a versioned typed result contract and approved egress profile. Parallel remains unimplemented.
 3. **Legacy DOC image proof.** Native Linux conversion, isolation, the signed route, and focused browser states passed on 9 September 2026. Run the new manual workflow on a Docker-capable host to execute the built-image smoke; DOCX, PDF, Markdown, HTML, text and ZIP intake remain available.
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
@@ -232,8 +262,9 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 6 September 2026 | Consolidate the build brief, roadmap, and release-candidate record into PRODUCT.md and this file. |
 | 11 September 2026 | Move the Go development, module, host-preparation, and runner build pins from 1.27.0 to 1.27.1. Historical verification records retain the versions actually tested. |
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
+| 11 September 2026 | Keep rejecting changed-image `navishai upgrade` targets on main until a scoped supported path is implemented and proven on a genuinely changed application image; the experimental recovery evidence does not relax that guard. |
 | 11 September 2026 | Cap the existing transitive `json` gem below 3.0. Active Support 8.1.3.1 passes `JSON.parse` options positionally, which json 3.0 rejects, so every jsonb attribute read raised `ArgumentError`. Remove the cap once a Rails release supports json 3. |
 
 ### Approved implementation scope — 6 September 2026
 
-The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake; and a web companion whose execution stays on deployed Linux. Personal content must not become shared knowledge automatically. On 7 September 2026 the owner approved LibreOffice bundled into the package for isolated legacy DOC conversion. Native search requires structured result evidence before enabling an adapter. Implementation remains unmerged. The checkpoint section records tests separately from deployment and live-provider proof.
+The owner approved immutable knowledge content versions with separate sync observations; complete-pass reconciliation and bounded resume; many-to-many product/Intercom applicability with human overrides; Admin-controlled search; separate Workspace connector enablement/service credentials and personal OAuth accounts; additive Notion intake; DOCX and legacy DOC intake; and a web companion whose execution stays on deployed Linux. Personal content must not become shared knowledge automatically. On 7 September 2026 the owner approved LibreOffice bundled into the package for isolated legacy DOC conversion. Native search requires structured result evidence before enabling an adapter. That implementation merged as PRs #90–#95. The checkpoint section records tests separately from deployment and live-provider proof.

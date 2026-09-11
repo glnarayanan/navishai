@@ -1162,6 +1162,31 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_status_exits_successfully_and_reports_deferred_capabilities_without_secrets
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_SUPERMEMORY_API_KEY=memory-pending-placeholder\nNAVISHAI_MEMORY_PENDING=1\n")
+
+      stdout, stderr, pending = run_installer(root, "status")
+      assert pending.success?, stderr
+      assert_includes stdout, "memory: pending configuration"
+      assert_includes stdout, "system mail: not configured"
+      assert_includes stdout, "attachment scanner: not configured"
+      refute_includes stdout, "db-secret"
+
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_SYSTEM_SMTP_PASSWORD=mail-secret\nNAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n")
+
+      stdout, stderr, configured = run_installer(root, "status")
+      assert configured.success?, stderr
+      assert_includes stdout, "memory: key configured"
+      assert_includes stdout, "system mail: configured, untested"
+      assert_includes stdout, "attachment scanner: clamd configured, untested"
+      refute_includes stdout, "sm_private"
+      refute_includes stdout, "mail-secret"
+      assert_equal [ "compose --project-name navishai --env-file #{root}/etc/navishai/env -f #{root}/opt/navishai/current/compose.yaml -f #{root}/opt/navishai/current/ops/installer/compose.yaml ps" ] * 2, docker_log(root).lines(chomp: true)
+    end
+  end
+
   def test_configure_memory_replaces_pending_state_and_retries_after_start_failure
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
