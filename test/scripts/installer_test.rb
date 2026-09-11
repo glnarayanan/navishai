@@ -122,6 +122,29 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  [ nil, "ca.crt", "server.crt", "server.key" ].each do |missing|
+    define_method("test_rejects_incomplete_resume_state_#{missing || 'current'}") do
+      Dir.mktmpdir do |root|
+        bundle = build_bundle(root)
+        FileUtils.mkdir_p("#{root}/etc/navishai/runner")
+        File.write("#{root}/etc/navishai/env", "preserved-secret=value\n")
+        %w[ca.crt server.crt server.key].each { |name| File.write("#{root}/etc/navishai/runner/#{name}", "tls-#{name}\n") unless name == missing }
+        unless missing.nil?
+          release = "#{root}/opt/navishai/releases/#{'a' * 64}"
+          FileUtils.mkdir_p(release)
+          File.symlink(release, "#{root}/opt/navishai/current")
+        end
+
+        _stdout, stderr, status = run_setup(root, bundle)
+
+        assert_not status.success?
+        assert_includes stderr, "incomplete setup state detected"
+        assert_equal "preserved-secret=value\n", File.read("#{root}/etc/navishai/env")
+        refute_includes docker_log(root), "image load"
+      end
+    end
+  end
+
   def test_free_https_ports_allow_a_clean_setup
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
