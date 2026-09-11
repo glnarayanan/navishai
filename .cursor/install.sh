@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent repository bootstrap for the NavishAI Cloud Agent environment.
-# System toolchains (Ruby 3.4.10 via mise, Go 1.27.0, PostgreSQL 16 + pgvector,
+# System toolchains (Ruby 4.0.6 via mise, Go 1.27.1, PostgreSQL 16 + pgvector,
 # libvips, Chrome) come from the environment snapshot; this script refreshes
 # source-derived state only.
 set -euo pipefail

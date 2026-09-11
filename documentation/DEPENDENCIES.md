@@ -10,7 +10,7 @@ This inventory records the production dependencies approved for the repository b
 | Rails | 8.1.3.1 | Web, jobs, mail, storage, and application framework |
 | PostgreSQL | 16 | Authoritative application, queue, cache, and cable state |
 | pgvector | 0.8.6 | PostgreSQL vector type and search support |
-| Go | 1.27.0 | Execution runner |
+| Go | 1.27.1 | Execution runner |
 
 ## Direct production gems
 
@@ -34,6 +34,8 @@ These gems come from the Rails 8.1 application generator and are approved by [PR
 | `image_processing` | Active Storage image variants |
 | `ruby-vips` | Vips backend for Active Storage image variants |
 | `pdf-reader` | Owner-approved on 6 September 2026 for knowledge PDF text extraction; pure Ruby, bounded by page and byte limits in `KnowledgeDocumentExtractor` |
+| `bigdecimal` | Owner-approved on 11 September 2026 as a `>= 4.0` floor on an existing transitive dependency of Active Support and pdf-reader's `ttfunk`, keeping it on the maintained line; this holds `ttfunk` at 1.7.0 until a release accepts bigdecimal 4 |
+| `json` | Added on 11 September 2026 as a `< 3` cap on an existing transitive dependency of Rails; Active Support 8.1.3.1 passes `JSON.parse` options positionally, which json 3.0 rejects on every jsonb read. Remove the cap once a Rails release supports json 3 |
 
 ## Services, images, and bundled assets
 

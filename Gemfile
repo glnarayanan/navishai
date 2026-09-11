@@ -59,3 +59,11 @@ group :test do
 end
 
 gem "pdf-reader", "~> 2.16"
+
+# Keep BigDecimal on its maintained 4.x line. ttfunk 1.8.0 (via pdf-reader) caps it
+# at 3.x, so Bundler holds ttfunk at 1.7.0 until a ttfunk release accepts 4.x.
+gem "bigdecimal", ">= 4.0", require: false
+
+# Rails 8.1.3.1 passes JSON.parse options positionally, which json 3.0 rejects on
+# every jsonb read. Remove this cap once a Rails release supports json 3.
+gem "json", "< 3", require: false
