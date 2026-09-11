@@ -2,6 +2,7 @@ require "test_helper"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../test_helpers/candidate_https_server"
 
 class BootstrapTest < ActiveSupport::TestCase
   def test_unsupported_host_stops_before_any_host_change
@@ -101,6 +102,170 @@ class BootstrapTest < ActiveSupport::TestCase
 
       assert_not status.success?
       assert_includes stderr, "must be a SHA-256"
+      refute_path_exists File.join(root, "commands.log")
+    end
+  end
+
+  def test_interrupted_https_transfer_resumes_with_a_byte_range_on_rerun
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:, cut_first_full_after: 40_000)
+      checksum, destination = trusted_candidate(root, body)
+
+      _stdout, stderr, first = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert_not first.success?
+      assert_includes stderr, "rerun bootstrap to resume"
+      assert_equal 40_000, File.size("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+
+      _stdout, stderr, second = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert second.success?, stderr
+      assert_equal body, File.binread(destination)
+      refute File.exist?("#{destination}.part")
+      assert_equal [ nil, "bytes=40000-" ], server.requests.map { |request| request[:range] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_corrupt_partial_download_is_removed_after_checksum_rejection_and_rerun_downloads_again
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite("#{destination}.part", SecureRandom.random_bytes(40_000))
+
+      _stdout, stderr, first = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert_not first.success?
+      assert_includes stderr, "checksum did not match"
+      refute File.exist?("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+      assert_equal [ "bytes=40000-" ], server.requests.map { |request| request[:range] }
+
+      _stdout, stderr, second = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert second.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_equal [ "bytes=40000-", nil ], server.requests.map { |request| request[:range] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_stale_full_size_partial_is_rejected_by_checksum_not_accepted_from_a_416_reply
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite("#{destination}.part", SecureRandom.random_bytes(100_000))
+
+      _stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert_not status.success?
+      assert_includes stderr, "checksum did not match"
+      refute File.exist?("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_server_without_range_support_restarts_the_transfer_instead_of_failing_forever
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:, ranges: false)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite("#{destination}.part", body.byteslice(0, 40_000))
+
+      _stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert status.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_equal [ "bytes=40000-", nil ], server.requests.map { |request| request[:range] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_https_redirect_to_http_is_refused_before_setup
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(1_000)
+      server = CandidateHttpsServer.new(root, body:, redirect: "http://127.0.0.1:9/candidate.tar")
+      checksum, destination = trusted_candidate(root, body)
+
+      _stdout, stderr, status = run_bootstrap(root, server.url("/redirect"), real_curl: true, **https_environment(server, checksum, destination))
+
+      assert_not status.success?
+      assert_includes stderr, "candidate download failed"
+      assert_equal [ "/redirect" ], server.requests.map { |request| request[:path] }
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_https_redirect_to_https_is_followed_and_verified
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(1_000)
+      server = CandidateHttpsServer.new(root, body:, redirect: "/candidate.tar")
+      checksum, destination = trusted_candidate(root, body)
+
+      _stdout, stderr, status = run_bootstrap(root, server.url("/redirect"), real_curl: true, **https_environment(server, checksum, destination))
+
+      assert status.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_equal [ "/redirect", "/candidate.tar" ], server.requests.map { |request| request[:path] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_already_verified_candidate_is_reused_without_a_download
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(1_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite(destination, body)
+
+      stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert status.success?, stderr
+      assert_includes stdout, "Reusing the verified candidate"
+      assert_empty server.requests
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_https_candidate_requires_curl_before_any_download_state
+    Dir.mktmpdir do |root|
+      checksum, destination = trusted_candidate(root, "candidate")
+      tools = File.join(root, "tools")
+      FileUtils.mkdir_p(tools)
+      %w[bash sh tr stat sha256sum cut id mkdir rm mv dirname cat grep].each do |tool|
+        path = ENV.fetch("PATH").split(File::PATH_SEPARATOR).map { |directory| File.join(directory, tool) }.find { |candidate| File.executable?(candidate) }
+        File.symlink(path, File.join(tools, tool)) if path
+      end
+
+      _stdout, stderr, status = run_bootstrap(root, "https://releases.example/candidate.tar", real_curl: true,
+        "FAKE_DOCKER" => "present", "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum,
+        "NAVISHAI_CANDIDATE_DESTINATION" => File.join(root, "missing-parent/candidate.tar"), "PATH" => "#{File.join(root, 'bin')}:#{tools}")
+
+      assert_not status.success?
+      assert_includes stderr, "curl is required"
+      refute_path_exists File.join(root, "missing-parent")
       refute_path_exists File.join(root, "commands.log")
     end
   end
@@ -246,6 +411,19 @@ class BootstrapTest < ActiveSupport::TestCase
 
   private
 
+  def trusted_candidate(root, body)
+    checksum = File.join(root, "candidate.sha256")
+    File.write(checksum, "#{Digest::SHA256.hexdigest(body)}\n")
+    FileUtils.chmod(0o600, checksum)
+    FileUtils.mkdir_p(File.join(root, "downloads"))
+    [ checksum, File.join(root, "downloads/candidate.tar") ]
+  end
+
+  def https_environment(server, checksum, destination)
+    server.curl_environment.merge("FAKE_DOCKER" => "present", "NAVISHAI_CANDIDATE_SHA256_FILE" => checksum,
+      "NAVISHAI_CANDIDATE_DESTINATION" => destination)
+  end
+
   def command_lines(root)
     File.readlines(File.join(root, "commands.log"), chomp: true)
   end
@@ -254,7 +432,7 @@ class BootstrapTest < ActiveSupport::TestCase
     refute commands.any? { |command| command.start_with?("setup ") }, commands.join("\n")
   end
 
-  def run_bootstrap(root, bundle, extra = {})
+  def run_bootstrap(root, bundle, real_curl: false, **extra)
     bin = File.join(root, "bin")
     installer = File.join(root, "installer")
     FileUtils.mkdir_p(bin)
@@ -265,12 +443,13 @@ class BootstrapTest < ActiveSupport::TestCase
     File.write(File.join(bin, "uname"), "#!/bin/sh\necho x86_64\n")
     File.write(File.join(bin, "docker"), "#!/bin/sh\nstate=\"$NAVISHAI_BOOTSTRAP_ROOT/docker-installed\"\nif [ \"$1\" = info ]; then echo \"docker info\" >>\"$BOOTSTRAP_LOG\"; [ \"${FAKE_DOCKER_INFO_FAIL:-0}\" = 1 ] && exit 1; exit 0; fi\nif [ \"$1\" = compose ]; then echo \"docker compose version\" >>\"$BOOTSTRAP_LOG\"; [ \"${FAKE_DOCKER_COMPOSE_FAIL:-0}\" = 1 ] && exit 1; [ \"${FAKE_DOCKER:-missing}\" = docker-only ] && exit 1; [ -f \"$state\" ] || [ \"${FAKE_DOCKER:-missing}\" = present ] || exit 1; exit 0; fi\n[ \"${FAKE_DOCKER:-missing}\" = missing ] && [ ! -f \"$state\" ] && exit 1\nexit 0\n")
     File.write(File.join(bin, "apt"), "#!/bin/sh\necho \"apt $*\" >>\"$BOOTSTRAP_LOG\"\ncase \" $* \" in *\" ca-certificates curl \"*) [ \"${FAKE_APT_FAIL_STAGE:-}\" = prerequisites ] && exit 1;; esac\n[ \"${FAKE_APT_FAIL_STAGE:-}\" = update ] && [ \"$1\" = update ] && exit 1\ncase \" $* \" in *\" docker-ce \"*) [ \"${FAKE_APT_FAIL_STAGE:-}\" = docker ] && exit 1; : >\"$NAVISHAI_BOOTSTRAP_ROOT/docker-installed\";; esac\nexit 0\n")
-    File.write(File.join(bin, "curl"), "#!/bin/sh\necho curl >>\"$BOOTSTRAP_LOG\"\nwhile [ \"$#\" -gt 0 ]; do case \"$1\" in -o|--output) printf '%s' \"${FAKE_CURL_BODY:-key}\" >\"$2\"; break;; esac; shift; done\n")
+    File.write(File.join(bin, "curl"), "#!/bin/sh\necho curl >>\"$BOOTSTRAP_LOG\"\nwhile [ \"$#\" -gt 0 ]; do case \"$1\" in -o|--output) printf '%s' \"${FAKE_CURL_BODY:-key}\" >\"$2\"; break;; esac; shift; done\n") unless real_curl
     File.write(File.join(bin, "dpkg-query"), "#!/bin/sh\nexit 1\n")
     File.write(File.join(bin, "systemctl"), "#!/bin/sh\necho systemctl >>\"$BOOTSTRAP_LOG\"\n")
     FileUtils.chmod(0o755, File.join(bin, "uname"))
     FileUtils.chmod(0o755, File.join(bin, "docker"))
-    FileUtils.chmod(0o755, [ File.join(bin, "apt"), File.join(bin, "curl"), File.join(bin, "dpkg-query"), File.join(bin, "systemctl") ])
+    FileUtils.chmod(0o755, [ File.join(bin, "apt"), File.join(bin, "dpkg-query"), File.join(bin, "systemctl") ])
+    FileUtils.chmod(0o755, File.join(bin, "curl")) unless real_curl
     release = File.join(root, "os-release")
     File.write(release, "ID=debian\nVERSION_ID=12\nVERSION_CODENAME=bookworm\n") unless extra.key?("NAVISHAI_OS_RELEASE")
     environment = {
