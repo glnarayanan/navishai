@@ -35,7 +35,9 @@ class WorkspaceSetupChecklist
     end
 
     def system_mail
-      Item.new("System email", "not checked", "SMTP is a deployment setting and has not been tested here.", edit_workspace_path(@workspace))
+      state = SystemMailConfiguration.status
+      detail = state == :configured ? "Deployment SMTP is configured but has not been tested." : state == :invalid ? "Deployment SMTP settings are incomplete or invalid." : "Set deployment SMTP for invitations and reset mail; this is separate from shared-inbox SMTP."
+      Item.new("System email", state.to_s, detail, edit_workspace_path(@workspace))
     end
 
     def connectors
