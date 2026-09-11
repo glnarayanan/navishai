@@ -13,9 +13,15 @@
             <strong><%= item.name %></strong>
             <span><%= item.detail %></span>
           </div>
-          <%= link_to item.path, class: "button button-quiet", aria: { label: "Open #{item.name}" } do %>
-            <span class="status-badge status-<%= item.state %>"><%= item.state.humanize %></span>
-          <% end %>
+          <div class="setup-checklist-actions">
+            <% if item.test_path %>
+              <%= button_to "Test scanner", item.test_path, class: "button button-secondary",
+                form: { data: { turbo_confirm: "Send a clean fixture and the EICAR test signature to the configured ClamAV daemon? No attachment changes state." } } %>
+            <% end %>
+            <%= link_to item.path, class: "button button-quiet", aria: { label: "Open #{item.name}" } do %>
+              <span class="status-badge status-<%= item.state %>"><%= item.state.humanize %></span>
+            <% end %>
+          </div>
         </li>
       <% end %>
     </ul>
