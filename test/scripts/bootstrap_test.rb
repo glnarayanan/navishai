@@ -287,6 +287,26 @@ class BootstrapTest < ActiveSupport::TestCase
     end
   end
 
+  def test_unwritable_candidate_destination_explains_sudo_before_any_download
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(1_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, = trusted_candidate(root, body)
+      blocker = File.join(root, "blocker")
+      File.write(blocker, "not a directory")
+
+      _stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true,
+        **https_environment(server, checksum, File.join(blocker, "candidate.tar")))
+
+      assert_not status.success?
+      assert_includes stderr, "rerun bootstrap with sudo"
+      assert_empty server.requests
+      refute_path_exists File.join(root, "commands.log")
+    ensure
+      server&.stop
+    end
+  end
+
   def test_clean_install_orders_prerequisites_docker_readiness_and_setup
     Dir.mktmpdir do |root|
       bundle = File.join(root, "candidate.tar")

@@ -36,7 +36,7 @@ fetch_candidate() {
     bundle="$destination"
     return 0
   fi
-  mkdir -p "$(dirname "$destination")"
+  mkdir -p "$(dirname "$destination")" 2>/dev/null && [[ -w "$(dirname "$destination")" ]] || die "cannot store the candidate under $(dirname "$destination"); rerun bootstrap with sudo, or set NAVISHAI_CANDIDATE_DESTINATION to a writable path"
   # Resume a partial transfer; when the server cannot serve byte ranges, curl exits 33 and the transfer restarts.
   download_candidate --continue-at - && curl_status=0 || curl_status=$?
   if [[ $curl_status -eq 33 ]]; then
