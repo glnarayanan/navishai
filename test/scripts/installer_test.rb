@@ -1114,6 +1114,24 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_configure_system_mail_rejects_an_answer_file_owned_by_another_user_without_changing_environment
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p("#{root}/etc/navishai")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=preserved\n")
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example.test\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "configure", "system-mail",
+        "NAVISHAI_ANSWERS_FILE" => answers, "FAKE_UNOWNED_ANSWER" => answers)
+
+      assert_not status.success?
+      assert_includes stderr, "answer file must be owned"
+      assert_equal "NAVISHAI_DATABASE_PASSWORD=preserved\n", File.read("#{root}/etc/navishai/env")
+      assert_empty docker_log(root)
+    end
+  end
+
   def test_configure_system_mail_keeps_the_new_configuration_after_restart_failure_and_retries
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
@@ -1196,6 +1214,15 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/ss")
     File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ] || exit 1\nprintf '%s' \"${FAKE_HTTPS_STATUS:-200}\"\n")
     FileUtils.chmod(0o755, "#{bin}/curl")
+    File.write("#{bin}/stat", <<~SH)
+      #!/bin/sh
+      if [ "$1" = -c ] && [ "$2" = %u ] && [ "$3" = "${FAKE_UNOWNED_ANSWER:-}" ]; then
+        printf '%s\n' 65534
+      else
+        /usr/bin/stat "$@"
+      fi
+    SH
+    FileUtils.chmod(0o755, "#{bin}/stat")
     extra_environment.merge(
       "NAVISHAI_MANAGED_ROOT" => root,
       "NAVISHAI_TEST_ALLOW_UNPRIVILEGED" => "1",

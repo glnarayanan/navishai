@@ -78,6 +78,7 @@ validate_answers() {
   local mode key value secret_file secret_value
   [[ -z ${NAVISHAI_ANSWERS_FILE:-} ]] && return
   [[ -f $NAVISHAI_ANSWERS_FILE && ! -L $NAVISHAI_ANSWERS_FILE ]] || die "answer file must be a regular file"
+  [[ $(stat -c %u "$NAVISHAI_ANSWERS_FILE") -eq ${EUID:-$(id -u)} ]] || die "answer file must be owned by the current user"
   mode=$((8#$(stat -c %a "$NAVISHAI_ANSWERS_FILE")))
   (( (mode & 0077) == 0 )) || die "answer file must not be readable by group or others"
   declare -A seen=()

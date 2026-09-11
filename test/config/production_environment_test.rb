@@ -5,7 +5,8 @@ class ProductionEnvironmentTest < ActiveSupport::TestCase
   test "boots with deployment SMTP configured for required TLS" do
     script = <<~RUBY
       settings = Rails.application.config.action_mailer.smtp_settings
-      puts "SYSTEM_MAIL_SMTP_RESULT=\#{JSON.generate(method: Rails.application.config.action_mailer.delivery_method, settings: settings.slice(:address, :port, :enable_starttls, :enable_starttls_auto, :openssl_verify_mode))}"
+      mail = ApplicationMailer.new.mail(to: "admin@example.test", subject: "test", body: "private")
+      puts "SYSTEM_MAIL_SMTP_RESULT=\#{JSON.generate(method: Rails.application.config.action_mailer.delivery_method, settings: settings.slice(:address, :port, :enable_starttls, :enable_starttls_auto, :openssl_verify_mode), from: mail.from)}"
     RUBY
     output, status = Open3.capture2e(
       {
@@ -18,6 +19,7 @@ class ProductionEnvironmentTest < ActiveSupport::TestCase
     result = JSON.parse(output.lines.grep(/SYSTEM_MAIL_SMTP_RESULT=/).sole.split("=", 2).last)
     assert_equal "smtp", result.fetch("method")
     assert_equal({ "address" => "127.0.0.1", "port" => 587, "enable_starttls" => true, "enable_starttls_auto" => false, "openssl_verify_mode" => "peer" }, result.fetch("settings"))
+    assert_equal [ "test@app.example.test" ], result.fetch("from")
   end
 
   test "boots without deployment SMTP and rejects system-mail delivery" do
