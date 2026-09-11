@@ -8,6 +8,7 @@
 #   - Ruby 4.0.6 built from the ruby_4_0 branch when no pinned Ruby is installed
 #   - pgvector 0.8.6 built from its pinned revision against the installed PostgreSQL
 #   - the navishai_development and navishai_test databases with the vector extension
+#   - a ChromeDriver matching a bundled Chromium so the browser suite can run
 #
 # It is idempotent and prints exactly which pins it could not honour so the
 # release-candidate record can list them as host omissions. Run it as the user
@@ -22,6 +23,12 @@ PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
 DEV_DB="${DEV_DB:-navishai_development}"
 TEST_DB="${TEST_DB:-navishai_test}"
 APP_ROLE="${APP_ROLE:-$(id -un)}"
+CHROMEDRIVER_PREFIX="${NAVISHAI_CHROMEDRIVER_PREFIX:-/opt/chromedriver}"
+# Chrome for Testing publishes no checksums; these were recorded from a verified download.
+declare -A CHROMEDRIVER_SHA256=(
+  ["141.0.7390.37"]="84a21f5c25f2cbfdcfdba68bdfe33e9e816ef8af25d2f50bcef3345c7b84fe01"
+)
+BROWSER_EXPORTS=()
 DEVIATIONS=()
 
 log() { printf '[prepare] %s\n' "$*"; }
@@ -30,7 +37,7 @@ as_postgres() { if [[ "$(id -u)" == "0" ]]; then runuser -u postgres -- "$@"; el
 
 ensure_packages() {
   local packages=(autoconf bison build-essential ca-certificates curl git libffi-dev libgmp-dev libpq-dev
-    libreadline-dev libssl-dev libyaml-dev pkg-config shared-mime-info zlib1g-dev postgresql-common libreoffice-writer libreofficekit-dev)
+    libreadline-dev libssl-dev libyaml-dev pkg-config shared-mime-info zlib1g-dev postgresql-common libreoffice-writer libreofficekit-dev unzip)
   local missing=()
   for pkg in "${packages[@]}"; do
     dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed' || missing+=("$pkg")
@@ -126,6 +133,46 @@ ensure_bundle() {
   bin/setup --skip-server >/dev/null
 }
 
+ensure_chromedriver() {
+  local chrome version driver tmp expected actual
+  chrome="${CHROME_BIN:-$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | sort -V | tail -1)}"
+  if [[ -z "$chrome" || ! -x "$chrome" ]]; then
+    log "no bundled Chromium found; the browser suite needs CHROME_BIN and CHROMEDRIVER_BIN"
+    return 0
+  fi
+  version="$("$chrome" --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+){3}' | head -1)"
+  if [[ -z "$version" ]]; then
+    log "could not read the Chromium version from ${chrome}; the browser suite stays omitted"
+    return 0
+  fi
+  driver="${CHROMEDRIVER_PREFIX}/${version}/chromedriver"
+  if [[ ! -x "$driver" ]]; then
+    expected="${CHROMEDRIVER_SHA256[$version]:-}"
+    tmp="$(mktemp -d)"
+    log "downloading chromedriver ${version} for the bundled Chromium"
+    if ! curl -fsSL --proto '=https' -o "${tmp}/chromedriver.zip" \
+      "https://storage.googleapis.com/chrome-for-testing-public/${version}/linux64/chromedriver-linux64.zip"; then
+      log "chromedriver ${version} download failed; the browser suite stays omitted"
+      rm -rf "$tmp"
+      return 0
+    fi
+    actual="$(sha256sum "${tmp}/chromedriver.zip" | cut -d' ' -f1)"
+    if [[ -n "$expected" && "$actual" != "$expected" ]]; then
+      log "chromedriver ${version} checksum ${actual} does not match the recorded ${expected}; not installed"
+      rm -rf "$tmp"
+      return 0
+    fi
+    [[ -n "$expected" ]] || DEVIATIONS+=("chromedriver ${version} installed without a recorded checksum (sha256 ${actual})")
+    as_root install -d "${CHROMEDRIVER_PREFIX}/${version}"
+    as_root unzip -q -o -j "${tmp}/chromedriver.zip" chromedriver-linux64/chromedriver -d "${CHROMEDRIVER_PREFIX}/${version}"
+    as_root chmod 0755 "$driver"
+    rm -rf "$tmp"
+  fi
+  log "chromedriver ${version} at ${driver} for ${chrome}"
+  BROWSER_EXPORTS=("export CHROME_BIN=\"${chrome}\"" "export CHROMEDRIVER_BIN=\"${driver}\"")
+  [[ "$(id -u)" != "0" ]] || BROWSER_EXPORTS+=('export CHROME_ARGS="--no-sandbox"')
+}
+
 main() {
   cd "$(dirname "$0")/.."
   ensure_packages
@@ -134,8 +181,17 @@ main() {
   ensure_databases
   ensure_ruby
   ensure_bundle
+  ensure_chromedriver
   log "ready: $("${RUBY_PREFIX}/bin/ruby" -v), $(go version 2>/dev/null || echo 'go missing'), PostgreSQL ${PG_MAJOR}, pgvector ${PGVECTOR_VERSION}"
   log "add ${RUBY_PREFIX}/bin to PATH before running bin/ci"
+  if ((${#BROWSER_EXPORTS[@]})); then
+    log "browser suite environment: ${BROWSER_EXPORTS[*]}"
+    if [[ -n "${NAVISHAI_CHECK_HOST_ENV:-}" ]]; then
+      printf '%s\n' "${BROWSER_EXPORTS[@]}" >> "$NAVISHAI_CHECK_HOST_ENV"
+    fi
+  else
+    log "browser suite: omitted unless CHROME_BIN and a matching CHROMEDRIVER_BIN are supplied"
+  fi
   if ((${#DEVIATIONS[@]})); then
     log "record these host deviations in the release-candidate checkpoint:"
     printf '  - %s\n' "${DEVIATIONS[@]}"

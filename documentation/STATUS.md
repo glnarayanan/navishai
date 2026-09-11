@@ -134,7 +134,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | SBOM, release manifest, dependency record, patch policy | Done | `script/sbom`, `script/release_manifest`, [DEPENDENCIES.md](./DEPENDENCIES.md), [RELEASE.md](./RELEASE.md) | Signing identity is external. |
 | Seeded demonstration Workspace | Done | `db/seeds/demo.rb`, [DEMO.md](./DEMO.md) | |
 | Public product page | Done | `PagesController`, `app/views/pages/show.html.erb` | Pricing and testimonial sections intentionally omitted. |
-| Check-host preparation for ephemeral environments | Done | `script/prepare_check_host`, `.claude/hooks/session-start.sh` | Builds pinned pgvector and Ruby from source when download hosts are blocked. |
+| Check-host preparation for ephemeral environments | Done | `script/prepare_check_host`, `.claude/hooks/session-start.sh` | Builds pinned pgvector and Ruby from source when download hosts are blocked, and installs a checksum-verified ChromeDriver for the bundled Chromium so the browser suite runs in web sessions. |
 
 ## 2. Evidence
 

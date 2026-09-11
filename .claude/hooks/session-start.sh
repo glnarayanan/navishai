@@ -8,7 +8,8 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
 fi
 
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
-script/prepare_check_host
+# The script appends browser-suite exports (CHROME_BIN, CHROMEDRIVER_BIN, CHROME_ARGS) to this file when it can.
+NAVISHAI_CHECK_HOST_ENV="${CLAUDE_ENV_FILE:-}" script/prepare_check_host
 
 ruby_prefix="/opt/ruby-$(tr -d '[:space:]' < .ruby-version)/bin"
 if [ -d "$ruby_prefix" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then
