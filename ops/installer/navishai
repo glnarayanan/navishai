@@ -412,6 +412,12 @@ setup() {
 status() {
   need_root
   [[ -f "$etc/env" ]] || die "not installed"
+  if [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" ]]; then
+    echo "release: $(basename "$(readlink -f "$prefix/current")")"
+    echo "source commit: $(cat "$prefix/current/SOURCE_COMMIT" 2>/dev/null || echo unknown)"
+  else
+    echo "release: none selected; restore the managed release before relying on this installation"
+  fi
   compose ps
   [[ ! -f "$state/install.json" ]] || cat "$state/install.json"
   if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then

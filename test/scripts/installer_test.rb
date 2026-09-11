@@ -1251,6 +1251,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       stdout, stderr, pending = run_installer(root, "status")
       assert pending.success?, stderr
+      assert_includes stdout, "release: none selected"
       assert_includes stdout, "memory: pending configuration"
       assert_includes stdout, "system mail: not configured"
       assert_includes stdout, "attachment scanner: not configured"
@@ -1258,8 +1259,15 @@ class InstallerTest < ActiveSupport::TestCase
 
       File.write("#{root}/etc/navishai/env", "NAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_SYSTEM_SMTP_PASSWORD=mail-secret\nNAVISHAI_ATTACHMENT_SCANNER=clamd\nNAVISHAI_CLAMD_ADDRESS=tcp://scanner.internal:3310\n")
 
+      release_id = "a" * 64
+      FileUtils.mkdir_p("#{root}/opt/navishai/releases/#{release_id}")
+      File.write("#{root}/opt/navishai/releases/#{release_id}/SOURCE_COMMIT", "#{'b' * 40}\n")
+      File.symlink("#{root}/opt/navishai/releases/#{release_id}", "#{root}/opt/navishai/current")
+
       stdout, stderr, configured = run_installer(root, "status")
       assert configured.success?, stderr
+      assert_includes stdout, "release: #{release_id}"
+      assert_includes stdout, "source commit: #{'b' * 40}"
       assert_includes stdout, "memory: key configured"
       assert_includes stdout, "system mail: configured, untested"
       assert_includes stdout, "attachment scanner: clamd configured, untested"
