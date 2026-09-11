@@ -11,7 +11,7 @@ class ProductionEnvironmentTest < ActiveSupport::TestCase
       {
         "RAILS_ENV" => "production", "NAVISHAI_APP_HOST" => "app.example.test", "SECRET_KEY_BASE" => "s" * 64,
         "NAVISHAI_SYSTEM_SMTP_ADDRESS" => "127.0.0.1", "NAVISHAI_SYSTEM_SMTP_PORT" => "587",
-        "NAVISHAI_SYSTEM_SMTP_USER_NAME" => "test", "NAVISHAI_SYSTEM_SMTP_PASSWORD" => "test"
+        "NAVISHAI_SYSTEM_SMTP_USER_NAME" => "test", "NAVISHAI_SYSTEM_SMTP_PASSWORD" => "test", "NAVISHAI_SYSTEM_SMTP_FROM" => "test@app.example.test"
       }, Rails.root.join("bin/rails").to_s, "runner", script
     )
     assert status.success?, output

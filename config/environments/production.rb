@@ -70,6 +70,7 @@ Rails.application.configure do
   if (smtp_settings = SystemMailConfiguration.smtp_settings)
     config.action_mailer.delivery_method = :smtp
     config.action_mailer.smtp_settings = smtp_settings
+    config.action_mailer.default_options = { from: SystemMailConfiguration.from_address }
   else
     ActionMailer::Base.add_delivery_method :system_mail_unavailable, SystemMailUnavailableDelivery
     config.action_mailer.delivery_method = :system_mail_unavailable
