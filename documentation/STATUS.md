@@ -140,6 +140,20 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 11 September 2026 stacked follow-up checkpoint
+
+On the top of the seven-branch stack (`claude/great-gauss-vo8e8g` through `claude/great-gauss-vo8e8g-scanner-check`, PRs #104–#110) on the same check host, now with the matching ChromeDriver installed by `script/prepare_check_host`:
+
+| Check | Result |
+|---|---|
+| Full Rails suite | 1,096 tests, 7,920 assertions, pass |
+| Full browser suite | 78 tests, 1,296 assertions, pass; first complete browser run in a web session |
+| RuboCop, Brakeman, gem audit, Importmap audit | 621 files, no offences; no warnings; no vulnerabilities |
+| `bash -n` on both installer scripts and the check-host script, `git diff --check` | pass |
+| Runner isolation suite, runner contract, legacy DOC conversion, Docker paths | Omitted: no Landlock and no Docker daemon on this host; not claimed green |
+
+The stack adds: host check before candidate download, sudo guidance for an unwritable candidate store, stall detection instead of a transfer cap, bounded HTTPS readiness polling, `navishai renew-owner-token`, release identity in `status`, a read-only `doctor` with `--json`, the Caddy image digest, relative renewal dates in tests, ChromeDriver installation for the check host, and the Owner-run synthetic scanner check. None of it is released, deployed, or host-validated.
+
 ### 11 September 2026 installer rebaseline
 
 From `24e1ae5ab11b392603559dd57322e1e8d8f2ea1a` plus the fixes on this branch, on a Linux 6.18 x86-64 check host prepared by `script/prepare_check_host`: Ruby 4.0.6, Go 1.27.1, PostgreSQL 16.15 with pgvector 0.8.6, the committed `Gemfile.lock`. This is a native rebaseline of the current dependency set, not a host installation.
