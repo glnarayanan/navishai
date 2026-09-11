@@ -16,7 +16,7 @@ Containers and other version managers are also supported; `.ruby-version`, `.go-
 bin/setup --skip-server
 ```
 
-The Amp orb setup script installs these system tools and prepares both databases.
+The Amp orb setup script installs these system tools and prepares both databases. It writes the selected local PostgreSQL socket and port to ignored `.env.local`; `bin/rails` reads only those two values when the shell did not set them. This keeps later Rails commands on PostgreSQL 16 when another local cluster owns port 5432.
 
 On an ephemeral host that cannot reach the mise or ruby-lang download hosts, run `script/prepare_check_host` instead. It installs the build packages, uses the installed PostgreSQL major, builds pgvector 0.8.6 from its pinned revision and Ruby 4.0.6 from the `ruby_4_0` branch when no pinned Ruby exists, creates both databases, and bundles the application. It prints every pin it could not honour so the checkpoint can record those host deviations. Claude Code on the web runs it from `.claude/hooks/session-start.sh`.
 

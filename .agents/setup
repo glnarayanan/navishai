@@ -220,6 +220,19 @@ SQL
   fi
 }
 
+persist_postgres_endpoint() {
+  local endpoint_file=".env.local" temporary
+  temporary="$(mktemp .env.local.XXXXXX)"
+  [[ -f "$endpoint_file" ]] && grep -Ev '^(PGHOST|PGPORT)=' "$endpoint_file" >"$temporary" || true
+  {
+    printf 'export PGHOST=%q\n' "$PGHOST"
+    printf 'export PGPORT=%q\n' "$PGPORT"
+  } | sed 's/^export //' >>"$temporary"
+  chmod 0600 "$temporary"
+  mv -f "$temporary" "$endpoint_file"
+  log "wrote PostgreSQL endpoint to ${endpoint_file}"
+}
+
 ensure_pgvector() {
   local control="/usr/share/postgresql/${PG_MAJOR}/extension/vector.control"
   if [[ -f "$control" ]] && grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
@@ -307,6 +320,7 @@ main() {
   run_timed "ruby and go" install_toolchains
   run_timed "app dependencies" install_app_dependencies
   run_timed "postgres" ensure_postgres
+  run_timed "postgres endpoint" persist_postgres_endpoint
   run_timed "pgvector" ensure_pgvector
   run_timed "databases" ensure_databases
   run_timed "application" prepare_application
