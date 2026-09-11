@@ -79,7 +79,7 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
 
   test "imports CSV and JSON inputs and rejects foreign accounts" do
     csv = Rack::Test::UploadedFile.new(
-      StringIO.new("source_id,account_name,renewal_on\ncontroller-csv,Controller Import,2026-09-20\n"),
+      StringIO.new("source_id,account_name,renewal_on\ncontroller-csv,Controller Import,#{(Date.current + 30).iso8601}\n"),
       "text/csv", original_filename: "accounts.csv"
     )
     post workspace_account_imports_path(@workspace), params: { file: csv }

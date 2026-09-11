@@ -231,11 +231,11 @@ class ReadPathPerformanceTest < ActionDispatch::IntegrationTest
       )
     end
     baseline = create_health_input(
-      account:, input_key: "renewal_on", date_value: Date.new(2026, 10, 1),
+      account:, input_key: "renewal_on", date_value: Date.current + 30,
       source_key: "performance-renewal-baseline", observed_at: 2.days.ago
     )
     correction = create_health_input(
-      account:, input_key: "renewal_on", date_value: Date.new(2026, 11, 1),
+      account:, input_key: "renewal_on", date_value: Date.current + 60,
       source_key: "performance-renewal-correction", observed_at: 1.day.ago, corrects_input: baseline
     )
     support_case = create_support_case(subject: "Dossier query guard")

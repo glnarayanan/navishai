@@ -6,6 +6,8 @@ class AccountDossierTest < ActiveSupport::TestCase
     @account = accounts(:acme)
     @owner = memberships(:owner_support)
     @now = Time.current.change(usec: 0)
+    @renewal_baseline = Date.current + 30
+    @renewal_correction = Date.current + 60
   end
 
   test "groups current facts conflicts corrections stale and deleted history without tenant leakage" do
@@ -14,8 +16,8 @@ class AccountDossierTest < ActiveSupport::TestCase
     tag = CaseWorkflow.create_tag!(workspace: @workspace, membership: @owner, name: "Recurring access")
     CaseWorkflow.tag!(workspace: @workspace, support_case:, membership: @owner, tag:)
     CaseWorkflow.tag!(workspace: @workspace, support_case: second_case, membership: @owner, tag:)
-    create_input("renewal_on", date_value: Date.new(2026, 10, 1), observed_at: @now - 2.days)
-    create_input("renewal_on", date_value: Date.new(2026, 11, 1), observed_at: @now - 1.day)
+    create_input("renewal_on", date_value: @renewal_baseline, observed_at: @now - 2.days)
+    create_input("renewal_on", date_value: @renewal_correction, observed_at: @now - 1.day)
 
     source = create_memory(topic: "support-window", content: "Support ends at 17:00 UTC.")
     correction = MemoryGovernance.propose_correction!(
@@ -48,8 +50,8 @@ class AccountDossierTest < ActiveSupport::TestCase
 
     renewal = dossier.fact_groups.find { |group| group.key == "renewal_on" }
     assert renewal.conflicted
-    assert_equal Date.new(2026, 11, 1), renewal.effective.date_value
-    assert_equal [ Date.new(2026, 11, 1), Date.new(2026, 10, 1) ], renewal.items.map(&:date_value)
+    assert_equal @renewal_correction, renewal.effective.date_value
+    assert_equal [ @renewal_correction, @renewal_baseline ], renewal.items.map(&:date_value)
     assert_equal [ "Recurring access" ], dossier.recurring_issues.map(&:name)
 
     support_window = dossier.memory_groups.find { |group| group.label == "support-window" }
@@ -67,19 +69,19 @@ class AccountDossierTest < ActiveSupport::TestCase
 
   test "uses terminal correction heads while retaining lineage and active merged accounts" do
     baseline = create_input(
-      "renewal_on", date_value: Date.new(2026, 10, 1), observed_at: @now - 3.days,
+      "renewal_on", date_value: @renewal_baseline, observed_at: @now - 3.days,
       source_key: "dossier-chain-baseline"
     )
     first_correction = create_input(
-      "renewal_on", date_value: Date.new(2026, 11, 1), observed_at: @now - 2.days,
+      "renewal_on", date_value: @renewal_correction, observed_at: @now - 2.days,
       source_key: "dossier-chain-first", corrects_input: baseline
     )
     terminal_correction = create_input(
-      "renewal_on", date_value: Date.new(2026, 12, 1), observed_at: @now - 1.day,
+      "renewal_on", date_value: Date.current + 90, observed_at: @now - 1.day,
       source_key: "dossier-chain-terminal", corrects_input: first_correction
     )
     later_observation = create_input(
-      "renewal_on", date_value: Date.new(2027, 1, 1), observed_at: @now - 30.minutes,
+      "renewal_on", date_value: Date.current + 120, observed_at: @now - 30.minutes,
       source_key: "dossier-chain-later"
     )
     merged_source = @workspace.accounts.create!(name: "Merged Dossier Source")
@@ -114,11 +116,11 @@ class AccountDossierTest < ActiveSupport::TestCase
 
   test "does not resurrect an ancestor when its correction head is outside the validity window" do
     baseline = create_input(
-      "renewal_on", date_value: Date.new(2026, 10, 1), observed_at: @now - 2.days,
+      "renewal_on", date_value: @renewal_baseline, observed_at: @now - 2.days,
       source_key: "dossier-future-baseline"
     )
     future_correction = create_input(
-      "renewal_on", date_value: Date.new(2026, 11, 1), observed_at: @now - 1.day,
+      "renewal_on", date_value: @renewal_correction, observed_at: @now - 1.day,
       source_key: "dossier-future-correction", valid_from: @now + 1.hour, corrects_input: baseline
     )
 
@@ -132,15 +134,15 @@ class AccountDossierTest < ActiveSupport::TestCase
 
   test "keeps an effective correction visible inside the bounded fact history" do
     baseline = create_input(
-      "renewal_on", date_value: Date.new(2026, 10, 1), observed_at: @now - 2.days,
+      "renewal_on", date_value: @renewal_baseline, observed_at: @now - 2.days,
       source_key: "dossier-bounded-baseline"
     )
     correction = create_input(
-      "renewal_on", date_value: Date.new(2026, 11, 1), observed_at: @now - 1.day,
+      "renewal_on", date_value: @renewal_correction, observed_at: @now - 1.day,
       source_key: "dossier-bounded-correction", corrects_input: baseline
     )
     competing = create_input(
-      "renewal_on", date_value: Date.new(2026, 12, 1), observed_at: @now - 3.days,
+      "renewal_on", date_value: Date.current + 90, observed_at: @now - 3.days,
       source_key: "dossier-bounded-competing"
     )
     61.times do |index|
@@ -185,7 +187,7 @@ class AccountDossierTest < ActiveSupport::TestCase
   end
 
   test "rebuilds source facts and correction lineage from a Workspace archive" do
-    create_input("renewal_on", date_value: Date.new(2026, 12, 1), observed_at: @now - 1.day)
+    create_input("renewal_on", date_value: Date.current + 90, observed_at: @now - 1.day)
     source = create_memory(topic: "portable-context", content: "Original retained context")
     correction = MemoryGovernance.propose_correction!(
       workspace: @workspace, membership: @owner, memory_record: source,
