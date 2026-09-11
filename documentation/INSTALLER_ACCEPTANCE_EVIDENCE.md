@@ -51,6 +51,14 @@ The isolated project upgraded with explicit confirmation using target `09242280â
 
 This was a comment-only helper payload delta with reused images. It proves promotion mechanics and retained-state behavior only; it does not prove changed installer behavior, an application-image upgrade, database-schema compatibility, or a public release upgrade.
 
+## Bounded changed-image recovery
+
+An isolated managed target built one Rails image from experimental operator source `0a44e1bcbdc04e4f43dcc598d63bcf4ce067d654`. The image digest was `sha256:16d9ea4f5d9b808c82b76d6e02f3c6552b4752eabbba11e1dfefdfd0e9412460`; runner and Supermemory images were reused. The candidate archive was `/tmp/navishai-pr102-changed-rails.tar`, SHA-256 `5e1e69db5acfa8cd68f7ba6c601adb795a36753f098016c5d9cb8b308be3d3e0`; its images archive SHA-256 was `fedef3b003ea487320909afa80f0136770b80e1f49c52f841be830df98bad33f`.
+
+A temporary local-only web healthcheck failure stopped the upgrade after writers stopped. It recorded `upgrade_health_restore_required`, retained baseline current release `841617108534694a982ab02e030049866492633934918a16673a085953e823c2`, and never promoted candidate `487803ff3ad197a4159d26469bf084257dbe02b439e2429cc27ae33e2a89c00b`. Exact baseline-backup restore then exited 0 with `restore_completed`; web and core services were healthy. Read-only checks found one user, one workspace, a 37-byte attachment with its draft association, and a bounded signed vault catalog with configured and secret-configured values. The forced override was removed; no provider, email, or live service call occurred.
+
+This proves the bounded failure-and-exact-restore sequence for the experimental operator only. It does not prove successful changed-image promotion, arbitrary schema compatibility, or relaxation of the current production changed-image guard.
+
 ## Remaining limits
 
 The latest vault/attachment roundtrip did not repeat every earlier artifact and runner-ledger query; those checks passed in prior restore evidence. Public ACME, live provider behavior, real scanner behavior, non-synthetic customer data, and a full application/schema upgrade remain unproved.
