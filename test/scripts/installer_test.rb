@@ -539,6 +539,11 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_includes stdout, "Infrastructure and HTTPS are ready at https://install.example."
+      curl = docker_log(root).lines.find { |line| line.include?("https://install.example/up") }
+      assert_includes curl, "--connect-timeout 10"
+      assert_includes curl, "--max-time 30"
+      assert_includes curl, "--write-out %{http_code}"
+      refute_includes curl, "--insecure"
       assert_includes stdout, "Create the first Owner at https://install.example/setup."
       assert_includes stdout, "navishai reveal-owner-token --confirm-reveal"
       assert_includes stdout, "Open setup if you have not created the first Owner."
@@ -562,6 +567,18 @@ class InstallerTest < ActiveSupport::TestCase
       assert retry_status.success?, retry_stderr
       assert_equal environment, File.read("#{root}/etc/navishai/env")
       assert_equal current, File.realpath("#{root}/opt/navishai/current")
+    end
+  end
+
+  def test_https_redirect_does_not_count_as_readiness
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle, "FAKE_HTTPS_STATUS" => "302")
+
+      assert_not status.success?
+      assert_includes stderr, "HTTPS could not be verified"
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_unverified"
     end
   end
 
@@ -1020,7 +1037,7 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/docker")
     File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) printf '%s' \"${FAKE_PORT_80:-}\";; *:443*) printf '%s' \"${FAKE_PORT_443:-}\";; esac\n")
     FileUtils.chmod(0o755, "#{bin}/ss")
-    File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ]\n")
+    File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ] || exit 1\nprintf '%s' \"${FAKE_HTTPS_STATUS:-200}\"\n")
     FileUtils.chmod(0o755, "#{bin}/curl")
     extra_environment.merge(
       "NAVISHAI_MANAGED_ROOT" => root,

@@ -309,7 +309,8 @@ setup() {
   compose up -d --wait web jobs caddy
   local setup_host
   setup_host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
-  if curl --fail --silent --show-error --head "https://$setup_host/up" >/dev/null; then
+  local https_status
+  if https_status="$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 --output /dev/null --write-out '%{http_code}' "https://$setup_host/up")" && [[ $https_status == 200 ]]; then
     progress https_verified
     echo "Infrastructure and HTTPS are ready at https://$setup_host."
   else
