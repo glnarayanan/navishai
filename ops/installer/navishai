@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+managed_root="${NAVISHAI_MANAGED_ROOT:-}"
+prefix="${managed_root:-}/opt/navishai"
+etc="${managed_root:-}/etc/navishai"
+state="${managed_root:-}/var/lib/navishai"
+project="${NAVISHAI_COMPOSE_PROJECT:-navishai}"
+verified_bundle_staging=""
+answer_memory_key=""
+selected_host=""
+
+die() { echo "navishai: $*" >&2; exit 1; }
+need_root() { [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 || ${EUID:-$(id -u)} -eq 0 ]] || die "run with sudo"; }
+compose() {
+  local arguments=(--project-name "$project" --env-file "$etc/env" -f "$prefix/current/compose.yaml" -f "$prefix/current/ops/installer/compose.yaml")
+  if [[ -n ${NAVISHAI_TEST_COMPOSE_OVERRIDE:-} ]]; then
+    [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 && -f $NAVISHAI_TEST_COMPOSE_OVERRIDE ]] || die "test Compose override is unavailable"
+    arguments+=(-f "$NAVISHAI_TEST_COMPOSE_OVERRIDE")
+  fi
+  docker compose "${arguments[@]}" "$@"
+}
+compose_at() {
+  local release="$1" arguments
+  shift
+  arguments=(--project-name "$project" --env-file "$etc/env" -f "$release/compose.yaml" -f "$release/ops/installer/compose.yaml")
+  if [[ -n ${NAVISHAI_TEST_COMPOSE_OVERRIDE:-} ]]; then
+    [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 && -f $NAVISHAI_TEST_COMPOSE_OVERRIDE ]] || die "test Compose override is unavailable"
+    arguments+=(-f "$NAVISHAI_TEST_COMPOSE_OVERRIDE")
+  fi
+  docker compose "${arguments[@]}" "$@"
+}
+operation() {
+  operation_at "$prefix/current" "$@"
+}
+operation_at() {
+  local release="$1"
+  shift
+  local compose_files="$release/compose.yaml:$release/ops/installer/compose.yaml"
+  if [[ -n ${NAVISHAI_TEST_COMPOSE_OVERRIDE:-} ]]; then
+    [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 && -f $NAVISHAI_TEST_COMPOSE_OVERRIDE ]] || die "test Compose override is unavailable"
+    compose_files+=":$NAVISHAI_TEST_COMPOSE_OVERRIDE"
+  fi
+  env -u COMPOSE_PROJECT_NAME -u COMPOSE_FILE -u COMPOSE_ENV_FILES -u COMPOSE_PATH_SEPARATOR \
+    COMPOSE_PROJECT_NAME="$project" \
+    COMPOSE_FILE="$compose_files" \
+    COMPOSE_PATH_SEPARATOR=: \
+    COMPOSE_ENV_FILES="$etc/env" \
+    NAVISHAI_RUNNER_CERTS_PATH="$etc/runner" \
+    NAVISHAI_RELEASE_ID="$(basename "$(readlink -f "$release")")" \
+    NAVISHAI_RELEASE_IMAGES_SHA256="$(sha256sum "$release/images.tar" | cut -d' ' -f1)" \
+    NAVISHAI_INSTALL_STATE_PATH="$state" \
+    NAVISHAI_OPERATION_LOCK_HELD=1 \
+    "$@"
+}
+random() { openssl rand -hex 32; }
+progress() {
+  local step="$1" temporary
+  mkdir -p "$state"
+  temporary="$(mktemp "$state/install.json.XXXXXX")"
+  printf '{"schema":1,"release":"%s","step":"%s"}\n' "$(cat "$prefix/current/SOURCE_COMMIT" 2>/dev/null || echo pending)" "$step" >"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$state/install.json"
+}
+lock() {
+  mkdir -p "$state"
+  command -v flock >/dev/null || die "flock is required"
+  exec {install_lock_fd}>"$state/install.lock"
+  flock -n "$install_lock_fd" || die "another mutating operation is running"
+  trap '[[ -z $verified_bundle_staging ]] || rm -rf "$verified_bundle_staging"' EXIT
+}
+validate_answers() {
+  local mode key value secret_file secret_value
+  [[ -z ${NAVISHAI_ANSWERS_FILE:-} ]] && return
+  [[ -f $NAVISHAI_ANSWERS_FILE && ! -L $NAVISHAI_ANSWERS_FILE ]] || die "answer file must be a regular file"
+  mode=$((8#$(stat -c %a "$NAVISHAI_ANSWERS_FILE")))
+  (( (mode & 0077) == 0 )) || die "answer file must not be readable by group or others"
+  declare -A seen=()
+  while IFS='=' read -r key value || [[ -n ${key:-} ]]; do
+    [[ -n $key && -n $value ]] || die "answer file contains an empty field"
+    [[ -z ${seen[$key]:-} ]] || die "answer file contains a duplicate field"
+    seen[$key]=1
+    case "$key" in
+      NAVISHAI_APP_HOST) selected_host="$(validate_hostname "$value")" ;;
+      NAVISHAI_SUPERMEMORY_API_KEY_FILE)
+        secret_file="$value"
+        [[ -f $secret_file && ! -L $secret_file && $(stat -c %u "$secret_file") -eq ${EUID:-$(id -u)} ]] || die "secret reference must be an owned regular file"
+        mode=$((8#$(stat -c %a "$secret_file")))
+        (( (mode & 0077) == 0 )) || die "secret reference must not be readable by group or others"
+        od -An -t x1 "$secret_file" | grep -q '00' && die "secret reference contains unsupported characters"
+        secret_value="$(<"$secret_file")"
+        [[ -n $secret_value && $secret_value != *$'\n'* && $secret_value != *$'\r'* && $secret_value =~ ^[[:graph:]]+$ && $secret_value != *'$'* && $secret_value != *'#'* && $secret_value != *'"'* && $secret_value != *"'"* ]] || die "secret reference contains unsupported characters"
+        answer_memory_key="$secret_value"
+        ;;
+      *) die "answer file contains an unsupported field: $key" ;;
+    esac
+  done <"$NAVISHAI_ANSWERS_FILE"
+}
+
+validate_hostname() {
+  local host="${1,,}" label
+  host="${host%.}"
+  [[ -n $host && ${#host} -le 253 && "$host" != *..* && "$host" != *.invalid && "$host" != *.test && "$host" != localhost && ! "$host" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "a public hostname is required for production TLS"
+  IFS=. read -r -a labels <<<"$host"
+  for label in "${labels[@]}"; do
+    [[ ${#label} -le 63 && "$label" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || die "a public hostname is required for production TLS"
+  done
+  printf '%s\n' "$host"
+}
+
+prepare_setup_host() {
+  local host
+  [[ -f "$etc/env" ]] && return
+  if [[ -z $selected_host ]]; then
+    { : </dev/tty; } 2>/dev/null || die "provide NAVISHAI_APP_HOST in a protected answer file"
+    read -r -p 'Public hostname: ' host </dev/tty
+    selected_host="$(validate_hostname "$host")"
+  fi
+}
+
+preflight() {
+  [[ $(uname -m) == x86_64 ]] || die "only x86-64 hosts are supported"
+  . /etc/os-release
+  [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && $VERSION_ID == 24.04) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04"
+  command -v docker >/dev/null || die "Docker Engine is required"
+  docker compose version >/dev/null || die "Docker Compose v2 is required"
+  [[ $(free -m | awk '/Mem:/ {print $2}') -ge 7168 ]] || echo "navishai: warning: this host has less than the 8 GiB test-host budget" >&2
+}
+
+disk_check() {
+  local bundle="$1" bundle_kib docker_root docker_free root_free required_kib
+  [[ -f "$bundle" ]] || die "bundle not found: $bundle"
+  bundle_kib=$((($(stat -c%s "$bundle") + 1023) / 1024))
+  docker_root="$(docker info --format '{{.DockerRootDir}}')"
+  docker_free="$(df -Pk "$docker_root" | awk 'NR==2 {print $4}')"
+  root_free="$(df -Pk / | awk 'NR==2 {print $4}')"
+  # One source archive, one extracted image archive, one imported image set, plus 2 GiB durable-data headroom.
+  required_kib=$((bundle_kib * 3 + 2097152))
+  if [[ "$docker_free" -lt "$required_kib" || "$root_free" -lt "$required_kib" ]]; then
+    die "insufficient installation space: bundle ${bundle_kib} KiB, required ${required_kib} KiB (archive + extraction + imported images + 2 GiB data headroom); free root ${root_free} KiB, Docker root ${docker_free} KiB"
+  fi
+}
+
+stage_bundle() {
+  local bundle="$1" staging entry expected actual canonical_manifest bundle_kib staging_free
+  [[ -f "$bundle" ]] || die "bundle not found: $bundle"
+  bundle_kib=$((($(stat -c%s "$bundle") + 1023) / 1024))
+  staging_free="$(df -Pk "${TMPDIR:-/tmp}" | awk 'NR==2 {print $4}')"
+  [[ "$staging_free" -ge "$bundle_kib" ]] || die "insufficient temporary space to verify bundle"
+  staging="$(mktemp -d)"
+  verified_bundle_staging="$staging"
+  while IFS= read -r entry; do
+    [[ "$entry" != /* && "$entry" != *"/../"* && "$entry" != ../* && "$entry" != *"//"* ]] || die "bundle contains an unsafe path"
+    case "$entry" in
+      SHA256SUMS|images.tar|release/|release/compose.yaml|release/SOURCE_COMMIT|release/ops/|release/ops/compose/|release/ops/compose/backup|release/ops/compose/lib.sh|release/ops/compose/restore|release/ops/compose/upgrade_preflight|release/ops/compose/verify_backup|release/ops/installer/|release/ops/installer/bootstrap|release/ops/installer/Caddyfile|release/ops/installer/compose.yaml|release/ops/installer/navishai|release/ops/runner/|release/ops/runner/execution.example.json|release/script/|release/script/generate_runner_tls) ;;
+      *) die "bundle contains an unexpected payload: $entry" ;;
+    esac
+  done < <(tar -tf "$bundle")
+  tar -tvf "$bundle" | awk '$1 !~ /^[-d]/ { exit 1 }' || die "bundle contains unsupported entry types"
+  tar -xf "$bundle" -C "$staging"
+  expected='images.tar
+release/SOURCE_COMMIT
+release/compose.yaml
+release/ops/compose/backup
+release/ops/compose/lib.sh
+release/ops/compose/restore
+release/ops/compose/upgrade_preflight
+release/ops/compose/verify_backup
+release/ops/installer/Caddyfile
+release/ops/installer/bootstrap
+release/ops/installer/compose.yaml
+release/ops/installer/navishai
+release/ops/runner/execution.example.json
+release/script/generate_runner_tls'
+  actual="$(cd "$staging" && find images.tar release -type f -printf '%p\n' | LC_ALL=C sort)"
+  [[ "$actual" == "$expected" ]] || die "bundle payload is incomplete or unexpected"
+  canonical_manifest="$(cd "$staging" && find images.tar release -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)"
+  [[ $(cat "$staging/SHA256SUMS") == "$canonical_manifest" ]] || die "bundle manifest is incomplete or unsafe"
+  (cd "$staging" && printf '%s\n' "$canonical_manifest" | sha256sum --check) || die "bundle checksum failed"
+  [[ $(cat "$staging/release/SOURCE_COMMIT") =~ ^[0-9a-f]{40}$ ]] || die "bundle has an invalid source commit"
+  verified_bundle_identity="$(printf '%s\n' "$canonical_manifest" | sha256sum | cut -d' ' -f1)"
+}
+
+install_bundle() {
+  local staging="$verified_bundle_staging" release
+  [[ -n ${staging:-} && -d $staging ]] || die "bundle was not verified"
+  release="$prefix/releases/$verified_bundle_identity"
+  mkdir -p "$prefix/releases" "$etc" "$state"
+  if [[ ! -e "$release" ]]; then
+    mv "$staging/release" "$release" || return
+    mv "$staging/images.tar" "$release/images.tar" || return
+  fi
+  docker image load -i "$release/images.tar" || return
+  ln -sfn "$release" "$prefix/current" || return
+  rm -rf "$staging" || return
+  verified_bundle_staging=""
+}
+
+confirm_setup() {
+  local release="$prefix/releases/$verified_bundle_identity" consent host
+  if [[ -e "$prefix/current" ]]; then
+    [[ "$(readlink -f "$prefix/current")" == "$release" ]] || die "installed release differs from this bundle; use navishai upgrade"
+    host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+    echo "Resume setup for release $verified_bundle_identity at https://$host on ports 80 and 443. Existing environment and runner TLS will be retained."
+  else
+    echo "Install release $verified_bundle_identity for https://$selected_host on ports 80 and 443."
+    echo "Create installer metadata under $state and persistent Docker volumes for PostgreSQL, Rails storage, runner, Supermemory, and Caddy; then start PostgreSQL, runner, web, jobs, and Caddy."
+  fi
+  echo "No firewall, SSH, unrelated service, or package change is part of this step."
+  [[ ${NAVISHAI_SETUP_ACCEPT:-} == yes ]] && return
+  { : </dev/tty; } 2>/dev/null || die "review the setup summary, then rerun with NAVISHAI_SETUP_ACCEPT=yes"
+  read -r -p 'Apply this setup? [yes/no] ' consent </dev/tty
+  [[ $consent == yes ]] || die "no setup changes made"
+}
+
+validate_staged_target() {
+  local staging="$verified_bundle_staging" target_postgres current_postgres_major target_postgres_major current_images_archive target_services current_services
+  [[ -n $staging && -d $staging ]] || die "target bundle was not verified"
+  command -v jq >/dev/null || die "jq is required to inspect the target Compose configuration"
+  docker compose --project-name "$project" --env-file "$etc/env" -f "$staging/release/compose.yaml" -f "$staging/release/ops/installer/compose.yaml" config --quiet || die "target Compose configuration is invalid"
+  current_images_archive="$prefix/current/images.tar"
+  [[ -f "$current_images_archive" ]] || die "changed-image upgrades are temporarily unavailable; the installed release has no retained image archive"
+  cmp -s "$staging/images.tar" "$current_images_archive" || die "changed-image upgrades are temporarily unavailable; restore-compatible recovery is not yet implemented"
+  target_services="$(docker compose --project-name "$project" --env-file "$etc/env" -f "$staging/release/compose.yaml" -f "$staging/release/ops/installer/compose.yaml" config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")} ]')"
+  current_services="$(compose config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")} ]')"
+  [[ "$target_services" == "$current_services" ]] || die "changed-image upgrades are temporarily unavailable; target service image references differ"
+  target_postgres="$(jq -r '.[] | select(.name == "postgres") | .image' <<<"$target_services")"
+  [[ "$target_postgres" == pgvector/pgvector:*@sha256:* ]] || die "target postgres service must use a digest-pinned pgvector image"
+  [[ "$target_postgres" == *"pg15"* || "$target_postgres" == *"pg16"* ]] || die "target PostgreSQL major version is unsupported"
+  target_postgres_major="$(sed -nE 's/.*pg(15|16).*/\1/p' <<<"$target_postgres")"
+  current_postgres_major="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command 'SHOW server_version_num' | sed -nE 's/^([0-9]{2}).*/\1/p')"
+  [[ "$current_postgres_major" == "$target_postgres_major" ]] || die "target PostgreSQL $target_postgres_major does not match installed PostgreSQL $current_postgres_major"
+}
+
+write_env() {
+  if [[ -f "$etc/env" ]]; then
+    if grep -qx 'NAVISHAI_SUPERMEMORY_API_KEY=' "$etc/env"; then
+      sed -i 's/^NAVISHAI_SUPERMEMORY_API_KEY=$/NAVISHAI_SUPERMEMORY_API_KEY=memory-pending-placeholder/' "$etc/env"
+      grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env" || echo 'NAVISHAI_MEMORY_PENDING=1' >>"$etc/env"
+    fi
+    if [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} != 1 || $(id -u) -eq 0 ]]; then
+      chown 1000:1000 "$etc/runner"/*
+      chown root:1000 "$etc/runner"
+    fi
+    chmod 0750 "$etc/runner"
+    chmod 0644 "$etc/runner/ca.crt" "$etc/runner/server.crt"
+    chmod 0600 "$etc/runner/server.key"
+    return
+  fi
+  umask 077
+  local memory_key="${answer_memory_key:-memory-pending-placeholder}"
+  cat >"$etc/env" <<EOF
+NAVISHAI_APP_HOST=$selected_host
+NAVISHAI_SOURCE_COMMIT=$(cat "$prefix/current/SOURCE_COMMIT")
+NAVISHAI_DATABASE_PASSWORD=$(random)
+NAVISHAI_RUNNER_SHARED_SECRET=$(random)
+NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET=$(random)
+NAVISHAI_SECRET_KEY_BASE=$(random)
+NAVISHAI_SUPERMEMORY_API_KEY=$memory_key
+NAVISHAI_MEMORY_PENDING=1
+NAVISHAI_BOOTSTRAP_TOKEN=$(random)
+NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)
+NAVISHAI_RUNNER_CERTS_PATH=$etc/runner
+EOF
+  mkdir -p "$etc/runner"
+  "$prefix/current/script/generate_runner_tls" "$etc/runner"
+  if [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} != 1 || $(id -u) -eq 0 ]]; then
+    chown 1000:1000 "$etc/runner"/*
+    chown root:1000 "$etc/runner"
+  fi
+  chmod 0750 "$etc/runner"
+  chmod 0640 "$etc/env"
+  chmod 0644 "$etc/runner/ca.crt" "$etc/runner/server.crt"
+  chmod 0600 "$etc/runner/server.key"
+}
+
+setup() {
+  need_root
+  [[ $# -eq 1 ]] || die "usage: navishai setup BUNDLE.tar"
+  lock
+  validate_answers
+  stage_bundle "$1"
+  prepare_setup_host
+  preflight
+  disk_check "$1"
+  confirm_setup
+  install_bundle; progress bundle_verified
+  write_env; progress secrets_ready
+  compose up -d --wait postgres runner app-net
+  compose run --rm web bin/rails db:prepare
+  compose up -d --wait web jobs caddy
+  progress infrastructure_started
+  local setup_host
+  setup_host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+  echo "Infrastructure is ready at https://$setup_host."
+  echo "Create the first Owner at https://$setup_host/setup. In a trusted terminal, run: navishai reveal-owner-token --confirm-reveal"
+  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
+    echo "Open setup if you have not created the first Owner. Memory configuration remains incomplete: Supermemory Local 0.0.8 needs approved first-boot provider configuration."
+    echo "The First-Owner token is not printed automatically. Do not record it in terminal output."
+    return 0
+  fi
+  compose up -d supermemory web jobs
+}
+
+status() { need_root; [[ -f "$etc/env" ]] || die "not installed"; compose ps; [[ -f "$state/install.json" ]] && cat "$state/install.json"; grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env" && echo "memory: pending configuration"; }
+doctor() { need_root; preflight; status; }
+reveal_owner_token() {
+  need_root
+  [[ $# -eq 1 && $1 == --confirm-reveal ]] || die "usage: navishai reveal-owner-token --confirm-reveal"
+  [[ -f "$etc/env" ]] || die "not installed"
+  { : >/dev/tty; } 2>/dev/null || die "reveal the token only from a trusted interactive terminal"
+  echo "Terminal recording can expose this token. Continue only in a trusted terminal." >/dev/tty
+  sed -n 's/^NAVISHAI_BOOTSTRAP_TOKEN=//p' "$etc/env" >/dev/tty
+}
+backup() { need_root; [[ $# -eq 1 ]] || die "usage: navishai backup PATH"; lock; operation "$prefix/current/ops/compose/backup" "$1"; operation "$prefix/current/ops/compose/verify_backup" "$1"; }
+release_for_backup() {
+  local archive="$1" release_id images_sha release
+  [[ -f "$archive/manifest" ]] || die "backup manifest is required to select a restore release"
+  release_id="$(sed -n 's/^managed_release_id=//p' "$archive/manifest")"
+  images_sha="$(sed -n 's/^managed_images_sha256=//p' "$archive/manifest")"
+  [[ "$release_id" =~ ^[0-9a-f]{64}$ && "$images_sha" =~ ^[0-9a-f]{64}$ ]] || die "managed backup lacks exact release identity metadata"
+  release="$prefix/releases/$release_id"
+  [[ -f "$release/images.tar" && "$(sha256sum "$release/images.tar" | cut -d' ' -f1)" == "$images_sha" ]] || die "no retained release matches the managed backup image archive"
+  printf '%s\n' "$release"
+}
+restore() {
+  need_root
+  [[ $# -eq 2 && $2 == --confirm-destroy ]] || die "usage: navishai restore PATH --confirm-destroy"
+  local release status
+  lock
+  operation "$prefix/current/ops/compose/verify_backup" "$1"
+  release="$(release_for_backup "$1")"
+  compose stop caddy jobs web runner supermemory
+  if docker image load -i "$release/images.tar"; then
+    :
+  else
+    status=$?
+    restore_failure image_load "$status"
+  fi
+  if operation_at "$release" "$release/ops/compose/restore" "$1" "$2"; then
+    :
+  else
+    status=$?
+    restore_failure data "$status"
+  fi
+  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
+    compose_at "$release" up -d --wait runner web jobs caddy || restore_failure readiness "$?"
+  else
+    compose_at "$release" up -d --wait supermemory runner web jobs caddy || restore_failure readiness "$?"
+  fi
+  ln -sfn "$release" "$prefix/current" || restore_failure current_align "$?"
+  progress restore_completed
+}
+restore_failure() {
+  local phase="$1" status="$2"
+  compose stop caddy jobs web runner supermemory || true
+  progress "restore_${phase}_restore_required"
+  printf 'navishai: restore %s failed; restore remains required\n' "$phase" >&2
+  exit "$status"
+}
+upgrade() {
+  need_root
+  [[ $# -eq 3 && $3 == --confirm-apply ]] || die "usage: navishai upgrade VERIFIED_BACKUP TARGET.tar --confirm-apply"
+  local backup="$1" target="$2"
+  lock
+  stage_bundle "$target"
+  validate_staged_target
+  disk_check "$target"
+  operation "$prefix/current/ops/compose/upgrade_preflight" "$backup"
+  echo "Upgrade will stop writers, prepare the target database once, and recreate application services. A failed migration requires restore from the verified backup."
+  compose stop caddy jobs web runner supermemory
+  progress upgrade_writers_stopped
+  if install_bundle; then
+    progress upgrade_target_promoted
+  else
+    upgrade_failure target_load "$?"
+  fi
+  if compose up -d --wait postgres app-net runner; then
+    :
+  else
+    upgrade_failure target_start "$?"
+  fi
+  if compose run --rm web bin/rails db:prepare; then
+    :
+  else
+    upgrade_failure prepare "$?"
+  fi
+  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
+    compose up -d --wait web jobs caddy || upgrade_failure health "$?"
+  else
+    compose up -d --wait supermemory web jobs caddy || upgrade_failure health "$?"
+  fi
+  progress upgrade_completed
+}
+
+upgrade_failure() {
+  local phase="$1" status="$2"
+  compose stop caddy jobs web runner supermemory || true
+  progress "upgrade_${phase}_restore_required"
+  printf 'navishai: upgrade %s failed; restore from the verified backup before retrying\n' "$phase" >&2
+  exit "$status"
+}
+
+case "${1:-}" in
+  setup) shift; setup "$@" ;;
+  status) status ;;
+  doctor) doctor ;;
+  reveal-owner-token) shift; reveal_owner_token "$@" ;;
+  backup) shift; backup "$@" ;;
+  restore) shift; restore "$@" ;;
+  upgrade) shift; upgrade "$@" ;;
+  *) echo "usage: navishai {setup|status|doctor|reveal-owner-token|backup|restore|upgrade}" >&2; exit 2 ;;
+esac

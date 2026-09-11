@@ -1,0 +1,13 @@
+{
+  admin off
+  auto_https disable_redirects
+}
+
+{$NAVISHAI_APP_HOST} {
+  encode zstd gzip
+  reverse_proxy app-net:3000
+}
+
+http://{$NAVISHAI_APP_HOST} {
+  redir https://{host}{uri} permanent
+}

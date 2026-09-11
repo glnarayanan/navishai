@@ -115,6 +115,26 @@ class ComposeOperationsTest < ActiveSupport::TestCase
     assert_equal 3, commands.count { |command| command.include?("--entrypoint sh") }
   end
 
+  test "pending-memory restore starts the namespace holder before state copies without starting memory" do
+    archive = File.join(@temporary, "backup")
+    environment_file = File.join(@temporary, "pending.env")
+    File.write(environment_file, "NAVISHAI_MEMORY_PENDING=1\n")
+    _stdout, stderr, backup_status = run_operation("backup", archive, "COMPOSE_ENV_FILES" => environment_file)
+    assert backup_status.success?, stderr
+    File.write(@log, "")
+
+    _stdout, restore_stderr, restore_status = run_operation(
+      "restore", archive, "--confirm-destroy", "COMPOSE_ENV_FILES" => environment_file
+    )
+
+    assert restore_status.success?, restore_stderr
+    commands = File.readlines(@log, chomp: true)
+    holder_index = commands.index { |command| command.include?("up -d app-net") }
+    copy_index = commands.index { |command| command.include?("--entrypoint sh supermemory") }
+    assert_operator holder_index, :<, copy_index
+    refute commands.any? { |command| command.include?("up -d supermemory") }
+  end
+
   test "upgrade preflight binds a verified backup to supported infrastructure" do
     archive = File.join(@temporary, "backup")
     certs = File.join(@temporary, "runner-certs")

@@ -2,9 +2,15 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 9 September 2026
+**Updated:** 10 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
+
+## Installer evidence, September 2026
+
+The unmerged installer has native fake-Docker coverage for bundle validation, locks, answer files, consent-gated setup, safe same-release resume, and a no-token terminal handoff to first-Owner setup, plus backup/restore helpers and upgrade success and failure phases. Disposable Docker evidence covers local-CA first Owner setup, runner ownership, signed callback and artifact flow, pending-memory service suppression, isolated restore of an attachment, memory sentinel, and vault readability metadata, including the managed backup-metadata restore path. A helper-only upgrade retained those records but reused application images, so it proves command, promotion, and retention behavior—not application-image or schema-change compatibility. The restore proof does not validate provider credentials or ClamAV. Public ACME, release signing, changed-image upgrade recovery, and the remaining guided bootstrap/checklist scope remain incomplete. The explicit `reveal-owner-token --confirm-reveal` command warns about terminal recording. Production cache, queue, and cable databases use Ruby schemas while primary uses SQL.
+
+See [installer acceptance evidence](./INSTALLER_ACCEPTANCE_EVIDENCE.md) for the disposable-host record and its limits.
 
 ## 1. Capability matrix
 
@@ -15,7 +21,7 @@ Status values: **Built** (implemented on the unmerged stack; evidence below), **
 | Requirement | Status | Where | Notes |
 |---|---|---|---|
 | Multi-organisation tenancy with isolated Workspaces | Done | `Organization`, `Workspace`, `Membership`, `WorkspaceAuthorization` | Cross-Workspace access fails closed in controllers, jobs, search, memory, integrations, and runner requests. |
-| Local auth, verification, reset, invitations, first-Owner bootstrap | Done | `SessionsController`, `VerificationsController`, `PasswordsController`, `WorkspaceInvitations*`, `FirstOwnerBootstrap` | Bootstrap closes after first use. |
+| Local auth, verification, reset, invitations, first-Owner bootstrap | Partial | `SessionsController`, `VerificationsController`, `PasswordsController`, `WorkspaceInvitations*`, `FirstOwnerBootstrap` | Bootstrap requires an expiring deployment token and closes after first use. The installer can stage a verified local candidate, ask for consent, and preserve same-release state on resume; HTTPS and browser handoff acceptance remain incomplete. |
 | Generic OpenID Connect | Done | `OidcProvider`, `OidcSessionsController` | Code flow with PKCE, state, nonce, exact issuer, allowlisted algorithms; binds only an existing verified User. |
 | Protected break-glass administrator | Done | `BreakGlassSessionsController`, `navishai:break_glass:create` | Loopback-only route, deployment token plus password, 15-minute sessions. |
 | Owner, Admin, Manager, Member, Viewer roles | Done | `Membership::ROLES` | Role matrix enforced in controllers and services. |
@@ -149,6 +155,15 @@ Branch `claude/docs-build-contracts-review-nx2rly` from main `5e35f5e3d3d536f000
 | Seeds, SBOM | Pass; 89 locked production components |
 | Runner isolation suite | Omitted: no Landlock on that kernel; fails under `bin/ci` by design |
 | Live Compose paths | Omitted: no Docker or Podman on that host |
+
+### 10 September 2026 installer I0 investigation
+
+An a1.medium Debian 12 x86-64 orb ran the uncommitted installer-plan and first-Owner snapshot through a real disposable Docker Engine 29.8.0 daemon with Compose v5.5.1. It built the current local Compose images, but did not install a release bundle or run an installer.
+
+- **Host measurement:** 4 CPUs, 7.8 GiB RAM, and 60 GiB free before build; 42 GiB free after. The images totalled 1.262 GiB and build cache 1.732 GiB. This is a test measurement, not a support minimum.
+- **Security boundary:** the runner used uid 1000, dropped all capabilities, enabled `no-new-privileges`, had no Docker socket, and joined only the internal control network. Runner data, Rails storage, and the `0600` runner key were accessible to the intended uid.
+- **Blocker:** pinned Supermemory Local 0.0.8 needs a provider key or interactive first boot before it becomes ready. Its doctor confirmed encrypted uid-1000 persistent state and local embeddings, but reported no model-provider key. No credential, provider request, or log-based key capture occurred. The full stack therefore cannot prove a no-credential guided install until this prerequisite has an approved safe path.
+- **Exposure boundary:** Supermemory shares the edge network and publishes port 3000 while Rails and jobs share its network namespace. This test did not prove intended public ingress only, so the guided HTTPS design remains unresolved.
 
 ### 27 August 2026 rebaseline
 

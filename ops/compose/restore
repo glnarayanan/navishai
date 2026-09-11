@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$root/ops/compose/lib.sh"
 cd "$root"
 
+require_operation_lock
 require_command docker
 archive="${1:-}"
 confirmation="${2:-}"
@@ -19,6 +20,7 @@ compose up -d --wait postgres
 restore_started=true
 trap 'if [[ "$restore_started" == true ]]; then stop_application || true; fi' EXIT
 stop_application
+compose up -d app-net
 
 for database in navishai_production navishai_production_cache navishai_production_queue navishai_production_cable; do
   compose exec -T postgres dropdb --username navishai --if-exists --force "$database"
@@ -29,11 +31,13 @@ done
 
 compose run --rm -T --no-deps --entrypoint sh supermemory -c \
   'find /var/lib/supermemory -mindepth 1 -delete && tar -C /var/lib/supermemory -xf -' <"$archive/supermemory-state.tar"
-compose up -d supermemory
+if ! memory_pending; then
+  compose up -d supermemory
+fi
 compose run --rm -T --no-deps --entrypoint sh web -c \
   'find /rails/storage -mindepth 1 -delete && tar -C /rails/storage -xf -' <"$archive/rails-storage.tar"
 compose run --rm -T --no-deps --entrypoint sh runner -c \
-  'find /var/lib/navishai -mindepth 1 -delete && tar -C /var/lib/navishai -xf -' <"$archive/runner-state.tar"
+  'for entry in /var/lib/navishai/* /var/lib/navishai/.[!.]*; do [ -e "$entry" ] || continue; [ "$entry" = /var/lib/navishai/runtime ] || rm -rf -- "$entry"; done && tar -C /var/lib/navishai --exclude=runtime --exclude="runtime/*" -xf -' <"$archive/runner-state.tar"
 
 start_application
 restore_started=false

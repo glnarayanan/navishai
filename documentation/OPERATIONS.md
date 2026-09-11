@@ -68,6 +68,10 @@ ops/compose/verify_backup /secure/backups/navishai-2026-08-24
 
 The backup command starts PostgreSQL if needed, stops jobs, web, and the runner, dumps all four databases, then stops Supermemory while copying its state. It restarts the application after the snapshot. If any step fails, it tries to restart the application and leaves the partial directory for diagnosis; never treat that directory as a backup.
 
+On a managed installation, use `navishai backup` and `navishai restore`. Direct release helpers detect the managed layout and take the same non-blocking operation lock, so they fail rather than race setup, upgrade, backup, or restore. The checked-out native deployment helpers retain their existing direct-use contract.
+
+`navishai restore` selects the retained release whose `SOURCE_COMMIT` matches the verified backup manifest and refuses if it is absent. `navishai upgrade` still accepts only a target whose verified `images.tar` exactly matches the archive retained with the installed release. It compares archive bytes, not Compose image tags. This deliberately blocks application-image upgrades; it does not prove that equal archives have compatible application or schema behavior.
+
 The `navishai-backup-v1` directory contains:
 
 - custom-format dumps for primary, cache, queue, and cable PostgreSQL databases;

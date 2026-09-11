@@ -5,9 +5,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$root/ops/compose/lib.sh"
 cd "$root"
 
+require_operation_lock
 require_command docker
 destination="${1:-backups/navishai-$(date -u +%Y%m%dT%H%M%SZ)}"
 [[ ! -e "$destination" ]] || { printf 'Backup destination already exists: %s\n' "$destination" >&2; exit 1; }
+execution_config="${NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH:-$root/ops/runner/execution.example.json}"
+[[ -f "$execution_config" ]] || { printf 'Runner execution config does not exist: %s\n' "$execution_config" >&2; exit 1; }
+compose config --quiet
 mkdir -p "$destination"
 
 restart_needed=false
@@ -27,22 +31,35 @@ for database in navishai_production navishai_production_cache navishai_productio
 done
 
 compose run --rm -T --no-deps --entrypoint tar web -C /rails/storage -cf - . >"$destination/rails-storage.tar"
-compose run --rm -T --no-deps --entrypoint tar runner -C /var/lib/navishai -cf - . >"$destination/runner-state.tar"
-compose stop supermemory
-compose run --rm -T --no-deps --entrypoint tar supermemory -C /var/lib/supermemory -cf - . >"$destination/supermemory-state.tar"
+compose run --rm -T --no-deps --entrypoint tar runner -C /var/lib/navishai --exclude=runtime --exclude=runtime/* -cf - . >"$destination/runner-state.tar"
+if memory_pending; then
+  compose run --rm -T --no-deps --entrypoint tar supermemory -C /var/lib/supermemory -cf - . >"$destination/supermemory-state.tar"
+else
+  compose stop supermemory
+  compose run --rm -T --no-deps --entrypoint tar supermemory -C /var/lib/supermemory -cf - . >"$destination/supermemory-state.tar"
+fi
 
 compose config --images | sort >"$destination/images.txt"
-if [[ -f .env ]]; then
-  sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; s/=.*//p' .env | LC_ALL=C sort -u >"$destination/environment-keys.txt"
+environment_file="${COMPOSE_ENV_FILES:-$root/.env}"
+if [[ -f "$environment_file" ]]; then
+  sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; s/=.*//p' "$environment_file" | LC_ALL=C sort -u >"$destination/environment-keys.txt"
 else
   : >"$destination/environment-keys.txt"
 fi
 {
   printf 'format=navishai-backup-v1\n'
   printf 'created_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf 'source_revision=%s\n' "$(git rev-parse HEAD 2>/dev/null || printf unknown)"
+  printf 'source_revision=%s\n' "$(cat SOURCE_COMMIT 2>/dev/null || git rev-parse HEAD 2>/dev/null || printf unknown)"
   printf 'compose_sha256=%s\n' "$(sha256sum compose.yaml | cut -d' ' -f1)"
-  printf 'environment_sha256=%s\n' "$(if [[ -f .env ]]; then sha256sum .env | cut -d' ' -f1; else printf absent; fi)"
+  printf 'environment_sha256=%s\n' "$(if [[ -f "$environment_file" ]]; then sha256sum "$environment_file" | cut -d' ' -f1; else printf absent; fi)"
+  if [[ -n ${NAVISHAI_RELEASE_ID:-} || -n ${NAVISHAI_RELEASE_IMAGES_SHA256:-} ]]; then
+    [[ ${NAVISHAI_RELEASE_ID:-} =~ ^[0-9a-f]{64}$ && ${NAVISHAI_RELEASE_IMAGES_SHA256:-} =~ ^[0-9a-f]{64}$ ]] || {
+      printf 'Managed backup release metadata is invalid.\n' >&2
+      exit 1
+    }
+    printf 'managed_release_id=%s\n' "$NAVISHAI_RELEASE_ID"
+    printf 'managed_images_sha256=%s\n' "$NAVISHAI_RELEASE_IMAGES_SHA256"
+  fi
 } >"$destination/manifest"
 
 (

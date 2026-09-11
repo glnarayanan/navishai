@@ -2,6 +2,10 @@ require "test_helper"
 
 class FirstOwnerBootstrapTest < ActiveSupport::TestCase
   setup do
+    @original_token = ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
+    @original_expiry = ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"]
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN"] = "b" * 32
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.hour.from_now.iso8601
     InstallationState.delete_all
     WorkspaceInvitation.delete_all
     Session.delete_all
@@ -16,6 +20,29 @@ class FirstOwnerBootstrapTest < ActiveSupport::TestCase
     Workspace.delete_all
     Organization.delete_all
     User.delete_all
+  end
+
+  teardown do
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN"] = @original_token
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = @original_expiry
+  end
+
+  test "requires an unexpired deployment token" do
+    assert FirstOwnerBootstrap.available?
+    assert FirstOwnerBootstrap.valid_token?("b" * 32)
+
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
+
+    assert_not FirstOwnerBootstrap.available?
+    assert_not FirstOwnerBootstrap.valid_token?("b" * 32)
+  end
+
+  test "fails closed when token expiry is missing or malformed" do
+    ENV.delete("NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT")
+    assert_not FirstOwnerBootstrap.available?
+
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = "not-a-time"
+    assert_not FirstOwnerBootstrap.available?
   end
 
   test "creates the first verified owner atomically" do
