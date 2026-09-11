@@ -593,6 +593,36 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_https_verification_waits_for_certificate_issuance_within_the_bounded_window
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      stdout, stderr, status = run_setup(root, bundle, "FAKE_HTTPS_FAIL_COUNT" => "2",
+        "NAVISHAI_HTTPS_WAIT_SECONDS" => "30", "NAVISHAI_TEST_HTTPS_INTERVAL" => "0")
+
+      assert status.success?, stderr
+      assert_includes stderr, "waiting for HTTPS"
+      assert_includes stdout, "Infrastructure and HTTPS are ready"
+      assert_equal 3, docker_log(root).lines.count { |line| line.include?("https://install.example/up") }
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_verified"
+    end
+  end
+
+  def test_https_verification_gives_up_after_the_bounded_window_without_a_200
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle, "FAKE_HTTPS_STATUS" => "302",
+        "NAVISHAI_HTTPS_WAIT_SECONDS" => "1", "NAVISHAI_TEST_HTTPS_INTERVAL" => "0")
+
+      assert_not status.success?
+      assert_includes stderr, "waiting for HTTPS"
+      assert_includes stderr, "HTTPS could not be verified"
+      assert_operator docker_log(root).lines.count { |line| line.include?("https://install.example/up") }, :>=, 2
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "https_unverified"
+    end
+  end
+
   def test_https_redirect_does_not_count_as_readiness
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
@@ -1299,7 +1329,16 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/docker")
     File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) printf '%s' \"${FAKE_PORT_80:-}\";; *:443*) printf '%s' \"${FAKE_PORT_443:-}\";; esac\n")
     FileUtils.chmod(0o755, "#{bin}/ss")
-    File.write("#{bin}/curl", "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DOCKER_TEST_LOG\"\n[ \"${FAKE_HTTPS_FAIL:-}\" != 1 ] || exit 1\nprintf '%s' \"${FAKE_HTTPS_STATUS:-200}\"\n")
+    File.write("#{bin}/curl", <<~SH)
+      #!/bin/sh
+      printf '%s\\n' "$*" >>"$DOCKER_TEST_LOG"
+      count="$(cat "$NAVISHAI_MANAGED_ROOT/curl-count" 2>/dev/null || echo 0)"
+      count=$((count + 1))
+      printf '%s' "$count" >"$NAVISHAI_MANAGED_ROOT/curl-count"
+      [ "${FAKE_HTTPS_FAIL:-}" != 1 ] || exit 1
+      [ "$count" -gt "${FAKE_HTTPS_FAIL_COUNT:-0}" ] || exit 1
+      printf '%s' "${FAKE_HTTPS_STATUS:-200}"
+    SH
     FileUtils.chmod(0o755, "#{bin}/curl")
     File.write("#{bin}/stat", <<~SH)
       #!/bin/sh
@@ -1322,7 +1361,7 @@ class InstallerTest < ActiveSupport::TestCase
     answers = "#{root}/answers"
     File.write(answers, "NAVISHAI_APP_HOST=install.example\n")
     FileUtils.chmod(0o600, answers)
-    run_installer(root, "setup", bundle, { "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes" }.merge(environment))
+    run_installer(root, "setup", bundle, { "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes", "NAVISHAI_HTTPS_WAIT_SECONDS" => "0" }.merge(environment))
   end
 
   def docker_log(root)
