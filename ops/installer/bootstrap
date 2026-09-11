@@ -13,7 +13,10 @@ die() { echo "navishai bootstrap: $*" >&2; exit 1; }
 
 fetch_candidate() {
   local checksum_file expected destination partial
-  [[ $bundle == https://* ]] || return
+  if [[ $bundle == *://* && $bundle != https://* ]]; then
+    die "candidate downloads must use HTTPS"
+  fi
+  [[ $bundle == https://* ]] || return 0
   checksum_file="${NAVISHAI_CANDIDATE_SHA256_FILE:-}"
   [[ -f $checksum_file && ! -L $checksum_file && $(stat -c %u "$checksum_file") -eq ${EUID:-$(id -u)} ]] || die "provide an owned trusted candidate checksum file"
   [[ $((8#$(stat -c %a "$checksum_file"))) -le 0600 ]] || die "candidate checksum file must not be readable by group or others"
