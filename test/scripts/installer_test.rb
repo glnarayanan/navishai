@@ -605,6 +605,24 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_setup_image_load_failure_keeps_release_complete_for_safe_retry
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, _stderr, status = run_setup(root, bundle, "DOCKER_FAIL_MATCH" => "image load -i")
+
+      assert_not status.success?
+      refute_path_exists "#{root}/opt/navishai/current"
+      refute_path_exists "#{root}/etc/navishai/env"
+      release = Dir.glob("#{root}/opt/navishai/releases/*").first
+      assert_path_exists "#{release}/images.tar"
+      assert_path_exists "#{release}/SOURCE_COMMIT"
+      _stdout, retry_stderr, retry_status = run_setup(root, bundle)
+      assert retry_status.success?, retry_stderr
+      assert_equal release, File.realpath("#{root}/opt/navishai/current")
+    end
+  end
+
   def test_normalizes_a_valid_public_hostname_before_writing_environment
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)

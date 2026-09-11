@@ -200,13 +200,19 @@ release/script/generate_runner_tls'
 }
 
 install_bundle() {
-  local staging="$verified_bundle_staging" release
+  local staging="$verified_bundle_staging" release temporary_release
   [[ -n ${staging:-} && -d $staging ]] || die "bundle was not verified"
   release="$prefix/releases/$verified_bundle_identity"
   mkdir -p "$prefix/releases" "$etc" "$state"
   if [[ ! -e "$release" ]]; then
-    mv "$staging/release" "$release" || return
-    mv "$staging/images.tar" "$release/images.tar" || return
+    temporary_release="$prefix/releases/.${verified_bundle_identity}.tmp"
+    rm -rf "$temporary_release"
+    mkdir "$temporary_release" || return
+    mv "$staging/release" "$temporary_release/release" || return
+    mv "$staging/images.tar" "$temporary_release/images.tar" || return
+    mv "$temporary_release/release" "$release" || return
+    mv "$temporary_release/images.tar" "$release/images.tar" || return
+    rmdir "$temporary_release" || return
   fi
   docker image load -i "$release/images.tar" || return
   ln -sfn "$release" "$prefix/current" || return
