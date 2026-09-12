@@ -65,3 +65,33 @@ The latest vault/attachment roundtrip did not repeat every earlier artifact and 
 
 Native fake-Docker tests now accept a changed application image when saved-image identity, topology, infrastructure pins, PostgreSQL major, and migrate-status checks pass. This check host has no Docker daemon, so the live procedure in [APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md) was not executed. Do not treat fixture success as old/new digest proof.
 
+## Cloud-agent check-host reconciliation, 12 September 2026
+
+Host: Ubuntu 24.04.4, Linux 6.12.94+ x86-64, commit `baa0a96`. Docker Engine is not installed (`docker: command not found`). This is not a clean supported-host install of a published candidate.
+
+Applicable procedures that **were** run here:
+
+| Procedure | Result |
+|---|---|
+| Native installer suite `bin/rails test test/scripts/installer_test.rb` | 92 runs, 732 assertions, 0 failures. Includes identical-archive upgrades and the new application-image fixtures. |
+| A1 memory verification fixtures | Implemented and tested on `cursor/memory-verification-efe6` (`bccf343`). Live engine not exercised. |
+
+Named remaining procedures that **were not** run. Omissions are not passes.
+
+| Procedure | Why omitted | Resume |
+|---|---|---|
+| Exact candidate on a supported clean Ubuntu 24.04 or Debian 12 host | This pod is not a fresh installer target and has no Docker | Operator-owned clean host + candidate |
+| Reboot and SSH interruption | No managed install, no SSH service under test | Disposable install with operator access |
+| Public DNS, ACME issuance/renewal, external ingress | No public hostname, no ACME account, no ingress | Public DNS and TLS operator |
+| Live application-image digest upgrade | No Docker daemon (BLK-002) | [APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md) |
+| Live self-hosted memory round trip | No Supermemory service (BLK-001) | Isolated first-boot key + Owner checklist |
+| Live ClamAV scanner | No clamd | Configured daemon + Owner test |
+| Live SMTP send/receive | No mailbox credentials | Protected system-mail answers + inbox proof |
+| Approved live provider or connector | No owner credentials | Existing connector/runtime test pages |
+| Legacy DOC conversion in a **built** image | No Docker image build | Manual built-image smoke on a Docker host |
+| Release signing and verification-key distribution | No signing identity | Owner-chosen identity; do not invent one |
+| I5 admin who did not build the installer | Out of scope for this worker | Independent operator |
+
+No credentials were invented. No customer messages were sent. No releases were published.
+
+
