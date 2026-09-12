@@ -115,7 +115,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
 | Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
-| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals and revisions are on `cursor/scorecard-revision-efe6`. |
+| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, and inspected-preview publish are on `cursor/scorecard-preview-efe6`. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -145,6 +145,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 12 September 2026 scorecard preview evidence (C3)
+
+On `cursor/scorecard-preview-efe6` from C2. The preview discloses the 500-snapshot cap. Publish and rollback require the inspected backtest currently on the page (`expected_backtest_id` must be the latest for that version). If retained snapshots change after that preview, publish is rejected until the human refreshes it. An accepted runner proposal still cannot publish without that inspected preview. Focused checks: scorecard service/controller/proposal/demo 23 runs, 177 assertions; three system tests, 53 assertions. RuboCop clean on touched Ruby files.
 
 ### 12 September 2026 scorecard proposal revision (C2)
 

@@ -57,7 +57,8 @@ class HealthScorecardsController < ApplicationController
   def publish
     version = @workspace.health_scorecard.versions.find(params[:version_id])
     HealthScorecardPublisher.publish!(workspace: @workspace, membership: @membership, version:,
-      expected_current_version_id: params[:expected_current_version_id])
+      expected_current_version_id: params[:expected_current_version_id],
+      expected_backtest_id: params[:expected_backtest_id])
     redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
       notice: "Version #{version.version_number} now scores future account snapshots."
   end
@@ -65,7 +66,8 @@ class HealthScorecardsController < ApplicationController
   def rollback
     version = @workspace.health_scorecard.versions.find(params[:version_id])
     HealthScorecardPublisher.rollback!(workspace: @workspace, membership: @membership, version:,
-      expected_current_version_id: params[:expected_current_version_id])
+      expected_current_version_id: params[:expected_current_version_id],
+      expected_backtest_id: params[:expected_backtest_id])
     redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
       notice: "Future scoring rolled back to version #{version.version_number}."
   end

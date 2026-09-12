@@ -21,6 +21,7 @@ class HealthScorecardTest < ApplicationSystemTestCase
     click_button "Run preview and backtest"
     assert_text "Preview and historical backtest saved"
     assert_text "snapshots tested"
+    assert_text "at most 500 retained snapshots"
 
     page.current_window.resize_to(1024, 900)
     assert_no_horizontal_overflow

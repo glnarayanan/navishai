@@ -21,7 +21,8 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
     post backtest_workspace_health_scorecard_path(@workspace), params: { version_id: version.id }
     assert_redirected_to workspace_health_scorecard_path(@workspace, version_id: version.id, anchor: "preview")
     post publish_workspace_health_scorecard_path(@workspace), params: {
-      version_id: version.id, expected_current_version_id: @workspace.health_scorecard.current_version_id
+      version_id: version.id, expected_current_version_id: @workspace.health_scorecard.current_version_id,
+      expected_backtest_id: version.backtests.order(generated_at: :desc, id: :desc).pick(:id)
     }
     assert_redirected_to workspace_health_scorecard_path(@workspace, version_id: version.id)
     assert_equal version, @workspace.health_scorecard.reload.current_version
