@@ -59,6 +59,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Inbox and case workspace UX | Done | `SupportCasesController`, `support_cases` views | Queue filters, history, responsive conversation view, next-action rail, concise Account context. |
 | SLA engine with calendars, holidays, pause, warnings, escalation | Done | `SlaEngine`, `ServiceCalendar`, `SlaPolicy`, `CaseSla`, `SlaEscalationTask` | Boundary-time deterministic tests. |
 | Workspace support quality readout | Built | `SupportQualityReadout`, `SupportQualityController` | Read-only live SLA, reopen, unproofed-resolution, and blocked-draft counts from retained PostgreSQL facts. Members and viewers can read. Does not score Accounts or send messages. On `cursor/support-quality-efe6`. |
+| Knowledge improvement queue | Built | `KnowledgeImprovementQueue`, `KnowledgeImprovementsController` | Read-only list of stale, deleted, retired, and failed-sync sources. Members and viewers can read. Does not mutate knowledge or send messages. On `cursor/knowledge-improvements-efe6`. |
 | Shared-email intake with signed webhook, threading, duplicate suppression | Done | `SharedEmailIntake`, `Webhooks::SharedEmailController`, `InboundEmailDelivery`, `EmailThread` | 10 MiB source, 1 MiB text, five-minute skew. |
 | Human-only email send with attribution, idempotency, unknown-outcome review | Done | `HumanEmailSend`, `HumanSendAuthorization`, `OutboundEmailDelivery`, `EmailRepliesController` | No agent or job entry point; retry cannot duplicate. |
 | Attachments with sniffing, limits, quarantine, authorised download | Done | `AttachmentIntake`, `StoredAttachment`, `AttachmentDownloadsController` | PDF, text, PNG, JPEG, GIF by signature; 5 MiB per file, 10 MiB per message. |
@@ -152,6 +153,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 On `cursor/support-quality-efe6` from verified `main` (`aa4b079`). Every Workspace member, including Viewer, can open a read-only Quality page that counts open cases, open first-response and resolution SLA breaches, latest retained reopen and unproofed-resolution health signals, proofed resolutions, and current contract-blocked drafts. Open case volume alone is not attention. Generating the page does not score Accounts or send messages. Cross-Workspace paths fail closed. Independent of the A/B and C stacks. Focused checks: presenter and controller 8 runs, 72 assertions; one system test, 14 assertions including 320px overflow and a case link. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
 
 See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs and remaining C/D/E slices.
+
+### 12 September 2026 knowledge improvement queue (D2)
+
+On `cursor/knowledge-improvements-efe6` from D1. Every Workspace member, including Viewer, can open a read-only Improvements page that lists stale (expired or sync-unavailable), deleted, retired, and failed-sync knowledge sources. Current sources stay off the queue. Cross-Workspace paths fail closed. The Knowledge library links to the queue. Focused checks: presenter, controller, and system 6 runs, 54 assertions, including 320px overflow and a stale-source link. RuboCop clean on touched Ruby files.
 
 ### 11 September 2026 stacked follow-up checkpoint
 
