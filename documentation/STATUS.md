@@ -126,7 +126,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Human-edit provenance on drafts | Done | `HumanDraftProvenance`, provenance columns on drafts and deliveries | |
 | Explain this outcome | Done | `OutcomeExplanation`, `OutcomeExplanationsController` | Reachable from case, Account, run, health assessment. |
 | Usage, budget, and cost rollups | Done | `UsageCostSnapshot`, `UsageRateSetting(Version)`, `UsageRatesController` | Unknown cost never shown as zero. |
-| Account dossier and concise case context | Done | `AccountDossier` presenter | Bounded caps and query budgets tested. |
+| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Deterministic account work-queue queries exist for attention, renewal, and intervention views; the Accounts UI still lists by name until the queue surface ships. |
 | Reliability and recovery cockpit with operational checks | Done | `ReliabilityCockpit`, `ReliabilityRecovery`, `OperationalCheck` | Five explicit states; bounded actions only. |
 | Verified Workspace archive round trip | Done | `WorkspacePortability`, `WorkspaceDataControlsController#verify_archive`, [WORKSPACE_ARCHIVE.md](./WORKSPACE_ARCHIVE.md) | Owner-only; atomic target creation plus check record. |
 | Governed policy change: preview, canary, publish, rollback | Done | `GovernedPolicyChange`, `GovernedPolicyResolver`, `GovernedPolicy*` models | Explicit scopes only; rollback affects future work only. |
@@ -253,6 +253,8 @@ Listed in the order they unblock a pilot. None of these blocks owner review of t
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
+The daily operating-workspace phase is in progress on stacked branches from 12 September 2026. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). This `main`-based branch adds `AccountWorkQueue` only. Memory verification, changed-image upgrades, and installer acceptance evidence live on the A stack.
+
 ## 4. External boundaries
 
 These need something outside the repository and are labelled as such rather than converted into passing evidence.
@@ -283,7 +285,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 11 September 2026 | Move the Go development, module, host-preparation, and runner build pins from 1.27.0 to 1.27.1. Historical verification records retain the versions actually tested. |
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
 | 11 September 2026 | Keep rejecting changed-image `navishai upgrade` targets on main until a scoped supported path is implemented and proven on a genuinely changed application image; the experimental recovery evidence does not relax that guard. |
-| 11 September 2026 | Cap the existing transitive `json` gem below 3.0. Active Support 8.1.3.1 passes `JSON.parse` options positionally, which json 3.0 rejects, so every jsonb attribute read raised `ArgumentError`. Remove the cap once a Rails release supports json 3. |
+| 12 September 2026 | Start the daily operating-workspace phase. Independent B-stack work derives account attention and renewal queues from existing assessments, investigations, and interventions. Do not persist an AI priority score or infer Account ownership from intervention ownership. |
 
 ### Approved implementation scope — 6 September 2026
 

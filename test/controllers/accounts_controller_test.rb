@@ -50,6 +50,17 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "index stays name-ordered without a work-queue view" do
+    zebra = @workspace.accounts.create!(name: "Zebra Queue")
+    alpha = @workspace.accounts.create!(name: "Alpha Queue")
+
+    get workspace_accounts_path(@workspace)
+    assert_response :success
+    names = css_select(".account-list-name strong").map(&:text)
+    assert_operator names.index(alpha.name), :<, names.index(zebra.name)
+    assert_select ".account-work-queue", count: 0
+  end
+
   test "paginates accounts without loading contacts or assessment history" do
     51.times { |index| @workspace.accounts.create!(name: "Page account #{index.to_s.rjust(2, "0")}") }
     12.times do |index|
