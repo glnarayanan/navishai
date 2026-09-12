@@ -58,6 +58,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Conversations, messages, cases, lifecycle, assignment, tags, notes, priority, resume and reopen | Done | `CaseWorkflow`, `SupportCase`, `SupportCaseStatusChange`, `ConversationThread` | Every transition records actor, source, time, reason, prior state. |
 | Inbox and case workspace UX | Done | `SupportCasesController`, `support_cases` views | Queue filters, history, responsive conversation view, next-action rail, concise Account context. |
 | SLA engine with calendars, holidays, pause, warnings, escalation | Done | `SlaEngine`, `ServiceCalendar`, `SlaPolicy`, `CaseSla`, `SlaEscalationTask` | Boundary-time deterministic tests. |
+| Workspace support quality readout | Built | `SupportQualityReadout`, `SupportQualityController` | Read-only live SLA, reopen, unproofed-resolution, and blocked-draft counts from retained PostgreSQL facts. Members and viewers can read. Does not score Accounts or send messages. On `cursor/support-quality-efe6`. |
 | Shared-email intake with signed webhook, threading, duplicate suppression | Done | `SharedEmailIntake`, `Webhooks::SharedEmailController`, `InboundEmailDelivery`, `EmailThread` | 10 MiB source, 1 MiB text, five-minute skew. |
 | Human-only email send with attribution, idempotency, unknown-outcome review | Done | `HumanEmailSend`, `HumanSendAuthorization`, `OutboundEmailDelivery`, `EmailRepliesController` | No agent or job entry point; retry cannot duplicate. |
 | Attachments with sniffing, limits, quarantine, authorised download | Done | `AttachmentIntake`, `StoredAttachment`, `AttachmentDownloadsController` | PDF, text, PNG, JPEG, GIF by signature; 5 MiB per file, 10 MiB per message. |
@@ -145,6 +146,12 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 12 September 2026 support quality readout (D1)
+
+On `cursor/support-quality-efe6` from verified `main` (`aa4b079`). Every Workspace member, including Viewer, can open a read-only Quality page that counts open cases, open first-response and resolution SLA breaches, latest retained reopen and unproofed-resolution health signals, proofed resolutions, and current contract-blocked drafts. Open case volume alone is not attention. Generating the page does not score Accounts or send messages. Cross-Workspace paths fail closed. Independent of the A/B and C stacks. Focused checks: presenter and controller 8 runs, 72 assertions; one system test, 14 assertions including 320px overflow and a case link. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
+
+See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs and remaining C/D/E slices.
 
 ### 11 September 2026 stacked follow-up checkpoint
 

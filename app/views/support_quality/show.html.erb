@@ -1,0 +1,85 @@
+<% content_for :title, "Support quality · #{Current.workspace.name} — NavishAI" %>
+<% content_for :page_status do %>
+  <span class="<%= @readout.attention? ? "status-badge status-warning" : "status-badge" %>">
+    <%= @readout.attention? ? "Work open" : "Quiet" %>
+  </span>
+<% end %>
+
+<main class="quality-page">
+  <header class="quality-heading">
+    <div>
+      <h1>Support quality</h1>
+      <p>Live case and SLA clocks plus the latest retained Account health evidence. This page does not score accounts or send messages.</p>
+    </div>
+    <p class="quality-verdict <%= @readout.attention? ? "is-attention" : "is-quiet" %>">
+      <span>Workspace quality</span>
+      <strong><%= @readout.attention? ? "Work is open" : "No counted issues" %></strong>
+    </p>
+  </header>
+
+  <section class="quality-metrics" aria-label="Support quality counts">
+    <% @readout.metrics.each do |metric| %>
+      <article class="quality-metric tone-<%= metric.tone %>" data-metric="<%= metric.key %>">
+        <span><%= metric.label %></span>
+        <strong><%= metric.value %></strong>
+        <p><%= metric.detail %></p>
+      </article>
+    <% end %>
+  </section>
+
+  <div class="quality-columns">
+    <section aria-labelledby="breached-title">
+      <h2 id="breached-title">Open SLA breaches</h2>
+      <% if @readout.breached_cases.empty? %>
+        <p class="quality-empty">No open case currently has a breached first-response or resolution clock.</p>
+      <% else %>
+        <ul class="quality-list">
+          <% @readout.breached_cases.each do |row| %>
+            <li>
+              <%= link_to row.path do %>
+                <%= row.title %>
+                <span><%= row.detail %></span>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+
+    <section aria-labelledby="unproofed-title">
+      <h2 id="unproofed-title">Accounts with unproofed resolutions</h2>
+      <% if @readout.unproofed_accounts.empty? %>
+        <p class="quality-empty">Latest health snapshots do not currently count resolutions without contract proof.</p>
+      <% else %>
+        <ul class="quality-list">
+          <% @readout.unproofed_accounts.each do |row| %>
+            <li>
+              <%= link_to row.path do %>
+                <%= row.title %>
+                <span><%= row.detail %></span>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+
+    <section aria-labelledby="blocked-title">
+      <h2 id="blocked-title">Blocked resolution drafts</h2>
+      <% if @readout.blocked_drafts.empty? %>
+        <p class="quality-empty">No current draft is retained as contract-blocked.</p>
+      <% else %>
+        <ul class="quality-list">
+          <% @readout.blocked_drafts.each do |row| %>
+            <li>
+              <%= link_to row.path do %>
+                <%= row.title %>
+                <span><%= row.detail %></span>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+  </div>
+</main>

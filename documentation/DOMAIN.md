@@ -33,6 +33,7 @@ Use these terms in product copy, code, tests, and design notes.
 - **Service calendar:** one Workspace’s named business hours, time zone, and holiday dates used for SLA calculations.
 - **SLA policy:** the active first-response target, resolution target, and warning threshold for one Case priority. A Case snapshots its policy when its SLA starts. Clock settings, calendars, and holidays become immutable once a Case uses them; later configuration creates a replacement for new Cases.
 - **Case SLA:** the durable first-response and resolution clocks for one Case, including warnings, deadlines, pauses, and outcomes. Reopening a resolved or closed Case reactivates its resolution clock without counting terminal time.
+- **Support quality readout:** one Workspace-scoped, read-only view of live Case and SLA clocks plus the latest retained Account health evidence for reopens, unproofed resolutions, and current contract-blocked drafts. It does not score Accounts or send messages.
 - **First response:** the first recorded outbound Message in a Conversation. Recording it for SLA purposes does not grant authority to send it.
 - **SLA pause:** time in Waiting on Customer. Only business minutes in that interval extend pending SLA deadlines.
 - **SLA escalation task:** an idempotent internal warning or breach item for one Case SLA objective.

@@ -94,6 +94,7 @@ Rails.application.routes.draw do
       post "runs/:run_id/retry", action: :retry_run, as: :retry_run
       post :reconstruct_memory
     end
+    resource :support_quality, path: "support-quality", only: :show, controller: "support_quality"
     get "explain/:subject_type/:subject_id", to: "outcome_explanations#show",
       as: :outcome_explanation, constraints: { subject_type: /case|account|run|health-assessment/ }
     resource :health_scorecard, path: "scorecard", only: :show do
