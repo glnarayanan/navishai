@@ -152,7 +152,7 @@ On `cursor/phase-handoff-efe6` from E1. The daily operating-workspace phase is e
 
 ### Independent D stack (D1–D3, not on this branch)
 
-D1–D3 were implemented from verified `main` and stay on `cursor/support-quality-efe6`, `cursor/knowledge-improvements-efe6`, and `cursor/knowledge-follow-up-efe6`. This C/E branch does not contain that code.
+D1–D3 were implemented from verified `main` and stay on [PR #117](https://github.com/glnarayanan/navishai/pull/117) `cursor/support-quality-efe6`, [PR #119](https://github.com/glnarayanan/navishai/pull/119) `cursor/knowledge-improvements-efe6`, and [PR #121](https://github.com/glnarayanan/navishai/pull/121) `cursor/knowledge-follow-up-efe6`. This C/E branch does not contain that code.
 
 On D1, every Workspace member including Viewer can open a read-only Quality page that counts open cases, open first-response and resolution SLA breaches, latest retained reopen and unproofed-resolution health signals, proofed resolutions, and current contract-blocked drafts. Open case volume alone is not attention. The page does not score Accounts or send messages. Focused checks: presenter and controller 8 runs, 72 assertions; one system test, 14 assertions.
 
