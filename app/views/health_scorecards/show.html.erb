@@ -66,6 +66,62 @@
       </section>
 
       <% if @membership.can_write? %>
+        <section class="scorecard-ai" aria-labelledby="ai-proposal-title">
+          <header>
+            <div>
+              <h2 id="ai-proposal-title">Ask for a constrained proposal</h2>
+              <p>The model may suggest supported signals and weights. It never calculates authoritative health. Accepting is a separate action and still leaves the version unpublished.</p>
+            </div>
+          </header>
+          <%= form_with url: generate_workspace_health_scorecard_path(@workspace), class: "scorecard-form" do |form| %>
+            <div class="field scorecard-goal">
+              <%= form.label :proposal_prompt, "What should this scorecard emphasise?" %>
+              <%= form.text_area :proposal_prompt, required: true, minlength: 10, maxlength: 2000, rows: 3,
+                placeholder: "Make approaching renewal and repeated SLA breaches matter more." %>
+              <span class="field-hint">Plain language only. Unsupported requests such as call sentiment or churn prediction are reported, not invented.</span>
+            </div>
+            <%= form.submit "Generate AI proposal", class: "button button-primary" %>
+          <% end %>
+
+          <% if @pending_proposal_run %>
+            <p class="muted-copy" role="status">A proposal run is in progress through the approved runtime. Scores are unchanged.</p>
+          <% end %>
+
+          <% if @proposals.any? %>
+            <ul class="scorecard-ai-list">
+              <% @proposals.each do |proposal| %>
+                <li class="scorecard-ai-item">
+                  <p class="version-label"><%= proposal.validation_status.humanize %></p>
+                  <p><%= proposal.explanation %></p>
+                  <% if proposal.validation_detail.present? %>
+                    <p class="muted-copy">Validation: <%= proposal.validation_detail %></p>
+                  <% end %>
+                  <% if proposal.unsupported_requests.any? %>
+                    <p class="muted-copy">Unsupported: <%= proposal.unsupported_requests.join(" ") %></p>
+                  <% end %>
+                  <% if proposal.assumptions.any? %>
+                    <p class="muted-copy">Assumptions: <%= proposal.assumptions.join(" ") %></p>
+                  <% end %>
+                  <% if proposal.missing_evidence.any? %>
+                    <p class="muted-copy">Missing evidence: <%= proposal.missing_evidence.join(" ") %></p>
+                  <% end %>
+                  <p class="scorecard-evidence">
+                    Runtime <%= proposal.execution_run.selected_adapter_key %>
+                    · <%= proposal.execution_run.runtime_selection_reason %>
+                    <% if proposal.accepted? %>
+                      · accepted as version <%= proposal.accepted_version.version_number %>
+                    <% end %>
+                  </p>
+                  <% if proposal.acceptable? %>
+                    <%= button_to "Accept into unpublished version", accept_workspace_health_scorecard_path(@workspace),
+                      params: { proposal_id: proposal.id }, class: "button button-secondary" %>
+                  <% end %>
+                </li>
+              <% end %>
+            </ul>
+          <% end %>
+        </section>
+
         <details class="scorecard-designer scorecard-stage" name="scorecard-stage" <%= "open" if proposal_open %>>
           <summary>
             <span class="section-number">01</span>

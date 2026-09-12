@@ -115,7 +115,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
 | Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
-| Conversational scorecard designer with backtest, publish, rollback | Done | `HealthScorecardDesigner`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | |
+| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals are on `cursor/scorecard-proposal-efe6`. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -145,6 +145,12 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 12 September 2026 scorecard proposal (C1)
+
+On `cursor/scorecard-proposal-efe6` from `origin/main` (`aa4b079`). Writers can request a constrained scorecard proposal through the versioned runner. Crew tasks gain a Workspace-level `health_scorecard` scope. The Success Strategist role is reused; no ninth agent role. Output is validated against `HealthScorecardDefinition` and retained as an append-only `HealthScorecardProposal`. Generating a proposal does not publish or recalculate scores. Accepting creates an unpublished version. The manual designer remains when no compatible runtime is approved. Proof is the scripted adapter via the execution ledger; live model execution is not claimed. Focused checks: 15 scorecard proposal/controller tests, 119 assertions; related crew, ledger, and expiry suites; both scorecard system tests, including generate-and-accept without publishing. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
+
+See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs and remaining C/D/E slices.
 
 ### 11 September 2026 stacked follow-up checkpoint
 
@@ -283,7 +289,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 11 September 2026 | Move the Go development, module, host-preparation, and runner build pins from 1.27.0 to 1.27.1. Historical verification records retain the versions actually tested. |
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
 | 11 September 2026 | Keep rejecting changed-image `navishai upgrade` targets on main until a scoped supported path is implemented and proven on a genuinely changed application image; the experimental recovery evidence does not relax that guard. |
-| 11 September 2026 | Cap the existing transitive `json` gem below 3.0. Active Support 8.1.3.1 passes `JSON.parse` options positionally, which json 3.0 rejects, so every jsonb attribute read raised `ArgumentError`. Remove the cap once a Rails release supports json 3. |
+| 12 September 2026 | Scorecard AI proposals use a Workspace-level `health_scorecard` crew-task scope and the existing Success Strategist role rather than a ninth agent role. The model proposes configuration only; deterministic scoring and publication stay human-gated. |
 
 ### Approved implementation scope — 6 September 2026
 

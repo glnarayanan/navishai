@@ -158,6 +158,21 @@ CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cuto
 DECLARE affected integer; total integer;
 BEGIN
   total := expire_workspace_content_before_governed_policy(target_workspace_id, cutoff);
+  LOCK TABLE health_scorecard_proposals IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE health_scorecard_proposals DISABLE TRIGGER USER;
+  UPDATE health_scorecard_proposals
+    SET prompt = '[Expired by retention policy]',
+        explanation = '[Expired by retention policy]',
+        assumptions = '[]'::jsonb,
+        unsupported_requests = '[]'::jsonb,
+        missing_evidence = '[]'::jsonb,
+        validation_detail = CASE WHEN validation_detail IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff
+      AND prompt <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  ALTER TABLE health_scorecard_proposals ENABLE TRIGGER USER;
+
   LOCK TABLE governed_policy_proposals, governed_policy_previews, governed_policy_publications
     IN ACCESS EXCLUSIVE MODE;
   ALTER TABLE governed_policy_proposals DISABLE TRIGGER USER;
@@ -929,11 +944,11 @@ BEGIN
   END IF;
   IF TG_OP <> 'UPDATE' OR
      ROW(OLD.id, OLD.workspace_id, OLD.task_key, OLD.scope_kind, OLD.support_case_id, OLD.account_id,
-         OLD.crew_template_id, OLD.owner_membership_id, OLD.owner_user_id, OLD.title,
+         OLD.health_scorecard_id, OLD.crew_template_id, OLD.owner_membership_id, OLD.owner_user_id, OLD.title,
          OLD.input_context, OLD.expected_output, OLD.created_at)
        IS DISTINCT FROM
      ROW(NEW.id, NEW.workspace_id, NEW.task_key, NEW.scope_kind, NEW.support_case_id, NEW.account_id,
-         NEW.crew_template_id, NEW.owner_membership_id, NEW.owner_user_id, NEW.title,
+         NEW.health_scorecard_id, NEW.crew_template_id, NEW.owner_membership_id, NEW.owner_user_id, NEW.title,
          NEW.input_context, NEW.expected_output, NEW.created_at) OR
      NEW.current_event_id IS NOT DISTINCT FROM OLD.current_event_id THEN
     RAISE EXCEPTION 'crew task identity and history are durable';
@@ -2431,14 +2446,14 @@ CREATE FUNCTION public.validate_crew_task_dependency() RETURNS trigger
     AS $$
 DECLARE task_scope record; dependency_scope record;
 BEGIN
-  SELECT scope_kind, support_case_id, account_id INTO task_scope
+  SELECT scope_kind, support_case_id, account_id, health_scorecard_id INTO task_scope
   FROM crew_tasks WHERE id = NEW.crew_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
-  SELECT scope_kind, support_case_id, account_id INTO dependency_scope
+  SELECT scope_kind, support_case_id, account_id, health_scorecard_id INTO dependency_scope
   FROM crew_tasks WHERE id = NEW.depends_on_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
   IF task_scope IS NULL OR dependency_scope IS NULL OR
-     ROW(task_scope.scope_kind, task_scope.support_case_id, task_scope.account_id)
+     ROW(task_scope.scope_kind, task_scope.support_case_id, task_scope.account_id, task_scope.health_scorecard_id)
        IS DISTINCT FROM
-     ROW(dependency_scope.scope_kind, dependency_scope.support_case_id, dependency_scope.account_id) OR
+     ROW(dependency_scope.scope_kind, dependency_scope.support_case_id, dependency_scope.account_id, dependency_scope.health_scorecard_id) OR
      EXISTS (
        WITH RECURSIVE ancestors(id) AS (
          SELECT depends_on_task_id FROM crew_task_dependencies
@@ -3593,6 +3608,7 @@ CREATE TABLE public.crew_tasks (
     scope_kind character varying NOT NULL,
     support_case_id bigint,
     account_id bigint,
+    health_scorecard_id bigint,
     crew_template_id bigint NOT NULL,
     assigned_agent_profile_id bigint NOT NULL,
     assigned_agent_profile_version_id bigint NOT NULL,
@@ -3609,7 +3625,7 @@ CREATE TABLE public.crew_tasks (
     resolution_contract_version_id bigint,
     CONSTRAINT crew_tasks_content CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
     CONSTRAINT crew_tasks_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
-    CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
+    CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL) AND (health_scorecard_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL) AND (health_scorecard_id IS NULL)) OR (((scope_kind)::text = 'health_scorecard'::text) AND (health_scorecard_id IS NOT NULL) AND (support_case_id IS NULL) AND (account_id IS NULL)))),
     CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('in_progress'::character varying)::text, ('blocked'::character varying)::text, ('review_requested'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))
 );
 
@@ -4332,6 +4348,56 @@ ALTER SEQUENCE public.health_scorecard_design_turns_id_seq OWNED BY public.healt
 
 
 --
+-- Name: health_scorecard_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecard_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    health_scorecard_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    execution_run_id bigint NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    prompt text NOT NULL,
+    proposed_definition jsonb,
+    explanation text NOT NULL,
+    assumptions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    unsupported_requests jsonb DEFAULT '[]'::jsonb NOT NULL,
+    missing_evidence jsonb DEFAULT '[]'::jsonb NOT NULL,
+    validation_status character varying NOT NULL,
+    validation_detail text,
+    payload_digest character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT health_scorecard_proposals_collections CHECK (((jsonb_typeof(assumptions) = 'array'::text) AND (jsonb_array_length(assumptions) <= 20) AND (jsonb_typeof(unsupported_requests) = 'array'::text) AND (jsonb_array_length(unsupported_requests) <= 20) AND (jsonb_typeof(missing_evidence) = 'array'::text) AND (jsonb_array_length(missing_evidence) <= 20))),
+    CONSTRAINT health_scorecard_proposals_content CHECK ((((octet_length(prompt) >= 1) AND (octet_length(prompt) <= 2000)) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)) AND ((validation_detail IS NULL) OR ((octet_length(validation_detail) >= 1) AND (octet_length(validation_detail) <= 2000))))),
+    CONSTRAINT health_scorecard_proposals_definition CHECK (((((validation_status)::text = 'valid'::text) AND (proposed_definition IS NOT NULL)) OR (((validation_status)::text <> 'valid'::text) AND (proposed_definition IS NULL)))),
+    CONSTRAINT health_scorecard_proposals_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT health_scorecard_proposals_status CHECK (((validation_status)::text = ANY (ARRAY[('valid'::character varying)::text, ('invalid'::character varying)::text, ('unsupported'::character varying)::text, ('incomplete'::character varying)::text])))
+);
+
+
+--
+-- Name: health_scorecard_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecard_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecard_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecard_proposals_id_seq OWNED BY public.health_scorecard_proposals.id;
+
+
+--
 -- Name: health_scorecard_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4347,6 +4413,7 @@ CREATE TABLE public.health_scorecard_versions (
     created_by_user_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    source_proposal_id bigint,
     CONSTRAINT health_scorecard_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT health_scorecard_versions_content CHECK (((octet_length(design_prompt) >= 1) AND (octet_length(design_prompt) <= 4000) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)))),
     CONSTRAINT health_scorecard_versions_number CHECK ((version_number > 0))
@@ -7785,6 +7852,13 @@ ALTER TABLE ONLY public.health_scorecard_design_turns ALTER COLUMN id SET DEFAUL
 
 
 --
+-- Name: health_scorecard_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals ALTER COLUMN id SET DEFAULT nextval('public.health_scorecard_proposals_id_seq'::regclass);
+
+
+--
 -- Name: health_scorecard_versions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -8634,6 +8708,14 @@ ALTER TABLE ONLY public.health_scorecard_backtests
 
 ALTER TABLE ONLY public.health_scorecard_design_turns
     ADD CONSTRAINT health_scorecard_design_turns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: health_scorecard_proposals health_scorecard_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT health_scorecard_proposals_pkey PRIMARY KEY (id);
 
 
 --
@@ -9960,6 +10042,13 @@ CREATE INDEX index_crew_tasks_on_account_and_status ON public.crew_tasks USING b
 
 
 --
+-- Name: index_crew_tasks_on_scorecard_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_scorecard_and_status ON public.crew_tasks USING btree (workspace_id, health_scorecard_id, status);
+
+
+--
 -- Name: index_crew_tasks_on_case_and_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10398,6 +10487,41 @@ CREATE INDEX index_health_scorecard_design_turns_on_workspace_id ON public.healt
 --
 
 CREATE UNIQUE INDEX index_health_scorecard_design_turns_on_workspace_id_and_id ON public.health_scorecard_design_turns USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_execution_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_proposals_on_execution_run_id ON public.health_scorecard_proposals USING btree (execution_run_id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_scorecard_and_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_scorecard_and_created ON public.health_scorecard_proposals USING btree (health_scorecard_id, created_at);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_workspace_id ON public.health_scorecard_proposals USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_proposals_on_workspace_id_and_id ON public.health_scorecard_proposals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_versions_on_source_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_versions_on_source_proposal_id ON public.health_scorecard_versions USING btree (source_proposal_id) WHERE (source_proposal_id IS NOT NULL);
 
 
 --
@@ -12830,6 +12954,20 @@ CREATE TRIGGER health_scorecard_design_turns_no_truncate BEFORE TRUNCATE ON publ
 
 
 --
+-- Name: health_scorecard_proposals health_scorecard_proposals_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_proposals_append_only BEFORE DELETE OR UPDATE ON public.health_scorecard_proposals FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_proposals health_scorecard_proposals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_proposals_no_truncate BEFORE TRUNCATE ON public.health_scorecard_proposals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
 -- Name: health_scorecard_versions health_scorecard_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -13510,6 +13648,14 @@ ALTER TABLE ONLY public.crew_tasks
 
 
 --
+-- Name: crew_tasks fk_crew_tasks_health_scorecard; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_health_scorecard FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
 -- Name: crew_tasks fk_crew_tasks_assigned_version; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13755,6 +13901,62 @@ ALTER TABLE ONLY public.execution_runs
 
 ALTER TABLE ONLY public.health_scorecard_versions
     ADD CONSTRAINT fk_health_scorecard_versions_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: health_scorecard_proposals fk_health_scorecard_proposals_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_health_scorecard_proposals_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: health_scorecard_versions fk_health_scorecard_versions_source_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_health_scorecard_versions_source_proposal FOREIGN KEY (workspace_id, source_proposal_id) REFERENCES public.health_scorecard_proposals(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_workspace; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_workspace FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_scorecard; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_scorecard FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_task; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_task FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_run FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_user FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -16684,6 +16886,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260913010000'),
 ('20260911120000'),
 ('20260906060000'),
 ('20260906050000'),
