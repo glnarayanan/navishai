@@ -19,19 +19,26 @@ class AccountWorkQueue
   ].freeze
 
   Row = Data.define(
-    :account, :assessment, :open_investigation, :relevant_intervention, :inclusion_reasons, :as_of
+    :account, :assessment, :open_investigation, :relevant_intervention, :inclusion_reasons, :as_of, :view
   ) do
     def health_unknown? = assessment.nil?
     def renewal_unknown? = assessment.nil? || assessment.renewal_on.nil?
     def comparable_material_change? = assessment&.material_change? && assessment.previous_assessment_id.present?
     def accountable_membership = relevant_intervention&.accountable_membership
     def action_anchor
-      return "risk-reviews" if inclusion_reasons.include?("open_investigation")
-      return "interventions" if inclusion_reasons.intersect?(
-        %w[intervention_awaiting_approval intervention_overdue completed_awaiting_outcome_review]
-      )
+      case view
+      when "interventions_awaiting_approval", "interventions_overdue", "completed_awaiting_outcome_review"
+        "customer-success-interventions"
+      when "renewal_approaching"
+        "health-assessment"
+      else
+        return "risk-reviews" if inclusion_reasons.include?("open_investigation")
+        return "customer-success-interventions" if inclusion_reasons.intersect?(
+          %w[intervention_awaiting_approval intervention_overdue completed_awaiting_outcome_review]
+        )
 
-      nil
+        "health-assessment" if assessment
+      end
     end
   end
 
@@ -67,7 +74,7 @@ class AccountWorkQueue
     ids = account_ids_for(view:, page:)
     has_next = ids.length > PAGE_SIZE
     ids = ids.first(PAGE_SIZE)
-    Page.new(view:, rows: rows_for(ids), page:, has_next_page: has_next, as_of: @as_of)
+    Page.new(view:, rows: rows_for(ids, view:), page:, has_next_page: has_next, as_of: @as_of)
   end
 
   private
@@ -89,11 +96,12 @@ class AccountWorkQueue
       Account.connection.select_values(sql).map(&:to_i)
     end
 
-    def rows_for(ids)
+    def rows_for(ids, view:)
       return [] if ids.empty?
 
       accounts = @workspace.accounts.where(id: ids).index_by(&:id)
       assessments = latest_assessments(ids)
+      ActiveRecord::Associations::Preloader.new(records: assessments.values, associations: :previous_assessment).call
       investigations = open_investigations(ids)
       interventions_by_account = relevant_interventions_by_account(ids)
       ids.filter_map do |id|
@@ -106,7 +114,7 @@ class AccountWorkQueue
           account:, assessment:, open_investigation: investigations[id],
           relevant_intervention: interventions.min_by { |intervention| intervention_sort_key(intervention) },
           inclusion_reasons: reasons_for(assessment:, investigation: investigations[id], interventions:),
-          as_of: @as_of
+          as_of: @as_of, view:
         )
       end
     end

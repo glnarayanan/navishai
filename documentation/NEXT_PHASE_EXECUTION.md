@@ -15,7 +15,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | A2 Changed-image upgrade | tested | `cursor/app-image-upgrade-efe6` `baa0a96` | Fixture-complete. Live Docker digest proof is BLK-002. GitHub PR blocked by BLK-003. |
 | A3 Deployment acceptance | tested | `cursor/deployment-acceptance-efe6` `bfb3f91` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
 | B1 Portfolio queries | tested | `AccountWorkQueue` | Fixture-complete. Independent of A2; branched from `main`. GitHub PR blocked by BLK-003. |
-| B2 Retention queue UI | not started | — | Depends on B1. |
+| B2 Retention queue UI | tested | Accounts index filters and deep links | Desktop/390/320 system coverage. GitHub PR blocked by BLK-003. |
 | B3 Intervention follow-up | not started | — | Depends on B2. |
 | C1 Scorecard proposal | not started | — | Starts from verified `main`. |
 | C2 Proposal revision | not started | — | Depends on C1. |
@@ -47,3 +47,4 @@ Recorded for opening. GitHub PR creation is BLK-003.
 | `cursor/app-image-upgrade-efe6` | `cursor/memory-verification-efe6` | A2 | feat: support verified application image upgrades |
 | `cursor/deployment-acceptance-efe6` | `cursor/app-image-upgrade-efe6` | A3 | docs: record applicable installer acceptance omissions |
 | `cursor/account-work-queries-efe6` | `main` | B1 | feat: query account attention and renewal work |
+| `cursor/retention-queue-ui-efe6` | `cursor/account-work-queries-efe6` | B2 | feat: surface account work in the retention queue |

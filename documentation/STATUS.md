@@ -126,7 +126,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Human-edit provenance on drafts | Done | `HumanDraftProvenance`, provenance columns on drafts and deliveries | |
 | Explain this outcome | Done | `OutcomeExplanation`, `OutcomeExplanationsController` | Reachable from case, Account, run, health assessment. |
 | Usage, budget, and cost rollups | Done | `UsageCostSnapshot`, `UsageRateSetting(Version)`, `UsageRatesController` | Unknown cost never shown as zero. |
-| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Deterministic account work-queue queries exist for attention, renewal, and intervention views; the Accounts UI still lists by name until the queue surface ships. |
+| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Accounts lists fixed attention, renewal, and intervention views with shareable `view` params. Intervention reassignment and follow-up notifications are not in this branch. |
 | Reliability and recovery cockpit with operational checks | Done | `ReliabilityCockpit`, `ReliabilityRecovery`, `OperationalCheck` | Five explicit states; bounded actions only. |
 | Verified Workspace archive round trip | Done | `WorkspacePortability`, `WorkspaceDataControlsController#verify_archive`, [WORKSPACE_ARCHIVE.md](./WORKSPACE_ARCHIVE.md) | Owner-only; atomic target creation plus check record. |
 | Governed policy change: preview, canary, publish, rollback | Done | `GovernedPolicyChange`, `GovernedPolicyResolver`, `GovernedPolicy*` models | Explicit scopes only; rollback affects future work only. |

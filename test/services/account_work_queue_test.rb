@@ -83,7 +83,7 @@ class AccountWorkQueueTest < ActiveSupport::TestCase
     assert_equal [ awaiting.id ], approval_page.rows.map { |row| row.account.id }.uniq
     assert_equal 1, approval_page.rows.count { |row| row.account.id == awaiting.id }
     assert_equal duplicate.accountable_membership, approval_page.rows.first.accountable_membership
-    assert_equal "interventions", approval_page.rows.first.action_anchor
+    assert_equal "customer-success-interventions", approval_page.rows.first.action_anchor
 
     overdue_page = queue.page(view: "interventions_overdue")
     assert_equal [ overdue.id ], overdue_page.rows.map { |row| row.account.id }
