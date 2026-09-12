@@ -1,6 +1,6 @@
 require "application_system_test_case"
 
-class AccountWorkQueueTest < ApplicationSystemTestCase
+class AccountRetentionQueueTest < ApplicationSystemTestCase
   setup do
     @workspace = workspaces(:acme_support)
     @owner = memberships(:owner_support)
