@@ -32,6 +32,12 @@ class KnowledgeSource < ApplicationRecord
     (knowledge_sync_observation&.unavailable_at.present? && knowledge_sync_observation.unavailable_at <= at) || current_version&.stale?(at: at) || false
   end
 
+  def left_improvement_queue?
+    return false if deleted? || stale?
+    current = current_version
+    current.present? && versions.any? { |version| version.id != current.id && version.stale?(at: current.retrieved_at) }
+  end
+
   def display_title
     current_version&.source_title.presence || title
   end

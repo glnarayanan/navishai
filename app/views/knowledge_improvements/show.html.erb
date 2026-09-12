@@ -46,4 +46,25 @@
       </ul>
     <% end %>
   </section>
+
+  <section aria-labelledby="improved-list-title">
+    <h2 id="improved-list-title">Recently improved</h2>
+    <% if @queue.improved.empty? %>
+      <p class="improvement-empty">Sources leave this queue when a new current version is no longer stale. Version lineage on the source remains the follow-up evidence.</p>
+    <% else %>
+      <ul class="improvement-list">
+        <% @queue.improved.each do |item| %>
+          <li>
+            <%= link_to item.path do %>
+              <span class="improvement-list-main">
+                <strong><%= item.source.display_title %></strong>
+                <span><%= item.detail %></span>
+              </span>
+              <span class="status-badge status-success">Improved</span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
 </main>

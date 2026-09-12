@@ -44,4 +44,27 @@ class KnowledgeImprovementsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :not_found
   end
+
+  test "adding a current version moves the source into recently improved" do
+    source = KnowledgeIngestion.create!(
+      workspace: @workspace, membership: @owner,
+      source_kind: :manual, title: "Expired recovery", content: "Legacy cancellation steps",
+      expires_at: 1.minute.ago
+    )
+    sign_in_as users(:owner)
+
+    patch workspace_knowledge_source_path(@workspace, source), params: {
+      knowledge_source: { content: "Use the new recovery link from the account owner." }
+    }
+    follow_redirect!
+
+    assert_select ".notice-success", text: /left the improvement queue/
+    assert_select ".knowledge-version-list li", count: 2
+
+    get workspace_knowledge_improvements_path(@workspace)
+    assert_select "[data-metric=attention] strong", "0"
+    assert_select "[data-metric=improved] strong", "1"
+    assert_select "#improved-list-title + ul a", text: /Expired recovery/
+    assert_select "#improvement-list-title + p", text: /No stale/
+  end
 end
