@@ -115,7 +115,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
 | Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
-| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, and inspected-preview publish are on `cursor/scorecard-preview-efe6`. |
+| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, inspected-preview publish, and the C1–C3 journey proof are on `cursor/integrated-scenario-efe6`. Not merged. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -146,6 +146,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 12 September 2026 scorecard proposal journey (E1)
+
+On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). D1–D3 remain on the independent `cursor/support-quality-efe6` … `cursor/knowledge-follow-up-efe6` stack and are not merged into this branch. Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
+
 ### 12 September 2026 scorecard preview evidence (C3)
 
 On `cursor/scorecard-preview-efe6` from C2. The preview discloses the 500-snapshot cap. Publish and rollback require the inspected backtest currently on the page (`expected_backtest_id` must be the latest for that version). If retained snapshots change after that preview, publish is rejected until the human refreshes it. An accepted runner proposal still cannot publish without that inspected preview. Focused checks: scorecard service/controller/proposal/demo 23 runs, 177 assertions; three system tests, 53 assertions. RuboCop clean on touched Ruby files.
@@ -158,7 +162,7 @@ On `cursor/scorecard-revision-efe6` from C1 (`2282798`). Writers can revise a re
 
 On `cursor/scorecard-proposal-efe6` from `origin/main` (`aa4b079`). Writers can request a constrained scorecard proposal through the versioned runner. Crew tasks gain a Workspace-level `health_scorecard` scope. The Success Strategist role is reused; no ninth agent role. Output is validated against `HealthScorecardDefinition` and retained as an append-only `HealthScorecardProposal`. Generating a proposal does not publish or recalculate scores. Accepting creates an unpublished version. The manual designer remains when no compatible runtime is approved. Proof is the scripted adapter via the execution ledger; live model execution is not claimed. Focused checks: 15 scorecard proposal/controller tests, 119 assertions; related crew, ledger, and expiry suites; both scorecard system tests, including generate-and-accept without publishing. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
 
-See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs and remaining C/D/E slices.
+See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs, C/D/E branch state, and remaining GitHub PRs (BLK-003).
 
 ### 11 September 2026 stacked follow-up checkpoint
 
