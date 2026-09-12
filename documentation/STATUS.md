@@ -2,9 +2,15 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 11 September 2026
+**Updated:** 12 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
+
+## Orb development evidence, 12 September 2026
+
+The committed orb setup installs the pinned Ruby 4.0.6 and Go 1.27.1 toolchains, PostgreSQL 16 with pgvector 0.8.6, system packages, locked application dependencies, and prepared development and test databases. Its warm package check no longer treats the removed `postgresql-contrib-16` virtual package as missing. Two warm setup runs took 4.26 and 4.25 seconds, and the resume hook took 0.06 seconds on this orb.
+
+The declared `web` orb service supervises `bin/dev`, which starts Rails and the local Go runner. It gives the runner a free loopback port, binds Rails to Amp's assigned port, checks `/up`, and publishes the NavishAI portal. `amp orb services ensure --json` reported the service already running, listening, and healthy with HTTP 200. Direct requests to both the portal root and `/up` returned HTTP 200. Development host authorization admits only the exact Amp-provided `PUBLIC_URL` host while `AMP_ORB` is set.
 
 ## Installer evidence, September 2026
 

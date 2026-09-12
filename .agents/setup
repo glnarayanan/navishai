@@ -72,7 +72,6 @@ ensure_apt_packages() {
     libyaml-dev
     pkg-config
     "postgresql-${PG_MAJOR}"
-    "postgresql-contrib-${PG_MAJOR}"
     "postgresql-server-dev-${PG_MAJOR}"
     shared-mime-info
     zlib1g-dev

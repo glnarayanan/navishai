@@ -3,6 +3,10 @@ require "active_support/core_ext/integer/time"
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
+  if ENV["AMP_ORB"] && ENV["PUBLIC_URL"]
+    config.hosts << URI.parse(ENV.fetch("PUBLIC_URL")).host
+  end
+
   # Make code changes take effect immediately without server restart.
   config.enable_reloading = true
 

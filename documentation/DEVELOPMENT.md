@@ -18,6 +18,8 @@ bin/setup --skip-server
 
 The Amp orb setup script installs these system tools and prepares both databases. It writes the selected local PostgreSQL socket and port to ignored `.env.local`; `bin/rails` reads only those two values when the shell did not set them. This keeps later Rails commands on PostgreSQL 16 when another local cluster owns port 5432.
 
+In an Amp orb, run `amp orb services ensure` to start the supervised Rails and Go development service. Amp assigns the web and runner ports, checks `/up`, and creates the NavishAI portal. The service allows only Amp's exact `PUBLIC_URL` host in development. Use the portal URL printed by Amp rather than a raw loopback address.
+
 On an ephemeral host that cannot reach the mise or ruby-lang download hosts, run `script/prepare_check_host` instead. It installs the build packages, uses the installed PostgreSQL major, builds pgvector 0.8.6 from its pinned revision and Ruby 4.0.6 from the `ruby_4_0` branch when no pinned Ruby exists, creates both databases, bundles the application, and installs the ChromeDriver that matches a bundled Chromium (under `/opt/pw-browsers`, or `CHROME_BIN`) so the browser suite can run without Selenium Manager's download service. A driver version with a recorded checksum is verified; any other version is installed and reported as a host deviation. It prints every pin it could not honour so the checkpoint can record those host deviations, and appends the browser exports to `NAVISHAI_CHECK_HOST_ENV` when that names a file. Claude Code on the web runs it from `.claude/hooks/session-start.sh`, which passes its session environment file.
 
 ## First Owner and recovery access

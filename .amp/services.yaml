@@ -1,0 +1,13 @@
+services:
+  web:
+    command: >-
+      runner_port="$(ruby -rsocket -e 'server = TCPServer.new("127.0.0.1", 0); puts server.addr[1]')" &&
+      NAVISHAI_RUNNER_BIND_ADDRESS="127.0.0.1:$runner_port"
+      NAVISHAI_RUNNER_ADDRESS="http://127.0.0.1:$runner_port"
+      bin/dev -b 0.0.0.0 -p "$PORT"
+    health: /up
+    agent: control
+    portal:
+      url: /
+      title: NavishAI
+      description: NavishAI development application with its local execution runner.
