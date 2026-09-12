@@ -15,8 +15,8 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | A2 Changed-image upgrade | tested | `cursor/app-image-upgrade-efe6` `baa0a96` | Fixture-complete. Live Docker digest proof is BLK-002. GitHub PR blocked by BLK-003. |
 | A3 Deployment acceptance | tested | `cursor/deployment-acceptance-efe6` `bfb3f91` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
 | B1 Portfolio queries | tested | `AccountWorkQueue` | Fixture-complete. Independent of A2; branched from `main`. GitHub PR blocked by BLK-003. |
-| B2 Retention queue UI | tested | Accounts index filters and deep links | Desktop/390/320 system coverage. GitHub PR blocked by BLK-003. |
-| B3 Intervention follow-up | not started | — | Depends on B2. |
+| B2 Retention queue UI | tested | `cursor/retention-queue-ui-efe6` `e171705` | Desktop/390/320 system coverage. GitHub PR blocked by BLK-003. |
+| B3 Intervention follow-up | tested | `cursor/intervention-follow-up-efe6` | Fixture-complete. GitHub PR blocked by BLK-003. |
 | C1 Scorecard proposal | not started | — | Starts from verified `main`. |
 | C2 Proposal revision | not started | — | Depends on C1. |
 | C3 Preview/backtest evidence | not started | — | Depends on C2. |
@@ -32,7 +32,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 |---|---|---|---|---|---|---|---|---|
 | BLK-001 | A1 | Credential/host | No live self-hosted Supermemory on this check host. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage. Do not claim live engine proof. | Continue A2 fixtures and independent B/C/D. | Operator-supplied self-hosted Supermemory on a disposable host. | open |
 | BLK-002 | A2 | Host | `docker` is not installed. Installer fixture suite covers supported/rejected/interrupted/restore paths. | Changed-image upgrade is not operationally accepted. | Keep production guard until live digest proof. | Continue A3 evidence and independent B/C/D. | Docker Engine + Compose v2; follow `APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md` on A2. | open |
-| BLK-003 | A1/A2/A3 | Tooling | ManagePullRequest is unavailable; `gh` is read-only for PR creation. Branches are pushed. | Stacked GitHub PRs are not opened. | Record exact PR metadata; continue implementation. | Continue independent stacks. | Write-capable PR tool or owner opens PRs from pushed branches. | open |
+| BLK-003 | A1/A2/A3/B1/B2/B3 | Tooling | ManagePullRequest is unavailable; `gh` is read-only for PR creation. Branches are pushed. | Stacked GitHub PRs are not opened. | Record exact PR metadata; continue implementation. | Continue independent stacks. | Write-capable PR tool or owner opens PRs from pushed branches. | open |
 | BLK-004 | A3 | Host/credential | No Docker, public DNS, ACME, signing identity, or live SMTP/scanner/provider on this host. | I5 and live connector checks remain omitted, not passing. | Keep omissions explicit. | Continue B/C/D. | Clean supported host plus operator-owned credentials and signing identity. | open |
 | DEC-001 | A1 | Routine | Owner and Admin may start the memory check, matching the setup-checklist role gate. | Broader than Owner-only if that phrase is read strictly. | Keep Owner/Admin. | Continue. | Owner restricts to Owner-only. | accepted |
 | DEC-002 | A2 | Routine | App-image compatibility uses Docker-save manifests plus `db:migrate:status`; no schema-change claim. | Unsupported/indeterminate still rejected before stop. | Keep the guard for PG major, Supermemory, topology, and down migrations. | Continue. | Owner expands the supported upgrade class. | accepted |
@@ -48,3 +48,4 @@ Recorded for opening. GitHub PR creation is BLK-003.
 | `cursor/deployment-acceptance-efe6` | `cursor/app-image-upgrade-efe6` | A3 | docs: record applicable installer acceptance omissions |
 | `cursor/account-work-queries-efe6` | `main` | B1 | feat: query account attention and renewal work |
 | `cursor/retention-queue-ui-efe6` | `cursor/account-work-queries-efe6` | B2 | feat: surface account work in the retention queue |
+| `cursor/intervention-follow-up-efe6` | `cursor/retention-queue-ui-efe6` | B3 | feat: manage intervention ownership and follow-up |

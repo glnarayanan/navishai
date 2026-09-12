@@ -14,6 +14,8 @@ class CustomerSuccessIntervention < ApplicationRecord
   belongs_to :abandoned_by_membership, class_name: "Membership", optional: true
   has_one :outcome_review, class_name: "CustomerSuccessInterventionOutcomeReview",
     dependent: :restrict_with_exception
+  has_many :due_notices, class_name: "CustomerSuccessInterventionDueNotice",
+    dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true
 

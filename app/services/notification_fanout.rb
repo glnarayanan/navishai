@@ -7,7 +7,8 @@ class NotificationFanout
     "email.send_failed" => [ "failure", "An email send needs attention" ],
     "intercom.send_failed" => [ "failure", "An Intercom send needs attention" ],
     "intercom.sync_failed" => [ "failure", "An Intercom sync needs attention" ],
-    "crew.task_event_recorded" => [ nil, nil ]
+    "crew.task_event_recorded" => [ nil, nil ],
+    "account.intervention_due" => [ "due", nil ]
   }.freeze
 
   def self.call(audit_event)
@@ -45,10 +46,17 @@ class NotificationFanout
 
   private
     def details
+      return intervention_due_details if @event.action == "account.intervention_due"
       return crew_event_details if @event.action == "crew.task_event_recorded"
       return [ nil, nil ] if @event.action == "case.status_changed" && @event.metadata["to_status"] != "awaiting_human_review"
 
       EVENT_DETAILS.fetch(@event.action)
+    end
+
+    def intervention_due_details
+      title = @event.metadata["due_state"] == "overdue" ?
+        "An intervention follow-up is overdue" : "An intervention follow-up is due today"
+      [ "due", title ]
     end
 
     def crew_event_details
@@ -67,12 +75,24 @@ class NotificationFanout
       case @event.action
       when "case.assigned"
         @workspace.memberships.where(id: @event.metadata["assignee_id"]).to_a
+      when "account.intervention_due"
+        intervention_due_recipients
       when "crew.task_event_recorded"
         task = subject_task
         task&.owner_membership ? [ task.owner_membership ] : managers
       else
         support_case&.assigned_membership ? [ support_case.assigned_membership ] : managers
       end
+    end
+
+    def intervention_due_recipients
+      membership = @workspace.memberships.find_by(id: @event.metadata["recipient_membership_id"])
+      intervention = @workspace.customer_success_interventions.find_by(id: @event.subject_id)
+      return [] unless membership&.can_write?
+      return [] unless intervention&.proposed? || intervention&.approved?
+      return [] unless intervention.accountable_membership_id == membership.id
+
+      [ membership ]
     end
 
     def managers
@@ -104,7 +124,11 @@ class NotificationFanout
     end
 
     def path
-      if (case_record = support_case)
+      if @event.action == "account.intervention_due" && (intervention = intervention_subject)
+        Rails.application.routes.url_helpers.workspace_account_path(
+          @workspace, intervention.account, anchor: "customer-success-interventions"
+        )
+      elsif (case_record = support_case)
         Rails.application.routes.url_helpers.workspace_support_case_path(@workspace, case_record)
       elsif (task = subject_task)
         scope = task.support_case || task.account
@@ -113,5 +137,11 @@ class NotificationFanout
       else
         Rails.application.routes.url_helpers.workspace_support_cases_path(@workspace)
       end
+    end
+
+    def intervention_subject
+      return @intervention_subject if defined?(@intervention_subject)
+
+      @intervention_subject = @workspace.customer_success_interventions.find_by(id: @event.subject_id)
     end
 end

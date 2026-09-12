@@ -114,7 +114,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Deterministic health signals including Support evidence, material change, renewal windows | Done | `AccountHealth`, `AccountHealthAssessment`, `AccountHealthSignal`, `HealthEvidence` | Score rules stay off until a published scorecard uses them. |
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
-| Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
+| Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)`, `CustomerSuccessInterventionDueNotice` | Association, never cause. Managers reassign and reschedule proposed or approved work. Due notices use existing alerts. |
 | Conversational scorecard designer with backtest, publish, rollback | Done | `HealthScorecardDesigner`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | |
 
 ### Proof, explanation, dossier, policy, and operations
@@ -126,12 +126,12 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Human-edit provenance on drafts | Done | `HumanDraftProvenance`, provenance columns on drafts and deliveries | |
 | Explain this outcome | Done | `OutcomeExplanation`, `OutcomeExplanationsController` | Reachable from case, Account, run, health assessment. |
 | Usage, budget, and cost rollups | Done | `UsageCostSnapshot`, `UsageRateSetting(Version)`, `UsageRatesController` | Unknown cost never shown as zero. |
-| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Accounts lists fixed attention, renewal, and intervention views with shareable `view` params. Intervention reassignment and follow-up notifications are not in this branch. |
+| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Accounts lists fixed attention, renewal, and intervention views with shareable `view` params. Managers can reassign and reschedule proposed or approved interventions; due notices stay on the current assignee. |
 | Reliability and recovery cockpit with operational checks | Done | `ReliabilityCockpit`, `ReliabilityRecovery`, `OperationalCheck` | Five explicit states; bounded actions only. |
 | Verified Workspace archive round trip | Done | `WorkspacePortability`, `WorkspaceDataControlsController#verify_archive`, [WORKSPACE_ARCHIVE.md](./WORKSPACE_ARCHIVE.md) | Owner-only; atomic target creation plus check record. |
 | Governed policy change: preview, canary, publish, rollback | Done | `GovernedPolicyChange`, `GovernedPolicyResolver`, `GovernedPolicy*` models | Explicit scopes only; rollback affects future work only. |
 | Integrated end-to-end proof of the seven journeys | Done | `test/integration/phase_completion_proof_test.rb` | Passes from code on a fresh host (section 2). |
-| Notifications: in-app, email, signed outbound webhooks | Done | `NotificationFanout`, `NotificationMailer`, `OutboundWebhookFanout`, `OutboundWebhookTransport` | |
+| Notifications: in-app, email, signed outbound webhooks | Done | `NotificationFanout`, `NotificationMailer`, `OutboundWebhookFanout`, `OutboundWebhookTransport` | Includes due and overdue intervention follow-ups. |
 | Retention, expiry, tombstones, protected Workspace deletion, full export and import | Done | `WorkspaceContentExpiry`, `WorkspaceDataGovernance`, `WorkspaceDeletion`, `WorkspacePortability` | |
 | Docker Compose deployment with isolated runner | Done | `compose.yaml`, `ops/docker`, `ops/compose` | No Docker socket; capabilities dropped. |
 | Native Linux deployment | Done | `ops/systemd`, [DEPLOYMENT.md](./DEPLOYMENT.md) | Separate runner user; Landlock helper. |
@@ -145,6 +145,18 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 12 September 2026 intervention follow-up (B3)
+
+On `cursor/intervention-follow-up-efe6`, Linux 6.12, Ruby 4.0.6, PostgreSQL 16, Chrome 148 with matching ChromeDriver. Engineering-complete for reassignment, follow-up date changes, due notices, and completed-without-review visibility. Not operationally accepted as a live deployment.
+
+| Check | Result |
+|---|---|
+| Focused workflow, due-notice, concurrency, fanout, and controller tests | 22 runs, 217 assertions, pass |
+| Related webhook, mailer, and accounts controller tests | 22 runs, 139 assertions, pass |
+| Intervention system tests (desktop, 390, 320, keyboard reassign) | 2 runs, 46 assertions, pass |
+| RuboCop on changed Ruby | 19 files, no offences |
+| Isolation, Docker, `bin/ci` full suite | Omitted on this host; not claimed green |
 
 ### 11 September 2026 stacked follow-up checkpoint
 
@@ -253,7 +265,7 @@ Listed in the order they unblock a pilot. None of these blocks owner review of t
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
-The daily operating-workspace phase is in progress on stacked branches from 12 September 2026. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). This `main`-based branch adds `AccountWorkQueue` only. Memory verification, changed-image upgrades, and installer acceptance evidence live on the A stack.
+The daily operating-workspace phase is in progress on stacked branches from 12 September 2026. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). This B-stack branch adds `AccountWorkQueue`, the Accounts retention-queue UI, and intervention follow-up ownership. Memory verification, changed-image upgrades, and installer acceptance evidence live on the A stack.
 
 ## 4. External boundaries
 
@@ -286,6 +298,7 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
 | 11 September 2026 | Keep rejecting changed-image `navishai upgrade` targets on main until a scoped supported path is implemented and proven on a genuinely changed application image; the experimental recovery evidence does not relax that guard. |
 | 12 September 2026 | Start the daily operating-workspace phase. Independent B-stack work derives account attention and renewal queues from existing assessments, investigations, and interventions. Do not persist an AI priority score or infer Account ownership from intervention ownership. |
+| 12 September 2026 | Managers and above may reassign a proposed or approved intervention to another writable human and change its follow-up date with a recorded reason. Due and overdue notices go to the current assignee only and never complete, approve, review, or message a customer. |
 
 ### Approved implementation scope — 6 September 2026
 

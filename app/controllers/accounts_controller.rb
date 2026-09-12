@@ -106,6 +106,11 @@ class AccountsController < ApplicationController
           :after_account_health_assessment ]
       ).order(proposed_at: :desc, id: :desc).limit(50).to_a
       @intervention_review_assessments = @account.health_assessments.limit(50).to_a
+      @writable_memberships = if @membership.can_manage_work?
+        @workspace.memberships.includes(:user).where.not(role: :viewer).sort_by { |membership| membership.user.email_address }
+      else
+        []
+      end
       load_intervention_proposals
       @tasks = @account.crew_tasks.includes(:assigned_agent_profile, :current_event).order(created_at: :desc).limit(8)
       @dossier = AccountDossier.new(workspace: @workspace, account: @account, membership: @membership)
