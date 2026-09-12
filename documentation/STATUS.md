@@ -146,6 +146,20 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 12 September 2026 remaining-work and operator handoff (E2)
+
+On `cursor/phase-handoff-efe6` from E1. The daily operating-workspace phase is engineering-complete on unmerged branches. C1–C3 and E1 live on the scorecard stack from `main`. D1–D3 live on an independent quality/knowledge stack from the same `main` (`aa4b079`) and were not merged into C. A1–B3 already have GitHub PRs #111–#116. C/D/E GitHub PRs are still pending because ManagePullRequest is unavailable in this agent and `gh` is read-only for PR creation (BLK-003). Live Supermemory, Docker digest, and clean-host/ACME/signing proof remain open (BLK-001, BLK-002, BLK-004). Scripted-adapter proof is not live model execution. No merge, release, or deploy. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for the slice table, suggested stacked PR titles, and operator handoff.
+
+### Independent D stack (D1–D3, not on this branch)
+
+D1–D3 were implemented from verified `main` and stay on `cursor/support-quality-efe6`, `cursor/knowledge-improvements-efe6`, and `cursor/knowledge-follow-up-efe6`. This C/E branch does not contain that code.
+
+On D1, every Workspace member including Viewer can open a read-only Quality page that counts open cases, open first-response and resolution SLA breaches, latest retained reopen and unproofed-resolution health signals, proofed resolutions, and current contract-blocked drafts. Open case volume alone is not attention. The page does not score Accounts or send messages. Focused checks: presenter and controller 8 runs, 72 assertions; one system test, 14 assertions.
+
+On D2, every Workspace member including Viewer can open a read-only Improvements page that lists stale (expired or sync-unavailable), deleted, retired, and failed-sync knowledge sources. Current sources stay off the queue. The Knowledge library links to the queue. Focused checks: presenter, controller, and system 6 runs, 54 assertions.
+
+On D3, adding a non-stale current version removes the source from the attention queue and records it under Recently improved with prior/current version numbers. The source page keeps immutable version lineage and states that the source left the queue. Focused checks: presenter, controller, and system 9 runs, 89 assertions.
+
 ### 12 September 2026 scorecard proposal journey (E1)
 
 On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). D1–D3 remain on the independent `cursor/support-quality-efe6` … `cursor/knowledge-follow-up-efe6` stack and are not merged into this branch. Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
@@ -264,6 +278,8 @@ Stack checkpoints at their pre-merge feature commits:
 ## 3. Pending work
 
 Listed in the order they unblock a pilot. None of these blocks owner review of the current source.
+
+The daily operating-workspace phase (A1–E2) is engineering-complete on unmerged branches. **Next incomplete slice:** open stacked GitHub PRs for C1–C3, D1–D3, and E1–E2 (BLK-003). A1–B3 already have PRs #111–#116. Do not merge C into D or D into C. Do not merge, release, or deploy this phase from this handoff.
 
 1. **Finish guided-installer acceptance.** The installer is merged and natively tested, not released or deployed. Remaining local engineering: proof of scoped memory indexing and retrieval after `navishai configure memory`; and a scoped changed-image upgrade contract proven on a genuinely changed application image before the production rejection is relaxed. Remaining external outcomes: clean supported-host acceptance with real reboot and SSH loss, public DNS/ACME and renewal, external ingress isolation, an approved signing identity with trusted verification-key distribution and artifact hosting, and live ClamAV, SMTP, provider, and Supermemory validation.
 2. **Native runtime search.** **Current no-go recorded 10 September 2026.** The four approved subscription protocols lack one or more required evidence fields: machine-readable run-bound HTTPS URL, bounded source excerpt, retrieval time, optional publication date, and rejectable terminal semantics. [The protocol record](./NATIVE_RUNTIME_SEARCH_PROTOCOL.md) pins each checked source revision and documents the limit. `web_search="disabled"` remains fixed, and parser tests reject a Codex query/action-only item as a non-retryable policy denial. Query events, action URLs, generated prose, inferred URLs, and opaque output cannot become citations or satisfy grounding. This applies only to the checked current protocols; a future adapter still needs a versioned typed result contract and approved egress profile. Parallel remains unimplemented.
