@@ -76,6 +76,21 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
       2 + (ReliabilityCockpit::DETAIL_LIMIT * 4)
   end
 
+  test "pending memory verification is attention and not healthy" do
+    OperationalCheck.record!(
+      workspace: @workspace, membership: @owner, check_kind: "memory_verification",
+      result: "pending", result_code: "indexing_pending",
+      evidence_digest: Digest::SHA256.hexdigest("pending memory"), source_commit: "b" * 40,
+      checked_at: @now - 1.minute
+    )
+
+    cockpit = ReliabilityCockpit.build(workspace: @workspace, membership: @owner, now: @now)
+    item = cockpit.groups.index_by(&:key).fetch("data").items.index_by(&:key).fetch("memory_verification")
+    assert_equal "attention", item.status
+    assert_match(/Pending is not verified/, item.summary)
+    assert_equal "verify_memory", item.action
+  end
+
   test "distinguishes a stale ready connector from a replayed delivery" do
     key = "NAVISHAI_SHARED_EMAIL_READY_STALE_WEBHOOK_SECRET"
     original = ENV[key]

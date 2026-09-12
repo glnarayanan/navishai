@@ -414,7 +414,8 @@ class ReliabilityCockpit
         Item.new(
           key: kind, title: kind.humanize, status:, summary:,
           detail: operational_count_detail(check),
-          occurred_at: check&.checked_at, record: check, action: nil
+          occurred_at: check&.checked_at, record: check,
+          action: memory_verification_action(kind, status)
         )
       end
     end
@@ -434,10 +435,20 @@ class ReliabilityCockpit
       return [ "not_configured", "No check evidence has been recorded." ] unless check
       return [ "blocked", "Check failed: #{check.result_code.humanize}." ] if check.result == "failed"
       return [ "unknown", "Check was unavailable: #{check.result_code.humanize}." ] if check.result == "unavailable"
+      return [ "attention", "Check is pending: #{check.result_code.humanize}. Pending is not verified." ] if
+        check.result == "pending"
       return [ "attention", "Last passing check is older than 30 days." ] if
         check.checked_at < @now - OPERATIONAL_CHECK_FRESH_FOR
 
       [ "healthy", "Passed with evidence digest #{check.evidence_digest.first(12)}…." ]
+    end
+
+    def memory_verification_action(kind, status)
+      return unless kind == "memory_verification"
+      return unless @membership.owner? || @membership.admin?
+      return if status == "healthy"
+
+      "verify_memory"
     end
 
     def strongest_status(statuses)

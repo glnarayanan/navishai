@@ -108,6 +108,9 @@ FORM: Operator incident sheet, chosen directly for this bounded extension of the
                       data: { turbo_confirm: "Queue only missing, failed, or unknown Memory index work from authoritative PostgreSQL records?" } %>
                   <% when "manage_data" %>
                     <%= link_to "Open data controls", workspace_data_controls_path(@workspace), class: "button button-secondary" %>
+                  <% when "verify_memory" %>
+                    <%= link_to "Open memory verification", workspace_setup_checklist_path(@workspace), class: "button button-secondary" %>
+                    <span>Pending and failed checks are not verified. NavishAI will not use a managed memory host.</span>
                   <% end %>
                 </div>
               <% end %>
