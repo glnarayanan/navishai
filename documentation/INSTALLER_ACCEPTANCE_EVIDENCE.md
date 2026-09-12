@@ -62,3 +62,6 @@ This proves the bounded failure-and-exact-restore sequence for the experimental 
 ## Remaining limits
 
 The latest vault/attachment roundtrip did not repeat every earlier artifact and runner-ledger query; those checks passed in prior restore evidence. Public ACME, live provider behavior, real scanner behavior, non-synthetic customer data, and a full application/schema upgrade remain unproved.
+
+Native fake-Docker tests now accept a changed application image when saved-image identity, topology, infrastructure pins, PostgreSQL major, and migrate-status checks pass. This check host has no Docker daemon, so the live procedure in [APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md) was not executed. Do not treat fixture success as old/new digest proof.
+
