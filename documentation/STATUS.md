@@ -158,6 +158,10 @@ See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs and rem
 
 On `cursor/knowledge-improvements-efe6` from D1. Every Workspace member, including Viewer, can open a read-only Improvements page that lists stale (expired or sync-unavailable), deleted, retired, and failed-sync knowledge sources. Current sources stay off the queue. Cross-Workspace paths fail closed. The Knowledge library links to the queue. Focused checks: presenter, controller, and system 6 runs, 54 assertions, including 320px overflow and a stale-source link. RuboCop clean on touched Ruby files.
 
+### 12 September 2026 knowledge follow-up evidence (D3)
+
+On `cursor/knowledge-follow-up-efe6` from D2. Adding a non-stale current version removes the source from the attention queue and records it under Recently improved with prior/current version numbers. The source page keeps immutable version lineage and states that the source left the queue. Focused checks: presenter, controller, and system 9 runs, 89 assertions. RuboCop clean on touched Ruby files.
+
 ### 11 September 2026 stacked follow-up checkpoint
 
 On the top of the seven-branch stack (`claude/great-gauss-vo8e8g` through `claude/great-gauss-vo8e8g-scanner-check`, PRs #104–#110) on the same check host, now with the matching ChromeDriver installed by `script/prepare_check_host`:
