@@ -44,6 +44,7 @@ class HealthScorecardProposalPublisher
         health_scorecard: task.health_scorecard, crew_task: task, execution_run: run,
         created_by_membership: run.requested_by_membership || task.owner_membership,
         created_by_user: (run.requested_by_membership || task.owner_membership).user,
+        parent_proposal: extract_parent(task),
         prompt: extract_prompt(task),
         proposed_definition: parsed[:definition], explanation: parsed[:explanation],
         assumptions: parsed[:assumptions], unsupported_requests: parsed[:unsupported_requests],
@@ -55,8 +56,9 @@ class HealthScorecardProposalPublisher
         actor_kind: :system, subject: proposal,
         metadata: {
           "validation_status" => proposal.validation_status,
-          "adapter" => run.selected_adapter_key.to_s
-        }
+          "adapter" => run.selected_adapter_key.to_s,
+          "parent_id" => proposal.parent_proposal_id
+        }.compact
       )
       proposal
     end
@@ -149,5 +151,16 @@ class HealthScorecardProposalPublisher
       prompt
     rescue JSON::ParserError, TypeError, KeyError
       raise InvalidOutput, "The retained task is missing the user prompt."
+    end
+
+    def extract_parent(task)
+      payload = JSON.parse(task.input_context.split("\n", 2).last)
+      parent = payload["parent_proposal"]
+      return if parent.blank?
+
+      id = parent.fetch("proposal_id")
+      @workspace.health_scorecard_proposals.find(id)
+    rescue JSON::ParserError, TypeError, KeyError, ActiveRecord::RecordNotFound
+      raise InvalidOutput, "The retained task names an unavailable parent proposal."
     end
 end

@@ -5411,6 +5411,27 @@ td {
   background: var(--canvas);
 }
 .scorecard-ai-item p { margin: 0; overflow-wrap: anywhere; }
+.scorecard-lineage { color: var(--muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.scorecard-diff-block { display: grid; gap: 0.4rem; }
+.scorecard-diff {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scorecard-diff li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.scorecard-diff-added { color: var(--success); }
+.scorecard-diff-removed { color: var(--danger); }
+.scorecard-diff-changed { color: var(--warning-foreground); }
+.scorecard-revise { display: grid; gap: 0.65rem; padding-top: 0.35rem; border-top: 1px solid var(--line); }
+.scorecard-revise textarea { min-height: 4.5rem; }
 
 .scorecard-bands label { display: grid; gap: 0.3rem; font-size: 0.875rem; font-weight: var(--weight-semibold); }
 .scorecard-bands input { width: 7rem; min-height: 3rem; }
@@ -5550,6 +5571,14 @@ td {
   .scorecard-empty { align-items: stretch; flex-direction: column; }
   .scorecard-empty .button,
   .scorecard-empty form { width: 100%; }
+  .scorecard-revise .button,
+  .scorecard-revise form,
+  .scorecard-ai-item .button,
+  .scorecard-ai .button {
+    width: 100%;
+    min-height: 3rem;
+    white-space: normal;
+  }
   .scorecard-preview-stats { grid-template-columns: 1fr; }
   .scorecard-preview-stats div,
   .scorecard-preview-stats div:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); }

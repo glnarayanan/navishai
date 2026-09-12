@@ -11,7 +11,7 @@ Use these terms in product copy, code, tests, and design notes.
 - **Account health signal:** one typed input to an Account health assessment, with its value, source locator, time range, weight, risk points, and stable `health://` citation.
 - **Health scorecard:** one Workspace’s published choice of deterministic Account health rules. It points to one immutable version for future assessments.
 - **Health scorecard version:** one immutable mapping from retained signals to weights and health bands, with the human’s goal and a plain explanation.
-- **Health scorecard proposal:** one runner-backed configuration suggestion for a Workspace scorecard. It keeps the human prompt, selected runtime, validation outcome, and a definition restricted to the supported signal catalog. Accepting it creates an unpublished version; it never calculates authoritative health.
+- **Health scorecard proposal:** one runner-backed configuration suggestion for a Workspace scorecard. It keeps the human prompt, selected runtime, validation outcome, optional parent proposal and run lineage, and a definition restricted to the supported signal catalog. Accepting it creates an unpublished version; it never calculates authoritative health.
 - **Health scorecard backtest:** one immutable replay of a version against up to 500 retained assessments. It keeps the compared results and a digest of the exact source snapshots.
 - **Material health change:** a score change of at least ten points or any risk-band change between retained assessments.
 - **Risk investigation:** the retained review opened by a material health change, a renewal within 90 days, or a human request. Crew analysis stays separate from its deterministic assessment.
