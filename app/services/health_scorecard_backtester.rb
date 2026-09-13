@@ -7,20 +7,21 @@ class HealthScorecardBacktester
     raise Current::RoleAccessDenied unless actor.can_write?
     scorecard = HealthScorecardDesigner.install_default!(workspace:)
     version = scorecard.versions.find(version.id)
-    snapshots = load_snapshots(workspace)
-    total = workspace.account_health_assessments.count
-    rows = snapshots.map { |assessment| result_for(assessment, version.definition) }
-    digest = source_digest(snapshots, version.definition)
-    current_ids = current_assessment_ids(workspace, snapshots)
-    results = {
-      "current" => rows.select { |row| current_ids.include?(row.fetch("assessment_id")) },
-      "history" => rows,
-      "summary" => summary(rows).merge(
-        "snapshot_limit" => MAX_SNAPSHOTS,
-        "truncated" => total > snapshots.size
-      )
-    }
     HealthScorecardBacktest.transaction do
+      version.lock!
+      snapshots = load_snapshots(workspace)
+      total = workspace.account_health_assessments.count
+      rows = snapshots.map { |assessment| result_for(assessment, version.definition) }
+      digest = source_digest(snapshots, version.definition)
+      current_ids = current_assessment_ids(workspace, snapshots)
+      results = {
+        "current" => rows.select { |row| current_ids.include?(row.fetch("assessment_id")) },
+        "history" => rows,
+        "summary" => summary(rows).merge(
+          "snapshot_limit" => MAX_SNAPSHOTS,
+          "truncated" => total > snapshots.size
+        )
+      }
       backtest = version.backtests.create!(
         workspace:, membership: actor, user: actor.user, source_digest: digest,
         results:, sample_count: rows.size, generated_at: at

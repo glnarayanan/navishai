@@ -147,6 +147,21 @@ class HealthScorecardTest < ActiveSupport::TestCase
     end
   end
 
+  test "treats the latest generated_at preview as inspected even if a later row has an earlier clock" do
+    version = propose(weights: { "open_cases" => 40 })
+    inspected = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 2.hours)
+    later_row = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
+
+    assert_operator later_row.created_at, :>=, inspected.created_at
+    assert_operator later_row.generated_at, :<, inspected.generated_at
+    error = assert_raises(HealthScorecardPublisher::InvalidPublish) do
+      HealthScorecardPublisher.publish!(workspace: @workspace, membership: @owner, version:,
+        expected_current_version_id: @scorecard.current_version_id, expected_backtest_id: later_row.id)
+    end
+    assert_match(/not the inspected backtest/i, error.message)
+    assert_equal version, publish_version(version, expected_backtest_id: inspected.id)
+  end
+
   test "rejects publish when retained snapshots change after the inspected preview" do
     version = propose(weights: { "open_cases" => 40 })
     backtest = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at)

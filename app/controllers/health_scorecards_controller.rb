@@ -83,7 +83,7 @@ class HealthScorecardsController < ApplicationController
       @versions = @scorecard.versions.includes(:backtests, :design_turns, :created_by_user, source_proposal: :execution_run)
         .order(version_number: :desc)
       @selected_version = params[:version_id].present? ? @versions.find(params[:version_id]) : @versions.first
-      @backtest = @selected_version.backtests.order(generated_at: :desc, id: :desc).first
+      @backtest = @selected_version.backtests.reorder(generated_at: :desc, id: :desc).first
       @catalog = HealthScorecardDefinition::CATALOG
       @proposals = @scorecard.proposals.includes(
         :execution_run, :created_by_user,
