@@ -20,6 +20,7 @@ Rails.application.routes.draw do
     end
     resource :setup_checklist, only: :show, controller: "workspace_setup_checklists" do
       post :scanner_check
+      post :memory_check
     end
     resources :outbound_webhook_endpoints, path: "webhooks", only: %i[ index create update ]
     resources :workspace_invitations, only: %i[ index create destroy ]
