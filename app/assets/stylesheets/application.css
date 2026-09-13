@@ -4331,6 +4331,70 @@ td {
   border-block: 1px solid var(--line);
 }
 
+.account-work-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 0 1rem;
+}
+
+.account-work-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.75rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.account-work-filter:hover,
+.account-work-filter:focus-visible {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.account-work-filter[aria-current="page"] {
+  border-color: var(--secondary);
+  color: var(--secondary);
+  background: color-mix(in srgb, var(--secondary) 10%, var(--card));
+}
+
+.account-work-count {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.account-work-filter[aria-current="page"] .account-work-count {
+  color: inherit;
+}
+
+.account-work-meta {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.account-work-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.account-work-reason {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
 .account-list-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 5rem 7rem minmax(0, 0.7fr);
@@ -5233,7 +5297,9 @@ td {
   }
   .account-import[open] form { position: static; margin-top: 0.5rem; }
   .account-list-row { grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem 1rem; padding-block: 1rem; }
-  .account-renewal { grid-column: 1 / -1; }
+  .account-renewal,
+  .account-work-meta { grid-column: 1 / -1; }
+  .account-work-filters { gap: 0.4rem; }
   .account-list-row .risk-state { justify-self: end; }
   .health-overview { grid-template-columns: 1fr; }
   .account-supporting-grid { grid-template-columns: 1fr; }
