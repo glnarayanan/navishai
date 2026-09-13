@@ -160,7 +160,7 @@ class AuditEvent < ApplicationRecord
     "usage_rate.published" => { "from_version" => Integer, "to_version" => Integer },
     "usage_rate.rolled_back" => { "from_version" => Integer, "to_version" => Integer },
     "scorecard.backtested" => { "version" => Integer, "sample_count" => Integer },
-    "scorecard.proposal_generated" => { "validation_status" => String, "adapter" => String },
+    "scorecard.proposal_generated" => { "validation_status" => String, "adapter" => String, "parent_id" => Integer },
     "scorecard.proposed" => { "version" => Integer, "proposal_id" => Integer },
     "scorecard.published" => { "from_version" => Integer, "to_version" => Integer },
     "scorecard.rolled_back" => { "from_version" => Integer, "to_version" => Integer },

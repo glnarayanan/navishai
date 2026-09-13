@@ -49,6 +49,14 @@
             <span class="version-label"><%= published_selected ? "Published" : "Proposal" %></span>
             <h3>Version <%= @selected_version.version_number %></h3>
             <p><%= @selected_version.explanation %></p>
+            <% if @selected_version.created_by_user %>
+              <p class="scorecard-lineage">
+                Designed by <%= @selected_version.created_by_user.email_address %>
+                <% if @selected_version.source_proposal %>
+                  · accepted from run <%= @selected_version.source_proposal.execution_run.run_key %>
+                <% end %>
+              </p>
+            <% end %>
           </div>
         </div>
         <ul class="scorecard-rule-cards">
@@ -70,10 +78,13 @@
           <header>
             <div>
               <h2 id="ai-proposal-title">Ask for a constrained proposal</h2>
-              <p>The model may suggest supported signals and weights. It never calculates authoritative health. Accepting is a separate action and still leaves the version unpublished.</p>
+              <p>The model may suggest supported signals and weights. It never calculates authoritative health. Revise a proposal to keep parent and run lineage. Accepting is a separate action and still leaves the version unpublished.</p>
             </div>
           </header>
           <%= form_with url: generate_workspace_health_scorecard_path(@workspace), class: "scorecard-form" do |form| %>
+            <% if @proposals.any? %>
+              <%= hidden_field_tag :expected_latest_proposal_id, @proposals.first.id, id: "expected_latest_proposal_id_generate" %>
+            <% end %>
             <div class="field scorecard-goal">
               <%= form.label :proposal_prompt, "What should this scorecard emphasise?" %>
               <%= form.text_area :proposal_prompt, required: true, minlength: 10, maxlength: 2000, rows: 3,
@@ -90,33 +101,7 @@
           <% if @proposals.any? %>
             <ul class="scorecard-ai-list">
               <% @proposals.each do |proposal| %>
-                <li class="scorecard-ai-item">
-                  <p class="version-label"><%= proposal.validation_status.humanize %></p>
-                  <p><%= proposal.explanation %></p>
-                  <% if proposal.validation_detail.present? %>
-                    <p class="muted-copy">Validation: <%= proposal.validation_detail %></p>
-                  <% end %>
-                  <% if proposal.unsupported_requests.any? %>
-                    <p class="muted-copy">Unsupported: <%= proposal.unsupported_requests.join(" ") %></p>
-                  <% end %>
-                  <% if proposal.assumptions.any? %>
-                    <p class="muted-copy">Assumptions: <%= proposal.assumptions.join(" ") %></p>
-                  <% end %>
-                  <% if proposal.missing_evidence.any? %>
-                    <p class="muted-copy">Missing evidence: <%= proposal.missing_evidence.join(" ") %></p>
-                  <% end %>
-                  <p class="scorecard-evidence">
-                    Runtime <%= proposal.execution_run.selected_adapter_key %>
-                    · <%= proposal.execution_run.runtime_selection_reason %>
-                    <% if proposal.accepted? %>
-                      · accepted as version <%= proposal.accepted_version.version_number %>
-                    <% end %>
-                  </p>
-                  <% if proposal.acceptable? %>
-                    <%= button_to "Accept into unpublished version", accept_workspace_health_scorecard_path(@workspace),
-                      params: { proposal_id: proposal.id }, class: "button button-secondary" %>
-                  <% end %>
-                </li>
+                <%= render "ai_proposal", proposal: proposal %>
               <% end %>
             </ul>
           <% end %>

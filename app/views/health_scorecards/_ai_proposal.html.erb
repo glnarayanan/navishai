@@ -1,0 +1,83 @@
+<% latest_proposal_id = @proposals.first.id %>
+<li class="scorecard-ai-item">
+  <p class="version-label"><%= proposal.validation_status.humanize %></p>
+  <p><%= proposal.explanation %></p>
+  <% if proposal.validation_detail.present? %>
+    <p class="muted-copy">Validation: <%= proposal.validation_detail %></p>
+  <% end %>
+  <% if proposal.unsupported_requests.any? %>
+    <p class="muted-copy">Unsupported: <%= proposal.unsupported_requests.join(" ") %></p>
+  <% end %>
+  <% if proposal.assumptions.any? %>
+    <p class="muted-copy">Assumptions: <%= proposal.assumptions.join(" ") %></p>
+  <% end %>
+  <% if proposal.missing_evidence.any? %>
+    <p class="muted-copy">Missing evidence: <%= proposal.missing_evidence.join(" ") %></p>
+  <% end %>
+
+  <p class="scorecard-lineage">
+    Asked by <%= proposal.created_by_user.email_address %>
+    · runtime <%= proposal.execution_run.selected_adapter_key %>
+    · run <%= proposal.execution_run.run_key %>
+    <% if proposal.accepted? %>
+      · accepted as version <%= proposal.accepted_version.version_number %>
+      by <%= proposal.accepted_version.created_by_user.email_address %>
+    <% end %>
+  </p>
+  <% if proposal.parent_proposal %>
+    <p class="scorecard-lineage">
+      Revises proposal <%= proposal.parent_proposal.id %>
+      · parent run <%= proposal.parent_proposal.execution_run.run_key %>
+      · parent prompt “<%= proposal.parent_proposal.prompt.truncate(120) %>”
+    </p>
+  <% end %>
+
+  <% if proposal.proposed_definition.present? %>
+    <% published_items = scorecard_proposal_diff_items(proposal.inspectable_diff(@published_definition)) %>
+    <% parent_items = proposal.parent_proposal ? scorecard_proposal_diff_items(proposal.inspectable_diff(proposal.parent_proposal.proposed_definition)) : [] %>
+    <% if published_items.any? %>
+      <div class="scorecard-diff-block">
+        <p class="text-label">Changes versus published</p>
+        <ul class="scorecard-diff">
+          <% published_items.each do |change| %>
+            <li class="scorecard-diff-<%= change.fetch("kind") %>">
+              <span><%= change.fetch("label") %></span>
+              <span><%= scorecard_diff_value(change["from_weight"]) %> → <%= scorecard_diff_value(change["to_weight"]) %></span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+    <% if parent_items.any? %>
+      <div class="scorecard-diff-block">
+        <p class="text-label">Changes versus previous proposal</p>
+        <ul class="scorecard-diff">
+          <% parent_items.each do |change| %>
+            <li class="scorecard-diff-<%= change.fetch("kind") %>">
+              <span><%= change.fetch("label") %></span>
+              <span><%= scorecard_diff_value(change["from_weight"]) %> → <%= scorecard_diff_value(change["to_weight"]) %></span>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% elsif proposal.parent_proposal %>
+      <p class="muted-copy">No inspectable configuration change versus the previous proposal.</p>
+    <% end %>
+  <% end %>
+
+  <% if proposal.acceptable? %>
+    <%= button_to "Accept into unpublished version", accept_workspace_health_scorecard_path(@workspace),
+      params: { proposal_id: proposal.id, expected_proposal_id: proposal.id }, class: "button button-secondary" %>
+  <% end %>
+
+  <%= form_with url: generate_workspace_health_scorecard_path(@workspace), class: "scorecard-form scorecard-revise" do |form| %>
+    <%= hidden_field_tag :parent_proposal_id, proposal.id, id: "parent_proposal_id_#{proposal.id}" %>
+    <%= hidden_field_tag :expected_latest_proposal_id, latest_proposal_id, id: "expected_latest_proposal_id_#{proposal.id}" %>
+    <div class="field scorecard-goal">
+      <%= form.label :proposal_prompt, "Revise this proposal" %>
+      <%= form.text_area :proposal_prompt, required: true, minlength: 10, maxlength: 2000, rows: 2,
+        placeholder: "Raise SLA-breach weight further and keep renewal proximity." %>
+    </div>
+    <%= form.submit "Revise this proposal", class: "button button-secondary" %>
+  <% end %>
+</li>

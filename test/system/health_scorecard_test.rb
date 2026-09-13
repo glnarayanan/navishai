@@ -114,4 +114,69 @@ class HealthScorecardTest < ApplicationSystemTestCase
     assert_field "What should this scorecard emphasise?"
     assert_operator find_button("Generate AI proposal").rect.height, :>=, 48
   end
+
+  test "an owner inspects a revision diff without publishing" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace:, membership: owner)
+    HealthScorecardDesigner.install_default!(workspace:)
+    parent_run = HealthScorecardProposalWorkflow.generate!(
+      workspace:, membership: owner,
+      prompt: "Make approaching renewal and repeated SLA breaches matter more.", admit: false
+    )
+    parent = complete_scorecard_proposal(workspace, parent_run, sla_weight: 35)
+    revision_run = HealthScorecardProposalWorkflow.generate!(
+      workspace:, membership: owner,
+      prompt: "Raise SLA-breach weight further and keep renewal proximity.",
+      parent_proposal: parent, expected_latest_proposal_id: parent.id, admit: false
+    )
+    complete_scorecard_proposal(workspace, revision_run, sla_weight: 50,
+      explanation: "I raised the SLA-breach weight further and kept renewal proximity.")
+
+    sign_in(owner.user)
+    page.current_window.resize_to(1440, 1100)
+    visit workspace_health_scorecard_path(workspace)
+    assert_text "Changes versus previous proposal"
+    assert_text "SLA breaches"
+    assert_text "35 → 50"
+    assert_text "Revises proposal #{parent.id}"
+    assert_field "Revise this proposal"
+    assert_selector "input[name=expected_latest_proposal_id]", visible: :hidden
+    assert_selector "input[name=parent_proposal_id]", visible: :hidden
+
+    page.current_window.resize_to(320, 844)
+    assert_operator find_button("Revise this proposal", match: :first).rect.height, :>=, 48
+    assert_operator find_button("Accept into unpublished version", match: :first).rect.height, :>=, 48
+  end
+
+  private
+    def complete_scorecard_proposal(workspace, run, sla_weight:, explanation: "I increased renewal proximity and SLA breach weights using only catalog signals.")
+      ledger = ExecutionLedger.new(workspace:)
+      time = Time.current.change(usec: 0)
+      output = JSON.generate(
+        schema_version: 1, kind: "scorecard_proposal",
+        definition: {
+          "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50,
+          "rules" => [
+            { "signal_key" => "renewal_on", "weight" => 40 },
+            { "signal_key" => "sla_breaches", "weight" => sla_weight }
+          ]
+        },
+        explanation:, assumptions: [ "Only retained catalog signals can change the score." ],
+        unsupported_requests: [], missing_evidence: []
+      )
+      [
+        [ 1, "run.admitted", { workspace_key: workspace.runner_key, task_key: run.crew_task.task_key, attempt: 1 } ],
+        [ 2, "run.started", { adapter: "scripted", scenario: "scorecard", attempt: 1 } ],
+        [ 3, "output.produced", { text: output } ],
+        [ 4, "run.completed", { outcome: "completed" } ]
+      ].each do |sequence, type, data|
+        ledger.ingest!(event: {
+          "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+          "sequence" => sequence, "event_type" => type,
+          "occurred_at" => (time + sequence.seconds).iso8601(6), "data" => data.deep_stringify_keys
+        })
+      end
+      workspace.health_scorecard_proposals.find_by!(execution_run: run)
+    end
 end

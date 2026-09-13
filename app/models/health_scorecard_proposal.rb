@@ -7,6 +7,9 @@ class HealthScorecardProposal < ApplicationRecord
   belongs_to :execution_run
   belongs_to :created_by_membership, class_name: "Membership"
   belongs_to :created_by_user, class_name: "User"
+  belongs_to :parent_proposal, class_name: "HealthScorecardProposal", optional: true
+  has_many :revisions, class_name: "HealthScorecardProposal", foreign_key: :parent_proposal_id,
+    inverse_of: :parent_proposal, dependent: :restrict_with_exception
   has_one :accepted_version, class_name: "HealthScorecardVersion", foreign_key: :source_proposal_id,
     inverse_of: :source_proposal, dependent: :restrict_with_exception
 
@@ -25,6 +28,10 @@ class HealthScorecardProposal < ApplicationRecord
   def accepted? = accepted_version.present?
 
   def acceptable? = valid_status? && !accepted?
+
+  def inspectable_diff(from_definition)
+    HealthScorecardProposalDiff.between(from_definition, proposed_definition)
+  end
 
   private
     def collections_are_bounded
@@ -54,8 +61,11 @@ class HealthScorecardProposal < ApplicationRecord
       if execution_run && crew_task && execution_run.crew_task_id != crew_task_id
         errors.add(:execution_run, "does not belong to this task")
       end
-      if created_by_membership && created_by_user && created_by_membership.user_id != created_by_user_id
-        errors.add(:created_by_membership, "does not match the proposing user")
+      if parent_proposal
+        if parent_proposal.workspace_id != workspace_id || parent_proposal.health_scorecard_id != health_scorecard_id
+          errors.add(:parent_proposal, "does not belong to this scorecard")
+        end
+        errors.add(:parent_proposal, "cannot be itself") if parent_proposal_id == id
       end
     end
 end
