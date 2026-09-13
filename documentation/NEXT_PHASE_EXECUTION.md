@@ -77,8 +77,8 @@ Merge strategy: on `cursor/integrated-scenario-efe6` (C3 parent), merge commits 
 | B1–B3 | Fixture-complete on [PRs #111](https://github.com/glnarayanan/navishai/pull/111), [#113](https://github.com/glnarayanan/navishai/pull/113), [#116](https://github.com/glnarayanan/navishai/pull/116) | No live-host gap beyond A |
 | C1–C3 | Scripted-adapter scorecard proposal, revision, and inspected-preview publish on [#118](https://github.com/glnarayanan/navishai/pull/118)–[#122](https://github.com/glnarayanan/navishai/pull/122) | Live model execution is not claimed |
 | D1–D3 | Quality readout, stale-source queue, and assign/triage/resolve/dismiss candidates on [#117](https://github.com/glnarayanan/navishai/pull/117)–[#121](https://github.com/glnarayanan/navishai/pull/121) | Does not score Accounts or send messages |
-| E1 | 14-step fixture journey plus seven failure variants on [#123](https://github.com/glnarayanan/navishai/pull/123) | No live credentials. Isolation, Docker, and full `bin/ci` omitted on this check host |
-| E2 | This handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). PR-body writes remain BLK-003. |
+| E1 | 14-step fixture journey plus seven failure variants on [#123](https://github.com/glnarayanan/navishai/pull/123) | No live credentials. CI fixes cherry-picked; the green `bin/ci` record is on E2 |
+| E2 | This handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Full `bin/ci` passed at `fdd3145` on this Linux host. Docker Engine is not installed. Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). PR-body writes remain BLK-003. |
 
 ## Operator handoff
 
