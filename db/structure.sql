@@ -10324,13 +10324,6 @@ CREATE INDEX index_crew_tasks_on_resolution_contract_version_id ON public.crew_t
 
 
 --
--- Name: index_crew_tasks_on_scorecard_and_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_crew_tasks_on_scorecard_and_status ON public.crew_tasks USING btree (workspace_id, health_scorecard_id, status);
-
-
---
 -- Name: index_crew_tasks_on_task_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -14009,14 +14002,6 @@ ALTER TABLE ONLY public.crew_tasks
 
 ALTER TABLE ONLY public.crew_tasks
     ADD CONSTRAINT fk_crew_tasks_exact_governed_policy FOREIGN KEY (workspace_id, governed_policy_publication_id, resolution_contract_version_id, assigned_agent_profile_version_id) REFERENCES public.governed_policy_publications(workspace_id, id, resolution_contract_version_id, agent_profile_version_id);
-
-
---
--- Name: crew_tasks fk_crew_tasks_health_scorecard; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.crew_tasks
-    ADD CONSTRAINT fk_crew_tasks_health_scorecard FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
 
 
 --
