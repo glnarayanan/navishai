@@ -11,17 +11,18 @@ class AccountsController < ApplicationController
   rescue_from AccountRiskWorkflow::InvalidCommand, with: :invalid_change
 
   def index
+    @view = params[:view].presence || "needs_attention"
+    return head :bad_request unless AccountWorkQueue::VIEWS.include?(@view)
+
     @page = [ params[:page].to_i, 1 ].max
-    records = @workspace.accounts.order(:name, :id).offset((@page - 1) * 50).limit(51).to_a
-    @has_next_page = records.length > 50
-    @accounts = records.first(50)
+    queue = AccountWorkQueue.new(workspace: @workspace)
+    @work_counts = queue.counts
+    result = queue.page(view: @view, page: @page)
+    @has_next_page = result.has_next_page
+    @work_rows = result.rows
+    @accounts = @work_rows.map(&:account)
     account_ids = @accounts.map(&:id)
     @contact_counts = Contact.where(workspace: @workspace, account_id: account_ids).group(:account_id).count
-    @assessments_by_account_id = @workspace.account_health_assessments
-      .where(account_id: account_ids)
-      .select("DISTINCT ON (account_id) account_health_assessments.*")
-      .order(account_id: :asc, calculated_at: :desc, id: :desc)
-      .index_by(&:account_id)
   end
 
   def show
@@ -105,6 +106,11 @@ class AccountsController < ApplicationController
           :after_account_health_assessment ]
       ).order(proposed_at: :desc, id: :desc).limit(50).to_a
       @intervention_review_assessments = @account.health_assessments.limit(50).to_a
+      @writable_memberships = if @membership.can_manage_work?
+        @workspace.memberships.includes(:user).where.not(role: :viewer).sort_by { |membership| membership.user.email_address }
+      else
+        []
+      end
       load_intervention_proposals
       @tasks = @account.crew_tasks.includes(:assigned_agent_profile, :current_event).order(created_at: :desc).limit(8)
       @dossier = AccountDossier.new(workspace: @workspace, account: @account, membership: @membership)

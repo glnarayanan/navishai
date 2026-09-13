@@ -5,6 +5,7 @@
     <div>
       <h1>Knowledge sources</h1>
       <p>Keep approved support guidance current, searchable, and tied to the exact version used.</p>
+      <p><%= link_to "Review sources that need attention", workspace_knowledge_improvements_path(Current.workspace) %></p>
     </div>
     <%= form_with url: workspace_knowledge_sources_path(Current.workspace), method: :get, class: "knowledge-search" do |form| %>
       <%= form.hidden_field :support_case_id, value: @support_case.id if @support_case %>

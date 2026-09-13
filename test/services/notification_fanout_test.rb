@@ -38,6 +38,49 @@ class NotificationFanoutTest < ActiveSupport::TestCase
     assert memberships(:owner_support).notifications.last.category_review?
   end
 
+  test "due intervention notices notify only the current writable assignee" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    account = accounts(:acme)
+    member = workspace.memberships.create!(
+      user: User.create!(email_address: "due-fanout-#{SecureRandom.hex(3)}@example.com",
+        password: "password12345", verified_at: Time.current),
+      role: :member
+    )
+    other = workspace.memberships.create!(
+      user: User.create!(email_address: "due-fanout-other-#{SecureRandom.hex(3)}@example.com",
+        password: "password12345", verified_at: Time.current),
+      role: :member
+    )
+    assessment = AccountHealth.recalculate!(
+      workspace:, account:, trigger_kind: "human_request", membership: owner
+    )
+    plan, = create_reviewed_intervention_plan(workspace:, account:, membership: owner, assessment:)
+    intervention = propose_test_intervention(
+      workspace:, account:, membership: owner, accountable_membership: member,
+      assessment:, artifact: plan, at: 2.days.ago
+    )
+    CustomerSuccessInterventionWorkflow.reschedule!(
+      workspace:, membership: owner, intervention:, target_on: Date.current,
+      reason: "Move the follow-up onto the due notice date."
+    )
+    CustomerSuccessInterventionDueNotices.deliver!(workspace:, as_of: Date.current)
+    event = intervention.due_notices.sole.source_audit_event
+
+    assert_equal 1, NotificationFanout.call(event)
+    assert_equal 1, member.notifications.count
+    assert_empty other.notifications
+    assert_includes member.notifications.sole.title, "due today"
+
+    CustomerSuccessInterventionWorkflow.reassign!(
+      workspace:, membership: owner, intervention:, accountable_membership: other,
+      reason: "Coverage moved before a repeated fanout."
+    )
+    assert_equal 0, NotificationFanout.call(event)
+    assert_equal 1, member.notifications.count
+    assert_empty other.notifications
+  end
+
   test "routine status changes do not notify" do
     workspace = workspaces(:acme_support)
     support_case = create_support_case
