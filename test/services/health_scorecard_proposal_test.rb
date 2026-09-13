@@ -83,6 +83,72 @@ class HealthScorecardProposalTest < ActiveSupport::TestCase
     end
   end
 
+  test "revises a proposal with inspectable lineage and rejects stale tabs" do
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
+    parent = complete_run(generate_proposal("Make approaching renewal and repeated SLA breaches matter more."), valid_output)
+    run = generate_proposal(
+      "Raise SLA-breach weight further and keep renewal proximity.",
+      parent_proposal: parent, expected_latest_proposal_id: parent.id
+    )
+    assert_equal "Revise a health scorecard proposal", run.crew_task.title
+    assert_includes run.crew_task.input_context, "scorecard_proposal_revision"
+    assert_includes run.crew_task.input_context, parent.execution_run.run_key
+    revision = complete_run(run, revision_output)
+
+    assert_equal parent, revision.parent_proposal
+    sla = revision.proposed_definition.fetch("rules").find { |rule| rule["signal_key"] == "sla_breaches" }
+    assert_equal 50, sla.fetch("weight")
+    sla_change = revision.inspectable_diff(parent.proposed_definition).fetch("rules")
+      .find { |rule| rule["signal_key"] == "sla_breaches" }
+    assert_equal "changed", sla_change.fetch("kind")
+    assert_equal 35, sla_change.fetch("from_weight")
+    assert_equal 50, sla_change.fetch("to_weight")
+    assert AuditEvent.exists?(action: "scorecard.proposal_generated", subject_type: revision.class.name, subject_id: revision.id)
+
+    assert_raises(HealthScorecardProposalWorkflow::InvalidCommand) do
+      generate_proposal("Raise SLA-breach weight further and keep renewal proximity.",
+        parent_proposal: parent, expected_latest_proposal_id: parent.id)
+    end
+    assert_raises(HealthScorecardProposalWorkflow::InvalidCommand) do
+      HealthScorecardProposalWorkflow.accept!(workspace: @workspace, membership: @owner, proposal: revision,
+        expected_proposal_id: parent.id)
+    end
+    version = HealthScorecardProposalWorkflow.accept!(workspace: @workspace, membership: @owner, proposal: revision,
+      expected_proposal_id: revision.id)
+    assert_equal revision, version.source_proposal
+    assert_equal @owner.user, version.created_by_user
+    assert_equal @published, @scorecard.reload.current_version
+  end
+
+  test "fails closed for a foreign parent proposal" do
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
+    parent = complete_run(generate_proposal("Make approaching renewal and repeated SLA breaches matter more."), valid_output)
+    assert_raises(ActiveRecord::RecordNotFound) do
+      HealthScorecardProposalWorkflow.generate!(
+        workspace: workspaces(:beta_support), membership: memberships(:outsider_beta),
+        prompt: "Raise SLA-breach weight further and keep renewal proximity.",
+        parent_proposal: parent, admit: false
+      )
+    end
+  end
+
+  test "diffs added removed and unchanged rules" do
+    from = {
+      "healthy_min" => 75, "watch_min" => 50,
+      "rules" => [ { "signal_key" => "open_cases", "weight" => 20 }, { "signal_key" => "sla_breaches", "weight" => 25 } ]
+    }
+    to = {
+      "healthy_min" => 80, "watch_min" => 50,
+      "rules" => [ { "signal_key" => "sla_breaches", "weight" => 40 }, { "signal_key" => "renewal_on", "weight" => 30 } ]
+    }
+    diff = HealthScorecardProposalDiff.between(from, to)
+    assert_equal [ 75, 80 ], diff.fetch("healthy_min")
+    kinds = diff.fetch("rules").index_by { |rule| rule.fetch("signal_key") }
+    assert_equal "removed", kinds.fetch("open_cases").fetch("kind")
+    assert_equal "changed", kinds.fetch("sla_breaches").fetch("kind")
+    assert_equal "added", kinds.fetch("renewal_on").fetch("kind")
+  end
+
   test "keeps the manual designer and fails closed across Workspaces" do
     version = HealthScorecardDesigner.propose!(workspace: @workspace, membership: @owner,
       prompt: "Focus the score on unresolved support work.", healthy_min: 75, watch_min: 50,
@@ -104,9 +170,10 @@ class HealthScorecardProposalTest < ActiveSupport::TestCase
   end
 
   private
-    def generate_proposal(prompt)
+    def generate_proposal(prompt, parent_proposal: nil, expected_latest_proposal_id: nil)
       HealthScorecardProposalWorkflow.generate!(
-        workspace: @workspace, membership: @owner, prompt:, admit: false
+        workspace: @workspace, membership: @owner, prompt:, parent_proposal:,
+        expected_latest_proposal_id:, admit: false
       )
     end
 
@@ -150,19 +217,31 @@ class HealthScorecardProposalTest < ActiveSupport::TestCase
     end
 
     def valid_output
+      proposal_json(
+        rules: [
+          { "signal_key" => "renewal_on", "weight" => 40 },
+          { "signal_key" => "sla_breaches", "weight" => 35 }
+        ],
+        explanation: "I increased renewal proximity and SLA breach weights using only catalog signals. This does not calculate account scores."
+      )
+    end
+
+    def revision_output
+      proposal_json(
+        rules: [
+          { "signal_key" => "renewal_on", "weight" => 40 },
+          { "signal_key" => "sla_breaches", "weight" => 50 }
+        ],
+        explanation: "I raised the SLA-breach weight further and kept renewal proximity. This does not calculate account scores."
+      )
+    end
+
+    def proposal_json(rules:, explanation:)
       JSON.generate(
         schema_version: 1, kind: "scorecard_proposal",
-        definition: {
-          "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50,
-          "rules" => [
-            { "signal_key" => "renewal_on", "weight" => 40 },
-            { "signal_key" => "sla_breaches", "weight" => 35 }
-          ]
-        },
-        explanation: "I increased renewal proximity and SLA breach weights using only catalog signals. This does not calculate account scores.",
-        assumptions: [ "Only retained catalog signals can change the score." ],
-        unsupported_requests: [],
-        missing_evidence: []
+        definition: { "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50, "rules" => rules },
+        explanation:, assumptions: [ "Only retained catalog signals can change the score." ],
+        unsupported_requests: [], missing_evidence: []
       )
     end
 

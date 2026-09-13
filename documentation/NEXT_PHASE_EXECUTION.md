@@ -18,7 +18,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | B2 Retention queue UI | PR open | [PR #113](https://github.com/glnarayanan/navishai/pull/113) `cursor/retention-queue-ui-efe6` | Desktop/390/320 system coverage. |
 | B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. |
 | C1 Scorecard proposal | tested | `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. GitHub PR pending (BLK-003). |
-| C2 Proposal revision | not started | — | Depends on C1. |
+| C2 Proposal revision | tested | `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. GitHub PR pending (BLK-003). |
 | C3 Preview/backtest evidence | not started | — | Depends on C2. |
 | D1 Support quality readout | not started | — | Starts from verified `main`. |
 | D2 Knowledge improvement queue | not started | — | Depends on D1. |
@@ -49,3 +49,4 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | `cursor/retention-queue-ui-efe6` | `cursor/account-work-queries-efe6` | B2 | [#113](https://github.com/glnarayanan/navishai/pull/113) | feat: surface account work in the retention queue |
 | `cursor/intervention-follow-up-efe6` | `cursor/retention-queue-ui-efe6` | B3 | [#116](https://github.com/glnarayanan/navishai/pull/116) | feat: manage intervention ownership and follow-up |
 | `cursor/scorecard-proposal-efe6` | `main` | C1 | pending | feat: generate constrained scorecard proposals through the runner |
+| `cursor/scorecard-revision-efe6` | `cursor/scorecard-proposal-efe6` | C2 | pending | feat: revise scorecard proposals with inspectable diffs |

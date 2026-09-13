@@ -115,7 +115,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
 | Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
-| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals are on `cursor/scorecard-proposal-efe6`. |
+| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals and revisions are on `cursor/scorecard-revision-efe6`. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -145,6 +145,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 12 September 2026 scorecard proposal revision (C2)
+
+On `cursor/scorecard-revision-efe6` from C1 (`2282798`). Writers can revise a retained scorecard proposal through the same runner boundary. The new row stores `parent_proposal_id`, the parent run key, and the revision prompt. Inspectable diffs show added, removed, and changed catalog rules versus the parent proposal and versus the published version. Generate and accept carry stale-tab tokens (`expected_latest_proposal_id`, `expected_proposal_id`). Cross-Workspace parent access fails closed. Accepting still creates an unpublished version and attributes the design turn to the accepting human. Generating a revision does not publish or recalculate scores. Focused checks: scorecard proposal, controller, and designer tests 20 runs, 158 assertions; three scorecard system tests, 52 assertions, including revision diffs and 320px revise/accept targets. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
 
 ### 12 September 2026 scorecard proposal (C1)
 

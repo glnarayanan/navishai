@@ -4359,6 +4359,7 @@ CREATE TABLE public.health_scorecard_proposals (
     execution_run_id bigint NOT NULL,
     created_by_membership_id bigint NOT NULL,
     created_by_user_id bigint NOT NULL,
+    parent_proposal_id bigint,
     prompt text NOT NULL,
     proposed_definition jsonb,
     explanation text NOT NULL,
@@ -4374,6 +4375,7 @@ CREATE TABLE public.health_scorecard_proposals (
     CONSTRAINT health_scorecard_proposals_content CHECK ((((octet_length(prompt) >= 1) AND (octet_length(prompt) <= 2000)) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)) AND ((validation_detail IS NULL) OR ((octet_length(validation_detail) >= 1) AND (octet_length(validation_detail) <= 2000))))),
     CONSTRAINT health_scorecard_proposals_definition CHECK (((((validation_status)::text = 'valid'::text) AND (proposed_definition IS NOT NULL)) OR (((validation_status)::text <> 'valid'::text) AND (proposed_definition IS NULL)))),
     CONSTRAINT health_scorecard_proposals_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT health_scorecard_proposals_parent CHECK (((parent_proposal_id IS NULL) OR (parent_proposal_id <> id))),
     CONSTRAINT health_scorecard_proposals_status CHECK (((validation_status)::text = ANY (ARRAY[('valid'::character varying)::text, ('invalid'::character varying)::text, ('unsupported'::character varying)::text, ('incomplete'::character varying)::text])))
 );
 
@@ -10497,6 +10499,13 @@ CREATE UNIQUE INDEX index_health_scorecard_proposals_on_execution_run_id ON publ
 
 
 --
+-- Name: index_health_scorecard_proposals_on_parent_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_parent_proposal_id ON public.health_scorecard_proposals USING btree (parent_proposal_id);
+
+
+--
 -- Name: index_health_scorecard_proposals_on_scorecard_and_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -13912,6 +13921,14 @@ ALTER TABLE ONLY public.health_scorecard_proposals
 
 
 --
+-- Name: health_scorecard_proposals fk_health_scorecard_proposals_parent; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_health_scorecard_proposals_parent FOREIGN KEY (workspace_id, parent_proposal_id) REFERENCES public.health_scorecard_proposals(workspace_id, id);
+
+
+--
 -- Name: health_scorecard_versions fk_health_scorecard_versions_source_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16886,6 +16903,7 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260913020000'),
 ('20260913010000'),
 ('20260912210000'),
 ('20260911120000'),

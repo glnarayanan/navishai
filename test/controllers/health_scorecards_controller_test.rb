@@ -78,6 +78,60 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
     assert_equal proposal, version.source_proposal
   end
 
+  test "revises a proposal, shows inspectable diffs, and rejects a stale tab" do
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
+    parent = retain_proposal(
+      HealthScorecardProposalWorkflow.generate!(
+        workspace: @workspace, membership: @owner,
+        prompt: "Make approaching renewal and repeated SLA breaches matter more.", admit: false
+      )
+    )
+    revision = retain_proposal(
+      HealthScorecardProposalWorkflow.generate!(
+        workspace: @workspace, membership: @owner,
+        prompt: "Raise SLA-breach weight further and keep renewal proximity.",
+        parent_proposal: parent, expected_latest_proposal_id: parent.id, admit: false
+      ),
+      sla_weight: 50
+    )
+
+    get workspace_health_scorecard_path(@workspace)
+    assert_response :success
+    assert_select ".scorecard-diff-changed", text: /SLA breaches/
+    assert_select "p.scorecard-lineage", text: /Revises proposal #{parent.id}/
+    assert_select "input[name=parent_proposal_id][value=?]", parent.id.to_s
+    assert_select "input[name=expected_latest_proposal_id][value=?]", revision.id.to_s
+    assert_select "input[name=expected_proposal_id][value=?]", revision.id.to_s
+
+    post generate_workspace_health_scorecard_path(@workspace), params: {
+      proposal_prompt: "Raise SLA-breach weight further and keep renewal proximity.",
+      parent_proposal_id: parent.id, expected_latest_proposal_id: parent.id
+    }
+    assert_response :unprocessable_content
+    assert_select "[role=alert]", text: /another proposal after the page loaded/
+
+    post accept_workspace_health_scorecard_path(@workspace),
+      params: { proposal_id: revision.id, expected_proposal_id: parent.id }
+    assert_response :unprocessable_content
+    assert_select "[role=alert]", text: /changed after the page loaded/
+  end
+
+  test "does not generate from a foreign parent proposal" do
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
+    parent = retain_proposal(
+      HealthScorecardProposalWorkflow.generate!(
+        workspace: @workspace, membership: @owner,
+        prompt: "Make approaching renewal and repeated SLA breaches matter more.", admit: false
+      )
+    )
+    sign_in_as users(:outsider)
+    post generate_workspace_health_scorecard_path(workspaces(:beta_support)), params: {
+      proposal_prompt: "Raise SLA-breach weight further and keep renewal proximity.",
+      parent_proposal_id: parent.id
+    }
+    assert_response :not_found
+  end
+
   test "does not expose a foreign workspace version" do
     foreign = HealthScorecardDesigner.install_default!(workspace: workspaces(:beta_support)).current_version
     get workspace_health_scorecard_path(@workspace, version_id: foreign.id)
@@ -99,7 +153,7 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
       }
     end
 
-    def retain_proposal(run)
+    def retain_proposal(run, sla_weight: 35)
       ledger = ExecutionLedger.new(workspace: @workspace)
       time = Time.current.change(usec: 0)
       [
@@ -111,7 +165,7 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
             "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50,
             "rules" => [
               { "signal_key" => "renewal_on", "weight" => 40 },
-              { "signal_key" => "sla_breaches", "weight" => 35 }
+              { "signal_key" => "sla_breaches", "weight" => sla_weight }
             ]
           },
           explanation: "I increased renewal proximity and SLA breach weights using only catalog signals.",

@@ -28,7 +28,7 @@ The landing page retains the template section rhythm: sticky header contracting 
 
 - Cases keep a compact queue, conversation and investigation, and a decision rail. The primary next action is blue; secondary controls stay quiet.
 - Accounts put current health in the mobile first fold. Signals use a table on desktop and keyboard-reachable cards on mobile, keeping signal, value, source/range, weight, risk points, and citation.
-- The scorecard is a visual scoring workspace: comparison first, compact threshold cards, and progressive disclosure for history, backtest, publish, and validation. Constrained AI proposals sit above the manual designer and never publish on generate. Mobile preserves Account/Published/Proposal/Change.
+- The scorecard is a visual scoring workspace: comparison first, compact threshold cards, and progressive disclosure for history, backtest, publish, and validation. Constrained AI proposals sit above the manual designer, show inspectable diffs when revised, and never publish on generate. Mobile preserves Account/Published/Proposal/Change.
 - Memory uses provenance and state cards with light/dark layer separation.
 - Setup, auth, and admin routes have route-specific compositions. Setup forms stay behind a disclosure until requested.
 
