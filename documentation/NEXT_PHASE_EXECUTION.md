@@ -19,7 +19,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. Merged into E1 for the full journey. |
 | C1 Scorecard proposal | PR open | [PR #118](https://github.com/glnarayanan/navishai/pull/118) `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. |
 | C2 Proposal revision | PR open | [PR #120](https://github.com/glnarayanan/navishai/pull/120) `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. |
-| C3 Preview/backtest evidence | PR open | [PR #122](https://github.com/glnarayanan/navishai/pull/122) `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. |
+| C3 Preview/backtest evidence | PR open | [PR #122](https://github.com/glnarayanan/navishai/pull/122) `cursor/scorecard-preview-efe6` | Publish bound to inspected preview under the version lock; 500-snapshot cap. |
 | D1 Support quality readout | PR open | [PR #117](https://github.com/glnarayanan/navishai/pull/117) `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Merged into E1. |
 | D2 Knowledge improvement queue | PR open | [PR #119](https://github.com/glnarayanan/navishai/pull/119) `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. Merged into E1. |
 | D3 Follow-up evidence | PR open | [PR #121](https://github.com/glnarayanan/navishai/pull/121) `cursor/knowledge-follow-up-efe6` | Stacked on D2. Assign/triage/resolve/dismiss candidates with audit. Merged into E1. |
@@ -32,7 +32,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 |---|---|---|---|---|---|---|---|---|
 | BLK-001 | A1 | Credential/host | No live self-hosted Supermemory on this check host. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage. Do not claim live engine proof. | Phase implementation is complete. | Operator-supplied self-hosted Supermemory on a disposable host. | open |
 | BLK-002 | A2 | Host | `docker` is not installed. | Changed-image upgrade is not operationally accepted. | Keep the production changed-image upgrade guard until live digest proof. | Phase implementation is complete. | Docker Engine + Compose v2. | open |
-| BLK-003 | All stacks | Tooling | Draft PRs #111–#124 cover A1–E2. ManagePullRequest is unavailable in this agent; `gh` is read-only for PR updates. | PR bodies and ready-for-review flags cannot be written from this agent. | Record exact PR metadata. Do not merge to main. Owner or the write-capable tool can mark drafts ready. | Live-host proof (BLK-001, BLK-002, BLK-004). | Write-capable PR tool or owner marks PRs ready. | open for ready-for-review; PR creation resolved |
+| BLK-003 | All stacks | Tooling | Open PRs #111–#124 cover A1–E2. ManagePullRequest is unavailable in this agent; `gh` is read-only for PR updates. | PR bodies cannot be rewritten from this agent. | Record exact PR metadata. Do not merge to main. | Live-host proof (BLK-001, BLK-002, BLK-004). | Write-capable PR tool or owner updates PR bodies. | open for PR-body writes; PR creation resolved |
 | BLK-004 | A3 | Host/credential | No Docker, public DNS, ACME, signing identity, or live SMTP/scanner/provider on this host. | I5 and live connector checks remain omitted, not passing. | Keep omissions explicit. Do not reopen installer audits. | Phase implementation is complete. | Clean supported host plus operator-owned credentials and signing identity. | open |
 | DEC-001 | A1 | Routine | Owner and Admin may start the memory check, matching the setup-checklist role gate. | Broader than Owner-only if that phrase is read strictly. | Keep Owner/Admin. | Continue. | Owner restricts to Owner-only. | accepted |
 | DEC-002 | A2 | Routine | App-image compatibility uses Docker-save manifests plus `db:migrate:status`; no schema-change claim. | Unsupported/indeterminate still rejected before stop. | Keep the guard. | Continue. | Owner expands the supported upgrade class. | accepted |
@@ -78,7 +78,7 @@ Merge strategy: on `cursor/integrated-scenario-efe6` (C3 parent), merge commits 
 | C1–C3 | Scripted-adapter scorecard proposal, revision, and inspected-preview publish on [#118](https://github.com/glnarayanan/navishai/pull/118)–[#122](https://github.com/glnarayanan/navishai/pull/122) | Live model execution is not claimed |
 | D1–D3 | Quality readout, stale-source queue, and assign/triage/resolve/dismiss candidates on [#117](https://github.com/glnarayanan/navishai/pull/117)–[#121](https://github.com/glnarayanan/navishai/pull/121) | Does not score Accounts or send messages |
 | E1 | 14-step fixture journey plus seven failure variants on [#123](https://github.com/glnarayanan/navishai/pull/123) | No live credentials. Isolation, Docker, and full `bin/ci` omitted on this check host |
-| E2 | This handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004) plus marking drafts ready (BLK-003) |
+| E2 | This handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). PR-body writes remain BLK-003. |
 
 ## Operator handoff
 
@@ -90,6 +90,6 @@ Four independent feature stacks leave `main` (`aa4b079`). Do not merge C into D 
 - **D stack:** `cursor/support-quality-efe6` → `cursor/knowledge-improvements-efe6` → `cursor/knowledge-follow-up-efe6`
 - **E integration:** `cursor/integrated-scenario-efe6` (C3 + merge commits of B3 and D3) → `cursor/phase-handoff-efe6`
 
-DEC-003 is accepted: scorecard AI proposals use `scope_kind=health_scorecard` and reuse `success_strategist`. BLK-003 remains open for ready-for-review writes. BLK-001, BLK-002, and BLK-004 stay open until live proof. Do not claim live Supermemory, Docker digest, or public ACME.
+DEC-003 is accepted: scorecard AI proposals use `scope_kind=health_scorecard` and reuse `success_strategist`. BLK-003 remains open for PR-body writes. BLK-001, BLK-002, and BLK-004 stay open until live proof. Do not claim live Supermemory, Docker digest, or public ACME.
 
 No merge, release, or deploy from this phase. No live Claude/Anthropic implementation review.
