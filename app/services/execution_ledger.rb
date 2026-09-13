@@ -192,21 +192,29 @@ class ExecutionLedger
       )
       updates = updates_for(run, event_record)
       run.update!(updates.merge(current_sequence: sequence, current_event: event_record))
-      if event_record.event_type == "run.completed" && CrewArtifactPublisher.supports?(run)
-        CrewArtifactPublisher.publish!(workspace: @workspace, task: run.crew_task, run:)
+      if event_record.event_type == "run.completed" && task_for_output(run)
+        if run.crew_task.scope_kind == "health_scorecard"
+          HealthScorecardProposalPublisher.publish!(workspace: @workspace, task: run.crew_task, run:)
+        elsif CrewArtifactPublisher.supports?(run)
+          CrewArtifactPublisher.publish!(workspace: @workspace, task: run.crew_task, run:)
+        end
       end
       UsageCostCapture.capture_run!(workspace: @workspace, run:) if run.status.in?(ExecutionRun::TERMINAL_STATUSES)
       event_record
     end
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidRun, error.record.errors.full_messages.to_sentence
-  rescue CrewArtifactPublisher::InvalidOutput => error
+  rescue CrewArtifactPublisher::InvalidOutput, HealthScorecardProposalPublisher::InvalidOutput => error
     raise InvalidRun, error.message
   rescue ActiveRecord::RecordNotUnique
     raise EventConflict, "Event identity or sequence is already in use."
   end
 
   private
+    def task_for_output(run)
+      run.crew_task.scope_kind == "health_scorecard" || CrewArtifactPublisher.supports?(run)
+    end
+
     def frozen_unit_limits(task, selection)
       return [ selection.max_input_units, selection.max_output_units ] unless task.governed_policy_publication
 

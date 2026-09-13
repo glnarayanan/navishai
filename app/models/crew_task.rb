@@ -6,6 +6,7 @@ class CrewTask < ApplicationRecord
   belongs_to :workspace
   belongs_to :support_case, optional: true
   belongs_to :account, optional: true
+  belongs_to :health_scorecard, optional: true
   belongs_to :crew_template
   belongs_to :assigned_agent_profile, class_name: "AgentProfile"
   belongs_to :assigned_agent_profile_version, class_name: "AgentProfileVersion"
@@ -21,13 +22,14 @@ class CrewTask < ApplicationRecord
   has_many :public_web_searches, dependent: :restrict_with_exception
   has_many :artifacts, -> { order(:artifact_kind, :version_number) },
     class_name: "CrewArtifact", dependent: :restrict_with_exception
+  has_many :health_scorecard_proposals, dependent: :restrict_with_exception
 
   enum :status, STATUSES.index_by(&:itself), validate: true
 
   validates :task_key, presence: true, uniqueness: true
   validates :title, presence: true, length: { maximum: 200 }
   validates :input_context, :expected_output, presence: true
-  validates :scope_kind, inclusion: { in: %w[support_case account] }
+  validates :scope_kind, inclusion: { in: %w[support_case account health_scorecard] }
   validate :scope_is_consistent
   validate :assignment_is_consistent
   validate :owner_is_consistent
@@ -36,12 +38,17 @@ class CrewTask < ApplicationRecord
   scope :active, -> { where.not(status: %w[completed canceled]) }
 
   def scope_record
-    support_case || account
+    support_case || account || health_scorecard
   end
 
   private
     def scope_is_consistent
-      valid = scope_kind == "support_case" ? support_case.present? && account.nil? : account.present? && support_case.nil?
+      valid = case scope_kind
+      when "support_case" then support_case.present? && account.nil? && health_scorecard.nil?
+      when "account" then account.present? && support_case.nil? && health_scorecard.nil?
+      when "health_scorecard" then health_scorecard.present? && support_case.nil? && account.nil?
+      else false
+      end
       errors.add(:scope_kind, "does not match its record") unless valid
     end
 

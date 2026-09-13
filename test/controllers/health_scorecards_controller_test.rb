@@ -12,6 +12,7 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", "Health scorecard"
     assert_select "form[action=?]", propose_workspace_health_scorecard_path(@workspace)
+    assert_select "form[action=?]", generate_workspace_health_scorecard_path(@workspace)
 
     post propose_workspace_health_scorecard_path(@workspace), params: proposal_params
     version = @workspace.health_scorecard.versions.first
@@ -46,8 +47,35 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
     get workspace_health_scorecard_path(@workspace)
     assert_response :success
     assert_select ".scorecard-designer", count: 0
+    assert_select ".scorecard-ai", count: 0
     post propose_workspace_health_scorecard_path(@workspace), params: proposal_params
     assert_response :forbidden
+    post generate_workspace_health_scorecard_path(@workspace), params: { proposal_prompt: "Make approaching renewal matter more." }
+    assert_response :forbidden
+  end
+
+  test "submits a runner-backed proposal and requires an explicit accept" do
+    post generate_workspace_health_scorecard_path(@workspace),
+      params: { proposal_prompt: "Make approaching renewal and repeated SLA breaches matter more." }
+    assert_response :unprocessable_content
+    assert_select ".scorecard-designer"
+    assert_select "form[action=?]", propose_workspace_health_scorecard_path(@workspace)
+
+    approve_scripted_runtime(workspace: @workspace, membership: @owner)
+    published = @workspace.health_scorecard.current_version
+    run = HealthScorecardProposalWorkflow.generate!(
+      workspace: @workspace, membership: @owner,
+      prompt: "Make approaching renewal and repeated SLA breaches matter more.", admit: false
+    )
+    proposal = retain_proposal(run)
+    get workspace_health_scorecard_path(@workspace)
+    assert_response :success
+    assert_select "p", text: /increased renewal/i
+    post accept_workspace_health_scorecard_path(@workspace), params: { proposal_id: proposal.id }
+    version = @workspace.health_scorecard.versions.order(version_number: :desc).first
+    assert_redirected_to workspace_health_scorecard_path(@workspace, version_id: version.id)
+    assert_equal published, @workspace.health_scorecard.reload.current_version
+    assert_equal proposal, version.source_proposal
   end
 
   test "does not expose a foreign workspace version" do
@@ -55,6 +83,8 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
     get workspace_health_scorecard_path(@workspace, version_id: foreign.id)
     assert_response :not_found
     post backtest_workspace_health_scorecard_path(@workspace), params: { version_id: foreign.id }
+    assert_response :not_found
+    post accept_workspace_health_scorecard_path(@workspace), params: { proposal_id: foreign.id }
     assert_response :not_found
   end
 
@@ -67,5 +97,35 @@ class HealthScorecardsControllerTest < ActionDispatch::IntegrationTest
           sla_breaches: { enabled: "0", weight: 25 }
         }
       }
+    end
+
+    def retain_proposal(run)
+      ledger = ExecutionLedger.new(workspace: @workspace)
+      time = Time.current.change(usec: 0)
+      [
+        [ 1, "run.admitted", { workspace_key: @workspace.runner_key, task_key: run.crew_task.task_key, attempt: run.attempt_number } ],
+        [ 2, "run.started", { adapter: "scripted", scenario: "scorecard", attempt: run.attempt_number } ],
+        [ 3, "output.produced", { text: JSON.generate(
+          schema_version: 1, kind: "scorecard_proposal",
+          definition: {
+            "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50,
+            "rules" => [
+              { "signal_key" => "renewal_on", "weight" => 40 },
+              { "signal_key" => "sla_breaches", "weight" => 35 }
+            ]
+          },
+          explanation: "I increased renewal proximity and SLA breach weights using only catalog signals.",
+          assumptions: [ "Only retained catalog signals can change the score." ],
+          unsupported_requests: [], missing_evidence: []
+        ) } ],
+        [ 4, "run.completed", { outcome: "completed" } ]
+      ].each do |sequence, type, data|
+        ledger.ingest!(event: {
+          "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+          "sequence" => sequence, "event_type" => type,
+          "occurred_at" => (time + sequence.seconds).iso8601(6), "data" => data.deep_stringify_keys
+        })
+      end
+      @workspace.health_scorecard_proposals.find_by!(execution_run: run)
     end
 end

@@ -99,6 +99,8 @@ Rails.application.routes.draw do
       as: :outcome_explanation, constraints: { subject_type: /case|account|run|health-assessment/ }
     resource :health_scorecard, path: "scorecard", only: :show do
       post :propose
+      post :generate
+      post :accept
       post :backtest
       post :publish
       post :rollback

@@ -11,37 +11,41 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 
 | Slice | State | Evidence | Notes |
 |---|---|---|---|
-| A1 Memory verification | tested | `MemoryVerificationCheck`, checklist and reliability surfaces, `bccf343` | Fixture engineering complete. Live Supermemory is BLK-001. PR publication blocked (no ManagePullRequest). |
-| A2 Changed-image upgrade | tested | `ops/installer/navishai`, `test/scripts/installer_test.rb`, [APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md) | Fixture engineering complete. Live digest proof is BLK-002. Opaque/unsupported targets still rejected. |
-| A3 Deployment acceptance | tested | [INSTALLER_ACCEPTANCE_EVIDENCE.md](./INSTALLER_ACCEPTANCE_EVIDENCE.md) cloud-agent reconciliation | Evidence-only. Applicable fixture suites recorded. Live host, ACME, signing, and Docker procedures omitted (not passed). |
-| B1 Portfolio queries | not started | — | Starts from verified `main`. |
-| B2 Retention queue UI | not started | — | Depends on B1. |
-| B3 Intervention follow-up | not started | — | Depends on B2. |
-| C1 Scorecard proposal | not started | — | Starts from verified `main`. |
+| A1 Memory verification | PR open | [PR #112](https://github.com/glnarayanan/navishai/pull/112) `cursor/memory-verification-efe6` | Fixture-complete. Live Supermemory is BLK-001. |
+| A2 Changed-image upgrade | PR open | [PR #114](https://github.com/glnarayanan/navishai/pull/114) `cursor/app-image-upgrade-efe6` | Fixture-complete. Live Docker digest proof is BLK-002. |
+| A3 Deployment acceptance | PR open | [PR #115](https://github.com/glnarayanan/navishai/pull/115) `cursor/deployment-acceptance-efe6` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
+| B1 Portfolio queries | PR open | [PR #111](https://github.com/glnarayanan/navishai/pull/111) `cursor/account-work-queries-efe6` | Fixture-complete. Independent of A. |
+| B2 Retention queue UI | PR open | [PR #113](https://github.com/glnarayanan/navishai/pull/113) `cursor/retention-queue-ui-efe6` | Desktop/390/320 system coverage. |
+| B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. |
+| C1 Scorecard proposal | tested | `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. GitHub PR pending (BLK-003). |
 | C2 Proposal revision | not started | — | Depends on C1. |
 | C3 Preview/backtest evidence | not started | — | Depends on C2. |
 | D1 Support quality readout | not started | — | Starts from verified `main`. |
 | D2 Knowledge improvement queue | not started | — | Depends on D1. |
 | D3 Follow-up evidence | not started | — | Depends on D2. |
-| E1 Integrated scenario | not started | — | After accepted feature branches. |
+| E1 Integrated scenario | not started | — | After C and D feature branches. |
 | E2 Status and handoff | not started | — | After E1. |
 
 ## Decisions and blockers
 
 | ID | Slice | Type | Evidence | Impact | Recommendation | Safe continuation | Resume condition | State |
 |---|---|---|---|---|---|---|---|---|
-| BLK-001 | A1 | Credential/host | No live self-hosted Supermemory is available on this check host. Fixture adapter covers success, timeout, config change, cross-Workspace, incomplete cleanup, pending, and failure. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage and the configuration-bound checklist result. Do not claim live engine proof. | Continue A2 fixture work and independent B/C/D stacks. | Operator-supplied self-hosted Supermemory with a non-managed key on a disposable host. | open |
-| BLK-002 | A2 | Credential/host | `docker info` failed on this check host. Native installer tests (92 runs) cover identical-archive upgrades plus changed application-image success, rollback, unrecoverable restore, interrupted resume, schema/topology/runner rejection, and the opaque-archive guard. | Live old/new image digest proof, attachment retention on a real volume, and injected Compose health failure are not operationally accepted. | Keep the production guard for unsupported targets. Run [APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md) on a disposable Docker host. | Continue A3 as evidence-only. Start B/C/D from `main`, not from this branch. | Disposable x86-64 host with Docker Engine and Compose v2; old and new Rails image ids recorded. | open |
-| BLK-004 | A3 | Credential/host | Fresh-host I5, public ACME, reboot/SSH interruption, built-image DOC smoke, live SMTP/scanner/provider, and release signing were not available on this Ubuntu 24.04 check host without Docker. | Those outcomes are not operationally accepted. | Keep the dated omission table. Do not infer passes. | Continue independent B/C/D from `main`. | Operator-owned clean supported host, DNS, signing identity, and approved live credentials as applicable. | open |
-| DEC-001 | A1 | Routine | Owner and Admin may start the check, matching the existing setup-checklist role gate. Members and Viewers are denied. | Broader than the word "Owner-triggered" if read as Owner-only. | Keep Owner/Admin, consistent with scanner test and checklist access. | Continue. | Owner decides to restrict to Owner-only. | accepted |
-| DEC-002 | A2 | Routine | Application-image compatibility is proven from Docker-save `manifest.json` config digests plus Compose topology/infra refs and `db:migrate:status`. Schema-changing targets stay unsupported. | Does not claim general schema-change compatibility. | Keep migrate-status as the schema gate; do not add structure.sql to the candidate payload in this slice. | Continue. | Owner asks for a signed compatibility manifest in the bundle. | accepted |
+| BLK-001 | A1 | Credential/host | No live self-hosted Supermemory on this check host. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage. Do not claim live engine proof. | Continue independent C/D. | Operator-supplied self-hosted Supermemory on a disposable host. | open |
+| BLK-002 | A2 | Host | `docker` is not installed. | Changed-image upgrade is not operationally accepted. | Keep production guard until live digest proof. | Continue independent C/D. | Docker Engine + Compose v2. | open |
+| BLK-003 | C1+ | Tooling | A1–B3 stacked PRs exist (#111–#116). ManagePullRequest is still unavailable in this agent; `gh` is read-only for PR creation. | C/D/E GitHub PRs may still need the write-capable tool or owner opening. | Record exact PR metadata when opened. | Continue implementation. | Write-capable PR tool or owner opens remaining PRs. | open for C/D/E; A1–B3 resolved |
+| BLK-004 | A3 | Host/credential | No Docker, public DNS, ACME, signing identity, or live SMTP/scanner/provider on this host. | I5 and live connector checks remain omitted, not passing. | Keep omissions explicit. | Continue C/D. | Clean supported host plus operator-owned credentials and signing identity. | open |
+| DEC-001 | A1 | Routine | Owner and Admin may start the memory check, matching the setup-checklist role gate. | Broader than Owner-only if that phrase is read strictly. | Keep Owner/Admin. | Continue. | Owner restricts to Owner-only. | accepted |
+| DEC-002 | A2 | Routine | App-image compatibility uses Docker-save manifests plus `db:migrate:status`; no schema-change claim. | Unsupported/indeterminate still rejected before stop. | Keep the guard. | Continue. | Owner expands the supported upgrade class. | accepted |
+| DEC-003 | C1 | Durable | Scorecard AI proposals use crew-task `scope_kind=health_scorecard` and reuse `success_strategist`. No ninth agent role. | Workspace-level work is not forced onto a dummy Account. | Keep this scope. | Continue C2. | Owner requires a dedicated designer role. | accepted |
 
 ## PR stack
 
-Pushed branches. GitHub PR creation is BLK-003.
-
-| Branch | Base | Slice |
-|---|---|---|
-| `cursor/memory-verification-efe6` | `main` | A1 |
-| `cursor/app-image-upgrade-efe6` | `cursor/memory-verification-efe6` | A2 |
-| `cursor/deployment-acceptance-efe6` | `cursor/app-image-upgrade-efe6` | A3 |
+| Branch | Base | Slice | PR | Suggested title |
+|---|---|---|---|---|
+| `cursor/memory-verification-efe6` | `main` | A1 | [#112](https://github.com/glnarayanan/navishai/pull/112) | feat: verify configured memory through scoped round trips |
+| `cursor/app-image-upgrade-efe6` | `cursor/memory-verification-efe6` | A2 | [#114](https://github.com/glnarayanan/navishai/pull/114) | feat: support verified application image upgrades |
+| `cursor/deployment-acceptance-efe6` | `cursor/app-image-upgrade-efe6` | A3 | [#115](https://github.com/glnarayanan/navishai/pull/115) | docs: record applicable installer acceptance omissions |
+| `cursor/account-work-queries-efe6` | `main` | B1 | [#111](https://github.com/glnarayanan/navishai/pull/111) | feat: query account attention and renewal work |
+| `cursor/retention-queue-ui-efe6` | `cursor/account-work-queries-efe6` | B2 | [#113](https://github.com/glnarayanan/navishai/pull/113) | feat: surface account work in the retention queue |
+| `cursor/intervention-follow-up-efe6` | `cursor/retention-queue-ui-efe6` | B3 | [#116](https://github.com/glnarayanan/navishai/pull/116) | feat: manage intervention ownership and follow-up |
+| `cursor/scorecard-proposal-efe6` | `main` | C1 | pending | feat: generate constrained scorecard proposals through the runner |

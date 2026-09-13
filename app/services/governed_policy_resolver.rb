@@ -40,11 +40,17 @@ class GovernedPolicyResolver
       case scope
       when SupportCase then @workspace.support_cases.find(scope.id)
       when Account then @workspace.accounts.find(scope.id)
+      when HealthScorecard
+        scorecard = @workspace.health_scorecard
+        raise ActiveRecord::RecordNotFound unless scorecard&.id == scope.id
+        scorecard
       else raise ActiveRecord::RecordNotFound
       end
     end
 
     def matching_publication(scope, profile, family)
+      return agent_profile_publication(profile, family) if scope.is_a?(HealthScorecard)
+
       account_id = scope.is_a?(Account) ? scope.id : scope.conversation.contact.account_id
       conditions = <<~SQL.squish
         (governed_policy_subjects.subject_kind = 'support_case' AND
@@ -68,5 +74,17 @@ class GovernedPolicyResolver
         rank = { "support_case" => 3, "account" => 2, "agent_profile" => 1 }.fetch(publication.scope_kind)
         [ rank, publication.id ]
       end
+    end
+
+    def agent_profile_publication(profile, family)
+      @workspace.governed_policy_publications
+        .joins(proposal: :subjects)
+        .where(expired_at: nil)
+        .where(governed_policy_proposals: {
+          resolution_contract_family_id: family.id, agent_profile_id: profile.id, scope_kind: "agent_profile"
+        })
+        .where(governed_policy_subjects: { subject_kind: "agent_profile", agent_profile_id: profile.id })
+        .distinct
+        .max_by(&:id)
     end
 end

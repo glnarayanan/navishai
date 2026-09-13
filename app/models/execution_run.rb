@@ -20,6 +20,7 @@ class ExecutionRun < ApplicationRecord
   belongs_to :input_artifact, class_name: "CrewArtifact", optional: true
   has_many :events, -> { order(:sequence_number) }, class_name: "ExecutionEvent", dependent: :restrict_with_exception
   has_one :crew_artifact, dependent: :restrict_with_exception
+  has_one :health_scorecard_proposal, dependent: :restrict_with_exception
   has_many :execution_memory_selections, -> { order(:rank) }, dependent: :restrict_with_exception
   has_many :retrieved_memory_records, through: :execution_memory_selections, source: :memory_record
   has_one :usage_cost_snapshot, dependent: :restrict_with_exception

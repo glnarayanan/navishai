@@ -5392,6 +5392,26 @@ td {
 
 .scorecard-bands { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
 .scorecard-bands legend { width: 100%; }
+.scorecard-ai {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.scorecard-ai > header h2 { margin: 0.15rem 0; }
+.scorecard-ai-list { display: grid; gap: 0.85rem; margin: 0; padding: 0; list-style: none; }
+.scorecard-ai-item {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 0.75);
+  background: var(--canvas);
+}
+.scorecard-ai-item p { margin: 0; overflow-wrap: anywhere; }
+
 .scorecard-bands label { display: grid; gap: 0.3rem; font-size: 0.875rem; font-weight: var(--weight-semibold); }
 .scorecard-bands input { width: 7rem; min-height: 3rem; }
 
@@ -5518,7 +5538,8 @@ td {
   .scorecard-proposal,
   .scorecard-preview,
   .scorecard-publish,
-  .scorecard-history { padding: 1rem; }
+  .scorecard-history,
+  .scorecard-ai { padding: 1rem; }
   .scorecard-signal { grid-template-columns: 1fr; gap: 0.5rem; padding: 1rem 0; }
   .scorecard-signal > label:last-child { width: 8rem; margin-left: 2rem; }
   .scorecard-bands { align-items: stretch; flex-direction: column; }
@@ -6031,6 +6052,7 @@ td {
 .scorecard-preview,
 .scorecard-publish,
 .scorecard-history,
+.scorecard-ai,
 .auth-panel,
 .setup-panel {
   border: 1px solid var(--border);

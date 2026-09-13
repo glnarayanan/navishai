@@ -60,4 +60,58 @@ class HealthScorecardTest < ApplicationSystemTestCase
     assert_operator find_button("Refresh preview and backtest").rect.height, :>=, 48
     assert_operator find_link("Accounts", match: :first).rect.height, :>=, 48
   end
+
+  test "an owner generates and accepts a runner proposal without publishing" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    approve_scripted_runtime(workspace:, membership: owner)
+    published = HealthScorecardDesigner.install_default!(workspace:).current_version
+    run = HealthScorecardProposalWorkflow.generate!(
+      workspace:, membership: owner,
+      prompt: "Make approaching renewal and repeated SLA breaches matter more.", admit: false
+    )
+    ledger = ExecutionLedger.new(workspace:)
+    time = Time.current.change(usec: 0)
+    output = JSON.generate(
+      schema_version: 1, kind: "scorecard_proposal",
+      definition: {
+        "schema_version" => 1, "healthy_min" => 75, "watch_min" => 50,
+        "rules" => [
+          { "signal_key" => "renewal_on", "weight" => 40 },
+          { "signal_key" => "sla_breaches", "weight" => 35 }
+        ]
+      },
+      explanation: "I increased renewal proximity and SLA breach weights using only catalog signals.",
+      assumptions: [ "Only retained catalog signals can change the score." ],
+      unsupported_requests: [], missing_evidence: []
+    )
+    [
+      [ 1, "run.admitted", { workspace_key: workspace.runner_key, task_key: run.crew_task.task_key, attempt: 1 } ],
+      [ 2, "run.started", { adapter: "scripted", scenario: "scorecard", attempt: 1 } ],
+      [ 3, "output.produced", { text: output } ],
+      [ 4, "run.completed", { outcome: "completed" } ]
+    ].each do |sequence, type, data|
+      ledger.ingest!(event: {
+        "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
+        "sequence" => sequence, "event_type" => type,
+        "occurred_at" => (time + sequence.seconds).iso8601(6), "data" => data.deep_stringify_keys
+      })
+    end
+
+    sign_in(owner.user)
+    page.current_window.resize_to(1440, 1100)
+    visit workspace_health_scorecard_path(workspace)
+    assert_text "Ask for a constrained proposal"
+    assert_text "I increased renewal proximity"
+    click_button "Accept into unpublished version"
+    assert_text "Proposal accepted as unpublished version"
+    assert_text "Viewing a proposal — not yet published"
+    assert_text "PUBLISHED"
+    assert_text "Version #{published.version_number}"
+    assert_no_text "Version #{workspace.health_scorecard.versions.maximum(:version_number)} is published"
+
+    page.current_window.resize_to(320, 844)
+    assert_field "What should this scorecard emphasise?"
+    assert_operator find_button("Generate AI proposal").rect.height, :>=, 48
+  end
 end

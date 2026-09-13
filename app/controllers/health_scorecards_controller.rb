@@ -8,6 +8,7 @@ class HealthScorecardsController < ApplicationController
 
   rescue_from Current::RoleAccessDenied, with: :forbidden
   rescue_from HealthScorecardDesigner::InvalidProposal,
+    HealthScorecardProposalWorkflow::InvalidCommand,
     HealthScorecardBacktester::InvalidBacktest,
     HealthScorecardPublisher::InvalidPublish, with: :invalid_change
 
@@ -21,6 +22,24 @@ class HealthScorecardsController < ApplicationController
       weights: selected_weights)
     redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
       notice: "Proposal saved as version #{version.version_number}. Run the preview before publishing."
+  end
+
+  def generate
+    HealthScorecardProposalWorkflow.generate!(
+      workspace: @workspace, membership: @membership, prompt: params[:proposal_prompt],
+      admit: !Rails.env.test?
+    )
+    redirect_to workspace_health_scorecard_path(@workspace),
+      notice: "A scorecard proposal run was submitted through the approved runtime. Generating a proposal does not publish or change scores."
+  end
+
+  def accept
+    version = HealthScorecardProposalWorkflow.accept!(
+      workspace: @workspace, membership: @membership,
+      proposal: @workspace.health_scorecard_proposals.find(params[:proposal_id])
+    )
+    redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
+      notice: "Proposal accepted as unpublished version #{version.version_number}. Run the preview before publishing."
   end
 
   def backtest
@@ -58,6 +77,10 @@ class HealthScorecardsController < ApplicationController
       @selected_version = params[:version_id].present? ? @versions.find(params[:version_id]) : @versions.first
       @backtest = @selected_version.backtests.order(generated_at: :desc, id: :desc).first
       @catalog = HealthScorecardDefinition::CATALOG
+      @proposals = @scorecard.proposals.includes(:execution_run, :accepted_version).limit(20)
+      @pending_proposal_run = @scorecard.crew_tasks.joins(:execution_runs)
+        .merge(ExecutionRun.where(status: %w[admitting admitted running]))
+        .order("execution_runs.created_at DESC", "execution_runs.id DESC").first
     end
 
     def selected_weights

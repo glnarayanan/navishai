@@ -27,6 +27,8 @@ class CrewArtifactPublisher
   end
 
   def self.supports?(run)
+    return false if run.crew_task.scope_kind == "health_scorecard"
+
     ROLE_KINDS.key?(run.agent_profile.role_key)
   end
 

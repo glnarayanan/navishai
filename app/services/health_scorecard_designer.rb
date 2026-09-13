@@ -16,27 +16,38 @@ class HealthScorecardDesigner
     end
   end
 
-  def self.propose!(workspace:, membership:, prompt:, healthy_min:, watch_min:, weights:)
+  def self.propose!(workspace:, membership:, prompt:, healthy_min: nil, watch_min: nil, weights: nil,
+    definition: nil, explanation: nil, source_proposal: nil)
     actor = workspace.memberships.find(membership.id)
     raise Current::RoleAccessDenied unless actor.can_write?
     prompt = prompt.to_s.strip
     raise InvalidProposal, "Describe the outcome this scorecard should track." unless prompt.bytesize.in?(1..4_000)
-    definition = HealthScorecardDefinition.build(healthy_min:, watch_min:, weights:)
+    if source_proposal && (source_proposal.workspace_id != workspace.id || !source_proposal.acceptable?)
+      raise InvalidProposal, "Only a valid unused proposal from this Workspace can be accepted."
+    end
+    definition = if definition
+      HealthScorecardDefinition.validate!(definition)
+      definition
+    else
+      HealthScorecardDefinition.build(healthy_min:, watch_min:, weights:)
+    end
+    explanation = explanation.to_s.strip.presence || explain(definition)
     scorecard = install_default!(workspace:)
 
     HealthScorecardVersion.transaction do
       scorecard.lock!
       version = scorecard.versions.create!(
         workspace:, version_number: scorecard.versions.maximum(:version_number).to_i + 1,
-        design_prompt: prompt, explanation: explain(definition), definition:,
-        created_by_membership: actor, created_by_user: actor.user
+        design_prompt: prompt, explanation:, definition:,
+        created_by_membership: actor, created_by_user: actor.user,
+        source_proposal:
       )
       scorecard.design_turns.create!(
         workspace:, health_scorecard_version: version, membership: actor, user: actor.user,
         prompt:, response: version.explanation
       )
       AuditEvent.record!(action: "scorecard.proposed", source: :web, workspace:, actor: actor.user,
-        subject: version, metadata: { "version" => version.version_number })
+        subject: version, metadata: { "version" => version.version_number, "proposal_id" => source_proposal&.id }.compact)
       version
     end
   rescue HealthScorecardDefinition::InvalidDefinition, ActiveRecord::RecordInvalid => error

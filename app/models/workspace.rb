@@ -103,6 +103,7 @@ class Workspace < ApplicationRecord
   has_many :health_scorecard_versions, dependent: :restrict_with_exception
   has_many :health_scorecard_design_turns, dependent: :restrict_with_exception
   has_many :health_scorecard_backtests, dependent: :restrict_with_exception
+  has_many :health_scorecard_proposals, dependent: :restrict_with_exception
   has_one :workspace_data_policy, dependent: :destroy
   has_many :workspace_content_expiry_runs, dependent: :restrict_with_exception
   has_many :notifications, dependent: :restrict_with_exception

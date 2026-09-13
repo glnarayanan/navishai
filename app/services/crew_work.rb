@@ -33,12 +33,15 @@ class CrewWork
     profile = @workspace.agent_profiles.includes(:current_version).find(profile.id)
     expected_crew = scope.is_a?(SupportCase) ? "support" : "customer_success"
     raise InvalidCommand, "Choose a specialist from the #{expected_crew.tr('_', ' ')} crew." unless profile.crew_template.crew_kind == expected_crew
+    if scope.is_a?(HealthScorecard) && profile.role_key != "success_strategist"
+      raise InvalidCommand, "Scorecard proposals use the Success Strategist."
+    end
 
     dependency_ids = Array(dependencies).map { |dependency| dependency.respond_to?(:id) ? dependency.id : dependency }.compact_blank.map(&:to_i).uniq
     dependencies = @workspace.crew_tasks.where(id: dependency_ids).order(:id).to_a
     raise InvalidCommand, "One or more dependencies are unavailable." unless dependencies.size == dependency_ids.size
     unless dependencies.all? { |dependency| same_scope?(dependency, scope) }
-      raise InvalidCommand, "Dependencies must belong to the same case or account."
+      raise InvalidCommand, "Dependencies must belong to the same case, account, or scorecard."
     end
 
     CrewTask.transaction do
@@ -220,7 +223,10 @@ class CrewWork
       case scope
       when SupportCase then @workspace.support_cases.find(scope.id)
       when Account then @workspace.accounts.find(scope.id)
-      else raise InvalidCommand, "Tasks must belong to a case or account."
+      when HealthScorecard then @workspace.health_scorecard.tap do |scorecard|
+        raise InvalidCommand, "Tasks must belong to this Workspace scorecard." unless scorecard&.id == scope.id
+      end
+      else raise InvalidCommand, "Tasks must belong to a case, account, or scorecard."
       end
     end
 
@@ -229,11 +235,19 @@ class CrewWork
     end
 
     def scope_kind(scope)
-      scope.is_a?(SupportCase) ? "support_case" : "account"
+      case scope
+      when SupportCase then "support_case"
+      when Account then "account"
+      when HealthScorecard then "health_scorecard"
+      end
     end
 
     def scope_association(scope)
-      scope.is_a?(SupportCase) ? :support_case : :account
+      case scope
+      when SupportCase then :support_case
+      when Account then :account
+      when HealthScorecard then :health_scorecard
+      end
     end
 
     def lock_scope!(scope)
