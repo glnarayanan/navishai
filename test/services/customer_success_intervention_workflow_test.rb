@@ -313,6 +313,102 @@ class CustomerSuccessInterventionWorkflowTest < ActiveSupport::TestCase
     end
   end
 
+  test "managers reassign and reschedule with prior owner and date retained in audit" do
+    manager = create_membership("follow-up-manager", :manager)
+    member = create_membership("follow-up-member", :member)
+    other = create_membership("follow-up-other", :member)
+    viewer = create_membership("follow-up-viewer", :viewer)
+    intervention = propose_test_intervention(
+      workspace: @workspace, account: @account, membership: @owner,
+      accountable_membership: member, assessment: @assessment, artifact: @plan, at: @at + 1.minute
+    )
+    original_target = intervention.target_on
+
+    assert_raises(Current::RoleAccessDenied) do
+      CustomerSuccessInterventionWorkflow.reassign!(
+        workspace: @workspace, membership: member, intervention:, accountable_membership: other,
+        reason: "Members cannot reassign."
+      )
+    end
+    assert_raises(CustomerSuccessInterventionWorkflow::InvalidCommand) do
+      CustomerSuccessInterventionWorkflow.reassign!(
+        workspace: @workspace, membership: manager, intervention:, accountable_membership: viewer,
+        reason: "Viewers cannot own completion."
+      )
+    end
+
+    CustomerSuccessInterventionWorkflow.reassign!(
+      workspace: @workspace, membership: manager, intervention:, accountable_membership: other,
+      reason: "The original owner is away.", at: @at + 2.minutes
+    )
+    assert_equal other, intervention.reload.accountable_membership
+    reassignment = @workspace.audit_events.find_by!(
+      action: "account.intervention_reassigned",
+      subject_type: "CustomerSuccessIntervention",
+      subject_id: intervention.id
+    )
+    assert_equal member.id, reassignment.metadata.fetch("previous_accountable_membership_id")
+    assert_equal other.id, reassignment.metadata.fetch("accountable_membership_id")
+    assert_equal "The original owner is away.", reassignment.metadata.fetch("reason")
+
+    CustomerSuccessInterventionWorkflow.reschedule!(
+      workspace: @workspace, membership: manager, intervention:,
+      target_on: original_target + 3.days, reason: "The Account asked for more time.", at: @at + 3.minutes
+    )
+    assert_equal original_target + 3.days, intervention.reload.target_on
+    reschedule = @workspace.audit_events.find_by!(
+      action: "account.intervention_rescheduled",
+      subject_type: "CustomerSuccessIntervention",
+      subject_id: intervention.id
+    )
+    assert_equal original_target.iso8601, reschedule.metadata.fetch("previous_target_on")
+    assert_equal (original_target + 3.days).iso8601, reschedule.metadata.fetch("target_on")
+
+    assert_raises(CustomerSuccessInterventionWorkflow::InvalidCommand) do
+      CustomerSuccessInterventionWorkflow.reassign!(
+        workspace: @workspace, membership: manager, intervention:, accountable_membership: other,
+        reason: "The same human is already accountable."
+      )
+    end
+    assert_raises(CustomerSuccessInterventionWorkflow::InvalidCommand) do
+      CustomerSuccessInterventionWorkflow.reschedule!(
+        workspace: @workspace, membership: manager, intervention:,
+        target_on: intervention.reload.target_on, reason: "The date did not change."
+      )
+    end
+
+    CustomerSuccessInterventionWorkflow.approve!(
+      workspace: @workspace, membership: manager, intervention:, at: @at + 4.minutes
+    )
+    assert_raises(Current::RoleAccessDenied) do
+      CustomerSuccessInterventionWorkflow.complete!(
+        workspace: @workspace, membership: member, intervention:
+      )
+    end
+    CustomerSuccessInterventionWorkflow.complete!(
+      workspace: @workspace, membership: other, intervention:, at: @at + 5.minutes
+    )
+    assert_raises(CustomerSuccessInterventionWorkflow::InvalidCommand) do
+      CustomerSuccessInterventionWorkflow.reassign!(
+        workspace: @workspace, membership: manager, intervention:, accountable_membership: member,
+        reason: "Completed work cannot move."
+      )
+    end
+    assert_raises(Current::RoleAccessDenied) do
+      CustomerSuccessInterventionWorkflow.complete!(
+        workspace: @workspace, membership: member, intervention:
+      )
+    end
+    assert_equal other, intervention.reload.accountable_membership
+    assert_equal other, intervention.completed_by_membership
+    assert_equal "The original owner is away.",
+      @workspace.audit_events.find_by!(
+        action: "account.intervention_reassigned",
+        subject_type: "CustomerSuccessIntervention",
+        subject_id: intervention.id
+      ).metadata.fetch("reason")
+  end
+
   private
     def create_membership(prefix, role)
       user = User.create!(

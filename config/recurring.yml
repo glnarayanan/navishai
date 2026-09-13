@@ -28,3 +28,6 @@ production:
   expire_workspace_audit:
     command: "Workspace.active.includes(:workspace_data_policy).find_each { |workspace| WorkspaceDataGovernance.request_audit_expiry!(workspace:) if workspace.workspace_data_policy.audit_retention_days }"
     schedule: every day at 3am
+  notify_intervention_follow_ups:
+    command: "CustomerSuccessInterventionDueNoticeJob.enqueue_due"
+    schedule: every day at 6am

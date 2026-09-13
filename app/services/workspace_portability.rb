@@ -36,7 +36,10 @@ class WorkspacePortability
     "assignee_id" => "memberships",
     "attachment_id" => "stored_attachments",
     "policy_id" => "sla_policies",
-    "tag_id" => "tags"
+    "tag_id" => "tags",
+    "previous_accountable_membership_id" => "memberships",
+    "accountable_membership_id" => "memberships",
+    "recipient_membership_id" => "memberships"
   }.freeze
   NON_DEFERRED_FOREIGN_KEYS = %w[
     email_drafts.human_edited_by_membership_id

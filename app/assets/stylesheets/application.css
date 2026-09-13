@@ -4906,20 +4906,24 @@ td {
   margin: 0;
 }
 
-.intervention-abandon {
+.intervention-abandon,
+.intervention-follow-up {
   position: relative;
 }
 
-.intervention-abandon > summary {
+.intervention-abandon > summary,
+.intervention-follow-up > summary {
   list-style: none;
   cursor: pointer;
 }
 
-.intervention-abandon > summary::-webkit-details-marker {
+.intervention-abandon > summary::-webkit-details-marker,
+.intervention-follow-up > summary::-webkit-details-marker {
   display: none;
 }
 
-.intervention-abandon[open] .intervention-form {
+.intervention-abandon[open] .intervention-form,
+.intervention-follow-up[open] .intervention-form {
   width: min(28rem, 100%);
   padding: 1rem;
   border: 1px solid var(--line);
@@ -4935,6 +4939,11 @@ td {
   padding: 0.875rem 1rem;
   color: var(--warning-foreground) !important;
   background: var(--warning-soft);
+}
+
+.intervention-outcome-pending {
+  display: block;
+  color: var(--warning-foreground);
 }
 
 .intervention-outcome {
@@ -5320,8 +5329,10 @@ td {
   .intervention-actions .button,
   .intervention-actions form,
   .intervention-actions form .button,
-  .intervention-abandon { width: 100%; min-height: 3rem; }
-  .intervention-abandon > summary { display: flex; align-items: center; justify-content: center; }
+  .intervention-abandon,
+  .intervention-follow-up { width: 100%; min-height: 3rem; }
+  .intervention-abandon > summary,
+  .intervention-follow-up > summary { display: flex; align-items: center; justify-content: center; }
   .intervention-outcome dl { grid-template-columns: minmax(0, 1fr); }
   .account-dossier { padding: 1rem; }
   .dossier-heading,
