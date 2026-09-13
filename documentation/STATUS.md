@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 12 September 2026
+**Updated:** 13 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -117,7 +117,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
 | Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)`, `CustomerSuccessInterventionDueNotice` | Association, never cause. Managers reassign and reschedule proposed or approved work. Due notices use existing alerts. |
-| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, inspected-preview publish, and C1–C3 journey proof live on this branch with B3 and D3 merged for the full E1 journey. |
+| Conversational scorecard designer with backtest, publish, rollback | Built | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, inspected-preview publish, and the B+C+D fixture journey are on `cursor/integrated-scenario-efe6`. Live model execution is not claimed. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -148,9 +148,13 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
-### 12 September 2026 scorecard proposal journey (E1)
+### 13 September 2026 operating workspace journey (E1)
 
-On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). B3 and D3 are merged into this branch; the 14-step Workspace journey is the remaining E1 work. Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
+On `cursor/integrated-scenario-efe6`. Merge commits brought B3 (`cursor/intervention-follow-up-efe6`) and D3 (`cursor/knowledge-follow-up-efe6`) onto the C3 scorecard tip without rebasing those stacks. `test/integration/operating_workspace_journey_test.rb` is one named fixture journey: two isolated Workspaces, Support-case and approaching-renewal ingest, blocked draft, Support quality, knowledge-improvement candidate assign/resolve against an authorised version, grounded revised draft, human review and Send through a test transport, material health change on the retention queue, authorised intervention propose/approve/complete/review, scripted scorecard generate/revise, Admin preview/publish, unchanged historical assessments, and empty foreign Workspace. Sibling tests cover memory unavailable, runtime unavailable, stale preview, ineligible assignee, unknown send outcome, missing cost, and insufficient follow-up data. No live credentials. Focused checks: 8 runs, 59 assertions. Related B/C/D services and controllers on this tip: 45 runs, 386 assertions. RuboCop clean on the journey test. Isolation, Docker, and full `bin/ci` omitted on this host. The earlier C-only scorecard lineage remains in `test/integration/scorecard_proposal_journey_test.rb`.
+
+### 12 September 2026 scorecard proposal journey (C stack proof)
+
+On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
 
 ### 12 September 2026 scorecard preview evidence (C3)
 
