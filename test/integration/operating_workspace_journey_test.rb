@@ -312,6 +312,7 @@ class OperatingWorkspaceJourneyTest < ActiveSupport::TestCase
   end
 
   test "unknown send outcome stays reviewable and is not treated as sent" do
+    travel_to @at
     workspace = workspaces(:acme_support)
     owner = memberships(:owner_support)
     Current.session = owner.user.sessions.create!(authentication_method: :local, expires_at: @at + 12.hours)
