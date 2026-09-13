@@ -7,6 +7,8 @@ etc="${managed_root:-}/etc/navishai"
 state="${managed_root:-}/var/lib/navishai"
 project="${NAVISHAI_COMPOSE_PROJECT:-navishai}"
 verified_bundle_staging=""
+upgrade_kind=""
+app_image_previous=""
 answer_memory_key=""
 selected_host=""
 configured_smtp_address=""
@@ -265,7 +267,7 @@ release/script/generate_runner_tls'
   verified_bundle_identity="$(printf '%s\n' "$canonical_manifest" | sha256sum | cut -d' ' -f1)"
 }
 
-install_bundle() {
+publish_staged_release() {
   local staging="$verified_bundle_staging" release temporary_release
   [[ -n ${staging:-} && -d $staging ]] || die "bundle was not verified"
   release="$prefix/releases/$verified_bundle_identity"
@@ -278,10 +280,16 @@ install_bundle() {
     [[ ${NAVISHAI_TEST_FAIL_BEFORE_RELEASE_PUBLISH:-} != 1 ]] || return 1
     mv "$temporary_release" "$release" || return
   fi
-  docker image load -i "$release/images.tar" || return
-  ln -sfn "$release" "$prefix/current" || return
   rm -rf "$staging" || return
   verified_bundle_staging=""
+}
+
+install_bundle() {
+  local release
+  publish_staged_release || return
+  release="$prefix/releases/$verified_bundle_identity"
+  docker image load -i "$release/images.tar" || return
+  ln -sfn "$release" "$prefix/current" || return
 }
 
 confirm_setup() {
@@ -301,23 +309,74 @@ confirm_setup() {
   [[ $consent == yes ]] || die "no setup changes made"
 }
 
+compose_service_records() {
+  docker compose --project-name "$project" --env-file "$etc/env" -f "$1" -f "$2" config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")}]'
+}
+
+saved_image_records() {
+  local archive="$1" payload
+  payload="$(tar -xOf "$archive" manifest.json 2>/dev/null)" || return 1
+  jq -e 'type == "array"' <<<"$payload" >/dev/null 2>&1 || return 1
+  jq -cS '[.[] | select((.RepoTags | type) == "array" and (.Config | type) == "string") | .RepoTags[] as $tag | {tag: $tag, config: .Config}] | sort_by(.tag)' <<<"$payload"
+}
+
+image_records_for() {
+  jq -cS --arg prefix "$1" '[.[] | select(.tag | startswith($prefix))]'
+}
+
+app_image_change_supported() {
+  local current_records="$1" target_records="$2" current_rails target_rails current_runner target_runner current_memory target_memory current_other target_other
+  current_rails="$(image_records_for "navishai-rails:" <<<"$current_records")"
+  target_rails="$(image_records_for "navishai-rails:" <<<"$target_records")"
+  current_runner="$(image_records_for "navishai-runner:" <<<"$current_records")"
+  target_runner="$(image_records_for "navishai-runner:" <<<"$target_records")"
+  current_memory="$(image_records_for "navishai-supermemory:" <<<"$current_records")"
+  target_memory="$(image_records_for "navishai-supermemory:" <<<"$target_records")"
+  current_other="$(jq -cS '[.[] | select((.tag | startswith("navishai-rails:") or startswith("navishai-runner:") or startswith("navishai-supermemory:")) | not)]' <<<"$current_records")"
+  target_other="$(jq -cS '[.[] | select((.tag | startswith("navishai-rails:") or startswith("navishai-runner:") or startswith("navishai-supermemory:")) | not)]' <<<"$target_records")"
+  [[ "$current_other" == "[]" && "$target_other" == "[]" ]] || return 1
+  [[ "$current_runner" == "$target_runner" && "$current_runner" != "[]" ]] || return 1
+  [[ "$current_memory" == "$target_memory" && "$current_memory" != "[]" ]] || return 1
+  [[ "$current_rails" != "[]" && "$target_rails" != "[]" && "$current_rails" != "$target_rails" ]] || return 1
+}
+
 validate_staged_target() {
-  local staging="$verified_bundle_staging" target_postgres current_postgres_major target_postgres_major current_images_archive target_services current_services
+  local staging="$verified_bundle_staging" target_postgres current_postgres_major target_postgres_major current_images_archive target_services current_services current_names target_names current_infra target_infra current_app target_app current_saved target_saved
+  upgrade_kind=""
   [[ -n $staging && -d $staging ]] || die "target bundle was not verified"
   command -v jq >/dev/null || die "jq is required to inspect the target Compose configuration"
   docker compose --project-name "$project" --env-file "$etc/env" -f "$staging/release/compose.yaml" -f "$staging/release/ops/installer/compose.yaml" config --quiet || die "target Compose configuration is invalid"
   current_images_archive="$prefix/current/images.tar"
   [[ -f "$current_images_archive" ]] || die "changed-image upgrades are temporarily unavailable; the installed release has no retained image archive"
-  cmp -s "$staging/images.tar" "$current_images_archive" || die "changed-image upgrades are temporarily unavailable; restore-compatible recovery is not yet implemented"
-  target_services="$(docker compose --project-name "$project" --env-file "$etc/env" -f "$staging/release/compose.yaml" -f "$staging/release/ops/installer/compose.yaml" config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")} ]')"
-  current_services="$(compose config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")} ]')"
-  [[ "$target_services" == "$current_services" ]] || die "changed-image upgrades are temporarily unavailable; target service image references differ"
+  target_services="$(compose_service_records "$staging/release/compose.yaml" "$staging/release/ops/installer/compose.yaml")"
+  current_services="$(compose config --format json | jq -cS '[.services | to_entries[] | {name: .key, image: (.value.image // "")}]')"
+  current_names="$(jq -cS '[.[].name]' <<<"$current_services")"
+  target_names="$(jq -cS '[.[].name]' <<<"$target_services")"
+  [[ "$current_names" == "$target_names" ]] || die "target service topology differs from the installed release"
+  current_infra="$(jq -cS '[.[] | select(.name != "web" and .name != "jobs")]' <<<"$current_services")"
+  target_infra="$(jq -cS '[.[] | select(.name != "web" and .name != "jobs")]' <<<"$target_services")"
+  [[ "$current_infra" == "$target_infra" ]] || die "target changes infrastructure image references; those upgrades are unsupported"
+  current_app="$(jq -cS '[.[] | select(.name == "web" or .name == "jobs") | .image] | unique' <<<"$current_services")"
+  target_app="$(jq -cS '[.[] | select(.name == "web" or .name == "jobs") | .image] | unique' <<<"$target_services")"
+  [[ "$(jq 'length' <<<"$current_app")" -le 1 && "$(jq 'length' <<<"$target_app")" -le 1 ]] || die "web and jobs must share one application image"
   target_postgres="$(jq -r '.[] | select(.name == "postgres") | .image' <<<"$target_services")"
   [[ "$target_postgres" == pgvector/pgvector:*@sha256:* ]] || die "target postgres service must use a digest-pinned pgvector image"
   [[ "$target_postgres" == *"pg15"* || "$target_postgres" == *"pg16"* ]] || die "target PostgreSQL major version is unsupported"
   target_postgres_major="$(sed -nE 's/.*pg(15|16).*/\1/p' <<<"$target_postgres")"
   current_postgres_major="$(compose exec -T postgres psql --username navishai --dbname navishai_production --tuples-only --no-align --command 'SHOW server_version_num' | sed -nE 's/^([0-9]{2}).*/\1/p')"
   [[ "$current_postgres_major" == "$target_postgres_major" ]] || die "target PostgreSQL $target_postgres_major does not match installed PostgreSQL $current_postgres_major"
+  if cmp -s "$staging/images.tar" "$current_images_archive"; then
+    [[ "$target_services" == "$current_services" ]] || die "changed-image upgrades are temporarily unavailable; target service image references differ"
+    upgrade_kind="same_archive"
+    return
+  fi
+  current_saved="$(saved_image_records "$current_images_archive")" || die "changed-image upgrades are temporarily unavailable; restore-compatible recovery is not yet implemented"
+  target_saved="$(saved_image_records "$staging/images.tar")" || die "changed-image upgrades are temporarily unavailable; restore-compatible recovery is not yet implemented"
+  if app_image_change_supported "$current_saved" "$target_saved"; then
+    upgrade_kind="app_image"
+    return
+  fi
+  die "changed-image upgrades are temporarily unavailable; target changes runner, memory, or other unsupported images"
 }
 
 write_env() {
@@ -501,7 +560,8 @@ doctor() {
       case "$step" in
         https_verified|upgrade_completed|restore_completed) finding ok install_step "last recorded step: $step" ;;
         https_unverified) finding failure install_step "HTTPS was never verified" "check DNS for $host, the certificate, and connectivity, then rerun navishai setup" ;;
-        *_restore_required) finding failure install_step "last recorded step: $step" "restore from the verified backup with navishai restore before retrying" ;;
+        upgrade_app_image_recovered) finding warning install_step "previous application image was restored after a failed promotion" "verify the restored release, then upgrade with a different supported candidate if needed" ;;
+        upgrade_app_image_unrecoverable|*_restore_required) finding failure install_step "last recorded step: $step" "restore from the verified backup with navishai restore before retrying" ;;
         "") finding warning install_step "install record has no step" "rerun navishai setup with the same candidate" ;;
         *) finding warning install_step "setup stopped at step $step" "rerun navishai setup with the same candidate" ;;
       esac
@@ -667,6 +727,156 @@ restore_failure() {
   printf 'navishai: restore %s failed; restore remains required\n' "$phase" >&2
   exit "$status"
 }
+sync_source_commit_env() {
+  local commit temporary
+  [[ -f "$etc/env" && -f "$prefix/current/SOURCE_COMMIT" ]] || return 0
+  commit="$(tr -d '\n' < "$prefix/current/SOURCE_COMMIT")"
+  temporary="$(mktemp "$etc/env.XXXXXX")"
+  grep -Ev '^NAVISHAI_SOURCE_COMMIT=' "$etc/env" >"$temporary" || true
+  printf 'NAVISHAI_SOURCE_COMMIT=%s\n' "$commit" >>"$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$etc/env"
+}
+
+install_step() {
+  [[ -f "$state/install.json" ]] || return 0
+  sed -n 's/.*"step":"\([a-z_]*\)".*/\1/p' "$state/install.json"
+}
+
+write_upgrade_attempt() {
+  local outcome="$1" previous_id
+  previous_id="$(basename "$app_image_previous")"
+  mkdir -p "$state"
+  printf '{"schema":1,"kind":"app_image","target":"%s","previous":"%s","outcome":"%s"}\n' \
+    "$verified_bundle_identity" "$previous_id" "$outcome" >"$state/upgrade-attempt.json"
+}
+
+start_application_services() {
+  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
+    compose up -d --wait web jobs caddy
+  else
+    compose up -d --wait supermemory web jobs caddy
+  fi
+}
+
+refuse_blocked_upgrade() {
+  local step outcome attempted
+  step="$(install_step)"
+  case "$step" in
+    upgrade_app_image_unrecoverable|*_restore_required)
+      die "restore from the verified backup before retrying this upgrade"
+      ;;
+  esac
+  [[ -f "$state/upgrade-attempt.json" ]] || return 0
+  attempted="$(jq -r '.target // empty' "$state/upgrade-attempt.json")"
+  outcome="$(jq -r '.outcome // empty' "$state/upgrade-attempt.json")"
+  [[ "$attempted" == "$verified_bundle_identity" ]] || return 0
+  case "$outcome" in
+    recovered)
+      die "this candidate was rolled back after a failed promotion; use a different candidate or restore from backup"
+      ;;
+    unrecoverable|failed)
+      die "restore from the verified backup before retrying this upgrade"
+      ;;
+  esac
+}
+
+target_schema_compatible() {
+  local release="$1" migrate_status
+  if ! migrate_status="$(compose_at "$release" run --rm --no-deps web bin/rails db:migrate:status)"; then
+    die "cannot determine target schema compatibility; no application services were stopped"
+  fi
+  if grep -Eq '^[[:space:]]*down[[:space:]]' <<<"$migrate_status"; then
+    die "target includes pending schema migrations; schema-changing upgrades are unsupported"
+  fi
+}
+
+app_image_rollback() {
+  local status="$1" previous="$app_image_previous"
+  compose stop caddy jobs web runner supermemory || true
+  if [[ -z $previous || ! -d $previous ]]; then
+    write_upgrade_attempt unrecoverable
+    progress upgrade_app_image_unrecoverable
+    printf 'navishai: target readiness failed and the previous application release is missing; restore from the verified backup\n' >&2
+    exit "$status"
+  fi
+  if ! ln -sfn "$previous" "$prefix/current"; then
+    write_upgrade_attempt unrecoverable
+    progress upgrade_app_image_unrecoverable
+    printf 'navishai: target readiness failed and the previous application pointer could not be restored; restore from the verified backup\n' >&2
+    exit "$status"
+  fi
+  sync_source_commit_env
+  if ! docker image load -i "$previous/images.tar"; then
+    write_upgrade_attempt unrecoverable
+    progress upgrade_app_image_unrecoverable
+    printf 'navishai: target readiness failed and the previous application image could not be reloaded; restore from the verified backup\n' >&2
+    exit "$status"
+  fi
+  if compose up -d --wait postgres app-net runner && start_application_services; then
+    write_upgrade_attempt recovered
+    progress upgrade_app_image_recovered
+    printf 'navishai: target readiness failed; restored previous application release %s. This candidate will not be promoted again.\n' "$(basename "$previous")" >&2
+    exit "$status"
+  fi
+  write_upgrade_attempt unrecoverable
+  progress upgrade_app_image_unrecoverable
+  printf 'navishai: target readiness failed and restoring the previous application was unsuccessful; restore from the verified backup\n' >&2
+  exit "$status"
+}
+
+app_image_finish() {
+  if compose up -d --wait postgres app-net runner; then
+    :
+  else
+    app_image_rollback "$?"
+  fi
+  if start_application_services; then
+    write_upgrade_attempt completed
+    rm -f "$state/upgrade-attempt.json"
+    progress upgrade_completed
+    echo "Application image upgrade completed for release $(cat "$prefix/current/SOURCE_COMMIT")."
+    return 0
+  else
+    app_image_rollback 1
+  fi
+}
+
+upgrade_app_image() {
+  local release="$prefix/releases/$verified_bundle_identity" outcome
+  app_image_previous="$(readlink -f "$prefix/current")"
+  if [[ -f "$state/upgrade-attempt.json" ]]; then
+    outcome="$(jq -r '.outcome // empty' "$state/upgrade-attempt.json")"
+    if [[ "$(jq -r '.target // empty' "$state/upgrade-attempt.json")" == "$verified_bundle_identity" && $outcome == promoted ]]; then
+      app_image_previous="$prefix/releases/$(jq -r '.previous' "$state/upgrade-attempt.json")"
+      echo "Resuming application-image upgrade for an already promoted candidate."
+      app_image_finish
+      return
+    fi
+  fi
+  if ! publish_staged_release; then
+    die "could not stage the target release; the running install was not stopped"
+  fi
+  if ! docker image load -i "$release/images.tar"; then
+    die "could not load the target application image; the running install was not stopped"
+  fi
+  progress upgrade_app_image_loaded
+  target_schema_compatible "$release"
+  write_upgrade_attempt compatible
+  echo "Upgrade will stop writers and promote a changed application image. Infrastructure images and schema stay unchanged. A failed readiness check restores the previous application image."
+  compose stop caddy jobs web runner supermemory
+  progress upgrade_writers_stopped
+  if ln -sfn "$release" "$prefix/current"; then
+    sync_source_commit_env
+    write_upgrade_attempt promoted
+    progress upgrade_app_image_promoted
+    [[ ${NAVISHAI_TEST_FAIL_AFTER_APP_IMAGE_PROMOTE:-} != 1 ]] || return 1
+  else
+    app_image_rollback "$?"
+  fi
+  app_image_finish
+}
+
 upgrade() {
   need_root
   [[ $# -eq 3 && $3 == --confirm-apply ]] || die "usage: navishai upgrade VERIFIED_BACKUP TARGET.tar --confirm-apply"
@@ -674,12 +884,25 @@ upgrade() {
   lock
   stage_bundle "$target"
   validate_staged_target
+  refuse_blocked_upgrade
   disk_check "$target"
   operation "$prefix/current/ops/compose/upgrade_preflight" "$backup"
+  if [[ -f "$state/upgrade-attempt.json" ]]; then
+    if [[ "$(jq -r '.target // empty' "$state/upgrade-attempt.json")" == "$verified_bundle_identity" && \
+          "$(jq -r '.outcome // empty' "$state/upgrade-attempt.json")" == "promoted" ]]; then
+      upgrade_app_image
+      return
+    fi
+  fi
+  if [[ $upgrade_kind == app_image ]]; then
+    upgrade_app_image
+    return
+  fi
   echo "Upgrade will stop writers, prepare the target database once, and recreate application services. A failed migration requires restore from the verified backup."
   compose stop caddy jobs web runner supermemory
   progress upgrade_writers_stopped
   if install_bundle; then
+    sync_source_commit_env
     progress upgrade_target_promoted
   else
     upgrade_failure target_load "$?"
@@ -694,11 +917,7 @@ upgrade() {
   else
     upgrade_failure prepare "$?"
   fi
-  if grep -qx 'NAVISHAI_MEMORY_PENDING=1' "$etc/env"; then
-    compose up -d --wait web jobs caddy || upgrade_failure health "$?"
-  else
-    compose up -d --wait supermemory web jobs caddy || upgrade_failure health "$?"
-  fi
+  start_application_services || upgrade_failure health "$?"
   progress upgrade_completed
 }
 

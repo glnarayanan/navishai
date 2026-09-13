@@ -912,6 +912,230 @@ class InstallerTest < ActiveSupport::TestCase
     end
   end
 
+  def test_upgrade_accepts_a_changed_application_image_when_infra_and_schema_stay_the_same
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n", "release/ops/compose/backup" => "target-backup\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+      password_line = File.read("#{root}/etc/navishai/env").lines.grep(/NAVISHAI_DATABASE_PASSWORD=/).first
+      tls_before = runner_tls_digests(root)
+      services = pinned_compose_services
+
+      stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(services).merge("DOCKER_POSTGRES_VERSION" => "160000"))
+
+      assert status.success?, stderr
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "upgrade_completed"
+      refute_path_exists "#{root}/var/lib/navishai/upgrade-attempt.json"
+      assert_not_equal current, File.realpath("#{root}/opt/navishai/current")
+      assert_equal "b" * 40, File.read("#{root}/opt/navishai/current/SOURCE_COMMIT").strip
+      env_after = File.read("#{root}/etc/navishai/env")
+      assert_includes env_after, "NAVISHAI_SOURCE_COMMIT=#{'b' * 40}\n"
+      assert_includes env_after, password_line
+      assert_equal tls_before, runner_tls_digests(root)
+      log = docker_log(root)
+      assert_operator log.index("image load -i"), :<, log.index("stop caddy")
+      assert_includes log, "db:migrate:status"
+      refute_includes log, "db:prepare"
+      refute_includes log, "down -v"
+      refute_includes log, "volume rm"
+      assert_includes stdout, "Application image upgrade completed"
+    end
+  end
+
+  def test_upgrade_rejects_a_changed_runner_image_before_stopping_services
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-1", runner: "runner-old", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-1", runner: "runner-new", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge("DOCKER_POSTGRES_VERSION" => "160000"))
+
+      assert_not status.success?
+      assert_includes stderr, "runner, memory, or other unsupported images"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      refute_includes docker_log(root), "stop caddy"
+    end
+  end
+
+  def test_upgrade_rejects_pending_schema_migrations_before_stopping_services
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge(
+          "DOCKER_POSTGRES_VERSION" => "160000",
+          "DOCKER_MIGRATE_STATUS" => "   down     20260912210000  add_incompatible_change"
+        ))
+
+      assert_not status.success?
+      assert_includes stderr, "pending schema migrations"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      log = docker_log(root)
+      assert_includes log, "image load -i"
+      refute_includes log, "stop caddy"
+    end
+  end
+
+  def test_upgrade_rejects_changed_service_topology_before_stopping_services
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      target = build_bundle(root, "release/ops/compose/backup" => "target-backup\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+      postgres = "pgvector/pgvector:0.8.6-pg16@sha256:#{'a' * 64}"
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        "DOCKER_CURRENT_CONFIG_JSON" => { services: { postgres: { image: postgres } } }.to_json,
+        "DOCKER_TARGET_CONFIG_JSON" => { services: { postgres: { image: postgres }, extra: { image: "busybox:latest" } } }.to_json,
+        "DOCKER_POSTGRES_VERSION" => "160000")
+
+      assert_not status.success?
+      assert_includes stderr, "target service topology differs"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      refute_includes docker_log(root), "stop caddy"
+    end
+  end
+
+  def test_failed_application_image_health_restores_the_previous_release
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+      tls_before = runner_tls_digests(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge(
+          "DOCKER_POSTGRES_VERSION" => "160000",
+          "DOCKER_FAIL_MATCH" => "up -d --wait web jobs caddy",
+          "DOCKER_FAIL_TIMES" => "1"
+        ))
+
+      assert_not status.success?
+      assert_includes stderr, "restored previous application release"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      assert_equal "a" * 40, File.read("#{root}/opt/navishai/current/SOURCE_COMMIT").strip
+      assert_equal tls_before, runner_tls_digests(root)
+      state = File.read("#{root}/var/lib/navishai/install.json")
+      assert_includes state, "upgrade_app_image_recovered"
+      refute_includes state, "upgrade_completed"
+      refute_includes state, "restore_required"
+      attempt = JSON.parse(File.read("#{root}/var/lib/navishai/upgrade-attempt.json"))
+      assert_equal "recovered", attempt.fetch("outcome")
+
+      File.write("#{root}/docker.log", "")
+      _stdout, retry_stderr, retry_status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge("DOCKER_POSTGRES_VERSION" => "160000"))
+
+      assert_not retry_status.success?
+      assert_includes retry_stderr, "rolled back after a failed promotion"
+      refute_includes docker_log(root), "stop caddy"
+    end
+  end
+
+  def test_unrecoverable_application_image_rollback_requires_restore
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      ready_upgrade(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge(
+          "DOCKER_POSTGRES_VERSION" => "160000",
+          "DOCKER_FAIL_MATCH" => "up -d --wait web jobs caddy"
+        ))
+
+      assert_not status.success?
+      assert_includes stderr, "restoring the previous application was unsuccessful"
+      state = File.read("#{root}/var/lib/navishai/install.json")
+      assert_includes state, "upgrade_app_image_unrecoverable"
+      refute_includes state, "upgrade_completed"
+    end
+  end
+
+  def test_application_image_load_failure_does_not_stop_the_running_install
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      current = ready_upgrade(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge(
+          "DOCKER_POSTGRES_VERSION" => "160000",
+          "DOCKER_FAIL_MATCH" => "image load -i"
+        ))
+
+      assert_not status.success?
+      assert_includes stderr, "could not load the target application image"
+      assert_equal current, File.realpath("#{root}/opt/navishai/current")
+      refute_includes docker_log(root), "stop caddy"
+    end
+  end
+
+  def test_interrupted_application_image_promotion_resumes_without_repeating_promotion
+    Dir.mktmpdir do |root|
+      current_images = docker_save_images(root, rails: "rails-old", runner: "runner-1", memory: "memory-1")
+      target_images = docker_save_images(root, rails: "rails-new", runner: "runner-1", memory: "memory-1")
+      bundle = build_bundle(root, "images.tar" => current_images)
+      target = build_bundle(root, "images.tar" => target_images, "release/SOURCE_COMMIT" => "#{"b" * 40}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      previous = ready_upgrade(root)
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge(
+          "DOCKER_POSTGRES_VERSION" => "160000",
+          "NAVISHAI_TEST_FAIL_AFTER_APP_IMAGE_PROMOTE" => "1"
+        ))
+
+      assert_not status.success?, stderr
+      assert_not_equal previous, File.realpath("#{root}/opt/navishai/current")
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "upgrade_app_image_promoted"
+      assert_equal "promoted", JSON.parse(File.read("#{root}/var/lib/navishai/upgrade-attempt.json")).fetch("outcome")
+      File.write("#{File.realpath("#{root}/opt/navishai/current")}/ops/compose/upgrade_preflight", "#!/bin/sh\nexit 0\n")
+      FileUtils.chmod(0o755, "#{File.realpath("#{root}/opt/navishai/current")}/ops/compose/upgrade_preflight")
+
+      File.write("#{root}/docker.log", "")
+      stdout, retry_stderr, retry_status = run_installer(root, "upgrade", "#{root}/backup", target, "--confirm-apply",
+        upgrade_docker_env(pinned_compose_services).merge("DOCKER_POSTGRES_VERSION" => "160000"))
+
+      assert retry_status.success?, retry_stderr
+      assert_includes File.read("#{root}/var/lib/navishai/install.json"), "upgrade_completed"
+      refute_path_exists "#{root}/var/lib/navishai/upgrade-attempt.json"
+      assert_equal "b" * 40, File.read("#{root}/opt/navishai/current/SOURCE_COMMIT").strip
+      assert_includes stdout, "Resuming application-image upgrade"
+      refute_includes docker_log(root), "db:prepare"
+    end
+  end
+
   def test_upgrade_accepts_installed_postgres_16_for_pinned_pg16_target
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
@@ -1421,10 +1645,20 @@ class InstallerTest < ActiveSupport::TestCase
       printf '%s\n' "$*" >>"$DOCKER_TEST_LOG"
       if [ -n "${DOCKER_FAIL_MATCH:-}" ]; then
         case "$*" in
-          *"$DOCKER_FAIL_MATCH"*) exit 1 ;;
+          *"$DOCKER_FAIL_MATCH"*)
+            count="$(cat "${DOCKER_FAIL_COUNT_FILE:-/tmp/docker-fail-count}" 2>/dev/null || echo 0)"
+            count=$((count + 1))
+            printf '%s' "$count" >"${DOCKER_FAIL_COUNT_FILE:-/tmp/docker-fail-count}"
+            if [ "$count" -le "${DOCKER_FAIL_TIMES:-9999}" ]; then
+              exit 1
+            fi
+            ;;
         esac
       fi
       case "$*" in
+        *"db:migrate:status"*)
+          printf '%s\n' "${DOCKER_MIGRATE_STATUS:-   up      20260101000000  init}"
+          ;;
         *"image load -i"*)
           for argument; do image="$argument"; done
           [ -f "$image" ] || exit 1
@@ -1475,10 +1709,12 @@ class InstallerTest < ActiveSupport::TestCase
       fi
     SH
     FileUtils.chmod(0o755, "#{bin}/stat")
+    File.write("#{root}/docker-fail-count", "0")
     extra_environment.merge(
       "NAVISHAI_MANAGED_ROOT" => root,
       "NAVISHAI_TEST_ALLOW_UNPRIVILEGED" => "1",
       "DOCKER_TEST_LOG" => log,
+      "DOCKER_FAIL_COUNT_FILE" => "#{root}/docker-fail-count",
       "PATH" => "#{bin}:#{ENV.fetch("PATH")}"
     )
   end
@@ -1539,6 +1775,9 @@ class InstallerTest < ActiveSupport::TestCase
       File.write("#{staging}/#{path}", contents)
     end
     FileUtils.chmod(0o755, "#{staging}/release/script/generate_runner_tls")
+    %w[backup restore upgrade_preflight verify_backup].each do |name|
+      FileUtils.chmod(0o755, "#{staging}/release/ops/compose/#{name}")
+    end
     manifest = files.keys.sort.map { |path| "#{Digest::SHA256.file("#{staging}/#{path}").hexdigest}  #{path}" }.join("\n")
     File.write("#{staging}/SHA256SUMS", "#{manifest}\n")
     bundle = "#{root}/#{SecureRandom.hex}.tar"
@@ -1546,5 +1785,53 @@ class InstallerTest < ActiveSupport::TestCase
     bundle
   ensure
     FileUtils.remove_entry(staging) if staging && File.exist?(staging)
+  end
+
+  def docker_save_images(root, rails:, runner:, memory:)
+    staging = Dir.mktmpdir("save", root)
+    manifest = [
+      { "Config" => "#{rails}.json", "RepoTags" => [ "navishai-rails:local" ], "Layers" => [ "#{rails}-layer.tar" ] },
+      { "Config" => "#{runner}.json", "RepoTags" => [ "navishai-runner:local" ], "Layers" => [ "#{runner}-layer.tar" ] },
+      { "Config" => "#{memory}.json", "RepoTags" => [ "navishai-supermemory:0.0.8" ], "Layers" => [ "#{memory}-layer.tar" ] }
+    ]
+    File.write("#{staging}/manifest.json", JSON.generate(manifest))
+    archive = "#{staging}/images.tar"
+    system("tar", "-cf", archive, "-C", staging, "manifest.json", exception: true)
+    File.binread(archive)
+  ensure
+    FileUtils.remove_entry(staging) if staging && File.exist?(staging)
+  end
+
+  def pinned_compose_services(app: "navishai-rails:local")
+    postgres = "pgvector/pgvector:0.8.6-pg16@sha256:#{'a' * 64}"
+    {
+      services: {
+        postgres: { image: postgres },
+        runner: { image: "navishai-runner:local" },
+        "app-net": { image: "debian:bookworm-slim@sha256:#{'b' * 64}" },
+        supermemory: { image: "navishai-supermemory:0.0.8" },
+        web: { image: app },
+        jobs: { image: app },
+        caddy: { image: "caddy:2.10.2-alpine@sha256:#{'c' * 64}" }
+      }
+    }
+  end
+
+  def upgrade_docker_env(services)
+    payload = services.to_json
+    { "DOCKER_CONFIG_JSON" => payload, "DOCKER_CURRENT_CONFIG_JSON" => payload, "DOCKER_TARGET_CONFIG_JSON" => payload }
+  end
+
+  def ready_upgrade(root)
+    current = File.realpath("#{root}/opt/navishai/current")
+    File.write("#{current}/ops/compose/upgrade_preflight", "#!/bin/sh\nexit 0\n")
+    FileUtils.chmod(0o755, "#{current}/ops/compose/upgrade_preflight")
+    File.write("#{root}/backup", "verified\n")
+    File.write("#{root}/docker.log", "")
+    current
+  end
+
+  def runner_tls_digests(root)
+    Dir["#{root}/etc/navishai/runner/*"].to_h { |path| [ File.basename(path), Digest::SHA256.file(path).hexdigest ] }
   end
 end
