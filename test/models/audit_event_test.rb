@@ -56,7 +56,7 @@ class AuditEventTest < ActiveSupport::TestCase
     end
     truncate_error = assert_raises(ActiveRecord::StatementInvalid) do
       AuditEvent.transaction(requires_new: true) do
-        AuditEvent.connection.execute("TRUNCATE audit_events")
+        AuditEvent.connection.execute("TRUNCATE customer_success_intervention_due_notices, audit_events")
       end
     end
 
