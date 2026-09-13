@@ -49,6 +49,7 @@ class Workspace < ApplicationRecord
   has_many :support_case_products, dependent: :restrict_with_exception
   has_many :knowledge_sources, dependent: :restrict_with_exception
   has_many :knowledge_source_versions, dependent: :restrict_with_exception
+  has_many :knowledge_improvement_candidates, dependent: :restrict_with_exception
   has_many :crew_templates, dependent: :restrict_with_exception
   has_many :agent_profiles, dependent: :restrict_with_exception
   has_many :agent_profile_versions, dependent: :restrict_with_exception
@@ -98,6 +99,7 @@ class Workspace < ApplicationRecord
   has_many :account_risk_investigations, dependent: :restrict_with_exception
   has_many :customer_success_interventions, dependent: :restrict_with_exception
   has_many :customer_success_intervention_outcome_reviews, dependent: :restrict_with_exception
+  has_many :customer_success_intervention_due_notices, dependent: :restrict_with_exception
   has_many :operational_checks, dependent: :restrict_with_exception
   has_one :health_scorecard, dependent: :restrict_with_exception
   has_many :health_scorecard_versions, dependent: :restrict_with_exception

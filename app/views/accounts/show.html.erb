@@ -3,7 +3,7 @@
 <main class="account-health-page account-health-detail page-family-record">
   <header class="account-health-heading">
     <div>
-      <%= link_to "All accounts", workspace_accounts_path(@workspace), class: "back-link" %>
+      <%= link_to "All accounts", workspace_accounts_path(@workspace, account_work_index_params(view: params[:view].presence || "needs_attention", page: params[:page])), class: "back-link" %>
       <h1><%= @account.name %></h1>
       <p>Deterministic account facts stay separate from crew analysis and proposed interventions.</p>
     </div>

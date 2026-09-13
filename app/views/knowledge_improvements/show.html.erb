@@ -1,0 +1,157 @@
+<% content_for :title, "Knowledge improvements · #{Current.workspace.name} — NavishAI" %>
+<% content_for :page_status do %>
+  <span class="<%= @queue.attention? ? "status-badge status-warning" : "status-badge" %>">
+    <%= @queue.attention? ? "Work open" : "Quiet" %>
+  </span>
+<% end %>
+
+<main class="improvement-page">
+  <header class="improvement-heading">
+    <div>
+      <h1>Knowledge improvements</h1>
+      <p>Stale, deleted, retired, and failed-sync sources plus human-owned improvement candidates. Assign, triage, resolve, or dismiss stays in this Workspace. Nothing here sends a customer message.</p>
+    </div>
+    <p class="improvement-verdict <%= @queue.attention? ? "is-attention" : "is-quiet" %>">
+      <span>Library attention</span>
+      <strong>
+        <% if @queue.attention? %>
+          <%= @queue.items.size %> <%= "source".pluralize(@queue.items.size) %> and
+          <%= @queue.candidates.size %> <%= "candidate".pluralize(@queue.candidates.size) %> need work
+        <% else %>
+          No sources or candidates need work
+        <% end %>
+      </strong>
+    </p>
+  </header>
+
+  <section class="improvement-metrics" aria-label="Knowledge improvement counts">
+    <% @queue.counts.each do |metric| %>
+      <article class="improvement-metric" data-metric="<%= metric.key %>">
+        <span><%= metric.label %></span>
+        <strong><%= metric.value %></strong>
+      </article>
+    <% end %>
+  </section>
+
+  <section aria-labelledby="candidate-list-title">
+    <h2 id="candidate-list-title">Improvement candidates</h2>
+    <% if @queue.candidates.empty? %>
+      <p class="improvement-empty">No open, triaged, or assigned candidate is currently retained. Create one from a blocked draft on Quality or from a source that needs attention.</p>
+    <% else %>
+      <ul class="improvement-candidate-list">
+        <% @queue.candidates.each do |item| %>
+          <li>
+            <article class="improvement-candidate" data-candidate-status="<%= item.candidate.status %>">
+              <header>
+                <span class="improvement-list-main">
+                  <strong><%= item.candidate.title %></strong>
+                  <span><%= item.label %> · <%= item.detail %></span>
+                </span>
+                <span class="status-badge <%= item.candidate.assigned? ? "status-warning" : "" %>"><%= item.candidate.status.humanize %></span>
+              </header>
+              <% if @membership.can_manage_work? %>
+                <div class="improvement-candidate-actions">
+                  <% if item.candidate.open? %>
+                    <%= form_with url: triage_workspace_knowledge_improvement_candidate_path(@workspace, item.candidate), class: "improvement-form" do |form| %>
+                      <div class="field">
+                        <%= form.label :note, "Triage note" %>
+                        <%= form.text_area :note, required: true, maxlength: 1_000, rows: 2 %>
+                      </div>
+                      <%= form.submit "Triage", class: "button button-compact" %>
+                    <% end %>
+                  <% end %>
+                  <% if item.candidate.open? || item.candidate.triaged? || item.candidate.assigned? %>
+                    <%= form_with url: assign_workspace_knowledge_improvement_candidate_path(@workspace, item.candidate), class: "improvement-form" do |form| %>
+                      <div class="field">
+                        <%= form.label :assigned_to_membership_id, "Assign to" %>
+                        <%= form.select :assigned_to_membership_id,
+                          options_from_collection_for_select(@queue.assignees, :id, ->(membership) { membership.user.email_address }, item.candidate.assigned_to_membership_id),
+                          { include_blank: "Choose a knowledge manager" }, required: true %>
+                      </div>
+                      <%= form.submit item.candidate.assigned? ? "Reassign" : "Assign", class: "button button-primary button-compact" %>
+                    <% end %>
+                  <% end %>
+                  <% if item.candidate.assigned? %>
+                    <%= form_with url: resolve_workspace_knowledge_improvement_candidate_path(@workspace, item.candidate), class: "improvement-form" do |form| %>
+                      <div class="field">
+                        <%= form.label :knowledge_source_id, "Current knowledge version" %>
+                        <%= form.select :knowledge_source_id,
+                          options_from_collection_for_select(@queue.resolvable_sources, :id, :display_title),
+                          { include_blank: "Choose a current source" }, required: true %>
+                      </div>
+                      <%= form.submit "Resolve with this version", class: "button button-primary button-compact" %>
+                    <% end %>
+                  <% end %>
+                  <%= form_with url: dismiss_workspace_knowledge_improvement_candidate_path(@workspace, item.candidate), class: "improvement-form" do |form| %>
+                    <div class="field">
+                      <%= form.label :reason, "Dismiss reason" %>
+                      <%= form.text_area :reason, required: true, maxlength: 1_000, rows: 2 %>
+                    </div>
+                    <%= form.submit "Dismiss", class: "button button-compact" %>
+                  <% end %>
+                </div>
+              <% end %>
+            </article>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section aria-labelledby="improvement-list-title">
+    <h2 id="improvement-list-title">Sources that need attention</h2>
+    <% if @queue.items.empty? %>
+      <p class="improvement-empty">No stale, deleted, retired, or failed-sync source is currently retained.</p>
+    <% else %>
+      <ul class="improvement-list">
+        <% @queue.items.each do |item| %>
+          <li>
+            <div class="improvement-source-row">
+              <%= link_to item.path do %>
+                <span class="improvement-list-main">
+                  <strong><%= item.source.display_title %></strong>
+                  <span><%= knowledge_source_kind_label(item.source.source_kind) %> · <%= item.detail %></span>
+                </span>
+                <span class="status-badge <%= item.reason == "deleted" || item.reason == "retired" ? "status-danger" : "status-warning" %>"><%= item.label %></span>
+              <% end %>
+              <% if @membership.can_write? && item.open_candidate.blank? %>
+                <%= button_to "Create candidate", workspace_knowledge_improvement_candidates_path(@workspace),
+                  params: { knowledge_source_id: item.source.id }, class: "button button-compact" %>
+              <% end %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+
+  <section aria-labelledby="improved-list-title">
+    <h2 id="improved-list-title">Recently improved</h2>
+    <% if @queue.improved.empty? && @queue.resolved_candidates.empty? %>
+      <p class="improvement-empty">Sources leave this queue when a new current version is no longer stale. Resolved candidates keep the linked version as follow-up evidence.</p>
+    <% else %>
+      <ul class="improvement-list">
+        <% @queue.improved.each do |item| %>
+          <li>
+            <%= link_to item.path do %>
+              <span class="improvement-list-main">
+                <strong><%= item.source.display_title %></strong>
+                <span><%= item.detail %></span>
+              </span>
+              <span class="status-badge status-success">Improved</span>
+            <% end %>
+          </li>
+        <% end %>
+        <% @queue.resolved_candidates.each do |item| %>
+          <li>
+            <span class="improvement-list-main">
+              <strong><%= item.candidate.title %></strong>
+              <span><%= item.detail %></span>
+            </span>
+            <span class="status-badge status-success">Resolved</span>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+</main>

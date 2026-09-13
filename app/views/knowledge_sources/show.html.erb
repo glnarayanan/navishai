@@ -17,6 +17,9 @@
   <% elsif @source.stale? %>
     <%= render "shared/notice", kind: "warning", css: "knowledge-warning", title: "Current version is stale",
       body: "Add a checked version before relying on this source for new work." %>
+  <% elsif @source.left_improvement_queue? %>
+    <%= render "shared/notice", kind: "success", css: "knowledge-warning", title: "This source left the improvement queue",
+      body: "Version lineage keeps the stale snapshot and the current replacement. Current search uses only the current version." %>
   <% end %>
 
   <%= render "knowledge_applicabilities/form", source: @source %>

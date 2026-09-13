@@ -12,6 +12,7 @@ class KnowledgeSource < ApplicationRecord
   belongs_to :deleted_by_user, class_name: "User", optional: true
   has_many :versions, -> { order(version_number: :desc) },
     class_name: "KnowledgeSourceVersion", dependent: :restrict_with_exception
+  has_many :knowledge_improvement_candidates, dependent: :restrict_with_exception
 
   enum :source_kind, SOURCE_KINDS.index_by(&:itself), validate: true
 
@@ -30,6 +31,12 @@ class KnowledgeSource < ApplicationRecord
 
   def stale?(at: Time.current)
     (knowledge_sync_observation&.unavailable_at.present? && knowledge_sync_observation.unavailable_at <= at) || current_version&.stale?(at: at) || false
+  end
+
+  def left_improvement_queue?
+    return false if deleted? || stale?
+    current = current_version
+    current.present? && versions.any? { |version| version.id != current.id && version.stale?(at: current.retrieved_at) }
   end
 
   def display_title

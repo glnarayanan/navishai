@@ -49,6 +49,17 @@ class AuditEvent < ApplicationRecord
     "account.intervention_reviewed" => {
       "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
     },
+    "account.intervention_reassigned" => {
+      "previous_accountable_membership_id" => Integer, "accountable_membership_id" => Integer, "reason" => String
+    },
+    "account.intervention_rescheduled" => {
+      "previous_target_on" => String, "target_on" => String, "reason" => String
+    },
+    "account.intervention_due" => {
+      "due_state" => CustomerSuccessInterventionDueNotice::DUE_STATES,
+      "recipient_membership_id" => Integer,
+      "target_on" => String
+    },
     "account.unmerged" => {},
     "agent.profile_updated" => {},
     "crew.artifact_published" => {
@@ -134,6 +145,30 @@ class AuditEvent < ApplicationRecord
     "knowledge.source_created" => {},
     "knowledge.source_deleted" => {},
     "knowledge.version_created" => {},
+    "knowledge.improvement_created" => {
+      "from_state" => [ "none" ],
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "reason_code" => KnowledgeImprovementCandidate::REASON_CODES
+    },
+    "knowledge.improvement_triaged" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES
+    },
+    "knowledge.improvement_assigned" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "assignee_membership_id" => Integer,
+      "previous_assignee_membership_id" => Integer
+    },
+    "knowledge.improvement_resolved" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "knowledge_source_version_id" => Integer
+    },
+    "knowledge.improvement_dismissed" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES
+    },
     "memory.procedure_published" => {},
     "memory.proposal_created" => { "memory_type" => MemoryProposal::MEMORY_TYPES },
     "memory.proposal_reviewed" => { "outcome" => %w[accepted rejected] },

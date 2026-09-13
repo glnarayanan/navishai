@@ -25,11 +25,13 @@
       <div class="sidebar-group">
         <p class="sidebar-group-label">Work</p>
         <%= nav_link "Cases", workspace_support_cases_path(Current.workspace), "support_cases", "support_case_commands" %>
+        <%= nav_link "Quality", workspace_support_quality_path(Current.workspace), "support_quality" %>
         <%= nav_link "Accounts", workspace_accounts_path(Current.workspace), "accounts", "account_imports" %>
       </div>
       <div class="sidebar-group">
         <p class="sidebar-group-label">Knowledge</p>
         <%= nav_link "Knowledge", workspace_knowledge_sources_path(Current.workspace), "knowledge_sources" %>
+        <%= nav_link "Improvements", workspace_knowledge_improvements_path(Current.workspace), "knowledge_improvements" %>
         <% if membership.can_inspect_memory? %>
           <%= nav_link "Memory", workspace_memory_records_path(Current.workspace), "memory_records", "memory_corrections" %>
         <% end %>

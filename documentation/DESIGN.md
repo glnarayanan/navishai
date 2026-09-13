@@ -27,6 +27,8 @@ The landing page retains the template section rhythm: sticky header contracting 
 ## Page families
 
 - Cases keep a compact queue, conversation and investigation, and a decision rail. The primary next action is blue; secondary controls stay quiet.
+- Quality is a ruled readout: live counts first, then open SLA breaches, unproofed Accounts, and blocked drafts. It is not a scoring dashboard and has no send action.
+- Knowledge improvements is a ruled attention list of stale, deleted, retired, and failed-sync sources plus assignable candidates. It is not a second library and has no send action.
 - Accounts put current health in the mobile first fold. Signals use a table on desktop and keyboard-reachable cards on mobile, keeping signal, value, source/range, weight, risk points, and citation.
 - The scorecard is a visual scoring workspace: comparison first, compact threshold cards, and progressive disclosure for history, backtest, publish, and validation. Constrained AI proposals sit above the manual designer, show inspectable diffs when revised, and never publish on generate. Mobile preserves Account/Published/Proposal/Change.
 - Memory uses provenance and state cards with light/dark layer separation.

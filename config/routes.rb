@@ -59,6 +59,15 @@ Rails.application.routes.draw do
     resources :knowledge_sources, path: "knowledge", only: %i[ index show create update destroy ] do
       resource :knowledge_applicability, only: %i[update destroy], controller: "knowledge_applicabilities"
     end
+    resource :knowledge_improvements, path: "knowledge-improvements", only: :show, controller: "knowledge_improvements"
+    resources :knowledge_improvement_candidates, path: "knowledge-improvement-candidates", only: :create do
+      member do
+        post :triage
+        post :assign
+        post :resolve
+        post :dismiss
+      end
+    end
     resources :memory_records, path: "memory", only: %i[ index show destroy ] do
       get :export, on: :collection
       post :import, on: :collection
@@ -94,6 +103,7 @@ Rails.application.routes.draw do
       post "runs/:run_id/retry", action: :retry_run, as: :retry_run
       post :reconstruct_memory
     end
+    resource :support_quality, path: "support-quality", only: :show, controller: "support_quality"
     get "explain/:subject_type/:subject_id", to: "outcome_explanations#show",
       as: :outcome_explanation, constraints: { subject_type: /case|account|run|health-assessment/ }
     resource :health_scorecard, path: "scorecard", only: :show do
@@ -113,6 +123,8 @@ Rails.application.routes.draw do
           post :complete
           post :abandon
           post :review
+          post :reassign
+          post :reschedule
         end
       end
       get "health-evidence/:assessment_id/:signal_key", to: "health_evidence#show", on: :member,
