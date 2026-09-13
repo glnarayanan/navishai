@@ -60,7 +60,7 @@ func New(root, helper string, excludedRoots ...string) (*Converter, error) {
 	process, err := supervisor.New(supervisor.Config{
 		HelperPath: helper, AllowedExecutableRoots: []string{filepath.Dir(executable)}, ApprovedExecutables: []string{executable},
 		AllowedWorkingRoots: []string{root}, RuntimeReadRoots: roots,
-		Limits: supervisor.Limits{WallTime: 30 * time.Second, CPUSeconds: 20, MemoryBytes: 2 * 1024 * 1024 * 1024, OpenFiles: 128, Processes: 64, OutputBytes: 16 * 1024, FileBytes: 8 * 1024 * 1024, KillGrace: time.Second},
+		Limits: supervisor.Limits{WallTime: 30 * time.Second, CPUSeconds: 20, MemoryBytes: 2 * 1024 * 1024 * 1024, OpenFiles: 512, Processes: 512, OutputBytes: 16 * 1024, FileBytes: 8 * 1024 * 1024, KillGrace: time.Second},
 	})
 	if err != nil {
 		return nil, ErrUnavailable
