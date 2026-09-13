@@ -1,0 +1,49 @@
+<% content_for :title, "Knowledge improvements · #{Current.workspace.name} — NavishAI" %>
+<% content_for :page_status do %>
+  <span class="<%= @queue.attention? ? "status-badge status-warning" : "status-badge" %>">
+    <%= @queue.attention? ? "Work open" : "Quiet" %>
+  </span>
+<% end %>
+
+<main class="improvement-page">
+  <header class="improvement-heading">
+    <div>
+      <h1>Knowledge improvements</h1>
+      <p>Sources that are stale, deleted, retired, or tied to a failed sync. Current search already excludes deleted and retired sources. This page does not change knowledge or send messages.</p>
+    </div>
+    <p class="improvement-verdict <%= @queue.attention? ? "is-attention" : "is-quiet" %>">
+      <span>Library attention</span>
+      <strong><%= @queue.attention? ? "#{@queue.items.size} #{'source'.pluralize(@queue.items.size)} need work" : "No sources need work" %></strong>
+    </p>
+  </header>
+
+  <section class="improvement-metrics" aria-label="Knowledge improvement counts">
+    <% @queue.counts.each do |metric| %>
+      <article class="improvement-metric" data-metric="<%= metric.key %>">
+        <span><%= metric.label %></span>
+        <strong><%= metric.value %></strong>
+      </article>
+    <% end %>
+  </section>
+
+  <section aria-labelledby="improvement-list-title">
+    <h2 id="improvement-list-title">Sources that need attention</h2>
+    <% if @queue.items.empty? %>
+      <p class="improvement-empty">No stale, deleted, retired, or failed-sync source is currently retained.</p>
+    <% else %>
+      <ul class="improvement-list">
+        <% @queue.items.each do |item| %>
+          <li>
+            <%= link_to item.path do %>
+              <span class="improvement-list-main">
+                <strong><%= item.source.display_title %></strong>
+                <span><%= knowledge_source_kind_label(item.source.source_kind) %> · <%= item.detail %></span>
+              </span>
+              <span class="status-badge <%= item.reason == 'deleted' || item.reason == 'retired' ? 'status-danger' : 'status-warning' %>"><%= item.label %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </section>
+</main>

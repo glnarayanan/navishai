@@ -21,7 +21,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | C2 Proposal revision | tested | `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. GitHub PR pending (BLK-003). |
 | C3 Preview/backtest evidence | tested | `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. GitHub PR pending (BLK-003). |
 | D1 Support quality readout | tested | `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. GitHub PR pending (BLK-003). |
-| D2 Knowledge improvement queue | not started | — | Depends on D1. |
+| D2 Knowledge improvement queue | tested | `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. GitHub PR pending (BLK-003). |
 | D3 Follow-up evidence | not started | — | Depends on D2. |
 | E1 Integrated scenario | not started | — | After C and D feature branches. |
 | E2 Status and handoff | not started | — | After E1. |
@@ -52,3 +52,4 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | `cursor/scorecard-revision-efe6` | `cursor/scorecard-proposal-efe6` | C2 | pending | feat: revise scorecard proposals with inspectable diffs |
 | `cursor/scorecard-preview-efe6` | `cursor/scorecard-revision-efe6` | C3 | pending | feat: bind scorecard publish to the inspected preview |
 | `cursor/support-quality-efe6` | `main` | D1 | pending | feat: surface a workspace support quality readout |
+| `cursor/knowledge-improvements-efe6` | `cursor/support-quality-efe6` | D2 | pending | feat: queue stale and failed knowledge sources |
