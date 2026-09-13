@@ -54,4 +54,31 @@ class KnowledgeImprovementsSystemTest < ApplicationSystemTestCase
     page.current_window.resize_to(320, 844)
     assert_no_horizontal_overflow
   end
+
+  test "members create a candidate from a blocked draft and managers assign it" do
+    workspace = workspaces(:acme_support)
+    owner = memberships(:owner_support)
+    support_case = create_support_case(subject: "Browser missing knowledge", workspace:, membership: owner)
+    create_draft_artifact(
+      workspace:, support_case:, membership: owner,
+      body: "I cannot cite a current policy.", result_state: "blocked",
+      blocker_message: "Applicable knowledge is missing."
+    )
+    sign_in(owner.user)
+    page.current_window.resize_to(1440, 1000)
+    visit workspace_support_quality_path(workspace)
+    click_button "Create improvement candidate"
+    assert_text "Knowledge improvement candidate recorded"
+
+    visit workspace_knowledge_improvements_path(workspace)
+    assert_selector "[data-metric=candidates] strong", text: "1"
+    select owner.user.email_address, from: "Assign to"
+    click_button "Assign"
+    assert_text "Candidate assigned to a human who can maintain knowledge."
+    assert_selector ".improvement-candidate", text: /Assigned/
+
+    page.current_window.resize_to(320, 844)
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+  end
 end

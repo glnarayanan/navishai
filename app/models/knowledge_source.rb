@@ -12,6 +12,7 @@ class KnowledgeSource < ApplicationRecord
   belongs_to :deleted_by_user, class_name: "User", optional: true
   has_many :versions, -> { order(version_number: :desc) },
     class_name: "KnowledgeSourceVersion", dependent: :restrict_with_exception
+  has_many :knowledge_improvement_candidates, dependent: :restrict_with_exception
 
   enum :source_kind, SOURCE_KINDS.index_by(&:itself), validate: true
 

@@ -7,7 +7,11 @@ class SupportQualityReadout
   DETAIL_LIMIT = 20
 
   Metric = Data.define(:key, :label, :value, :detail, :tone)
-  Row = Data.define(:title, :detail, :path)
+  Row = Data.define(:title, :detail, :path, :artifact) do
+    def initialize(title:, detail:, path:, artifact: nil)
+      super(title:, detail:, path:, artifact:)
+    end
+  end
 
   attr_reader :metrics, :breached_cases, :unproofed_accounts, :blocked_drafts
 
@@ -50,15 +54,17 @@ class SupportQualityReadout
         path: [ @workspace, account ]
       )
     end
-    @blocked_drafts = blocked_draft_scope.includes(crew_task: { support_case: { conversation: :contact } })
-      .order(id: :desc).limit(DETAIL_LIMIT).filter_map do |artifact|
+    @blocked_drafts = blocked_draft_scope.includes(
+      :knowledge_improvement_candidate, crew_task: { support_case: { conversation: :contact } }
+    ).order(id: :desc).limit(DETAIL_LIMIT).filter_map do |artifact|
       support_case = artifact.crew_task.support_case
       next unless support_case
 
       Row.new(
         title: support_case.conversation.subject,
-        detail: "Draft contract #{artifact.contract_result_state.humanize}.",
-        path: [ @workspace, support_case ]
+        detail: blocked_draft_detail(artifact),
+        path: [ @workspace, support_case ],
+        artifact:
       )
     end
     self
@@ -128,5 +134,13 @@ class SupportQualityReadout
       parts << "first response breached" if case_sla.first_response_breached?
       parts << "resolution breached" if case_sla.resolution_breached?
       parts.join(" · ").presence || "SLA clock needs attention"
+    end
+
+    def blocked_draft_detail(artifact)
+      if artifact.knowledge_improvement_candidate
+        "Blocked draft · improvement candidate #{artifact.knowledge_improvement_candidate.status.humanize.downcase}."
+      else
+        "Draft contract #{artifact.contract_result_state.humanize}."
+      end
     end
 end

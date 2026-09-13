@@ -22,7 +22,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | C3 Preview/backtest evidence | tested | `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. GitHub PR pending (BLK-003). |
 | D1 Support quality readout | tested | `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. GitHub PR pending (BLK-003). |
 | D2 Knowledge improvement queue | tested | `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. GitHub PR pending (BLK-003). |
-| D3 Follow-up evidence | tested | `cursor/knowledge-follow-up-efe6` | Stacked on D2. New current version leaves the queue; lineage retained. GitHub PR pending (BLK-003). |
+| D3 Follow-up evidence | tested | `cursor/knowledge-follow-up-efe6` | Stacked on D2. New current version leaves the queue; lineage retained. Assign/triage/resolve/dismiss candidates with audit. |
 | E1 Integrated scenario | not started | — | After C and D feature branches. |
 | E2 Status and handoff | not started | — | After E1. |
 

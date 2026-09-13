@@ -105,7 +105,7 @@ Browser input, identity-provider responses, mail and integration payloads, publi
 
 | Threat | Control |
 |---|---|
-| Failed sync retires valid knowledge or one connection changes another's articles | Immutable connection origin, bounded resumable passes, complete enumeration before reconciliation, two confirmed absences, retained versions and human mappings. |
+| Forged knowledge improvement assignment or silent resolution | Workspace-scoped candidates, composite foreign keys, Manager-only triage/assign/resolve/dismiss, eligible assignee must maintain knowledge, append-only audit, immutable provenance. |
 | Article applicability bypasses case context | Product and Intercom mappings enforced in case search and evidence resolution; composite Workspace foreign keys. |
 | DOCX payload executes code or exhausts extraction | Scanned retained original, bounded ZIP/XML parsing, no DTD/entity expansion or macro execution, no Rails subprocess. |
 | Legacy DOC executes code or reads secrets during conversion | Signed Workspace/digest-bound request after scanning; fixed LibreOffice executable under the Linux supervisor; denied network and credential access; fresh profile with macros and link updates disabled; bounded input, output, processes, memory, CPU, files and wall time; private temporary files removed after conversion. |

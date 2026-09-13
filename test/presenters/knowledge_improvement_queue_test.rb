@@ -12,7 +12,9 @@ class KnowledgeImprovementQueueTest < ActiveSupport::TestCase
     assert_not queue.attention?
     assert_empty queue.items
     assert_empty queue.improved
+    assert_empty queue.candidates
     assert_equal 0, metric(queue, "attention").value
+    assert_equal 0, metric(queue, "candidates").value
     assert_equal 0, metric(queue, "improved").value
   end
 
@@ -92,6 +94,25 @@ class KnowledgeImprovementQueueTest < ActiveSupport::TestCase
     assert_not source.current_version.stale?
     assert_equal 1, metric(queue, "improved").value
     assert_equal 0, metric(queue, "attention").value
+  end
+
+  test "lists open candidates separately from source attention" do
+    support_case = create_support_case(subject: "Missing candidate policy")
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case:, membership: @owner,
+      body: "Blocked without knowledge.", result_state: "blocked",
+      blocker_message: "Applicable knowledge is missing."
+    )
+    candidate = KnowledgeImprovementWorkflow.create_from_blocked_draft!(
+      workspace: @workspace, membership: @owner, artifact:
+    )
+
+    queue = KnowledgeImprovementQueue.build(workspace: @workspace)
+
+    assert queue.attention?
+    assert_equal 1, metric(queue, "candidates").value
+    assert_equal candidate, queue.candidates.sole.candidate
+    assert_equal "Missing knowledge", queue.candidates.sole.label
   end
 
   private

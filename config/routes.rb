@@ -60,6 +60,14 @@ Rails.application.routes.draw do
       resource :knowledge_applicability, only: %i[update destroy], controller: "knowledge_applicabilities"
     end
     resource :knowledge_improvements, path: "knowledge-improvements", only: :show, controller: "knowledge_improvements"
+    resources :knowledge_improvement_candidates, path: "knowledge-improvement-candidates", only: :create do
+      member do
+        post :triage
+        post :assign
+        post :resolve
+        post :dismiss
+      end
+    end
     resources :memory_records, path: "memory", only: %i[ index show destroy ] do
       get :export, on: :collection
       post :import, on: :collection
