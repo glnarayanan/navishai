@@ -44,18 +44,24 @@ class AccountWorkQueue
   end
 
   def counts
-    sql = <<~SQL.squish
-      SELECT
-        COUNT(*) FILTER (WHERE #{needs_attention_sql}) AS needs_attention,
-        COUNT(*) FILTER (WHERE #{renewal_sql}) AS renewal_approaching,
-        COUNT(*) FILTER (WHERE #{awaiting_approval_sql}) AS interventions_awaiting_approval,
-        COUNT(*) FILTER (WHERE #{overdue_sql}) AS interventions_overdue,
-        COUNT(*) FILTER (WHERE #{outcome_review_sql}) AS completed_awaiting_outcome_review,
-        COUNT(*) AS all_accounts
-      FROM accounts
-      WHERE workspace_id = #{@workspace.id.to_i}
-    SQL
-    row = Account.connection.select_one(sql)
+    row = Account.connection.select_one(
+      Account.sanitize_sql_array(
+        [
+          <<~SQL.squish,
+            SELECT
+              COUNT(*) FILTER (WHERE #{needs_attention_sql}) AS needs_attention,
+              COUNT(*) FILTER (WHERE #{renewal_sql}) AS renewal_approaching,
+              COUNT(*) FILTER (WHERE #{awaiting_approval_sql}) AS interventions_awaiting_approval,
+              COUNT(*) FILTER (WHERE #{overdue_sql}) AS interventions_overdue,
+              COUNT(*) FILTER (WHERE #{outcome_review_sql}) AS completed_awaiting_outcome_review,
+              COUNT(*) AS all_accounts
+            FROM accounts
+            WHERE workspace_id = ?
+          SQL
+          @workspace.id
+        ]
+      )
+    )
     VIEWS.index_with { |view| row.fetch(view).to_i }
   end
 
@@ -74,19 +80,27 @@ class AccountWorkQueue
     def account_ids_for(view:, page:)
       filter = view_filter_sql(view)
       offset = (page - 1) * PAGE_SIZE
-      sql = <<~SQL.squish
-        SELECT accounts.id
-        FROM accounts
-        WHERE accounts.workspace_id = #{@workspace.id.to_i}
-          AND #{filter}
-        ORDER BY
-          CASE WHEN #{overdue_sql} THEN 0 ELSE 1 END ASC,
-          #{due_expression_sql(view)} ASC NULLS LAST,
-          accounts.id ASC
-        LIMIT #{PAGE_SIZE + 1}
-        OFFSET #{offset}
-      SQL
-      Account.connection.select_values(sql).map(&:to_i)
+      Account.connection.select_values(
+        Account.sanitize_sql_array(
+          [
+            <<~SQL.squish,
+              SELECT accounts.id
+              FROM accounts
+              WHERE accounts.workspace_id = ?
+                AND #{filter}
+              ORDER BY
+                CASE WHEN #{overdue_sql} THEN 0 ELSE 1 END ASC,
+                #{due_expression_sql(view)} ASC NULLS LAST,
+                accounts.id ASC
+              LIMIT ?
+              OFFSET ?
+            SQL
+            @workspace.id,
+            PAGE_SIZE + 1,
+            offset
+          ]
+        )
+      ).map(&:to_i)
     end
 
     def rows_for(ids)
