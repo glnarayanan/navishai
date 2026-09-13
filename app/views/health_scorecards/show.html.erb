@@ -169,7 +169,7 @@
             </small>
           </span>
         </summary>
-        <header><div><h2 id="preview-title">Preview and backtest</h2><p>Publishing never rewrites those past results.</p></div></header>
+        <header><div><h2 id="preview-title">Preview and backtest</h2><p>This preview uses at most <%= HealthScorecardBacktester::MAX_SNAPSHOTS %> retained snapshots. Publishing never rewrites those past results.</p></div></header>
         <% if @backtest %>
           <% summary = @backtest.results.fetch("summary") %>
           <% current_rows = @backtest.results.fetch("current") %>
@@ -208,7 +208,12 @@
               <% end %>
             </ul>
           <% end %>
-          <p class="scorecard-evidence">Evidence digest <code><%= @backtest.source_digest %></code> · <%= @backtest.generated_at.to_fs(:long) %></p>
+          <p class="scorecard-evidence">
+            At most <%= summary.fetch("snapshot_limit", HealthScorecardBacktester::MAX_SNAPSHOTS) %> retained snapshots
+            <% if summary["truncated"] %> · older snapshots were omitted<% end %>
+            · evidence digest <code><%= @backtest.source_digest %></code>
+            · <%= @backtest.generated_at.to_fs(:long) %>
+          </p>
         <% else %>
           <div class="scorecard-empty">
             <div><strong>No preview for this version</strong><p>Test it against current accounts and retained history before publishing.</p></div>
@@ -234,7 +239,7 @@
         <% if @backtest %>
           <% summary = @backtest.results.fetch("summary") %>
           <dl class="case-facts">
-            <div><dt>Snapshots</dt><dd><%= @backtest.sample_count %> snapshots tested</dd></div>
+            <div><dt>Snapshots</dt><dd><%= @backtest.sample_count %> of at most <%= HealthScorecardBacktester::MAX_SNAPSHOTS %></dd></div>
             <div><dt>Scores changed</dt><dd><%= summary.fetch("changed_count") %></dd></div>
             <div><dt>Bands changed</dt><dd><%= summary.fetch("band_changed_count") %></dd></div>
             <div><dt>At risk</dt><dd><%= summary.fetch("at_risk_count") %></dd></div>
@@ -253,12 +258,15 @@
       <div class="stage-card">
         <p class="text-label">Publish</p>
         <% if @membership.can_configure_agents? && @backtest %>
+          <% if @selected_version.source_proposal %>
+            <p class="muted-copy">Accepted proposal <%= @selected_version.source_proposal.id %> still needs this inspected preview. Generate and accept never publish.</p>
+          <% end %>
           <% if published_selected %>
             <p class="muted-copy">This version already scores future snapshots.</p>
           <% elsif @selected_version.version_number < @scorecard.current_version.version_number %>
-            <%= button_to "Roll back to version #{@selected_version.version_number}", rollback_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id }, class: "button button-danger" %>
+            <%= button_to "Roll back to version #{@selected_version.version_number}", rollback_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id, expected_backtest_id: @backtest.id }, class: "button button-danger" %>
           <% else %>
-            <%= button_to "Publish version #{@selected_version.version_number}", publish_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id }, class: "button button-primary" %>
+            <%= button_to "Publish version #{@selected_version.version_number}", publish_workspace_health_scorecard_path(@workspace), params: { version_id: @selected_version.id, expected_current_version_id: @scorecard.current_version_id, expected_backtest_id: @backtest.id }, class: "button button-primary" %>
           <% end %>
         <% else %>
           <p class="read-only-notice"><%= @backtest ? "You can review this version, but an Owner or Admin must publish it." : "Run a preview before this version can be published." %></p>

@@ -57,7 +57,8 @@ class HealthScorecardsController < ApplicationController
   def publish
     version = @workspace.health_scorecard.versions.find(params[:version_id])
     HealthScorecardPublisher.publish!(workspace: @workspace, membership: @membership, version:,
-      expected_current_version_id: params[:expected_current_version_id])
+      expected_current_version_id: params[:expected_current_version_id],
+      expected_backtest_id: params[:expected_backtest_id])
     redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
       notice: "Version #{version.version_number} now scores future account snapshots."
   end
@@ -65,7 +66,8 @@ class HealthScorecardsController < ApplicationController
   def rollback
     version = @workspace.health_scorecard.versions.find(params[:version_id])
     HealthScorecardPublisher.rollback!(workspace: @workspace, membership: @membership, version:,
-      expected_current_version_id: params[:expected_current_version_id])
+      expected_current_version_id: params[:expected_current_version_id],
+      expected_backtest_id: params[:expected_backtest_id])
     redirect_to workspace_health_scorecard_path(@workspace, version_id: version.id),
       notice: "Future scoring rolled back to version #{version.version_number}."
   end
@@ -81,7 +83,7 @@ class HealthScorecardsController < ApplicationController
       @versions = @scorecard.versions.includes(:backtests, :design_turns, :created_by_user, source_proposal: :execution_run)
         .order(version_number: :desc)
       @selected_version = params[:version_id].present? ? @versions.find(params[:version_id]) : @versions.first
-      @backtest = @selected_version.backtests.order(generated_at: :desc, id: :desc).first
+      @backtest = @selected_version.backtests.reorder(generated_at: :desc, id: :desc).first
       @catalog = HealthScorecardDefinition::CATALOG
       @proposals = @scorecard.proposals.includes(
         :execution_run, :created_by_user,

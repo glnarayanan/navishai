@@ -19,7 +19,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. |
 | C1 Scorecard proposal | tested | `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. GitHub PR pending (BLK-003). |
 | C2 Proposal revision | tested | `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. GitHub PR pending (BLK-003). |
-| C3 Preview/backtest evidence | not started | — | Depends on C2. |
+| C3 Preview/backtest evidence | tested | `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. GitHub PR pending (BLK-003). |
 | D1 Support quality readout | not started | — | Starts from verified `main`. |
 | D2 Knowledge improvement queue | not started | — | Depends on D1. |
 | D3 Follow-up evidence | not started | — | Depends on D2. |
@@ -50,3 +50,4 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | `cursor/intervention-follow-up-efe6` | `cursor/retention-queue-ui-efe6` | B3 | [#116](https://github.com/glnarayanan/navishai/pull/116) | feat: manage intervention ownership and follow-up |
 | `cursor/scorecard-proposal-efe6` | `main` | C1 | pending | feat: generate constrained scorecard proposals through the runner |
 | `cursor/scorecard-revision-efe6` | `cursor/scorecard-proposal-efe6` | C2 | pending | feat: revise scorecard proposals with inspectable diffs |
+| `cursor/scorecard-preview-efe6` | `cursor/scorecard-revision-efe6` | C3 | pending | feat: bind scorecard publish to the inspected preview |
