@@ -109,6 +109,65 @@ class CustomerSuccessInterventionsTest < ApplicationSystemTestCase
     assert_text "A complete cited plan needs an approved success review"
   end
 
+  test "managers reassign and reschedule from the account with keyboard and compact layouts" do
+    member = @workspace.memberships.create!(
+      user: User.create!(
+        email_address: "follow-up-ui-#{SecureRandom.hex(3)}@example.com",
+        password: "password12345", verified_at: Time.current
+      ),
+      role: :member
+    )
+    intervention = propose_test_intervention(
+      workspace: @workspace, account: @account, membership: @owner,
+      assessment: @assessment, artifact: @plan, at: Time.current.change(usec: 0)
+    )
+
+    page.current_window.resize_to(1440, 1000)
+    visit workspace_account_path(@workspace, @account)
+    reassign = find(".intervention-follow-up", text: "Reassign")
+    reassign.find("summary").send_keys(:enter)
+    assert reassign.evaluate_script("this.open")
+    within reassign do
+      select member.user.email_address, from: "Accountable human"
+      fill_in "Why reassign?", with: "Coverage moved to another writable human."
+      click_button "Record new owner"
+    end
+    assert_text "Intervention ownership recorded for a different eligible human."
+    assert_text "Accountable to #{member.user.email_address}"
+
+    reschedule = find(".intervention-follow-up", text: "Change follow-up date")
+    reschedule.find("summary").click
+    next_date = intervention.target_on + 5.days
+    within reschedule do
+      fill_in "Follow-up date", with: next_date
+      fill_in "Why change the date?", with: "The Account asked for more time."
+      click_button "Record follow-up date"
+    end
+    assert_text "Follow-up date changed with a recorded reason."
+    assert_text "Follow up #{next_date.to_fs(:long)}"
+
+    click_button "Approve intervention"
+    Capybara.reset_sessions!
+    sign_in(member.user)
+    visit workspace_account_path(@workspace, @account)
+    assert_no_text "Reassign"
+    assert_no_text "Change follow-up date"
+    click_button "Record human completion"
+    assert_text "Human completion recorded. No customer message was sent or scheduled."
+    assert_text "Completed · outcome review pending"
+
+    page.current_window.resize_to(390, 844)
+    refresh
+    assert_text "Completed · outcome review pending"
+    assert_equal 0, horizontal_overflow
+
+    page.current_window.resize_to(320, 844)
+    refresh
+    assert_text "Completed · outcome review pending"
+    assert_equal 0, horizontal_overflow
+    assert_operator find(".intervention-outcome-pending").rect.height, :>=, 16
+  end
+
   private
     def horizontal_overflow
       page.evaluate_script("Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")

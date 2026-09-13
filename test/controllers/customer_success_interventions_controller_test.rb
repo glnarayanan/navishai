@@ -105,6 +105,10 @@ class CustomerSuccessInterventionsControllerTest < ActionDispatch::IntegrationTe
     assert_select "form[action=?]", review_workspace_account_intervention_path(
       @workspace, @account, intervention
     ), count: 0
+    assert_select ".intervention-outcome-pending", text: /outcome review pending/
+    assert_select "form[action=?]", reassign_workspace_account_intervention_path(
+      @workspace, @account, intervention
+    ), count: 0
     post workspace_account_interventions_path(@workspace, @account), params: {
       proposing_crew_artifact_id: second_plan.id,
       account_health_assessment_id: @assessment.id,
@@ -144,6 +148,43 @@ class CustomerSuccessInterventionsControllerTest < ActionDispatch::IntegrationTe
     )
     assert_equal "Only a approved intervention can be completed.", flash[:alert]
     assert intervention.reload.proposed?
+  end
+
+  test "managers reassign and reschedule while members and viewers cannot" do
+    manager = create_membership("controller-follow-up-manager", :manager)
+    member = create_membership("controller-follow-up-member", :member)
+    other = create_membership("controller-follow-up-other", :member)
+    viewer = create_membership("controller-follow-up-viewer", :viewer)
+    intervention = propose_test_intervention(
+      workspace: @workspace, account: @account, membership: @owner,
+      accountable_membership: member, assessment: @assessment, artifact: @plan, at: @at + 1.minute
+    )
+
+    sign_in_as member.user
+    post reassign_workspace_account_intervention_path(@workspace, @account, intervention), params: {
+      accountable_membership_id: other.id, reason: "A member tried to reassign."
+    }
+    assert_response :forbidden
+    assert_equal member, intervention.reload.accountable_membership
+
+    sign_in_as viewer.user
+    get workspace_account_path(@workspace, @account)
+    assert_response :success
+    assert_select "form[action=?]", reassign_workspace_account_intervention_path(@workspace, @account, intervention), count: 0
+    assert_select "form[action=?]", reschedule_workspace_account_intervention_path(@workspace, @account, intervention), count: 0
+
+    sign_in_as manager.user
+    post reassign_workspace_account_intervention_path(@workspace, @account, intervention), params: {
+      accountable_membership_id: other.id, reason: "Coverage moved to another writable human."
+    }
+    assert_redirected_to workspace_account_path(@workspace, @account, anchor: "customer-success-interventions")
+    assert_equal other, intervention.reload.accountable_membership
+
+    post reschedule_workspace_account_intervention_path(@workspace, @account, intervention), params: {
+      target_on: intervention.target_on + 4.days, reason: "The follow-up moved after a customer request."
+    }
+    assert_redirected_to workspace_account_path(@workspace, @account, anchor: "customer-success-interventions")
+    assert_equal intervention.target_on + 4.days, intervention.reload.target_on
   end
 
   private

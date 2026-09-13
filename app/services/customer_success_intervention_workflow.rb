@@ -78,15 +78,75 @@ class CustomerSuccessInterventionWorkflow
 
   def self.complete!(workspace:, membership:, intervention:, at: Time.current)
     actor = workspace.memberships.find(membership.id)
+    raise Current::RoleAccessDenied unless actor.can_write?
     record = workspace.customer_success_interventions.find(intervention.id)
-    unless actor.can_write? && record.accountable_membership_id == actor.id
-      raise Current::RoleAccessDenied
+    record.with_lock do
+      raise Current::RoleAccessDenied unless record.accountable_membership_id == actor.id
+
+      transition!(workspace:, membership: actor, intervention: record,
+        from: "approved", to: "completed", at:) do |locked, human|
+        locked.completed_by_membership = human
+        locked.completed_at = at
+      end
     end
-    transition!(workspace:, membership: actor, intervention: record,
-      from: "approved", to: "completed", at:) do |locked, human|
-      locked.completed_by_membership = human
-      locked.completed_at = at
+  end
+
+  def self.reassign!(workspace:, membership:, intervention:, accountable_membership:, reason:, at: Time.current)
+    actor = workspace.memberships.find(membership.id)
+    raise Current::RoleAccessDenied unless actor.can_manage_work?
+    record = workspace.customer_success_interventions.find(intervention.id)
+    accountable = workspace.memberships.find(accountable_membership.id)
+    raise InvalidCommand, "Choose a human who can complete Account work." unless accountable.can_write?
+    change_reason = bounded_text(reason, 1_000, "Reassignment reason")
+
+    record.with_lock do
+      unless record.proposed? || record.approved?
+        raise InvalidCommand, "Only a proposed or approved intervention can be reassigned."
+      end
+      raise InvalidCommand, "Choose a different accountable human." if record.accountable_membership_id == accountable.id
+
+      previous_id = record.accountable_membership_id
+      record.update!(accountable_membership: accountable)
+      audit!("account.intervention_reassigned", workspace:, actor:, intervention: record,
+        metadata: {
+          "previous_accountable_membership_id" => previous_id,
+          "accountable_membership_id" => accountable.id,
+          "reason" => change_reason
+        }, at:)
+      record
     end
+  rescue ActiveRecord::RecordInvalid => error
+    raise InvalidCommand, error.record.errors.full_messages.to_sentence
+  end
+
+  def self.reschedule!(workspace:, membership:, intervention:, target_on:, reason:, at: Time.current)
+    actor = workspace.memberships.find(membership.id)
+    raise Current::RoleAccessDenied unless actor.can_manage_work?
+    record = workspace.customer_success_interventions.find(intervention.id)
+    next_date = Date.iso8601(target_on.to_s)
+    change_reason = bounded_text(reason, 1_000, "Follow-up date reason")
+
+    record.with_lock do
+      unless record.proposed? || record.approved?
+        raise InvalidCommand, "Only a proposed or approved intervention can change its follow-up date."
+      end
+      raise InvalidCommand, "Follow-up date cannot be before the proposal date." if next_date < record.proposed_at.to_date
+      raise InvalidCommand, "Choose a different follow-up date." if next_date == record.target_on
+
+      previous = record.target_on
+      record.update!(target_on: next_date)
+      audit!("account.intervention_rescheduled", workspace:, actor:, intervention: record,
+        metadata: {
+          "previous_target_on" => previous.iso8601,
+          "target_on" => next_date.iso8601,
+          "reason" => change_reason
+        }, at:)
+      record
+    end
+  rescue Date::Error, TypeError
+    raise InvalidCommand, "Target date is invalid."
+  rescue ActiveRecord::RecordInvalid => error
+    raise InvalidCommand, error.record.errors.full_messages.to_sentence
   end
 
   def self.review!(workspace:, membership:, intervention:, after_assessment:, uncertainty:, at: Time.current)
