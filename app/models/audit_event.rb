@@ -145,6 +145,30 @@ class AuditEvent < ApplicationRecord
     "knowledge.source_created" => {},
     "knowledge.source_deleted" => {},
     "knowledge.version_created" => {},
+    "knowledge.improvement_created" => {
+      "from_state" => [ "none" ],
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "reason_code" => KnowledgeImprovementCandidate::REASON_CODES
+    },
+    "knowledge.improvement_triaged" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES
+    },
+    "knowledge.improvement_assigned" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "assignee_membership_id" => Integer,
+      "previous_assignee_membership_id" => Integer
+    },
+    "knowledge.improvement_resolved" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES,
+      "knowledge_source_version_id" => Integer
+    },
+    "knowledge.improvement_dismissed" => {
+      "from_state" => KnowledgeImprovementCandidate::STATUSES,
+      "to_state" => KnowledgeImprovementCandidate::STATUSES
+    },
     "memory.procedure_published" => {},
     "memory.proposal_created" => { "memory_type" => MemoryProposal::MEMORY_TYPES },
     "memory.proposal_reviewed" => { "outcome" => %w[accepted rejected] },

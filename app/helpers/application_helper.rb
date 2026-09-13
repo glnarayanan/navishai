@@ -2,11 +2,14 @@ module ApplicationHelper
   NAV_SECTION_LABELS = {
     "support_cases" => "Cases",
     "support_case_commands" => "Cases",
+    "support_quality" => "Quality",
     "accounts" => "Accounts",
     "account_imports" => "Accounts",
     "customer_success_interventions" => "Accounts",
     "health_evidence" => "Accounts",
     "knowledge_sources" => "Knowledge",
+    "knowledge_improvements" => "Improvements",
+    "knowledge_improvement_candidates" => "Improvements",
     "memory_records" => "Memory",
     "memory_corrections" => "Memory",
     "health_scorecards" => "Scorecard",
@@ -29,8 +32,10 @@ module ApplicationHelper
 
   NAV_ICONS = {
     "Cases" => "M2 3.2h12v2H2zm0 3.4h12v7.2H2zm1.5 1.5v4.2h9V8.1z",
+    "Quality" => "M3 2.4h10v11.2H3zm1.6 2.2h6.8v1.2H4.6zm0 2.8h6.8v1.2H4.6zm0 2.8h4.4v1.2H4.6z",
     "Accounts" => "M8 1.7 14.2 4.8v6.4L8 14.3 1.8 11.2V4.8L8 1.7zm0 1.8L3.6 5.6v5l4.4 2.2 4.4-2.2v-5L8 3.5z",
     "Knowledge" => "M3 2.2h4.2c1.2 0 2.2.7 2.2 1.8v9.2c-.8-.6-1.6-.9-2.2-.9H3zm6.6 0H13v10.1h-3.2c-.6 0-1.4.3-2.2.9V4c0-1.1 1-1.8 2-1.8z",
+    "Improvements" => "M2.4 3.2h11.2v1.6H2.4zm0 3.6h11.2v1.6H2.4zm0 3.6h7.6v1.6H2.4zM12 10.2l1.8 1.8-1.8 1.8-.9-.9.9-.9-.9-.9z",
     "Memory" => "M3.2 3.2h9.6v2.1H3.2zm0 3.7h9.6v2.1H3.2zm0 3.8h6.4V13H3.2z",
     "Scorecard" => "M8 1.6A6.4 6.4 0 1 1 1.6 8 6.4 6.4 0 0 1 8 1.6zm-.7 3.2h1.4v3.2l2.2 2.2-.9.9-2.7-2.7z",
     "Crew setup" => "M8 1.8a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4zM3.2 4.2a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zm9.6 0a1.7 1.7 0 1 1 0 3.4 1.7 1.7 0 0 1 0-3.4zM8 7.6c2.3 0 4.4 1.2 4.4 3.2v1.6H3.6V10.8C3.6 8.8 5.7 7.6 8 7.6z",

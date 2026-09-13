@@ -20,10 +20,10 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | C1 Scorecard proposal | tested | `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. GitHub PR pending (BLK-003). |
 | C2 Proposal revision | tested | `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. GitHub PR pending (BLK-003). |
 | C3 Preview/backtest evidence | tested | `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. GitHub PR pending (BLK-003). |
-| D1 Support quality readout | tested (independent stack) | `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Not merged into C. GitHub PR pending (BLK-003). |
-| D2 Knowledge improvement queue | tested (independent stack) | `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. GitHub PR pending (BLK-003). |
-| D3 Follow-up evidence | tested (independent stack) | `cursor/knowledge-follow-up-efe6` | Stacked on D2. New current version leaves the queue; lineage retained. GitHub PR pending (BLK-003). |
-| E1 Integrated scenario | in progress | `cursor/integrated-scenario-efe6` | C stack plus merged B3. D remains independent until the next merge. GitHub PR pending (BLK-003). |
+| D1 Support quality readout | tested | `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Merged into E1. GitHub PR pending (BLK-003). |
+| D2 Knowledge improvement queue | tested | `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. Merged into E1. GitHub PR pending (BLK-003). |
+| D3 Follow-up evidence | tested | `cursor/knowledge-follow-up-efe6` | Stacked on D2. Assign/triage/resolve/dismiss candidates with audit. Merged into E1. |
+| E1 Integrated scenario | in progress | `cursor/integrated-scenario-efe6` | C stack plus merged B3 and D3. 14-step journey remains. GitHub PR pending (BLK-003). |
 | E2 Status and handoff | not started | — | After E1. |
 
 ## Decisions and blockers

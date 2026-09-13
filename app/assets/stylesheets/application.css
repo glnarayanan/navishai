@@ -118,7 +118,8 @@ p {
 .queue-heading p,
 .thread-heading p,
 .scorecard-heading p,
-.account-health-heading p {
+.account-health-heading p,
+.quality-heading p {
   color: var(--muted-foreground);
 }
 
