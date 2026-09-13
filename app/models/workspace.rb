@@ -49,6 +49,7 @@ class Workspace < ApplicationRecord
   has_many :support_case_products, dependent: :restrict_with_exception
   has_many :knowledge_sources, dependent: :restrict_with_exception
   has_many :knowledge_source_versions, dependent: :restrict_with_exception
+  has_many :knowledge_improvement_candidates, dependent: :restrict_with_exception
   has_many :crew_templates, dependent: :restrict_with_exception
   has_many :agent_profiles, dependent: :restrict_with_exception
   has_many :agent_profile_versions, dependent: :restrict_with_exception

@@ -155,45 +155,24 @@ CREATE FUNCTION public.expire_workspace_content(target_workspace_id bigint, cuto
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public', 'pg_temp'
     AS $$
-DECLARE affected integer; total integer;
+DECLARE
+  affected integer;
+  total integer;
 BEGIN
-  total := expire_workspace_content_before_governed_policy(target_workspace_id, cutoff);
-  LOCK TABLE governed_policy_proposals, governed_policy_previews, governed_policy_publications
-    IN ACCESS EXCLUSIVE MODE;
-  ALTER TABLE governed_policy_proposals DISABLE TRIGGER USER;
-  ALTER TABLE governed_policy_previews DISABLE TRIGGER USER;
-  ALTER TABLE governed_policy_publications DISABLE TRIGGER USER;
+  total := expire_workspace_content_before_knowledge_improvements(target_workspace_id, cutoff);
+  LOCK TABLE knowledge_improvement_candidates IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE knowledge_improvement_candidates DISABLE TRIGGER USER;
 
-  UPDATE governed_policy_proposals
-    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE workspace_id = target_workspace_id AND created_at < cutoff AND expired_at IS NULL;
+  UPDATE knowledge_improvement_candidates
+  SET detail = '[Expired by retention policy]',
+      triage_note = CASE WHEN triage_note IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      dismissal_reason = CASE WHEN dismissal_reason IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE workspace_id = target_workspace_id AND opened_at < cutoff AND
+    detail <> '[Expired by retention policy]';
   GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
 
-  UPDATE governed_policy_previews
-    SET source_snapshot = '{"retention":"expired"}'::jsonb,
-        results = COALESCE((
-          SELECT jsonb_agg(jsonb_build_object(
-            'subject_kind', item->>'subject_kind', 'subject_id', item->'subject_id',
-            'old_decision', '{"retention":"expired"}'::jsonb,
-            'proposed_decision', '{"retention":"expired"}'::jsonb,
-            'changes', '[]'::jsonb, 'facts', '[]'::jsonb, 'result', 'expired'
-          ) ORDER BY ordinal)
-          FROM jsonb_array_elements(results) WITH ORDINALITY AS values(item, ordinal)
-        ), '[]'::jsonb),
-        expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE workspace_id = target_workspace_id AND previewed_at < cutoff AND expired_at IS NULL;
-  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
-
-  UPDATE governed_policy_publications
-    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE workspace_id = target_workspace_id AND published_at < cutoff AND expired_at IS NULL;
-  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
-
-  ALTER TABLE governed_policy_publications ENABLE TRIGGER USER;
-  ALTER TABLE governed_policy_previews ENABLE TRIGGER USER;
-  ALTER TABLE governed_policy_proposals ENABLE TRIGGER USER;
+  ALTER TABLE knowledge_improvement_candidates ENABLE TRIGGER USER;
   RETURN total;
 END;
 $$;
@@ -657,6 +636,73 @@ $$;
 
 
 --
+-- Name: expire_workspace_content_before_knowledge_improvements(bigint, timestamp without time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.expire_workspace_content_before_knowledge_improvements(target_workspace_id bigint, cutoff timestamp without time zone) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE affected integer; total integer;
+BEGIN
+  total := expire_workspace_content_before_governed_policy(target_workspace_id, cutoff);
+  LOCK TABLE health_scorecard_proposals IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE health_scorecard_proposals DISABLE TRIGGER USER;
+  UPDATE health_scorecard_proposals
+    SET prompt = '[Expired by retention policy]',
+        explanation = '[Expired by retention policy]',
+        assumptions = '[]'::jsonb,
+        unsupported_requests = '[]'::jsonb,
+        missing_evidence = '[]'::jsonb,
+        validation_detail = CASE WHEN validation_detail IS NULL THEN NULL ELSE '[Expired by retention policy]' END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff
+      AND prompt <> '[Expired by retention policy]';
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+  ALTER TABLE health_scorecard_proposals ENABLE TRIGGER USER;
+
+  LOCK TABLE governed_policy_proposals, governed_policy_previews, governed_policy_publications
+    IN ACCESS EXCLUSIVE MODE;
+  ALTER TABLE governed_policy_proposals DISABLE TRIGGER USER;
+  ALTER TABLE governed_policy_previews DISABLE TRIGGER USER;
+  ALTER TABLE governed_policy_publications DISABLE TRIGGER USER;
+
+  UPDATE governed_policy_proposals
+    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND created_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE governed_policy_previews
+    SET source_snapshot = '{"retention":"expired"}'::jsonb,
+        results = COALESCE((
+          SELECT jsonb_agg(jsonb_build_object(
+            'subject_kind', item->>'subject_kind', 'subject_id', item->'subject_id',
+            'old_decision', '{"retention":"expired"}'::jsonb,
+            'proposed_decision', '{"retention":"expired"}'::jsonb,
+            'changes', '[]'::jsonb, 'facts', '[]'::jsonb, 'result', 'expired'
+          ) ORDER BY ordinal)
+          FROM jsonb_array_elements(results) WITH ORDINALITY AS values(item, ordinal)
+        ), '[]'::jsonb),
+        expired_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND previewed_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  UPDATE governed_policy_publications
+    SET reason = '[Expired by retention policy]', expired_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE workspace_id = target_workspace_id AND published_at < cutoff AND expired_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT; total := total + affected;
+
+  ALTER TABLE governed_policy_publications ENABLE TRIGGER USER;
+  ALTER TABLE governed_policy_previews ENABLE TRIGGER USER;
+  ALTER TABLE governed_policy_proposals ENABLE TRIGGER USER;
+  RETURN total;
+END;
+$$;
+
+
+--
 -- Name: prevent_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -929,11 +975,11 @@ BEGIN
   END IF;
   IF TG_OP <> 'UPDATE' OR
      ROW(OLD.id, OLD.workspace_id, OLD.task_key, OLD.scope_kind, OLD.support_case_id, OLD.account_id,
-         OLD.crew_template_id, OLD.owner_membership_id, OLD.owner_user_id, OLD.title,
+         OLD.health_scorecard_id, OLD.crew_template_id, OLD.owner_membership_id, OLD.owner_user_id, OLD.title,
          OLD.input_context, OLD.expected_output, OLD.created_at)
        IS DISTINCT FROM
      ROW(NEW.id, NEW.workspace_id, NEW.task_key, NEW.scope_kind, NEW.support_case_id, NEW.account_id,
-         NEW.crew_template_id, NEW.owner_membership_id, NEW.owner_user_id, NEW.title,
+         NEW.health_scorecard_id, NEW.crew_template_id, NEW.owner_membership_id, NEW.owner_user_id, NEW.title,
          NEW.input_context, NEW.expected_output, NEW.created_at) OR
      NEW.current_event_id IS NOT DISTINCT FROM OLD.current_event_id THEN
     RAISE EXCEPTION 'crew task identity and history are durable';
@@ -1532,6 +1578,70 @@ BEGIN
     RETURN NEW;
   END IF;
   RAISE EXCEPTION 'Intercom outbound delivery records are durable';
+END;
+$$;
+
+
+--
+-- Name: protect_knowledge_improvement_candidate(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.protect_knowledge_improvement_candidate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'knowledge improvement candidates cannot be truncated';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
+      RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'knowledge improvement candidates cannot be deleted';
+  END IF;
+  IF ROW(
+    NEW.workspace_id, NEW.source_crew_artifact_id, NEW.support_case_id, NEW.knowledge_source_id,
+    NEW.reason_code, NEW.title, NEW.detail, NEW.created_by_membership_id, NEW.opened_at, NEW.created_at
+  ) IS DISTINCT FROM ROW(
+    OLD.workspace_id, OLD.source_crew_artifact_id, OLD.support_case_id, OLD.knowledge_source_id,
+    OLD.reason_code, OLD.title, OLD.detail, OLD.created_by_membership_id, OLD.opened_at, OLD.created_at
+  ) THEN
+    RAISE EXCEPTION 'knowledge improvement candidate provenance is immutable';
+  END IF;
+  IF OLD.status = NEW.status THEN
+    IF OLD.status = 'assigned' AND (
+      NEW.assigned_to_membership_id IS DISTINCT FROM OLD.assigned_to_membership_id OR
+      NEW.assigned_by_membership_id IS DISTINCT FROM OLD.assigned_by_membership_id OR
+      NEW.assigned_at IS DISTINCT FROM OLD.assigned_at
+    ) THEN
+      RETURN NEW;
+    END IF;
+    IF NEW IS DISTINCT FROM OLD THEN
+      RAISE EXCEPTION 'knowledge improvement candidate is immutable in its current state';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF OLD.status = 'open' AND NEW.status = 'triaged' THEN
+    IF NEW.triaged_by_membership_id IS NULL OR NEW.triaged_at IS NULL OR NEW.triage_note IS NULL THEN
+      RAISE EXCEPTION 'invalid knowledge improvement triage';
+    END IF;
+  ELSIF OLD.status IN ('open', 'triaged') AND NEW.status = 'assigned' THEN
+    IF NEW.assigned_to_membership_id IS NULL OR NEW.assigned_by_membership_id IS NULL OR NEW.assigned_at IS NULL THEN
+      RAISE EXCEPTION 'invalid knowledge improvement assignment';
+    END IF;
+  ELSIF OLD.status = 'assigned' AND NEW.status = 'resolved' THEN
+    IF NEW.resolved_knowledge_source_id IS NULL OR NEW.resolved_knowledge_source_version_id IS NULL OR
+        NEW.resolved_by_membership_id IS NULL OR NEW.resolved_at IS NULL THEN
+      RAISE EXCEPTION 'invalid knowledge improvement resolution';
+    END IF;
+  ELSIF OLD.status IN ('open', 'triaged', 'assigned') AND NEW.status = 'dismissed' THEN
+    IF NEW.dismissed_by_membership_id IS NULL OR NEW.dismissed_at IS NULL OR NEW.dismissal_reason IS NULL THEN
+      RAISE EXCEPTION 'invalid knowledge improvement dismissal';
+    END IF;
+  ELSE
+    RAISE EXCEPTION 'invalid knowledge improvement candidate transition';
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
@@ -2431,14 +2541,14 @@ CREATE FUNCTION public.validate_crew_task_dependency() RETURNS trigger
     AS $$
 DECLARE task_scope record; dependency_scope record;
 BEGIN
-  SELECT scope_kind, support_case_id, account_id INTO task_scope
+  SELECT scope_kind, support_case_id, account_id, health_scorecard_id INTO task_scope
   FROM crew_tasks WHERE id = NEW.crew_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
-  SELECT scope_kind, support_case_id, account_id INTO dependency_scope
+  SELECT scope_kind, support_case_id, account_id, health_scorecard_id INTO dependency_scope
   FROM crew_tasks WHERE id = NEW.depends_on_task_id AND workspace_id = NEW.workspace_id FOR UPDATE;
   IF task_scope IS NULL OR dependency_scope IS NULL OR
-     ROW(task_scope.scope_kind, task_scope.support_case_id, task_scope.account_id)
+     ROW(task_scope.scope_kind, task_scope.support_case_id, task_scope.account_id, task_scope.health_scorecard_id)
        IS DISTINCT FROM
-     ROW(dependency_scope.scope_kind, dependency_scope.support_case_id, dependency_scope.account_id) OR
+     ROW(dependency_scope.scope_kind, dependency_scope.support_case_id, dependency_scope.account_id, dependency_scope.health_scorecard_id) OR
      EXISTS (
        WITH RECURSIVE ancestors(id) AS (
          SELECT depends_on_task_id FROM crew_task_dependencies
@@ -3593,6 +3703,7 @@ CREATE TABLE public.crew_tasks (
     scope_kind character varying NOT NULL,
     support_case_id bigint,
     account_id bigint,
+    health_scorecard_id bigint,
     crew_template_id bigint NOT NULL,
     assigned_agent_profile_id bigint NOT NULL,
     assigned_agent_profile_version_id bigint NOT NULL,
@@ -3609,7 +3720,7 @@ CREATE TABLE public.crew_tasks (
     resolution_contract_version_id bigint,
     CONSTRAINT crew_tasks_content CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200) AND ((octet_length(input_context) >= 1) AND (octet_length(input_context) <= 8000)) AND ((octet_length(expected_output) >= 1) AND (octet_length(expected_output) <= 8000)))),
     CONSTRAINT crew_tasks_governed_policy_shape CHECK (((governed_policy_publication_id IS NULL) OR (resolution_contract_version_id IS NOT NULL))),
-    CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL)))),
+    CONSTRAINT crew_tasks_scope CHECK (((((scope_kind)::text = 'support_case'::text) AND (support_case_id IS NOT NULL) AND (account_id IS NULL) AND (health_scorecard_id IS NULL)) OR (((scope_kind)::text = 'account'::text) AND (account_id IS NOT NULL) AND (support_case_id IS NULL) AND (health_scorecard_id IS NULL)) OR (((scope_kind)::text = 'health_scorecard'::text) AND (health_scorecard_id IS NOT NULL) AND (support_case_id IS NULL) AND (account_id IS NULL)))),
     CONSTRAINT crew_tasks_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('in_progress'::character varying)::text, ('blocked'::character varying)::text, ('review_requested'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('canceled'::character varying)::text])))
 );
 
@@ -4332,6 +4443,58 @@ ALTER SEQUENCE public.health_scorecard_design_turns_id_seq OWNED BY public.healt
 
 
 --
+-- Name: health_scorecard_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.health_scorecard_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    health_scorecard_id bigint NOT NULL,
+    crew_task_id bigint NOT NULL,
+    execution_run_id bigint NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    created_by_user_id bigint NOT NULL,
+    parent_proposal_id bigint,
+    prompt text NOT NULL,
+    proposed_definition jsonb,
+    explanation text NOT NULL,
+    assumptions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    unsupported_requests jsonb DEFAULT '[]'::jsonb NOT NULL,
+    missing_evidence jsonb DEFAULT '[]'::jsonb NOT NULL,
+    validation_status character varying NOT NULL,
+    validation_detail text,
+    payload_digest character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT health_scorecard_proposals_collections CHECK (((jsonb_typeof(assumptions) = 'array'::text) AND (jsonb_array_length(assumptions) <= 20) AND (jsonb_typeof(unsupported_requests) = 'array'::text) AND (jsonb_array_length(unsupported_requests) <= 20) AND (jsonb_typeof(missing_evidence) = 'array'::text) AND (jsonb_array_length(missing_evidence) <= 20))),
+    CONSTRAINT health_scorecard_proposals_content CHECK (((octet_length(prompt) >= 1) AND (octet_length(prompt) <= 2000) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)) AND ((validation_detail IS NULL) OR ((octet_length(validation_detail) >= 1) AND (octet_length(validation_detail) <= 2000))))),
+    CONSTRAINT health_scorecard_proposals_definition CHECK (((((validation_status)::text = 'valid'::text) AND (proposed_definition IS NOT NULL)) OR (((validation_status)::text <> 'valid'::text) AND (proposed_definition IS NULL)))),
+    CONSTRAINT health_scorecard_proposals_digest CHECK (((payload_digest)::text ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT health_scorecard_proposals_parent CHECK (((parent_proposal_id IS NULL) OR (parent_proposal_id <> id))),
+    CONSTRAINT health_scorecard_proposals_status CHECK (((validation_status)::text = ANY (ARRAY[('valid'::character varying)::text, ('invalid'::character varying)::text, ('unsupported'::character varying)::text, ('incomplete'::character varying)::text])))
+);
+
+
+--
+-- Name: health_scorecard_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.health_scorecard_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: health_scorecard_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.health_scorecard_proposals_id_seq OWNED BY public.health_scorecard_proposals.id;
+
+
+--
 -- Name: health_scorecard_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4347,6 +4510,7 @@ CREATE TABLE public.health_scorecard_versions (
     created_by_user_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    source_proposal_id bigint,
     CONSTRAINT health_scorecard_versions_actor CHECK ((((created_by_membership_id IS NULL) AND (created_by_user_id IS NULL)) OR ((created_by_membership_id IS NOT NULL) AND (created_by_user_id IS NOT NULL)))),
     CONSTRAINT health_scorecard_versions_content CHECK (((octet_length(design_prompt) >= 1) AND (octet_length(design_prompt) <= 4000) AND ((octet_length(explanation) >= 1) AND (octet_length(explanation) <= 8000)))),
     CONSTRAINT health_scorecard_versions_number CHECK ((version_number > 0))
@@ -5320,6 +5484,64 @@ ALTER SEQUENCE public.knowledge_applicability_products_id_seq OWNED BY public.kn
 
 
 --
+-- Name: knowledge_improvement_candidates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.knowledge_improvement_candidates (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    source_crew_artifact_id bigint,
+    support_case_id bigint,
+    knowledge_source_id bigint,
+    reason_code character varying NOT NULL,
+    title character varying NOT NULL,
+    detail text NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    created_by_membership_id bigint NOT NULL,
+    opened_at timestamp(6) without time zone NOT NULL,
+    triaged_by_membership_id bigint,
+    triaged_at timestamp(6) without time zone,
+    triage_note text,
+    assigned_to_membership_id bigint,
+    assigned_by_membership_id bigint,
+    assigned_at timestamp(6) without time zone,
+    resolved_knowledge_source_id bigint,
+    resolved_knowledge_source_version_id bigint,
+    resolved_by_membership_id bigint,
+    resolved_at timestamp(6) without time zone,
+    dismissed_by_membership_id bigint,
+    dismissed_at timestamp(6) without time zone,
+    dismissal_reason text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT knowledge_improvement_candidates_content CHECK ((((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)) AND ((octet_length(detail) >= 1) AND (octet_length(detail) <= 2000)) AND ((triage_note IS NULL) OR ((octet_length(triage_note) >= 1) AND (octet_length(triage_note) <= 1000))) AND ((dismissal_reason IS NULL) OR ((octet_length(dismissal_reason) >= 1) AND (octet_length(dismissal_reason) <= 1000))))),
+    CONSTRAINT knowledge_improvement_candidates_origin CHECK ((((source_crew_artifact_id IS NOT NULL) AND (support_case_id IS NOT NULL)) OR (knowledge_source_id IS NOT NULL))),
+    CONSTRAINT knowledge_improvement_candidates_reason CHECK (((reason_code)::text = ANY ((ARRAY['missing_knowledge'::character varying, 'stale'::character varying, 'deleted'::character varying, 'retired'::character varying, 'failed_sync'::character varying])::text[]))),
+    CONSTRAINT knowledge_improvement_candidates_state CHECK (((((status)::text = 'open'::text) AND (triaged_by_membership_id IS NULL) AND (triaged_at IS NULL) AND (triage_note IS NULL) AND (assigned_to_membership_id IS NULL) AND (assigned_by_membership_id IS NULL) AND (assigned_at IS NULL) AND (resolved_knowledge_source_id IS NULL) AND (resolved_knowledge_source_version_id IS NULL) AND (resolved_by_membership_id IS NULL) AND (resolved_at IS NULL) AND (dismissed_by_membership_id IS NULL) AND (dismissed_at IS NULL) AND (dismissal_reason IS NULL)) OR (((status)::text = 'triaged'::text) AND (triaged_by_membership_id IS NOT NULL) AND (triaged_at IS NOT NULL) AND (triage_note IS NOT NULL) AND (assigned_to_membership_id IS NULL) AND (assigned_by_membership_id IS NULL) AND (assigned_at IS NULL) AND (resolved_knowledge_source_id IS NULL) AND (resolved_knowledge_source_version_id IS NULL) AND (resolved_by_membership_id IS NULL) AND (resolved_at IS NULL) AND (dismissed_by_membership_id IS NULL) AND (dismissed_at IS NULL) AND (dismissal_reason IS NULL)) OR (((status)::text = 'assigned'::text) AND (assigned_to_membership_id IS NOT NULL) AND (assigned_by_membership_id IS NOT NULL) AND (assigned_at IS NOT NULL) AND (resolved_knowledge_source_id IS NULL) AND (resolved_knowledge_source_version_id IS NULL) AND (resolved_by_membership_id IS NULL) AND (resolved_at IS NULL) AND (dismissed_by_membership_id IS NULL) AND (dismissed_at IS NULL) AND (dismissal_reason IS NULL)) OR (((status)::text = 'resolved'::text) AND (assigned_to_membership_id IS NOT NULL) AND (assigned_by_membership_id IS NOT NULL) AND (assigned_at IS NOT NULL) AND (resolved_knowledge_source_id IS NOT NULL) AND (resolved_knowledge_source_version_id IS NOT NULL) AND (resolved_by_membership_id IS NOT NULL) AND (resolved_at IS NOT NULL) AND (dismissed_by_membership_id IS NULL) AND (dismissed_at IS NULL) AND (dismissal_reason IS NULL)) OR (((status)::text = 'dismissed'::text) AND (dismissed_by_membership_id IS NOT NULL) AND (dismissed_at IS NOT NULL) AND (dismissal_reason IS NOT NULL) AND (resolved_knowledge_source_id IS NULL) AND (resolved_knowledge_source_version_id IS NULL) AND (resolved_by_membership_id IS NULL) AND (resolved_at IS NULL)))),
+    CONSTRAINT knowledge_improvement_candidates_status CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'triaged'::character varying, 'assigned'::character varying, 'resolved'::character varying, 'dismissed'::character varying])::text[])))
+);
+
+
+--
+-- Name: knowledge_improvement_candidates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.knowledge_improvement_candidates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: knowledge_improvement_candidates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.knowledge_improvement_candidates_id_seq OWNED BY public.knowledge_improvement_candidates.id;
+
+
+--
 -- Name: knowledge_source_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5392,8 +5614,8 @@ CREATE TABLE public.knowledge_sources (
     CONSTRAINT knowledge_sources_deletion CHECK ((((deleted_at IS NULL) AND (deleted_by_membership_id IS NULL) AND (deleted_by_user_id IS NULL)) OR ((deleted_at IS NOT NULL) AND (deleted_by_membership_id IS NOT NULL) AND (deleted_by_user_id IS NOT NULL)))),
     CONSTRAINT knowledge_sources_identity CHECK ((((title)::text <> ''::text) AND (length((title)::text) <= 200) AND ((canonical_url IS NULL) OR (length((canonical_url)::text) <= 2048)) AND ((external_id IS NULL) OR (((external_id)::text <> ''::text) AND (length((external_id)::text) <= 500))))),
     CONSTRAINT knowledge_sources_key CHECK (((source_key)::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'::text)),
-    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'url'::character varying, 'upload'::character varying, 'intercom_help_center'::character varying, 'notion_page'::character varying])::text[]))),
-    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['intercom_help_center'::character varying, 'notion_page'::character varying])::text[])) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY ((ARRAY['manual'::character varying, 'upload'::character varying])::text[])) AND (canonical_url IS NULL) AND (external_id IS NULL)))),
+    CONSTRAINT knowledge_sources_kind CHECK (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('url'::character varying)::text, ('upload'::character varying)::text, ('intercom_help_center'::character varying)::text, ('notion_page'::character varying)::text]))),
+    CONSTRAINT knowledge_sources_locator CHECK (((((source_kind)::text = 'url'::text) AND ((canonical_url)::text ~ '^https://'::text) AND (external_id IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('intercom_help_center'::character varying)::text, ('notion_page'::character varying)::text])) AND (external_id IS NOT NULL) AND (canonical_url IS NULL)) OR (((source_kind)::text = ANY (ARRAY[('manual'::character varying)::text, ('upload'::character varying)::text])) AND (canonical_url IS NULL) AND (external_id IS NULL)))),
     CONSTRAINT knowledge_sources_notion_origin CHECK (((notion_knowledge_connection_id IS NULL) OR (((source_kind)::text = 'notion_page'::text) AND (intercom_connection_id IS NULL)))),
     CONSTRAINT knowledge_sources_origin_kind CHECK (((intercom_connection_id IS NULL) OR ((source_kind)::text = 'intercom_help_center'::text)))
 );
@@ -5433,7 +5655,7 @@ CREATE TABLE public.knowledge_sync_observations (
     retired_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT knowledge_sync_observations_state CHECK ((((missing_passes >= 0) AND (missing_passes <= 2)) AND (((missing_passes = 0) AND (unavailable_at IS NULL) AND (retired_at IS NULL)) OR ((missing_passes = 1) AND (unavailable_at IS NOT NULL) AND (retired_at IS NULL)) OR ((missing_passes = 2) AND (unavailable_at IS NOT NULL) AND (retired_at IS NOT NULL)))))
+    CONSTRAINT knowledge_sync_observations_state CHECK (((missing_passes >= 0) AND (missing_passes <= 2) AND (((missing_passes = 0) AND (unavailable_at IS NULL) AND (retired_at IS NULL)) OR ((missing_passes = 1) AND (unavailable_at IS NOT NULL) AND (retired_at IS NULL)) OR ((missing_passes = 2) AND (unavailable_at IS NOT NULL) AND (retired_at IS NOT NULL)))))
 );
 
 
@@ -5477,7 +5699,7 @@ CREATE TABLE public.knowledge_sync_passes (
     frontier jsonb DEFAULT '[]'::jsonb NOT NULL,
     visited jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT knowledge_sync_pass_origin CHECK (((intercom_connection_id IS NULL) <> (notion_knowledge_connection_id IS NULL))),
-    CONSTRAINT knowledge_sync_passes_state CHECK ((((status)::text = ANY ((ARRAY['pending'::character varying, 'failed'::character varying, 'completed'::character varying])::text[])) AND ((page_count >= 0) AND (page_count <= 1000)) AND (reconciliation_position >= 0) AND ((cursor IS NULL) OR (octet_length((cursor)::text) <= 2048)) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z_]{1,64}$'::text)) AND (((status)::text = 'completed'::text) = (completed_at IS NOT NULL))))
+    CONSTRAINT knowledge_sync_passes_state CHECK ((((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('failed'::character varying)::text, ('completed'::character varying)::text])) AND ((page_count >= 0) AND (page_count <= 1000)) AND (reconciliation_position >= 0) AND ((cursor IS NULL) OR (octet_length((cursor)::text) <= 2048)) AND ((failure_code IS NULL) OR ((failure_code)::text ~ '^[a-z_]{1,64}$'::text)) AND (((status)::text = 'completed'::text) = (completed_at IS NOT NULL))))
 );
 
 
@@ -6184,7 +6406,7 @@ CREATE TABLE public.personal_provider_accounts (
     expires_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT personal_accounts_state CHECK (((state)::text = ANY ((ARRAY['starting'::character varying, 'pending'::character varying, 'connected'::character varying, 'failed'::character varying, 'disconnected'::character varying])::text[])))
+    CONSTRAINT personal_accounts_state CHECK (((state)::text = ANY (ARRAY[('starting'::character varying)::text, ('pending'::character varying)::text, ('connected'::character varying)::text, ('failed'::character varying)::text, ('disconnected'::character varying)::text])))
 );
 
 
@@ -7245,7 +7467,7 @@ CREATE TABLE public.workspace_connectors (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     service_remote_workspace_id character varying,
-    CONSTRAINT workspace_connectors_provider CHECK (((provider)::text = ANY ((ARRAY['intercom'::character varying, 'notion'::character varying])::text[])))
+    CONSTRAINT workspace_connectors_provider CHECK (((provider)::text = ANY (ARRAY[('intercom'::character varying)::text, ('notion'::character varying)::text])))
 );
 
 
@@ -7785,6 +8007,13 @@ ALTER TABLE ONLY public.health_scorecard_design_turns ALTER COLUMN id SET DEFAUL
 
 
 --
+-- Name: health_scorecard_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals ALTER COLUMN id SET DEFAULT nextval('public.health_scorecard_proposals_id_seq'::regclass);
+
+
+--
 -- Name: health_scorecard_versions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -7950,6 +8179,13 @@ ALTER TABLE ONLY public.knowledge_applicability_connections ALTER COLUMN id SET 
 --
 
 ALTER TABLE ONLY public.knowledge_applicability_products ALTER COLUMN id SET DEFAULT nextval('public.knowledge_applicability_products_id_seq'::regclass);
+
+
+--
+-- Name: knowledge_improvement_candidates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates ALTER COLUMN id SET DEFAULT nextval('public.knowledge_improvement_candidates_id_seq'::regclass);
 
 
 --
@@ -8637,6 +8873,14 @@ ALTER TABLE ONLY public.health_scorecard_design_turns
 
 
 --
+-- Name: health_scorecard_proposals health_scorecard_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT health_scorecard_proposals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: health_scorecard_versions health_scorecard_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8826,6 +9070,14 @@ ALTER TABLE ONLY public.knowledge_applicability_connections
 
 ALTER TABLE ONLY public.knowledge_applicability_products
     ADD CONSTRAINT knowledge_applicability_products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: knowledge_improvement_candidates knowledge_improvement_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT knowledge_improvement_candidates_pkey PRIMARY KEY (id);
 
 
 --
@@ -9981,6 +10233,13 @@ CREATE INDEX index_crew_tasks_on_resolution_contract_version_id ON public.crew_t
 
 
 --
+-- Name: index_crew_tasks_on_scorecard_and_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_crew_tasks_on_scorecard_and_status ON public.crew_tasks USING btree (workspace_id, health_scorecard_id, status);
+
+
+--
 -- Name: index_crew_tasks_on_task_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10398,6 +10657,48 @@ CREATE INDEX index_health_scorecard_design_turns_on_workspace_id ON public.healt
 --
 
 CREATE UNIQUE INDEX index_health_scorecard_design_turns_on_workspace_id_and_id ON public.health_scorecard_design_turns USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_execution_run_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_proposals_on_execution_run_id ON public.health_scorecard_proposals USING btree (execution_run_id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_parent_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_parent_proposal_id ON public.health_scorecard_proposals USING btree (parent_proposal_id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_scorecard_and_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_scorecard_and_created ON public.health_scorecard_proposals USING btree (health_scorecard_id, created_at);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_health_scorecard_proposals_on_workspace_id ON public.health_scorecard_proposals USING btree (workspace_id);
+
+
+--
+-- Name: index_health_scorecard_proposals_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_proposals_on_workspace_id_and_id ON public.health_scorecard_proposals USING btree (workspace_id, id);
+
+
+--
+-- Name: index_health_scorecard_versions_on_source_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_health_scorecard_versions_on_source_proposal_id ON public.health_scorecard_versions USING btree (source_proposal_id) WHERE (source_proposal_id IS NOT NULL);
 
 
 --
@@ -10937,6 +11238,41 @@ CREATE INDEX index_knowledge_applicability_products_on_workspace_id ON public.kn
 --
 
 CREATE UNIQUE INDEX index_knowledge_applicability_products_unique ON public.knowledge_applicability_products USING btree (knowledge_applicability_id, product_id);
+
+
+--
+-- Name: index_knowledge_improvement_candidates_for_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_improvement_candidates_for_queue ON public.knowledge_improvement_candidates USING btree (workspace_id, status, id);
+
+
+--
+-- Name: index_knowledge_improvement_candidates_on_artifact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_improvement_candidates_on_artifact ON public.knowledge_improvement_candidates USING btree (source_crew_artifact_id) WHERE (source_crew_artifact_id IS NOT NULL);
+
+
+--
+-- Name: index_knowledge_improvement_candidates_on_workspace_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_improvement_candidates_on_workspace_and_id ON public.knowledge_improvement_candidates USING btree (workspace_id, id);
+
+
+--
+-- Name: index_knowledge_improvement_candidates_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_knowledge_improvement_candidates_on_workspace_id ON public.knowledge_improvement_candidates USING btree (workspace_id);
+
+
+--
+-- Name: index_knowledge_improvement_candidates_open_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_knowledge_improvement_candidates_open_source ON public.knowledge_improvement_candidates USING btree (workspace_id, knowledge_source_id) WHERE ((knowledge_source_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['open'::character varying, 'triaged'::character varying, 'assigned'::character varying])::text[])));
 
 
 --
@@ -12830,6 +13166,20 @@ CREATE TRIGGER health_scorecard_design_turns_no_truncate BEFORE TRUNCATE ON publ
 
 
 --
+-- Name: health_scorecard_proposals health_scorecard_proposals_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_proposals_append_only BEFORE DELETE OR UPDATE ON public.health_scorecard_proposals FOR EACH ROW EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
+-- Name: health_scorecard_proposals health_scorecard_proposals_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER health_scorecard_proposals_no_truncate BEFORE TRUNCATE ON public.health_scorecard_proposals FOR EACH STATEMENT EXECUTE FUNCTION public.protect_health_scorecard_record();
+
+
+--
 -- Name: health_scorecard_versions health_scorecard_versions_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -12911,6 +13261,20 @@ CREATE TRIGGER intercom_webhook_deliveries_no_truncate BEFORE TRUNCATE ON public
 --
 
 CREATE TRIGGER intercom_webhook_deliveries_protect_source BEFORE DELETE OR UPDATE ON public.intercom_webhook_deliveries FOR EACH ROW EXECUTE FUNCTION public.prevent_intercom_webhook_source_mutation();
+
+
+--
+-- Name: knowledge_improvement_candidates knowledge_improvement_candidates_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_improvement_candidates_no_truncate BEFORE TRUNCATE ON public.knowledge_improvement_candidates FOR EACH STATEMENT EXECUTE FUNCTION public.protect_knowledge_improvement_candidate();
+
+
+--
+-- Name: knowledge_improvement_candidates knowledge_improvement_candidates_protect; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER knowledge_improvement_candidates_protect BEFORE DELETE OR UPDATE ON public.knowledge_improvement_candidates FOR EACH ROW EXECUTE FUNCTION public.protect_knowledge_improvement_candidate();
 
 
 --
@@ -13534,6 +13898,14 @@ ALTER TABLE ONLY public.crew_tasks
 
 
 --
+-- Name: crew_tasks fk_crew_tasks_health_scorecard; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.crew_tasks
+    ADD CONSTRAINT fk_crew_tasks_health_scorecard FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
 -- Name: crew_tasks fk_crew_tasks_owner; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13750,11 +14122,35 @@ ALTER TABLE ONLY public.execution_runs
 
 
 --
+-- Name: health_scorecard_proposals fk_health_scorecard_proposals_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_health_scorecard_proposals_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: health_scorecard_proposals fk_health_scorecard_proposals_parent; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_health_scorecard_proposals_parent FOREIGN KEY (workspace_id, parent_proposal_id) REFERENCES public.health_scorecard_proposals(workspace_id, id);
+
+
+--
 -- Name: health_scorecard_versions fk_health_scorecard_versions_actor; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.health_scorecard_versions
     ADD CONSTRAINT fk_health_scorecard_versions_actor FOREIGN KEY (workspace_id, created_by_membership_id, created_by_user_id) REFERENCES public.memberships(workspace_id, id, user_id);
+
+
+--
+-- Name: health_scorecard_versions fk_health_scorecard_versions_source_proposal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_versions
+    ADD CONSTRAINT fk_health_scorecard_versions_source_proposal FOREIGN KEY (workspace_id, source_proposal_id) REFERENCES public.health_scorecard_proposals(workspace_id, id);
 
 
 --
@@ -13907,6 +14303,94 @@ ALTER TABLE ONLY public.intercom_part_attachments
 
 ALTER TABLE ONLY public.intercom_part_attachments
     ADD CONSTRAINT fk_intercom_part_attachments_part FOREIGN KEY (workspace_id, intercom_part_link_id) REFERENCES public.intercom_part_links(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_artifact; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_artifact FOREIGN KEY (workspace_id, source_crew_artifact_id) REFERENCES public.crew_artifacts(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_assigned_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_assigned_by FOREIGN KEY (workspace_id, assigned_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_assigned_to; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_assigned_to FOREIGN KEY (workspace_id, assigned_to_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_case; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_case FOREIGN KEY (workspace_id, support_case_id) REFERENCES public.support_cases(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_created_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_created_by FOREIGN KEY (workspace_id, created_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_dismissed_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_dismissed_by FOREIGN KEY (workspace_id, dismissed_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_resolved_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_resolved_by FOREIGN KEY (workspace_id, resolved_by_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_resolved_source; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_resolved_source FOREIGN KEY (workspace_id, resolved_knowledge_source_id) REFERENCES public.knowledge_sources(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_resolved_version; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_resolved_version FOREIGN KEY (workspace_id, resolved_knowledge_source_version_id) REFERENCES public.knowledge_source_versions(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_source; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_source FOREIGN KEY (workspace_id, knowledge_source_id) REFERENCES public.knowledge_sources(workspace_id, id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_knowledge_improvement_candidates_triaged_by; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_knowledge_improvement_candidates_triaged_by FOREIGN KEY (workspace_id, triaged_by_membership_id) REFERENCES public.memberships(workspace_id, id);
 
 
 --
@@ -15211,6 +15695,14 @@ ALTER TABLE ONLY public.knowledge_sync_observations
 
 ALTER TABLE ONLY public.outbound_email_deliveries
     ADD CONSTRAINT fk_rails_70d4e66122 FOREIGN KEY (workspace_id, shared_email_inbox_id, email_thread_id, conversation_id) REFERENCES public.email_threads(workspace_id, shared_email_inbox_id, id, conversation_id);
+
+
+--
+-- Name: knowledge_improvement_candidates fk_rails_70e7bc48c2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.knowledge_improvement_candidates
+    ADD CONSTRAINT fk_rails_70e7bc48c2 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -16558,6 +17050,46 @@ ALTER TABLE ONLY public.account_health_assessments
 
 
 --
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_run; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_run FOREIGN KEY (workspace_id, execution_run_id) REFERENCES public.execution_runs(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_scorecard; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_scorecard FOREIGN KEY (workspace_id, health_scorecard_id) REFERENCES public.health_scorecards(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_task; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_task FOREIGN KEY (workspace_id, crew_task_id) REFERENCES public.crew_tasks(workspace_id, id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_user; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_user FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: health_scorecard_proposals fk_rails_health_scorecard_proposals_workspace; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.health_scorecard_proposals
+    ADD CONSTRAINT fk_rails_health_scorecard_proposals_workspace FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: resolution_contract_families fk_resolution_contract_families_current_version; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16684,6 +17216,9 @@ ALTER TABLE ONLY public.usage_rate_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260913100000'),
+('20260913020000'),
+('20260913010000'),
 ('20260911120000'),
 ('20260906060000'),
 ('20260906050000'),
@@ -16758,3 +17293,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195258'),
 ('20260823195257'),
 ('20260823193334');
+

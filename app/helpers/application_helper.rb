@@ -9,6 +9,7 @@ module ApplicationHelper
     "health_evidence" => "Accounts",
     "knowledge_sources" => "Knowledge",
     "knowledge_improvements" => "Improvements",
+    "knowledge_improvement_candidates" => "Improvements",
     "memory_records" => "Memory",
     "memory_corrections" => "Memory",
     "health_scorecards" => "Scorecard",

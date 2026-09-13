@@ -13,6 +13,9 @@ class Membership < ApplicationRecord
   has_many :accountable_customer_success_interventions, class_name: "CustomerSuccessIntervention",
     foreign_key: :accountable_membership_id, dependent: :restrict_with_exception,
     inverse_of: :accountable_membership
+  has_many :assigned_knowledge_improvement_candidates, class_name: "KnowledgeImprovementCandidate",
+    foreign_key: :assigned_to_membership_id, dependent: :restrict_with_exception,
+    inverse_of: :assigned_to_membership
 
   enum :role, ROLES.index_by(&:itself), validate: true
 

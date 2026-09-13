@@ -11,7 +11,11 @@ class KnowledgeImprovementQueueTest < ActiveSupport::TestCase
 
     assert_not queue.attention?
     assert_empty queue.items
+    assert_empty queue.improved
+    assert_empty queue.candidates
     assert_equal 0, metric(queue, "attention").value
+    assert_equal 0, metric(queue, "candidates").value
+    assert_equal 0, metric(queue, "improved").value
   end
 
   test "lists expired, deleted, retired, and failed-sync sources and ignores current ones" do
@@ -64,6 +68,51 @@ class KnowledgeImprovementQueueTest < ActiveSupport::TestCase
     queue = KnowledgeImprovementQueue.build(workspace: @workspace)
 
     assert_equal [ "Local expired" ], queue.items.map { |item| item.source.display_title }
+    assert_empty queue.improved
+  end
+
+  test "a replacement current version leaves the queue and retains lineage" do
+    source = create_manual("Expired access", "Legacy cancellation steps", expires_at: 1.minute.ago)
+    prior = source.current_version
+    assert KnowledgeImprovementQueue.build(workspace: @workspace).items.map(&:source).include?(source)
+
+    KnowledgeIngestion.update!(
+      workspace: @workspace, membership: @owner, knowledge_source: source,
+      content: "Use the new recovery link from the account owner.", upload: nil, expires_at: nil
+    )
+    source.reload
+    queue = KnowledgeImprovementQueue.build(workspace: @workspace)
+    improved = queue.improved.sole
+
+    assert_not queue.items.map(&:source).include?(source)
+    assert source.left_improvement_queue?
+    assert_equal source, improved.source
+    assert_equal prior, improved.prior_version
+    assert_equal source.current_version, improved.current_version
+    assert_equal 2, source.versions.size
+    assert prior.reload.stale?
+    assert_not source.current_version.stale?
+    assert_equal 1, metric(queue, "improved").value
+    assert_equal 0, metric(queue, "attention").value
+  end
+
+  test "lists open candidates separately from source attention" do
+    support_case = create_support_case(subject: "Missing candidate policy")
+    artifact = create_draft_artifact(
+      workspace: @workspace, support_case:, membership: @owner,
+      body: "Blocked without knowledge.", result_state: "blocked",
+      blocker_message: "Applicable knowledge is missing."
+    )
+    candidate = KnowledgeImprovementWorkflow.create_from_blocked_draft!(
+      workspace: @workspace, membership: @owner, artifact:
+    )
+
+    queue = KnowledgeImprovementQueue.build(workspace: @workspace)
+
+    assert queue.attention?
+    assert_equal 1, metric(queue, "candidates").value
+    assert_equal candidate, queue.candidates.sole.candidate
+    assert_equal "Missing knowledge", queue.candidates.sole.label
   end
 
   private

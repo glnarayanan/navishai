@@ -72,10 +72,17 @@
         <ul class="quality-list">
           <% @readout.blocked_drafts.each do |row| %>
             <li>
-              <%= link_to row.path do %>
-                <%= row.title %>
-                <span><%= row.detail %></span>
-              <% end %>
+              <div class="quality-blocked-row">
+                <%= link_to row.path do %>
+                  <%= row.title %>
+                  <span><%= row.detail %></span>
+                <% end %>
+                <% if @membership.can_write? && row.artifact && row.artifact.knowledge_improvement_candidate.blank? %>
+                  <%= button_to "Create improvement candidate", workspace_knowledge_improvement_candidates_path(@workspace),
+                    params: { crew_artifact_id: row.artifact.id, return_to: "quality" },
+                    class: "button button-compact" %>
+                <% end %>
+              </div>
             </li>
           <% end %>
         </ul>
