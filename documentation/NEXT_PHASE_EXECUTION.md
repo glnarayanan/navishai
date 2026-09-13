@@ -3,7 +3,9 @@
 **Status:** Working ledger for the daily operating-workspace phase  
 **Updated:** 13 September 2026
 
-This file tracks slice state for the phase. Detailed product rules stay in [PRODUCT.md](./PRODUCT.md). Implementation evidence stays in [STATUS.md](./STATUS.md). Live-host proof is separate from fixture engineering.
+This file tracks slice state for the phase. The operator handoff covering PRs #111–#124 is [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). Detailed product rules stay in [PRODUCT.md](./PRODUCT.md). Implementation evidence stays in [STATUS.md](./STATUS.md). Live-host proof is separate from fixture engineering.
+
+Owner authorized merge-commit integration into `main` on 13 September 2026 (A stack, then C/E including this E2 tip, then any still-open B/D PRs). That is not a launch, release, deploy, or customer-validation claim. Next incomplete slice: live-host proof (BLK-001, BLK-002, BLK-004).
 
 States: **not started**, **in progress**, **implemented**, **tested**, **PR open**, **merged**, **externally verified**, **blocked**.
 
@@ -32,7 +34,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 |---|---|---|---|---|---|---|---|---|
 | BLK-001 | A1 | Credential/host | No live self-hosted Supermemory on this check host. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage. Do not claim live engine proof. | Phase implementation is complete. | Operator-supplied self-hosted Supermemory on a disposable host. | open |
 | BLK-002 | A2 | Host | `docker` is not installed. | Changed-image upgrade is not operationally accepted. | Keep the production changed-image upgrade guard until live digest proof. | Phase implementation is complete. | Docker Engine + Compose v2. | open |
-| BLK-003 | All stacks | Tooling | Open PRs #111–#124 cover A1–E2. ManagePullRequest is unavailable in this agent; `gh` is read-only for PR updates. | PR bodies cannot be rewritten from this agent. | Record exact PR metadata. Do not merge to main. | Live-host proof (BLK-001, BLK-002, BLK-004). | Write-capable PR tool or owner updates PR bodies. | open for PR-body writes; PR creation resolved |
+| BLK-003 | All stacks | Tooling | Open PRs #111–#124 cover A1–E2. ManagePullRequest is unavailable in this agent. Owner authorized merge-commit integration into `main` on 13 September 2026. | PR bodies still cannot be rewritten from this agent. Merge-to-main is no longer blocked. | Record exact PR metadata. Merge with merge commits only. | Live-host proof (BLK-001, BLK-002, BLK-004). | Write-capable PR tool or owner updates PR bodies. | open for PR-body writes; merge-to-main authorized |
 | BLK-004 | A3 | Host/credential | No Docker, public DNS, ACME, signing identity, or live SMTP/scanner/provider on this host. | I5 and live connector checks remain omitted, not passing. | Keep omissions explicit. Do not reopen installer audits. | Phase implementation is complete. | Clean supported host plus operator-owned credentials and signing identity. | open |
 | DEC-001 | A1 | Routine | Owner and Admin may start the memory check, matching the setup-checklist role gate. | Broader than Owner-only if that phrase is read strictly. | Keep Owner/Admin. | Continue. | Owner restricts to Owner-only. | accepted |
 | DEC-002 | A2 | Routine | App-image compatibility uses Docker-save manifests plus `db:migrate:status`; no schema-change claim. | Unsupported/indeterminate still rejected before stop. | Keep the guard. | Continue. | Owner expands the supported upgrade class. | accepted |
@@ -78,9 +80,11 @@ Merge strategy: on `cursor/integrated-scenario-efe6` (C3 parent), merge commits 
 | C1–C3 | Scripted-adapter scorecard proposal, revision, and inspected-preview publish on [#118](https://github.com/glnarayanan/navishai/pull/118)–[#122](https://github.com/glnarayanan/navishai/pull/122) | Live model execution is not claimed |
 | D1–D3 | Quality readout, stale-source queue, and assign/triage/resolve/dismiss candidates on [#117](https://github.com/glnarayanan/navishai/pull/117)–[#121](https://github.com/glnarayanan/navishai/pull/121) | Does not score Accounts or send messages |
 | E1 | 14-step fixture journey plus seven failure variants on [#123](https://github.com/glnarayanan/navishai/pull/123) | No live credentials. CI fixes cherry-picked; the green `bin/ci` record is on E2 |
-| E2 | This handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Full `bin/ci` passed at `fdd3145` on this Linux host. Docker Engine is not installed. Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). PR-body writes remain BLK-003. |
+| E2 | Dedicated operator handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Full `bin/ci` passed at `fdd3145`; docs checkpoint `b9e0a80`. C tip `f4cb1a9` and D tip `81751bd` also passed `bin/ci`. A isolation after `bb933d9`. Docker Engine is not installed. PostgreSQL on the CI host was 15.19, not pinned 16. Owner authorized merge commits into `main`. Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). |
 
 ## Operator handoff
+
+See [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). **#124 is the latest integrated product tip** (B+C+D+E). **A is a separate stack** that still needs its own merges into `main`.
 
 Four independent feature stacks leave `main` (`aa4b079`). Do not merge C into D or D into C.
 
@@ -90,6 +94,6 @@ Four independent feature stacks leave `main` (`aa4b079`). Do not merge C into D 
 - **D stack:** `cursor/support-quality-efe6` → `cursor/knowledge-improvements-efe6` → `cursor/knowledge-follow-up-efe6`
 - **E integration:** `cursor/integrated-scenario-efe6` (C3 + merge commits of B3 and D3) → `cursor/phase-handoff-efe6`
 
-DEC-003 is accepted: scorecard AI proposals use `scope_kind=health_scorecard` and reuse `success_strategist`. BLK-003 remains open for PR-body writes. BLK-001, BLK-002, and BLK-004 stay open until live proof. Do not claim live Supermemory, Docker digest, or public ACME.
+DEC-001, DEC-002, and DEC-003 are accepted. BLK-001, BLK-002, and BLK-004 stay open until live proof. Do not claim live Supermemory, Docker digest, or public ACME. Docker Engine was not installed. PostgreSQL on the CI host was 15.19, not pinned 16.
 
-No merge, release, or deploy from this phase. No live Claude/Anthropic implementation review.
+Owner authorized merge-commit integration into `main`. This phase is not launched, released, deployed, or customer-validated. No live Claude/Anthropic implementation review.
