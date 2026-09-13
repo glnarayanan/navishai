@@ -190,6 +190,16 @@ class OperatingWorkspaceJourneyTest < ActiveSupport::TestCase
     owner = memberships(:owner_support)
     support_case = create_support_case(subject: "Memory outage")
     install_crew_test_dependencies(workspace:, membership: owner)
+    memory = workspace.memory_records.create!(
+      memory_type: :episodic, scope_kind: :workspace, topic: "e1-memory-outage",
+      content: "Durable context for the outage journey.", authority: :source_record, origin_kind: :system,
+      source_reference: "test://e1-memory-outage", source_digest: Digest::SHA256.hexdigest("e1-memory-outage"),
+      observed_at: 1.hour.ago, valid_from: 1.hour.ago, confidence: 1, retention_policy: :indefinite
+    )
+    workspace.memory_index_entries.create!(
+      memory_record: memory, status: :indexed, external_document_id: "document-#{memory.memory_key}",
+      external_status: "done", attempt_count: 1, last_attempted_at: Time.current, indexed_at: Time.current
+    )
     task = CrewWork.create!(
       workspace:, membership: owner, scope: support_case,
       profile: workspace.agent_profiles.find_by!(role_key: "support_investigator"),
@@ -248,7 +258,7 @@ class OperatingWorkspaceJourneyTest < ActiveSupport::TestCase
     AccountHealth.recalculate!(workspace:, account:, trigger_kind: "human_request", membership: owner, at: @at)
     version = HealthScorecardDesigner.propose!(
       workspace:, membership: owner, prompt: "Focus the score on clear renewal risk.",
-      weights: { "open_cases" => 40 }
+      healthy_min: 75, watch_min: 50, weights: { "open_cases" => 40 }
     )
     backtest = HealthScorecardBacktester.run!(workspace:, membership: owner, version:, at: @at)
     AccountHealth.recalculate!(workspace:, account:, trigger_kind: "schedule", membership: owner, at: @at + 1.day)
@@ -339,7 +349,7 @@ class OperatingWorkspaceJourneyTest < ActiveSupport::TestCase
     [
       [ 1, "run.admitted", { workspace_key: workspace.runner_key, task_key: task.task_key, attempt: run.attempt_number } ],
       [ 2, "run.started", { adapter: "scripted", scenario: "e1-cost", attempt: run.attempt_number } ],
-      [ 3, "run.completed", { outcome: "completed" } ]
+      [ 3, "run.failed", { code: "scripted_failure", retryable: false } ]
     ].each do |sequence, type, data|
       ledger.ingest!(event: {
         "protocol_version" => "v1", "event_id" => SecureRandom.uuid, "run_id" => run.run_key,
@@ -406,7 +416,7 @@ class OperatingWorkspaceJourneyTest < ActiveSupport::TestCase
     def ingest_support_case(workspace:, account:, email: "e1-customer@example.net")
       inbox = workspace.shared_email_inboxes.create!(
         name: "E1 Support", email_address: "e1-support-#{workspace.id}@example.com",
-        credential_key: "e1-support-#{workspace.id}"
+        credential_key: "e1support#{workspace.id}"
       )
       delivery = SharedEmailIntake.receive!(
         inbox:, raw_email: raw_support_email(from: email, to: inbox.email_address),
