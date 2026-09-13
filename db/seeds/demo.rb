@@ -97,7 +97,8 @@ module DemoSeed
     )
     HealthScorecardBacktester.run!(workspace:, membership:, version:)
     HealthScorecardPublisher.publish!(
-      workspace:, membership:, version:, expected_current_version_id: current.id
+      workspace:, membership:, version:, expected_current_version_id: current.id,
+      expected_backtest_id: version.backtests.order(generated_at: :desc, id: :desc).pick(:id)
     )
   end
   private_class_method :seed_scorecard!

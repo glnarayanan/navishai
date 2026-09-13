@@ -7,27 +7,21 @@ class HealthScorecardBacktester
     raise Current::RoleAccessDenied unless actor.can_write?
     scorecard = HealthScorecardDesigner.install_default!(workspace:)
     version = scorecard.versions.find(version.id)
-    snapshots = workspace.account_health_assessments.includes(:account, :signals)
-      .order(calculated_at: :desc, id: :desc).limit(MAX_SNAPSHOTS).to_a
-    rows = snapshots.map { |assessment| result_for(assessment, version.definition) }
-    source = snapshots.map do |assessment|
-      {
-        "assessment_id" => assessment.id, "calculated_at" => assessment.calculated_at.iso8601,
-        "signals" => assessment.signals.map do |signal|
-          [ signal.signal_key, signal.numeric_value&.to_s("F"), signal.date_value&.iso8601 ]
-        end.sort
-      }
-    end
-    digest = Digest::SHA256.hexdigest(JSON.generate(
-      "definition" => version.definition, "source" => source
-    ))
-    current_ids = current_assessment_ids(workspace, snapshots)
-    results = {
-      "current" => rows.select { |row| current_ids.include?(row.fetch("assessment_id")) },
-      "history" => rows,
-      "summary" => summary(rows)
-    }
     HealthScorecardBacktest.transaction do
+      version.lock!
+      snapshots = load_snapshots(workspace)
+      total = workspace.account_health_assessments.count
+      rows = snapshots.map { |assessment| result_for(assessment, version.definition) }
+      digest = source_digest(snapshots, version.definition)
+      current_ids = current_assessment_ids(workspace, snapshots)
+      results = {
+        "current" => rows.select { |row| current_ids.include?(row.fetch("assessment_id")) },
+        "history" => rows,
+        "summary" => summary(rows).merge(
+          "snapshot_limit" => MAX_SNAPSHOTS,
+          "truncated" => total > snapshots.size
+        )
+      }
       backtest = version.backtests.create!(
         workspace:, membership: actor, user: actor.user, source_digest: digest,
         results:, sample_count: rows.size, generated_at: at
@@ -39,6 +33,29 @@ class HealthScorecardBacktester
   rescue ActiveRecord::RecordInvalid => error
     raise InvalidBacktest, error.record.errors.full_messages.to_sentence
   end
+
+  def self.source_digest_for(workspace:, version:)
+    source_digest(load_snapshots(workspace), version.definition)
+  end
+
+  def self.load_snapshots(workspace)
+    workspace.account_health_assessments.includes(:account, :signals)
+      .order(calculated_at: :desc, id: :desc).limit(MAX_SNAPSHOTS).to_a
+  end
+  private_class_method :load_snapshots
+
+  def self.source_digest(snapshots, definition)
+    source = snapshots.map do |assessment|
+      {
+        "assessment_id" => assessment.id, "calculated_at" => assessment.calculated_at.iso8601,
+        "signals" => assessment.signals.map do |signal|
+          [ signal.signal_key, signal.numeric_value&.to_s("F"), signal.date_value&.iso8601 ]
+        end.sort
+      }
+    end
+    Digest::SHA256.hexdigest(JSON.generate("definition" => definition, "source" => source))
+  end
+  private_class_method :source_digest
 
   def self.current_assessment_ids(workspace, snapshots)
     account_ids = snapshots.map(&:account_id).uniq
