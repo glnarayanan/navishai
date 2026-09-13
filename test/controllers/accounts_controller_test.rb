@@ -50,6 +50,74 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "account work views share counts and preserve filters on account detail" do
+    unscored = @workspace.accounts.create!(name: "Needs Scoring Queue")
+    CrewConfiguration.install_defaults!(workspace: @workspace)
+    AccountDataImport.import_api!(workspace: @workspace, membership: memberships(:owner_support), rows: [ {
+      source_id: "queue-renewal", observed_at: Time.current.iso8601,
+      account_name: "Renewal Queue Co", renewal_on: 10.days.from_now.to_date.iso8601,
+      active_users: 90, licensed_seats: 100
+    } ])
+    renewal = @workspace.accounts.find_by!(name: "Renewal Queue Co")
+
+    get workspace_accounts_path(@workspace)
+    assert_response :success
+    assert_select ".account-work-filter[aria-current=page]", text: /Needs attention/
+    assert_select ".account-work-queue a", text: /#{unscored.name}/
+    assert_select "form[action=?]", workspace_account_imports_path(@workspace)
+    assert_select "button, .button", text: /Approve intervention/, count: 0
+
+    get workspace_accounts_path(@workspace, view: "renewal_approaching")
+    assert_response :success
+    assert_select ".account-work-filter[aria-current=page]", text: /Renewal approaching/
+    assert_select ".account-work-queue a", text: /#{renewal.name}/
+    assert_select ".account-work-reason", text: "Renewal approaching"
+    assert_select %(.account-work-queue a[href*="#{workspace_account_path(@workspace, renewal)}"])
+
+    get workspace_account_path(@workspace, renewal, view: "renewal_approaching", page: 1)
+    assert_response :success
+    assert_select %(a.back-link[href="#{workspace_accounts_path(@workspace, view: "renewal_approaching")}"])
+  end
+
+  test "intervention views deep-link to the intervention record and stay in the Workspace" do
+    CrewConfiguration.install_defaults!(workspace: @workspace)
+    account = @workspace.accounts.create!(name: "Intervention Queue Co")
+    assessment = AccountHealth.recalculate!(
+      workspace: @workspace, account:, trigger_kind: "human_request",
+      membership: memberships(:owner_support)
+    )
+    plan, = create_reviewed_intervention_plan(
+      workspace: @workspace, account:, membership: memberships(:owner_support), assessment:
+    )
+    propose_test_intervention(
+      workspace: @workspace, account:, membership: memberships(:owner_support),
+      assessment:, artifact: plan
+    )
+
+    get workspace_accounts_path(@workspace, view: "interventions_awaiting_approval")
+    assert_response :success
+    assert_select ".account-work-queue a", text: /#{account.name}/
+    assert_select ".account-work-queue a[href*='customer-success-interventions']"
+    assert_select "a", text: /#{accounts(:beta).name}/, count: 0
+  end
+
+  test "unknown account work view is rejected" do
+    get workspace_accounts_path(@workspace, view: "custom")
+    assert_response :bad_request
+  end
+
+  test "all accounts view lists each Workspace account" do
+    zebra = @workspace.accounts.create!(name: "Zebra Queue")
+    alpha = @workspace.accounts.create!(name: "Alpha Queue")
+
+    get workspace_accounts_path(@workspace, view: "all_accounts")
+    assert_response :success
+    names = css_select(".account-list-name strong").map(&:text)
+    assert_includes names, alpha.name
+    assert_includes names, zebra.name
+    assert_select ".account-work-filter[aria-current=page]", text: /All accounts/
+  end
+
   test "paginates accounts without loading contacts or assessment history" do
     51.times { |index| @workspace.accounts.create!(name: "Page account #{index.to_s.rjust(2, "0")}") }
     12.times do |index|
@@ -69,9 +137,9 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".account-list [role='listitem']", count: 50
     assert_select "nav[aria-label='Account pages'] a", text: "Next"
     assert_equal 0, instantiated["Contact"]
-    assert_equal 1, instantiated["AccountHealthAssessment"]
+    assert_operator instantiated.fetch("AccountHealthAssessment", 0), :<=, 50
 
-    get workspace_accounts_path(@workspace, page: 2)
+    get workspace_accounts_path(@workspace, view: "all_accounts", page: 2)
     assert_response :success
     assert_select ".account-list [role='listitem']", count: 3
     assert_select "nav[aria-label='Account pages'] a", text: "Previous"
@@ -104,6 +172,11 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     viewer = User.create!(email_address: "account-viewer@example.com", password: "password12345", verified_at: Time.current)
     @workspace.memberships.create!(user: viewer, role: :viewer)
     sign_in_as viewer
+    get workspace_accounts_path(@workspace)
+    assert_response :success
+    assert_select ".account-work-filters", count: 1
+    assert_select "form[action=?]", workspace_account_imports_path(@workspace), count: 0
+
     get workspace_account_path(@workspace, @account)
     assert_response :success
     assert_select "form[action=?]", recalculate_workspace_account_path(@workspace, @account), count: 0

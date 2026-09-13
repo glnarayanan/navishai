@@ -1,5 +1,5 @@
 class Notification < ApplicationRecord
-  CATEGORIES = %w[assignment review sla failure blocked completion].freeze
+  CATEGORIES = %w[assignment review sla failure blocked completion due].freeze
 
   belongs_to :workspace
   belongs_to :recipient_membership, class_name: "Membership"

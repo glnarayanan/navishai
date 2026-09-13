@@ -4,7 +4,7 @@
   <header class="account-health-heading">
     <div>
       <h1>Accounts</h1>
-      <p>Renewal risk starts with facts. Each score keeps its signal values, source, time range, weight, and result.</p>
+      <p>Prioritize retained Account work from current health, renewal dates, open reviews, and human-owned interventions. Scores stay on their original snapshots.</p>
     </div>
     <div class="account-health-actions">
       <%= link_to "Scorecard designer", workspace_health_scorecard_path(@workspace), class: "button button-secondary" %>
@@ -24,38 +24,83 @@
     </div>
   </header>
 
-  <% if @accounts.any? %>
-    <div class="account-list" role="list">
-      <% @accounts.each do |account| %>
-        <% assessment = @assessments_by_account_id[account.id] %>
+  <nav class="account-work-filters" aria-label="Account work">
+    <% AccountWorkQueue::VIEWS.each do |view| %>
+      <%= link_to workspace_accounts_path(@workspace, view:),
+        class: "account-work-filter",
+        aria: { current: @view == view ? "page" : nil } do %>
+        <span><%= account_work_view_label(view) %></span>
+        <span class="account-work-count"><%= @work_counts.fetch(view) %></span>
+      <% end %>
+    <% end %>
+  </nav>
+
+  <% if @work_rows.any? %>
+    <div class="account-list account-work-queue" role="list">
+      <% @work_rows.each do |row| %>
+        <% account = row.account %>
+        <% assessment = row.assessment %>
         <div role="listitem">
-          <%= link_to workspace_account_path(@workspace, account), class: "account-list-row" do %>
-            <span class="account-list-name"><strong><%= account.name %></strong><small><%= pluralize(@contact_counts.fetch(account.id, 0), "contact") %></small></span>
+          <%= link_to account_work_account_path(row), class: "account-list-row" do %>
+            <span class="account-list-name">
+              <strong><%= account.name %></strong>
+              <small><%= pluralize(@contact_counts.fetch(account.id, 0), "contact") %></small>
+            </span>
             <% if assessment %>
-              <span class="health-score health-score-<%= assessment.risk_level.dasherize %>"><b><%= assessment.score %></b><small>of 100</small></span>
+              <span class="health-score health-score-<%= assessment.risk_level.dasherize %>">
+                <b><%= assessment.score %></b>
+                <small>of 100 · <%= assessment.calculated_at.to_fs(:short) %></small>
+              </span>
               <span class="risk-state risk-state-<%= assessment.risk_level.dasherize %>"><%= assessment.risk_level.humanize %></span>
-              <span class="account-renewal"><small>Renewal</small><%= assessment.renewal_on&.to_fs(:long) || "Not supplied" %></span>
+              <span class="account-renewal">
+                <small>Renewal</small>
+                <%= assessment.renewal_on&.to_fs(:long) || "Unknown" %>
+              </span>
             <% else %>
-              <span class="account-unscored">Not scored</span>
+              <span class="account-unscored">Health unknown</span>
+              <span class="account-renewal"><small>Renewal</small>Unknown</span>
             <% end %>
+            <span class="account-work-meta">
+              <% if row.comparable_material_change? %>
+                <span>Material change from <%= assessment.previous_assessment.score %> to <%= assessment.score %></span>
+              <% end %>
+              <% if row.open_investigation %>
+                <span>Open risk review · <%= row.open_investigation.status.humanize %></span>
+              <% end %>
+              <% if row.relevant_intervention %>
+                <span>
+                  <%= row.relevant_intervention.status.humanize %> intervention
+                  <% if row.accountable_membership %>
+                    · <%= row.accountable_membership.user.email_address %>
+                  <% end %>
+                  · follow-up <%= row.relevant_intervention.target_on.to_fs(:long) %>
+                </span>
+              <% end %>
+              <span class="account-work-reasons">
+                <% row.inclusion_reasons.each do |reason| %>
+                  <span class="account-work-reason"><%= account_work_reason_label(reason) %></span>
+                <% end %>
+              </span>
+            </span>
           <% end %>
         </div>
       <% end %>
     </div>
   <% else %>
-    <%= render "shared/empty_state", title: "No accounts yet",
-      description: "Sync Intercom or import account data to create the first health record.",
-      action_label: "Open scorecard designer",
-      action_path: workspace_health_scorecard_path(@workspace) %>
+    <% empty_title, empty_description = AccountsHelper::ACCOUNT_WORK_EMPTY.fetch(@view) %>
+    <%= render "shared/empty_state", title: empty_title,
+      description: empty_description,
+      action_label: @view == "all_accounts" ? "Open scorecard designer" : "View all accounts",
+      action_path: @view == "all_accounts" ? workspace_health_scorecard_path(@workspace) : workspace_accounts_path(@workspace, view: "all_accounts") %>
   <% end %>
 
   <% if @page > 1 || @has_next_page %>
     <nav class="pagination" aria-label="Account pages">
       <% if @page > 1 %>
-        <%= link_to "Previous", workspace_accounts_path(@workspace, request.query_parameters.merge(page: @page - 1)), class: "button button-quiet" %>
+        <%= link_to "Previous", workspace_accounts_path(@workspace, account_work_index_params(page: @page - 1)), class: "button button-quiet" %>
       <% end %>
       <% if @has_next_page %>
-        <%= link_to "Next", workspace_accounts_path(@workspace, request.query_parameters.merge(page: @page + 1)), class: "button button-quiet" %>
+        <%= link_to "Next", workspace_accounts_path(@workspace, account_work_index_params(page: @page + 1)), class: "button button-quiet" %>
       <% end %>
     </nav>
   <% end %>

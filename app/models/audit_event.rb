@@ -49,6 +49,17 @@ class AuditEvent < ApplicationRecord
     "account.intervention_reviewed" => {
       "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
     },
+    "account.intervention_reassigned" => {
+      "previous_accountable_membership_id" => Integer, "accountable_membership_id" => Integer, "reason" => String
+    },
+    "account.intervention_rescheduled" => {
+      "previous_target_on" => String, "target_on" => String, "reason" => String
+    },
+    "account.intervention_due" => {
+      "due_state" => CustomerSuccessInterventionDueNotice::DUE_STATES,
+      "recipient_membership_id" => Integer,
+      "target_on" => String
+    },
     "account.unmerged" => {},
     "agent.profile_updated" => {},
     "crew.artifact_published" => {

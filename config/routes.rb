@@ -113,6 +113,8 @@ Rails.application.routes.draw do
           post :complete
           post :abandon
           post :review
+          post :reassign
+          post :reschedule
         end
       end
       get "health-evidence/:assessment_id/:signal_key", to: "health_evidence#show", on: :member,

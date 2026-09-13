@@ -54,6 +54,23 @@ class CustomerSuccessInterventionsController < ApplicationController
     redirect_to account_path, notice: "Observed outcome review frozen without a causal claim."
   end
 
+  def reassign
+    CustomerSuccessInterventionWorkflow.reassign!(
+      workspace: @workspace, membership: @membership, intervention: @intervention,
+      accountable_membership: @workspace.memberships.find(params.require(:accountable_membership_id)),
+      reason: params[:reason]
+    )
+    redirect_to account_path, notice: "Intervention ownership recorded for a different eligible human."
+  end
+
+  def reschedule
+    CustomerSuccessInterventionWorkflow.reschedule!(
+      workspace: @workspace, membership: @membership, intervention: @intervention,
+      target_on: params[:target_on], reason: params[:reason]
+    )
+    redirect_to account_path, notice: "Follow-up date changed with a recorded reason."
+  end
+
   private
     def set_context
       @workspace = Current.require_workspace!

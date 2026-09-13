@@ -1089,43 +1089,47 @@ BEGIN
   IF ROW(
     NEW.workspace_id, NEW.account_id, NEW.account_health_assessment_id,
     NEW.account_risk_investigation_id, NEW.proposing_crew_artifact_id,
-    NEW.accountable_membership_id, NEW.proposed_by_membership_id,
-    NEW.supporting_evidence, NEW.expected_observable_change, NEW.target_on,
+    NEW.proposed_by_membership_id, NEW.supporting_evidence, NEW.expected_observable_change,
     NEW.reason, NEW.proposed_at, NEW.created_at
   ) IS DISTINCT FROM ROW(
     OLD.workspace_id, OLD.account_id, OLD.account_health_assessment_id,
     OLD.account_risk_investigation_id, OLD.proposing_crew_artifact_id,
-    OLD.accountable_membership_id, OLD.proposed_by_membership_id,
-    OLD.supporting_evidence, OLD.expected_observable_change, OLD.target_on,
+    OLD.proposed_by_membership_id, OLD.supporting_evidence, OLD.expected_observable_change,
     OLD.reason, OLD.proposed_at, OLD.created_at
   ) THEN
     RAISE EXCEPTION 'customer success intervention provenance is immutable';
   END IF;
   IF OLD.status = 'proposed' AND NEW.status = 'approved' THEN
-    IF NEW.approved_by_membership_id IS NULL OR NEW.approved_at IS NULL OR
+    IF ROW(NEW.accountable_membership_id, NEW.target_on) IS DISTINCT FROM
+        ROW(OLD.accountable_membership_id, OLD.target_on) OR
+        NEW.approved_by_membership_id IS NULL OR NEW.approved_at IS NULL OR
         NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
         NEW.abandoned_by_membership_id IS NOT NULL OR NEW.abandoned_at IS NOT NULL OR
         NEW.abandonment_reason IS NOT NULL THEN
       RAISE EXCEPTION 'invalid customer success intervention approval';
     END IF;
   ELSIF OLD.status = 'proposed' AND NEW.status = 'abandoned' THEN
-    IF NEW.approved_by_membership_id IS NOT NULL OR NEW.approved_at IS NOT NULL OR
+    IF ROW(NEW.accountable_membership_id, NEW.target_on) IS DISTINCT FROM
+        ROW(OLD.accountable_membership_id, OLD.target_on) OR
+        NEW.approved_by_membership_id IS NOT NULL OR NEW.approved_at IS NOT NULL OR
         NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
         NEW.abandoned_by_membership_id IS NULL OR NEW.abandoned_at IS NULL OR
         NEW.abandonment_reason IS NULL THEN
       RAISE EXCEPTION 'invalid customer success intervention abandonment';
     END IF;
   ELSIF OLD.status = 'approved' AND NEW.status = 'completed' THEN
-    IF ROW(NEW.approved_by_membership_id, NEW.approved_at) IS DISTINCT FROM
-        ROW(OLD.approved_by_membership_id, OLD.approved_at) OR
+    IF ROW(NEW.approved_by_membership_id, NEW.approved_at, NEW.accountable_membership_id, NEW.target_on)
+        IS DISTINCT FROM ROW(OLD.approved_by_membership_id, OLD.approved_at,
+        OLD.accountable_membership_id, OLD.target_on) OR
         NEW.completed_by_membership_id IS NULL OR NEW.completed_at IS NULL OR
         NEW.abandoned_by_membership_id IS NOT NULL OR NEW.abandoned_at IS NOT NULL OR
         NEW.abandonment_reason IS NOT NULL THEN
       RAISE EXCEPTION 'invalid customer success intervention completion';
     END IF;
   ELSIF OLD.status = 'approved' AND NEW.status = 'abandoned' THEN
-    IF ROW(NEW.approved_by_membership_id, NEW.approved_at) IS DISTINCT FROM
-        ROW(OLD.approved_by_membership_id, OLD.approved_at) OR
+    IF ROW(NEW.approved_by_membership_id, NEW.approved_at, NEW.accountable_membership_id, NEW.target_on)
+        IS DISTINCT FROM ROW(OLD.approved_by_membership_id, OLD.approved_at,
+        OLD.accountable_membership_id, OLD.target_on) OR
         NEW.completed_by_membership_id IS NOT NULL OR NEW.completed_at IS NOT NULL OR
         NEW.abandoned_by_membership_id IS NULL OR NEW.abandoned_at IS NULL OR
         NEW.abandonment_reason IS NULL THEN
@@ -1134,15 +1138,31 @@ BEGIN
   ELSIF OLD.status = 'completed' AND NEW.status = 'reviewed' THEN
     IF ROW(
         NEW.approved_by_membership_id, NEW.approved_at,
-        NEW.completed_by_membership_id, NEW.completed_at
+        NEW.completed_by_membership_id, NEW.completed_at,
+        NEW.accountable_membership_id, NEW.target_on
       ) IS DISTINCT FROM ROW(
         OLD.approved_by_membership_id, OLD.approved_at,
-        OLD.completed_by_membership_id, OLD.completed_at
+        OLD.completed_by_membership_id, OLD.completed_at,
+        OLD.accountable_membership_id, OLD.target_on
       ) OR NOT EXISTS (
         SELECT 1 FROM customer_success_intervention_outcome_reviews
         WHERE customer_success_intervention_id = NEW.id AND workspace_id = NEW.workspace_id
       ) THEN
       RAISE EXCEPTION 'invalid customer success intervention outcome review';
+    END IF;
+  ELSIF OLD.status IN ('proposed', 'approved') AND NEW.status = OLD.status THEN
+    IF ROW(
+        NEW.approved_by_membership_id, NEW.approved_at,
+        NEW.completed_by_membership_id, NEW.completed_at,
+        NEW.abandoned_by_membership_id, NEW.abandoned_at, NEW.abandonment_reason
+      ) IS DISTINCT FROM ROW(
+        OLD.approved_by_membership_id, OLD.approved_at,
+        OLD.completed_by_membership_id, OLD.completed_at,
+        OLD.abandoned_by_membership_id, OLD.abandoned_at, OLD.abandonment_reason
+      ) OR ROW(NEW.accountable_membership_id, NEW.target_on) IS NOT DISTINCT FROM
+        ROW(OLD.accountable_membership_id, OLD.target_on) OR
+        NEW.target_on < (NEW.proposed_at)::date THEN
+      RAISE EXCEPTION 'invalid customer success intervention follow-up change';
     END IF;
   ELSE
     RAISE EXCEPTION 'invalid customer success intervention transition';
@@ -3684,6 +3704,45 @@ CREATE SEQUENCE public.crew_templates_id_seq
 ALTER SEQUENCE public.crew_templates_id_seq OWNED BY public.crew_templates.id;
 
 
+
+--
+-- Name: customer_success_intervention_due_notices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_success_intervention_due_notices (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    customer_success_intervention_id bigint NOT NULL,
+    recipient_membership_id bigint NOT NULL,
+    due_state character varying NOT NULL,
+    target_on date NOT NULL,
+    source_audit_event_id bigint NOT NULL,
+    notified_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT customer_success_intervention_due_notices_state CHECK (((due_state)::text = ANY (ARRAY[('due'::character varying)::text, ('overdue'::character varying)::text])))
+);
+
+
+--
+-- Name: customer_success_intervention_due_notices_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.customer_success_intervention_due_notices_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: customer_success_intervention_due_notices_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.customer_success_intervention_due_notices_id_seq OWNED BY public.customer_success_intervention_due_notices.id;
+
+
 --
 -- Name: customer_success_intervention_outcome_reviews; Type: TABLE; Schema: public; Owner: -
 --
@@ -5882,7 +5941,7 @@ CREATE TABLE public.notifications (
     read_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT notifications_category CHECK (((category)::text = ANY (ARRAY[('assignment'::character varying)::text, ('review'::character varying)::text, ('sla'::character varying)::text, ('failure'::character varying)::text, ('blocked'::character varying)::text, ('completion'::character varying)::text]))),
+    CONSTRAINT notifications_category CHECK (((category)::text = ANY (ARRAY[('assignment'::character varying)::text, ('review'::character varying)::text, ('sla'::character varying)::text, ('failure'::character varying)::text, ('blocked'::character varying)::text, ('completion'::character varying)::text, ('due'::character varying)::text]))),
     CONSTRAINT notifications_path CHECK ((((path)::text ~ '^/[^/]'::text) AND (octet_length((path)::text) <= 1000))),
     CONSTRAINT notifications_read_time CHECK (((read_at IS NULL) OR (read_at >= occurred_at))),
     CONSTRAINT notifications_title CHECK (((octet_length((title)::text) >= 1) AND (octet_length((title)::text) <= 200)))
@@ -6215,7 +6274,7 @@ CREATE TABLE public.outbound_webhook_endpoints (
     categories jsonb DEFAULT '[]'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT outbound_webhooks_categories CHECK (((jsonb_typeof(categories) = 'array'::text) AND ((jsonb_array_length(categories) >= 1) AND (jsonb_array_length(categories) <= 6)))),
+    CONSTRAINT outbound_webhooks_categories CHECK (((jsonb_typeof(categories) = 'array'::text) AND ((jsonb_array_length(categories) >= 1) AND (jsonb_array_length(categories) <= 7)))),
     CONSTRAINT outbound_webhooks_credential CHECK (((credential_key)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)),
     CONSTRAINT outbound_webhooks_name CHECK (((octet_length((name)::text) >= 1) AND (octet_length((name)::text) <= 100)))
 );
@@ -7748,6 +7807,14 @@ ALTER TABLE ONLY public.crew_tasks ALTER COLUMN id SET DEFAULT nextval('public.c
 ALTER TABLE ONLY public.crew_templates ALTER COLUMN id SET DEFAULT nextval('public.crew_templates_id_seq'::regclass);
 
 
+
+--
+-- Name: customer_success_intervention_due_notices id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices ALTER COLUMN id SET DEFAULT nextval('public.customer_success_intervention_due_notices_id_seq'::regclass);
+
+
 --
 -- Name: customer_success_intervention_outcome_reviews id; Type: DEFAULT; Schema: public; Owner: -
 --
@@ -8592,6 +8659,15 @@ ALTER TABLE ONLY public.crew_templates
     ADD CONSTRAINT crew_templates_pkey PRIMARY KEY (id);
 
 
+
+--
+-- Name: customer_success_intervention_due_notices customer_success_intervention_due_notices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices
+    ADD CONSTRAINT customer_success_intervention_due_notices_pkey PRIMARY KEY (id);
+
+
 --
 -- Name: customer_success_intervention_outcome_reviews customer_success_intervention_outcome_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -9434,6 +9510,14 @@ CREATE UNIQUE INDEX idx_on_workspace_connector_id_membership_id_30ca455257 ON pu
 CREATE INDEX idx_on_workspace_id_82898bf35b ON public.customer_success_intervention_outcome_reviews USING btree (workspace_id);
 
 
+
+--
+-- Name: idx_on_workspace_id_c0816f11a8; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_c0816f11a8 ON public.customer_success_intervention_due_notices USING btree (workspace_id);
+
+
 --
 -- Name: idx_on_workspace_id_conversation_id_f80281e8e7; Type: INDEX; Schema: public; Owner: -
 --
@@ -10111,6 +10195,21 @@ CREATE UNIQUE INDEX index_crew_templates_on_workspace_id_and_crew_kind ON public
 --
 
 CREATE UNIQUE INDEX index_crew_templates_on_workspace_id_and_id ON public.crew_templates USING btree (workspace_id, id);
+
+
+
+--
+-- Name: index_cs_due_notices_on_transition; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_due_notices_on_transition ON public.customer_success_intervention_due_notices USING btree (customer_success_intervention_id, recipient_membership_id, due_state, target_on);
+
+
+--
+-- Name: index_cs_due_notices_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cs_due_notices_on_workspace_id_and_id ON public.customer_success_intervention_due_notices USING btree (workspace_id, id);
 
 
 --
@@ -13712,6 +13811,31 @@ ALTER TABLE ONLY public.crew_tasks
     ADD CONSTRAINT fk_crew_tasks_policy_publication FOREIGN KEY (workspace_id, governed_policy_publication_id) REFERENCES public.governed_policy_publications(workspace_id, id);
 
 
+
+--
+-- Name: customer_success_intervention_due_notices fk_cs_due_notices_event; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices
+    ADD CONSTRAINT fk_cs_due_notices_event FOREIGN KEY (source_audit_event_id) REFERENCES public.audit_events(id);
+
+
+--
+-- Name: customer_success_intervention_due_notices fk_cs_due_notices_intervention; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices
+    ADD CONSTRAINT fk_cs_due_notices_intervention FOREIGN KEY (workspace_id, customer_success_intervention_id) REFERENCES public.customer_success_interventions(workspace_id, id);
+
+
+--
+-- Name: customer_success_intervention_due_notices fk_cs_due_notices_recipient; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices
+    ADD CONSTRAINT fk_cs_due_notices_recipient FOREIGN KEY (workspace_id, recipient_membership_id) REFERENCES public.memberships(workspace_id, id);
+
+
 --
 -- Name: customer_success_interventions fk_cs_interventions_abandoned_by; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
@@ -16464,6 +16588,15 @@ ALTER TABLE ONLY public.intercom_drafts
     ADD CONSTRAINT fk_rails_d6dabca820 FOREIGN KEY (workspace_id, intercom_conversation_link_id, conversation_id) REFERENCES public.intercom_conversation_links(workspace_id, id, conversation_id);
 
 
+
+--
+-- Name: customer_success_intervention_due_notices fk_rails_d90782c5fa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_success_intervention_due_notices
+    ADD CONSTRAINT fk_rails_d90782c5fa FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
 --
 -- Name: usage_rate_versions fk_rails_dbc87c3d7f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
@@ -16905,6 +17038,7 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20260913020000'),
 ('20260913010000'),
+('20260912120000'),
 ('20260911120000'),
 ('20260906060000'),
 ('20260906050000'),

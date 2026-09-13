@@ -16,14 +16,14 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 | A3 Deployment acceptance | PR open | [PR #115](https://github.com/glnarayanan/navishai/pull/115) `cursor/deployment-acceptance-efe6` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
 | B1 Portfolio queries | PR open | [PR #111](https://github.com/glnarayanan/navishai/pull/111) `cursor/account-work-queries-efe6` | Fixture-complete. Independent of A. |
 | B2 Retention queue UI | PR open | [PR #113](https://github.com/glnarayanan/navishai/pull/113) `cursor/retention-queue-ui-efe6` | Desktop/390/320 system coverage. |
-| B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. |
+| B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. Merged into E1 for the full journey. |
 | C1 Scorecard proposal | tested | `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. GitHub PR pending (BLK-003). |
 | C2 Proposal revision | tested | `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. GitHub PR pending (BLK-003). |
 | C3 Preview/backtest evidence | tested | `cursor/scorecard-preview-efe6` | Publish bound to inspected preview and 500-snapshot cap. GitHub PR pending (BLK-003). |
 | D1 Support quality readout | tested (independent stack) | `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Not merged into C. GitHub PR pending (BLK-003). |
 | D2 Knowledge improvement queue | tested (independent stack) | `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. GitHub PR pending (BLK-003). |
 | D3 Follow-up evidence | tested (independent stack) | `cursor/knowledge-follow-up-efe6` | Stacked on D2. New current version leaves the queue; lineage retained. GitHub PR pending (BLK-003). |
-| E1 Integrated scenario | tested | `cursor/integrated-scenario-efe6` | Scorecard C1–C3 journey proof on the C stack. D proof stays on D3. GitHub PR pending (BLK-003). |
+| E1 Integrated scenario | in progress | `cursor/integrated-scenario-efe6` | C stack plus merged B3. D remains independent until the next merge. GitHub PR pending (BLK-003). |
 | E2 Status and handoff | not started | — | After E1. |
 
 ## Decisions and blockers

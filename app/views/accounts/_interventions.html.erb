@@ -91,6 +91,9 @@
                 <% if intervention.approved_by_membership %><small>Approved by <%= intervention.approved_by_membership.user.email_address %> at <%= intervention.approved_at.to_fs(:short) %></small><% end %>
                 <% if intervention.completed_by_membership %><small>Completed by <%= intervention.completed_by_membership.user.email_address %> at <%= intervention.completed_at.to_fs(:short) %></small><% end %>
                 <% if intervention.abandoned_by_membership %><small>Abandoned by <%= intervention.abandoned_by_membership.user.email_address %>: <%= intervention.abandonment_reason %></small><% end %>
+                <% if intervention.completed? && intervention.outcome_review.nil? %>
+                  <small class="intervention-outcome-pending">Completed · outcome review pending</small>
+                <% end %>
               </section>
             </div>
 
@@ -99,6 +102,37 @@
                 <%= button_to "Approve intervention", approve_workspace_account_intervention_path(@workspace, @account, intervention), class: "button button-primary" %>
               <% end %>
               <% if (intervention.proposed? || intervention.approved?) && @membership.can_manage_work? %>
+                <details class="intervention-follow-up">
+                  <summary class="button button-secondary">Reassign</summary>
+                  <%= form_with url: reassign_workspace_account_intervention_path(@workspace, @account, intervention), class: "intervention-form" do |form| %>
+                    <div class="field">
+                      <%= form.label :accountable_membership_id, "Accountable human" %>
+                      <%= form.select :accountable_membership_id,
+                        @writable_memberships.map { |membership| [ membership.user.email_address, membership.id ] },
+                        { selected: intervention.accountable_membership_id }, required: true %>
+                    </div>
+                    <div class="field">
+                      <%= form.label :reason, "Why reassign?" %>
+                      <%= form.text_area :reason, required: true, maxlength: 1_000 %>
+                    </div>
+                    <%= form.submit "Record new owner", class: "button button-secondary" %>
+                  <% end %>
+                </details>
+                <details class="intervention-follow-up">
+                  <summary class="button button-secondary">Change follow-up date</summary>
+                  <%= form_with url: reschedule_workspace_account_intervention_path(@workspace, @account, intervention), class: "intervention-form" do |form| %>
+                    <div class="field">
+                      <%= form.label :target_on, "Follow-up date" %>
+                      <%= form.date_field :target_on, required: true, value: intervention.target_on.iso8601,
+                        min: intervention.proposed_at.to_date.iso8601 %>
+                    </div>
+                    <div class="field">
+                      <%= form.label :reason, "Why change the date?" %>
+                      <%= form.text_area :reason, required: true, maxlength: 1_000 %>
+                    </div>
+                    <%= form.submit "Record follow-up date", class: "button button-secondary" %>
+                  <% end %>
+                </details>
                 <details class="intervention-abandon">
                   <summary class="button button-quiet">Abandon</summary>
                   <%= form_with url: abandon_workspace_account_intervention_path(@workspace, @account, intervention), class: "intervention-form" do |form| %>

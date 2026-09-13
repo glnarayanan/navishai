@@ -114,8 +114,8 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Deterministic health signals including Support evidence, material change, renewal windows | Done | `AccountHealth`, `AccountHealthAssessment`, `AccountHealthSignal`, `HealthEvidence` | Score rules stay off until a published scorecard uses them. |
 | Scheduled recalculation | Done | `AccountHealthScheduledRecalculationJob`, `config/recurring.yml` | Daily at 01:30 per active Workspace, plus input-change triggers. |
 | Risk investigation and crew analysis | Done | `AccountRiskWorkflow`, `AccountRiskInvestigation` | |
-| Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)` | Association, never cause. |
-| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, inspected-preview publish, and the C1–C3 journey proof are on `cursor/integrated-scenario-efe6`. Not merged. |
+| Human-owned interventions with outcome reviews | Done | `CustomerSuccessInterventionWorkflow`, `CustomerSuccessIntervention(OutcomeReview)`, `CustomerSuccessInterventionDueNotice` | Association, never cause. Managers reassign and reschedule proposed or approved work. Due notices use existing alerts. |
+| Conversational scorecard designer with backtest, publish, rollback | Partial | `HealthScorecardDesigner`, `HealthScorecardProposalWorkflow`, `HealthScorecardBacktester`, `HealthScorecardPublisher` | Manual designer remains. Runner-backed proposals, revisions, inspected-preview publish, and the C1–C3 journey proof are on `cursor/integrated-scenario-efe6`. B3 is merged into this branch; D remains independent until the next merge. |
 
 ### Proof, explanation, dossier, policy, and operations
 
@@ -126,12 +126,12 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 | Human-edit provenance on drafts | Done | `HumanDraftProvenance`, provenance columns on drafts and deliveries | |
 | Explain this outcome | Done | `OutcomeExplanation`, `OutcomeExplanationsController` | Reachable from case, Account, run, health assessment. |
 | Usage, budget, and cost rollups | Done | `UsageCostSnapshot`, `UsageRateSetting(Version)`, `UsageRatesController` | Unknown cost never shown as zero. |
-| Account dossier and concise case context | Done | `AccountDossier` presenter | Bounded caps and query budgets tested. |
+| Account dossier and concise case context | Partial | `AccountDossier`, `AccountWorkQueue` | Dossier caps remain tested. Accounts lists fixed attention, renewal, and intervention views with shareable `view` params. Managers can reassign and reschedule proposed or approved interventions; due notices stay on the current assignee. |
 | Reliability and recovery cockpit with operational checks | Done | `ReliabilityCockpit`, `ReliabilityRecovery`, `OperationalCheck` | Five explicit states; bounded actions only. |
 | Verified Workspace archive round trip | Done | `WorkspacePortability`, `WorkspaceDataControlsController#verify_archive`, [WORKSPACE_ARCHIVE.md](./WORKSPACE_ARCHIVE.md) | Owner-only; atomic target creation plus check record. |
 | Governed policy change: preview, canary, publish, rollback | Done | `GovernedPolicyChange`, `GovernedPolicyResolver`, `GovernedPolicy*` models | Explicit scopes only; rollback affects future work only. |
 | Integrated end-to-end proof of the seven journeys | Done | `test/integration/phase_completion_proof_test.rb` | Passes from code on a fresh host (section 2). |
-| Notifications: in-app, email, signed outbound webhooks | Done | `NotificationFanout`, `NotificationMailer`, `OutboundWebhookFanout`, `OutboundWebhookTransport` | |
+| Notifications: in-app, email, signed outbound webhooks | Done | `NotificationFanout`, `NotificationMailer`, `OutboundWebhookFanout`, `OutboundWebhookTransport` | Includes due and overdue intervention follow-ups. |
 | Retention, expiry, tombstones, protected Workspace deletion, full export and import | Done | `WorkspaceContentExpiry`, `WorkspaceDataGovernance`, `WorkspaceDeletion`, `WorkspacePortability` | |
 | Docker Compose deployment with isolated runner | Done | `compose.yaml`, `ops/docker`, `ops/compose` | No Docker socket; capabilities dropped. |
 | Native Linux deployment | Done | `ops/systemd`, [DEPLOYMENT.md](./DEPLOYMENT.md) | Separate runner user; Landlock helper. |
@@ -148,7 +148,7 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 ### 12 September 2026 scorecard proposal journey (E1)
 
-On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). D1–D3 remain on the independent `cursor/support-quality-efe6` … `cursor/knowledge-follow-up-efe6` stack and are not merged into this branch. Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
+On `cursor/integrated-scenario-efe6` from C3. One integration test walks generate → unchanged scores and publication → revise with parent lineage and an inspectable SLA-weight diff → accept an unpublished version → fail closed on publish without a bound preview → 500-snapshot backtest → publish with `expected_backtest_id` → later assessment uses the published version while a prior snapshot keeps the original. Proof uses the scripted adapter through the execution ledger (`admit: false` in tests). B3 is merged into this branch. D1–D3 remain on the independent `cursor/support-quality-efe6` … `cursor/knowledge-follow-up-efe6` stack until the next merge. Proven: `test/integration/scorecard_proposal_journey_test.rb` (1 run, 22 assertions). RuboCop clean on the new test. Isolation and Docker omitted on this host.
 
 ### 12 September 2026 scorecard preview evidence (C3)
 
@@ -161,6 +161,18 @@ On `cursor/scorecard-revision-efe6` from C1 (`2282798`). Writers can revise a re
 ### 12 September 2026 scorecard proposal (C1)
 
 On `cursor/scorecard-proposal-efe6` from `origin/main` (`aa4b079`). Writers can request a constrained scorecard proposal through the versioned runner. Crew tasks gain a Workspace-level `health_scorecard` scope. The Success Strategist role is reused; no ninth agent role. Output is validated against `HealthScorecardDefinition` and retained as an append-only `HealthScorecardProposal`. Generating a proposal does not publish or recalculate scores. Accepting creates an unpublished version. The manual designer remains when no compatible runtime is approved. Proof is the scripted adapter via the execution ledger; live model execution is not claimed. Focused checks: 15 scorecard proposal/controller tests, 119 assertions; related crew, ledger, and expiry suites; both scorecard system tests, including generate-and-accept without publishing. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
+
+### 12 September 2026 intervention follow-up (B3)
+
+On `cursor/intervention-follow-up-efe6`, Linux 6.12, Ruby 4.0.6, PostgreSQL 16, Chrome 148 with matching ChromeDriver. Engineering-complete for reassignment, follow-up date changes, due notices, and completed-without-review visibility. Merged into `cursor/integrated-scenario-efe6` for the full E1 journey. Not operationally accepted as a live deployment.
+
+| Check | Result |
+|---|---|
+| Focused workflow, due-notice, concurrency, fanout, and controller tests | 22 runs, 217 assertions, pass |
+| Related webhook, mailer, and accounts controller tests | 22 runs, 139 assertions, pass |
+| Intervention system tests (desktop, 390, 320, keyboard reassign) | 2 runs, 46 assertions, pass |
+| RuboCop on changed Ruby | 19 files, no offences |
+| Isolation, Docker, `bin/ci` full suite | Omitted on this host; not claimed green |
 
 See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs, C/D/E branch state, and remaining GitHub PRs (BLK-003).
 
@@ -271,6 +283,8 @@ Listed in the order they unblock a pilot. None of these blocks owner review of t
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
+The daily operating-workspace phase is in progress on stacked branches from 12 September 2026. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). This B-stack branch adds `AccountWorkQueue`, the Accounts retention-queue UI, and intervention follow-up ownership. Memory verification, changed-image upgrades, and installer acceptance evidence live on the A stack.
+
 ## 4. External boundaries
 
 These need something outside the repository and are labelled as such rather than converted into passing evidence.
@@ -302,6 +316,8 @@ Decisions taken after the build that changed scope, pins, or posture. Durable pr
 | 11 September 2026 | Constrain the existing transitive `bigdecimal` gem to `>= 4.0` so it stays on its maintained line. Bundler therefore holds `ttfunk` at 1.7.0, because ttfunk 1.8.0 caps bigdecimal at 3.x; a later ttfunk release that accepts 4.x needs no Gemfile change. |
 | 11 September 2026 | Keep rejecting changed-image `navishai upgrade` targets on main until a scoped supported path is implemented and proven on a genuinely changed application image; the experimental recovery evidence does not relax that guard. |
 | 12 September 2026 | Scorecard AI proposals use a Workspace-level `health_scorecard` crew-task scope and the existing Success Strategist role rather than a ninth agent role. The model proposes configuration only; deterministic scoring and publication stay human-gated. |
+| 12 September 2026 | Start the daily operating-workspace phase. Independent B-stack work derives account attention and renewal queues from existing assessments, investigations, and interventions. Do not persist an AI priority score or infer Account ownership from intervention ownership. |
+| 12 September 2026 | Managers and above may reassign a proposed or approved intervention to another writable human and change its follow-up date with a recorded reason. Due and overdue notices go to the current assignee only and never complete, approve, review, or message a customer. |
 
 ### Approved implementation scope — 6 September 2026
 
