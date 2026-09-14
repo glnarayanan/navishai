@@ -159,6 +159,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_includes docker_log(root), "image load"
+      assert_equal "#{root}/opt/navishai/current/ops/installer/navishai", File.readlink("#{root}/usr/local/bin/navishai")
     end
   end
 
@@ -355,6 +356,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_equal selected, File.realpath("#{root}/opt/navishai/current")
+      assert_equal "#{root}/opt/navishai/current/ops/installer/navishai", File.readlink("#{root}/usr/local/bin/navishai")
       log = File.read("#{root}/restore.log")
       assert_includes log, "verify-old"
       assert_includes log, "restore-selected"
