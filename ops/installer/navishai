@@ -15,7 +15,6 @@ update_source_owner=""
 update_source_ref=""
 installer_lock_held=0
 upgrade_kind=""
-upgrade_source_components_unchanged=0
 app_image_previous=""
 upgrade_recovery_backup=""
 answer_memory_key=""
@@ -423,8 +422,8 @@ app_image_change_supported() {
   current_other="$(jq -cS '[.[] | select((.tag | startswith("navishai-rails:") or startswith("navishai-runner:") or startswith("navishai-supermemory:")) | not)]' <<<"$current_records")"
   target_other="$(jq -cS '[.[] | select((.tag | startswith("navishai-rails:") or startswith("navishai-runner:") or startswith("navishai-supermemory:")) | not)]' <<<"$target_records")"
   [[ "$current_other" == "[]" && "$target_other" == "[]" ]] || return 1
-  [[ ( "$current_runner" == "$target_runner" || $upgrade_source_components_unchanged -eq 1 ) && "$current_runner" != "[]" && "$target_runner" != "[]" ]] || return 1
-  [[ ( "$current_memory" == "$target_memory" || $upgrade_source_components_unchanged -eq 1 ) && "$current_memory" != "[]" && "$target_memory" != "[]" ]] || return 1
+  [[ "$current_runner" == "$target_runner" && "$current_runner" != "[]" ]] || return 1
+  [[ "$current_memory" == "$target_memory" && "$current_memory" != "[]" ]] || return 1
   [[ "$current_rails" != "[]" && "$target_rails" != "[]" && "$current_rails" != "$target_rails" ]] || return 1
 }
 
@@ -1041,9 +1040,6 @@ build_update_candidate() {
   current="$(tr -d '\n' <"$prefix/current/SOURCE_COMMIT")"
   [[ $current == "$commit" ]] && { echo "Already current at source commit $commit."; return 10; }
   source_git merge-base --is-ancestor "$current" "$commit" || die "configured update target is not a descendant of the installed source commit"
-  if source_git diff --quiet "$current" "$commit" -- go.mod go.sum runner ops/docker/runner.Dockerfile ops/runner/execution.example.json ops/docker/supermemory.Dockerfile script/install_supermemory; then
-    upgrade_source_components_unchanged=1
-  fi
   worktree="$(mktemp -d)"
   rmdir "$worktree"
   source_git worktree add --detach "$worktree" "$commit" >/dev/null || die "could not create an immutable update worktree"
@@ -1051,7 +1047,9 @@ build_update_candidate() {
   candidate="$(mktemp --suffix=.tar)"
   upgrade_candidate_path="$candidate"
   if [[ ${EUID:-$(id -u)} -eq 0 ]]; then chown "$owner" "$candidate" || die "could not prepare the update candidate destination"; fi
-  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" -- "$worktree/script/candidate_bundle" "$candidate" "$commit"; else "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
+  if source_git diff --quiet "$current" "$commit" -- .dockerignore go.mod go.sum runner ops/docker/runner.Dockerfile ops/runner/execution.example.json ops/docker/supermemory.Dockerfile script/install_supermemory; then
+    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" --preserve-environment -- env NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE="$prefix/current/images.tar" "$worktree/script/candidate_bundle" "$candidate" "$commit"; else NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE="$prefix/current/images.tar" "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
+  elif [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" -- "$worktree/script/candidate_bundle" "$candidate" "$commit"; else "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
   stage_bundle "$candidate"
   rm -f "$candidate"
   upgrade_candidate_path=""
