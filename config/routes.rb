@@ -185,6 +185,7 @@ Rails.application.routes.draw do
   end
   get "invitations", to: "workspace_invitation_acceptances#show", as: :workspace_invitation_acceptance
   post "invitations", to: "workspace_invitation_acceptances#create"
+  get "setup", to: "setups#new"
   resource :setup, only: %i[ new create ]
   resource :break_glass_session, only: %i[ new create ], path: "break-glass/session"
   get "verification", to: "verifications#show", as: :verification
