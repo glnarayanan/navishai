@@ -54,7 +54,7 @@ class HealthScorecardTest < ActiveSupport::TestCase
     assert_equal 1, first.sample_count
     assert_equal first.source_digest, second.source_digest
     assert_equal first.results, second.results
-    assert_equal @account.id, first.results.fetch("current").first.fetch("account_id")
+    assert_equal @account.id, first.results.fetch("current").find { |row| row.fetch("account_id") == @account.id }.fetch("account_id")
     assert_equal HealthScorecardBacktester::MAX_SNAPSHOTS, second.results.fetch("summary").fetch("snapshot_limit")
     assert_equal false, second.results.fetch("summary").fetch("truncated")
     assert_raises(HealthScorecardPublisher::InvalidPublish) do
@@ -76,10 +76,99 @@ class HealthScorecardTest < ActiveSupport::TestCase
       HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
     end
 
-    assert_equal [ newer.id ], backtest.results.fetch("current").pluck("assessment_id")
+    assert_equal [ newer.id ], backtest.results.fetch("current")
+      .select { |row| row.fetch("account_id") == @account.id }.pluck("assessment_id")
     current_queries = queries.grep(/DISTINCT ON \(account_health_assessments\.account_id\)/)
     assert_equal 1, current_queries.size
     assert_match(/ORDER BY .*account_id.*ASC, .*calculated_at.*DESC, .*id.*DESC/, current_queries.sole)
+  end
+
+  test "keeps every current account in the preview when one account fills the historical replay cap" do
+    crowded = @workspace.accounts.create!(name: "Crowded history")
+    quiet = @workspace.accounts.create!(name: "Quiet current")
+    quiet_assessment = create_backtest_assessment(quiet, calculated_at: @at - 1.day)
+    HealthScorecardBacktester::MAX_SNAPSHOTS.times do |offset|
+      create_backtest_assessment(crowded, calculated_at: @at + offset.seconds)
+    end
+    version = propose(weights: { "open_cases" => 40 })
+
+    backtest = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
+
+    assert_equal [ quiet_assessment.id ], backtest.results.fetch("current")
+      .select { |row| row.fetch("account_id") == quiet.id }.pluck("assessment_id")
+    summary = backtest.results.fetch("summary")
+    assert_equal @workspace.accounts.count, summary.fetch("current_account_count")
+    assert_equal HealthScorecardBacktester::MAX_SNAPSHOTS, summary.fetch("historical_snapshot_count")
+    assert_operator summary.fetch("historical_snapshot_omitted_count"), :>, 0
+    assert_equal "most_recent_by_calculated_at_then_id", summary.fetch("historical_sampling_rule")
+    assert summary.fetch("historical_starts_at").present?
+    assert summary.fetch("historical_ends_at").present?
+  end
+
+  test "bounds persisted current detail without excluding current accounts from coverage or freshness" do
+    accounts = @workspace.accounts.order(:id).to_a
+    accounts.concat(Array.new(150 - accounts.size) { |index| @workspace.accounts.create!(name: "Current detail #{index}") })
+    accounts.reject { |account| account == @account }.each do |account|
+      create_backtest_assessment(account, calculated_at: @at - 1.day)
+    end
+    HealthScorecardBacktester::MAX_SNAPSHOTS.times do |offset|
+      create_backtest_assessment(@account, calculated_at: @at + offset.seconds)
+    end
+    version = propose(weights: HealthScorecardDefinition::CATALOG.keys.to_h { |key| [ key, 25 ] })
+
+    backtest = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
+
+    summary = backtest.results.fetch("summary")
+    assert_equal accounts.size, summary.fetch("current_account_count")
+    assert_equal HealthScorecardBacktester::MAX_CURRENT_DETAILS, summary.fetch("current_detail_count")
+    assert_equal 50, summary.fetch("current_detail_omitted_count")
+    assert_equal "lowest_account_id_first", summary.fetch("current_sampling_rule")
+    assert_equal accounts.sort_by(&:id).first(HealthScorecardBacktester::MAX_CURRENT_DETAILS).pluck(:id),
+      backtest.results.fetch("current").pluck("account_id")
+    assert_equal HealthScorecardBacktester::MAX_SNAPSHOTS, backtest.results.fetch("history").size
+    assert_operator backtest.results.to_json.bytesize, :<=, 1.megabyte
+
+    omitted_account = accounts.sort_by(&:id).last
+    digest = backtest.source_digest
+    create_backtest_assessment(omitted_account, calculated_at: @at + 2.hours)
+    refute_equal digest, HealthScorecardBacktester.source_digest_for(workspace: @workspace, version:)
+  end
+
+  test "retains no-data incomplete and no-change comparison states with signal reasons" do
+    no_data = @workspace.accounts.create!(name: "No retained health")
+    incomplete = @workspace.accounts.create!(name: "Missing renewal input")
+    changed = @workspace.accounts.create!(name: "Changed by open cases")
+    unchanged = @workspace.accounts.create!(name: "No score change")
+    create_backtest_assessment(incomplete, calculated_at: @at)
+    changed_assessment = create_backtest_assessment(changed, calculated_at: @at, open_cases: 2)
+    changed_assessment.signals.create!(
+      workspace: @workspace, signal_key: "renewal_on", value_kind: "date", date_value: @at.to_date + 365,
+      weight: 0, risk_points: 0, source_kind: "account_input", source_locator: "account://#{changed.id}/renewal",
+      range_ends_at: @at
+    )
+    unchanged_assessment = create_backtest_assessment(unchanged, calculated_at: @at)
+    unchanged_assessment.signals.create!(
+      workspace: @workspace, signal_key: "renewal_on", value_kind: "date", date_value: @at.to_date + 365,
+      weight: 0, risk_points: 0, source_kind: "account_input", source_locator: "account://#{unchanged.id}/renewal",
+      range_ends_at: @at
+    )
+    version = propose(weights: { "open_cases" => 20, "renewal_on" => 25 })
+
+    backtest = HealthScorecardBacktester.run!(workspace: @workspace, membership: @owner, version:, at: @at + 1.hour)
+    rows = backtest.results.fetch("current").index_by { |row| row.fetch("account_id") }
+
+    assert_equal "no_data", rows.fetch(no_data.id).fetch("comparison_status")
+    assert_equal "incomparable", rows.fetch(incomplete.id).fetch("comparison_status")
+    assert_equal [ "renewal_on" ], rows.fetch(incomplete.id).fetch("missing_signal_keys")
+    assert_equal "changed", rows.fetch(changed.id).fetch("comparison_status")
+    assert_equal "no_change", rows.fetch(unchanged.id).fetch("comparison_status")
+    reason = rows.fetch(changed.id).fetch("signal_reasons").find { |entry| entry.fetch("signal_key") == "open_cases" }
+    assert_equal "compared", reason.fetch("status")
+    assert_match(/changes risk points from 0 to 10/, reason.fetch("reason"))
+    assert_equal @workspace.accounts.where.missing(:health_assessments).count,
+      backtest.results.fetch("summary").fetch("no_data_count")
+    assert_operator backtest.results.fetch("summary").fetch("no_change_count"), :>=, 1
+    assert_operator backtest.results.fetch("summary").fetch("incomparable_count"), :>=, 1
   end
 
   test "rolls back a backtest when its audit fails and rejects a stale publish" do
@@ -245,5 +334,18 @@ class HealthScorecardTest < ActiveSupport::TestCase
         })
       end
       @workspace.health_scorecard_proposals.find_by!(execution_run: run)
+    end
+
+    def create_backtest_assessment(account, calculated_at:, open_cases: 0)
+      assessment = account.health_assessments.create!(
+        workspace: @workspace, score: 100, risk_level: "healthy", trigger_kind: "schedule",
+        material_change: false, health_scorecard_version: @scorecard.current_version, calculated_at:
+      )
+      assessment.signals.create!(
+        workspace: @workspace, signal_key: "open_cases", value_kind: "number", numeric_value: open_cases,
+        weight: 0, risk_points: 0, source_kind: "support_cases", source_locator: "account://#{account.id}/cases",
+        range_ends_at: calculated_at
+      )
+      assessment
     end
 end
