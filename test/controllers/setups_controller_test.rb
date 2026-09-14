@@ -34,6 +34,13 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", text: "Create the first Owner"
   end
 
+  test "setup route aliases the guarded first-run form" do
+    get setup_path
+
+    assert_response :success
+    assert_select "h1", text: "Create the first Owner"
+  end
+
   test "valid deployment token creates and signs in the first Owner" do
     assert_difference "AuditEvent.count", 1 do
       post setup_path, params: {
@@ -86,6 +93,10 @@ class SetupsControllerTest < ActionDispatch::IntegrationTest
     ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
 
     get new_setup_path
+
+    assert_response :not_found
+
+    get setup_path
 
     assert_response :not_found
   end

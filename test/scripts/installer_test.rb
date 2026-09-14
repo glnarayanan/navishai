@@ -317,7 +317,7 @@ class InstallerTest < ActiveSupport::TestCase
       install = "#{root}/opt/navishai/current"
       FileUtils.mkdir_p("#{install}/ops/compose")
       FileUtils.mkdir_p("#{root}/etc/navishai")
-      File.write("#{root}/etc/navishai/env", "value=true\n")
+      File.write("#{root}/etc/navishai/env", "value=true\nNAVISHAI_SOURCE_COMMIT=stale\n")
       %w[ backup verify_backup ].each do |name|
         File.write("#{install}/ops/compose/#{name}", "#!/bin/sh\nprintf '%s|%s|%s|%s\\n' \"$COMPOSE_PROJECT_NAME\" \"$COMPOSE_FILE\" \"$COMPOSE_ENV_FILES\" \"$PWD\" >>\"$OPERATION_LOG\"\n")
         FileUtils.chmod(0o755, "#{install}/ops/compose/#{name}")
@@ -364,6 +364,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_equal selected, File.realpath("#{root}/opt/navishai/current")
+      assert_equal "same-source", File.read("#{root}/etc/navishai/env").lines.grep(/^NAVISHAI_SOURCE_COMMIT=/).sole.strip.delete_prefix("NAVISHAI_SOURCE_COMMIT=")
       assert_equal "#{root}/opt/navishai/current/ops/installer/navishai", File.readlink("#{root}/usr/local/bin/navishai")
       log = File.read("#{root}/restore.log")
       assert_includes log, "verify-old"
@@ -1311,6 +1312,118 @@ class InstallerTest < ActiveSupport::TestCase
       assert_includes stderr, "usage: navishai upgrade"
       assert_empty docker_log(root)
       refute_path_exists "#{root}/var/lib/navishai/install.json"
+    end
+  end
+
+  def test_upgrade_without_an_installed_source_contract_refuses_before_docker_or_state_mutation
+    Dir.mktmpdir do |root|
+      _stdout, stderr, status = run_installer(root, "upgrade")
+
+      refute status.success?
+      assert_includes stderr, "not installed"
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_installed_upgrade_requires_a_configured_source_contract_before_docker_mutation
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      File.write("#{root}/docker.log", "")
+
+      _stdout, stderr, status = run_installer(root, "upgrade")
+
+      refute status.success?
+      assert_includes stderr, "configure one NAVISHAI_UPDATE_SOURCE_PATH"
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_source_upgrade_reports_already_current_without_backup_or_docker_mutation
+    Dir.mktmpdir do |root|
+      source = "#{root}/source"
+      FileUtils.mkdir_p(source)
+      system("git", "init", "-q", "-b", "main", source, exception: true)
+      system("git", "-C", source, "config", "user.email", "test@example.test", exception: true)
+      system("git", "-C", source, "config", "user.name", "Test", exception: true)
+      File.write("#{source}/README", "source\n")
+      system("git", "-C", source, "add", "README", exception: true)
+      system("git", "-C", source, "commit", "-qm", "source", exception: true)
+      commit = `git -C #{Shellwords.escape(source)} rev-parse HEAD`.strip
+      system("git", "-C", source, "remote", "add", "origin", source, exception: true)
+      bundle = build_bundle(root, "release/SOURCE_COMMIT" => "#{commit}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      File.write("#{root}/etc/navishai/env", File.read("#{root}/etc/navishai/env") + "NAVISHAI_UPDATE_SOURCE_PATH=#{source}\n")
+      File.write("#{root}/docker.log", "")
+
+      stdout, stderr, status = run_installer(root, "upgrade")
+
+      assert status.success?, stderr
+      assert_includes stdout, "Already current at source commit #{commit}."
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_source_upgrade_target_uses_the_requested_origin_ref_without_mutation_when_current
+    Dir.mktmpdir do |root|
+      source = "#{root}/source"
+      FileUtils.mkdir_p(source)
+      system("git", "init", "-q", "-b", "main", source, exception: true)
+      system("git", "-C", source, "config", "user.email", "test@example.test", exception: true)
+      system("git", "-C", source, "config", "user.name", "Test", exception: true)
+      File.write("#{source}/README", "release\n")
+      system("git", "-C", source, "add", "README", exception: true)
+      system("git", "-C", source, "commit", "-qm", "release", exception: true)
+      commit = `git -C #{Shellwords.escape(source)} rev-parse HEAD`.strip
+      system("git", "-C", source, "branch", "release-test", commit, exception: true)
+      File.write("#{source}/README", "main\n")
+      system("git", "-C", source, "commit", "-am", "main", "-q", exception: true)
+      system("git", "-C", source, "remote", "add", "origin", source, exception: true)
+      bundle = build_bundle(root, "release/SOURCE_COMMIT" => "#{commit}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      File.write("#{root}/etc/navishai/env", File.read("#{root}/etc/navishai/env") + "NAVISHAI_UPDATE_SOURCE_PATH=#{source}\n")
+      File.write("#{root}/docker.log", "")
+
+      stdout, stderr, status = run_installer(root, "upgrade", "--target", "release-test")
+
+      assert status.success?, stderr
+      assert_includes stdout, "Already current at source commit #{commit}."
+      assert_empty docker_log(root)
+    end
+  end
+
+  def test_source_upgrade_refuses_an_unrelated_target_before_any_mutation
+    Dir.mktmpdir do |root|
+      source = "#{root}/source"
+      FileUtils.mkdir_p(source)
+      system("git", "init", "-q", "-b", "main", source, exception: true)
+      system("git", "-C", source, "config", "user.email", "test@example.test", exception: true)
+      system("git", "-C", source, "config", "user.name", "Test", exception: true)
+      File.write("#{source}/README", "installed\n")
+      system("git", "-C", source, "add", "README", exception: true)
+      system("git", "-C", source, "commit", "-qm", "installed", exception: true)
+      installed = `git -C #{Shellwords.escape(source)} rev-parse HEAD`.strip
+      system("git", "-C", source, "checkout", "-q", "--orphan", "unrelated", exception: true)
+      system("git", "-C", source, "rm", "-q", "-rf", ".", exception: true)
+      File.write("#{source}/README", "unrelated\n")
+      system("git", "-C", source, "add", "README", exception: true)
+      system("git", "-C", source, "commit", "-qm", "unrelated", exception: true)
+      system("git", "-C", source, "remote", "add", "origin", source, exception: true)
+      bundle = build_bundle(root, "release/SOURCE_COMMIT" => "#{installed}\n")
+      _stdout, setup_stderr, setup_status = run_setup(root, bundle)
+      assert setup_status.success?, setup_stderr
+      File.write("#{root}/etc/navishai/env", File.read("#{root}/etc/navishai/env") + "NAVISHAI_UPDATE_SOURCE_PATH=#{source}\n")
+      File.write("#{root}/docker.log", "")
+
+      _stdout, stderr, status = run_installer(root, "upgrade", "--target", "unrelated")
+
+      refute status.success?
+      assert_includes stderr, "target is not a descendant"
+      assert_empty docker_log(root)
+      assert_equal installed, File.read("#{root}/opt/navishai/current/SOURCE_COMMIT").strip
     end
   end
 
