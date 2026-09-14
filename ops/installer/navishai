@@ -1047,7 +1047,9 @@ build_update_candidate() {
   candidate="$(mktemp --suffix=.tar)"
   upgrade_candidate_path="$candidate"
   if [[ ${EUID:-$(id -u)} -eq 0 ]]; then chown "$owner" "$candidate" || die "could not prepare the update candidate destination"; fi
-  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" -- "$worktree/script/candidate_bundle" "$candidate" "$commit"; else "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
+  if source_git diff --quiet "$current" "$commit" -- .dockerignore compose.yaml go.mod go.sum runner ops/docker/runner.Dockerfile ops/runner/execution.example.json ops/docker/supermemory.Dockerfile script/install_supermemory; then
+    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" --preserve-environment -- env NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE="$prefix/current/images.tar" "$worktree/script/candidate_bundle" "$candidate" "$commit"; else NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE="$prefix/current/images.tar" "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
+  elif [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" -- "$worktree/script/candidate_bundle" "$candidate" "$commit"; else "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
   stage_bundle "$candidate"
   rm -f "$candidate"
   upgrade_candidate_path=""

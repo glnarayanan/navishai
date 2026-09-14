@@ -47,6 +47,27 @@ class CandidateBundleTest < ActiveSupport::TestCase
     end
   end
 
+  test "loads retained infrastructure images before selectively rebuilding Rails" do
+    with_fixture do |root, bin, commit|
+      retained = "#{root}/retained-images.tar"
+      File.write(retained, "retained")
+
+      _stdout, stderr, status = run_builder(root, bin, "#{root}/candidate.tar", commit,
+        "NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE" => retained)
+
+      assert status.success?, stderr
+      commands = File.readlines("#{root}/docker.log", chomp: true)
+      load_index = commands.index { |command| command == "image load -i #{retained}" }
+      build_index = commands.index { |command| command.include?("compose") && command.end_with?("build web jobs") }
+      save_index = commands.index { |command| command.start_with?("image save ") }
+      assert_not_nil load_index
+      assert_not_nil build_index
+      assert_not_nil save_index
+      assert_operator load_index, :<, build_index
+      assert_operator build_index, :<, save_index
+    end
+  end
+
   private
 
     def with_fixture(remove: nil)
@@ -71,7 +92,7 @@ class CandidateBundleTest < ActiveSupport::TestCase
       end
     end
 
-    def run_builder(root, bin, output, commit)
-      Open3.capture3({ "PATH" => "#{bin}:#{ENV.fetch('PATH')}", "FAKE_DOCKER_LOG" => "#{root}/docker.log", "FAKE_CONTEXT_LOG" => "#{root}/context.log" }, "#{root}/candidate_bundle", output, commit, chdir: root)
+    def run_builder(root, bin, output, commit, environment = {})
+      Open3.capture3({ "PATH" => "#{bin}:#{ENV.fetch('PATH')}", "FAKE_DOCKER_LOG" => "#{root}/docker.log", "FAKE_CONTEXT_LOG" => "#{root}/context.log" }.merge(environment), "#{root}/candidate_bundle", output, commit, chdir: root)
     end
 end
