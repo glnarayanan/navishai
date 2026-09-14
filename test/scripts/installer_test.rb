@@ -6,6 +6,20 @@ require "shellwords"
 require "json"
 
 class InstallerTest < ActiveSupport::TestCase
+  def test_caddy_redirects_www_to_the_https_apex_without_changing_apex_proxying
+    caddyfile = File.read(Rails.root.join("ops/installer/Caddyfile"))
+
+    assert_includes caddyfile, "{$NAVISHAI_APP_HOST} {\n  encode zstd gzip\n  reverse_proxy app-net:3000\n}"
+    assert_includes caddyfile, "www.{$NAVISHAI_APP_HOST} {\n  redir https://{$NAVISHAI_APP_HOST}{uri} permanent\n}"
+    assert_includes caddyfile, "http://www.{$NAVISHAI_APP_HOST} {\n  redir https://{$NAVISHAI_APP_HOST}{uri} permanent\n}"
+  end
+
+  def test_installer_host_allowlists_include_supported_ubuntu_releases
+    [ Rails.root.join("ops/installer/bootstrap"), Rails.root.join("ops/installer/navishai") ].each do |path|
+      assert_includes File.read(path), "VERSION_ID == 24.04 || $VERSION_ID == 26.04"
+    end
+  end
+
   def test_second_setup_rejects_held_lock_before_docker
     Dir.mktmpdir do |root|
       lock = "#{root}/var/lib/navishai/install.lock"
@@ -153,6 +167,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_includes docker_log(root), "image load"
+      assert_equal "#{root}/opt/navishai/current/ops/installer/navishai", File.readlink("#{root}/usr/local/bin/navishai")
     end
   end
 
@@ -167,6 +182,51 @@ class InstallerTest < ActiveSupport::TestCase
       refute_path_exists "#{root}/etc/navishai/env"
       refute_path_exists "#{root}/opt/navishai/current"
       refute_includes docker_log(root), "image load"
+    end
+  end
+
+  [ "0.0.0.0:80", "[::]:80" ].each do |listener|
+    define_method("test_wildcard_listener_#{listener.tr('[]:.', '_')}_rejects_before_install_mutation") do
+      Dir.mktmpdir do |root|
+        bundle = build_bundle(root)
+
+        _stdout, stderr, status = run_setup(root, bundle,
+          "FAKE_PORT_80" => "LISTEN 0 0 #{listener} 0.0.0.0:*\\n")
+
+        assert_not status.success?
+        assert_includes stderr, "port 80 is in use"
+        refute_path_exists "#{root}/etc/navishai/env"
+        refute_includes docker_log(root), "image load"
+      end
+    end
+  end
+
+  def test_tailnet_only_listener_does_not_block_the_public_caddy_binding
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+
+      _stdout, stderr, status = run_setup(root, bundle,
+        "FAKE_PORT_443" => "LISTEN 0 0 100.98.160.115:443 0.0.0.0:*\\n")
+
+      assert status.success?, stderr
+      assert_includes docker_log(root), "image load"
+    end
+  end
+
+  def test_rejects_a_tailnet_listen_address_before_docker_or_state_mutation
+    Dir.mktmpdir do |root|
+      bundle = build_bundle(root)
+      answers = "#{root}/answers"
+      File.write(answers, "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=100.98.160.115\n")
+      FileUtils.chmod(0o600, answers)
+
+      _stdout, stderr, status = run_installer(root, "setup", bundle,
+        "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes", "FAKE_ROUTE_SOURCE" => "100.98.160.115")
+
+      assert_not status.success?
+      assert_includes stderr, "public listen address must be globally routable"
+      refute_path_exists "#{root}/etc/navishai/env"
+      assert_empty docker_log(root)
     end
   end
 
@@ -304,6 +364,7 @@ class InstallerTest < ActiveSupport::TestCase
 
       assert status.success?, stderr
       assert_equal selected, File.realpath("#{root}/opt/navishai/current")
+      assert_equal "#{root}/opt/navishai/current/ops/installer/navishai", File.readlink("#{root}/usr/local/bin/navishai")
       log = File.read("#{root}/restore.log")
       assert_includes log, "verify-old"
       assert_includes log, "restore-selected"
@@ -483,7 +544,7 @@ class InstallerTest < ActiveSupport::TestCase
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       answers = "#{root}/answers"
-      File.write(answers, "NAVISHAI_APP_HOST=install.example\n")
+      File.write(answers, "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\n")
       FileUtils.chmod(0o600, answers)
 
       stdout, stderr, status = run_installer(root, "setup", bundle, "NAVISHAI_ANSWERS_FILE" => answers)
@@ -673,14 +734,16 @@ class InstallerTest < ActiveSupport::TestCase
     Dir.mktmpdir do |root|
       bundle = build_bundle(root)
       answers = "#{root}/answers"
-      File.write(answers, "NAVISHAI_APP_HOST=Install.Example.\n")
+      File.write(answers, "NAVISHAI_APP_HOST=Install.Example.\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\n")
       FileUtils.chmod(0o600, answers)
 
       _stdout, stderr, status = run_installer(root, "setup", bundle,
         "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes")
 
       assert status.success?, stderr
-      assert_includes File.read("#{root}/etc/navishai/env"), "NAVISHAI_APP_HOST=install.example"
+      environment = File.read("#{root}/etc/navishai/env")
+      assert_includes environment, "NAVISHAI_APP_HOST=install.example"
+      assert_includes environment, "NAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10"
     end
   end
 
@@ -689,7 +752,7 @@ class InstallerTest < ActiveSupport::TestCase
       bundle = build_bundle(root)
       answers = "#{root}/answers"
       transcript = "#{root}/setup.typescript"
-      File.write(answers, "NAVISHAI_APP_HOST=install.example\n")
+      File.write(answers, "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\n")
       FileUtils.chmod(0o600, answers)
       environment = installer_environment(root, "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes")
       command = Shellwords.join([ Rails.root.join("ops/installer/navishai").to_s, "setup", bundle ])
@@ -1505,7 +1568,7 @@ class InstallerTest < ActiveSupport::TestCase
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p("#{root}/etc/navishai")
       FileUtils.mkdir_p("#{root}/var/lib/navishai")
-      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_MEMORY_PENDING=1\n")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\nNAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_MEMORY_PENDING=1\n")
       File.write("#{root}/var/lib/navishai/install.json", "{\"schema\":1,\"release\":\"pending\",\"step\":\"https_unverified\"}\n")
 
       stdout, stderr, status = run_installer(root, "doctor", "--json", "FAKE_PORT_80" => "LISTEN\n")
@@ -1540,7 +1603,7 @@ class InstallerTest < ActiveSupport::TestCase
       File.write("#{root}/opt/navishai/releases/#{release_id}/images.tar", "images")
       File.symlink("#{root}/opt/navishai/releases/#{release_id}", "#{root}/opt/navishai/current")
       %w[ca.crt server.crt server.key].each { |name| File.write("#{root}/etc/navishai/runner/#{name}", name) }
-      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_ATTACHMENT_SCANNER=clamd\n")
+      File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\nNAVISHAI_SUPERMEMORY_API_KEY=sm_private\nNAVISHAI_SYSTEM_SMTP_ADDRESS=smtp.example\nNAVISHAI_ATTACHMENT_SCANNER=clamd\n")
       File.write("#{root}/var/lib/navishai/install.json", "{\"schema\":1,\"release\":\"#{'d' * 40}\",\"step\":\"https_verified\"}\n")
 
       stdout, stderr, status = run_installer(root, "doctor")
@@ -1687,8 +1750,10 @@ class InstallerTest < ActiveSupport::TestCase
       esac
     SH
     FileUtils.chmod(0o755, "#{bin}/docker")
-    File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) printf '%s' \"${FAKE_PORT_80:-}\";; *:443*) printf '%s' \"${FAKE_PORT_443:-}\";; esac\n")
+    File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) value=\"${FAKE_PORT_80:-}\"; port=80;; *:443*) value=\"${FAKE_PORT_443:-}\"; port=443;; esac\nlistener=$(printf '%s' \"$value\")\nif [ \"$listener\" = LISTEN ]; then printf 'LISTEN 0 0 %s:%s 0.0.0.0:*\\n' \"${FAKE_LISTEN_ADDRESS:-203.0.113.10}\" \"$port\"; else printf '%s' \"$value\"; fi\n")
     FileUtils.chmod(0o755, "#{bin}/ss")
+    File.write("#{bin}/ip", "#!/bin/sh\nprintf '1.1.1.1 via 203.0.113.1 dev eth0 src %s\\n' \"${FAKE_ROUTE_SOURCE:-203.0.113.10}\"\n")
+    FileUtils.chmod(0o755, "#{bin}/ip")
     File.write("#{bin}/curl", <<~SH)
       #!/bin/sh
       printf '%s\\n' "$*" >>"$DOCKER_TEST_LOG"
@@ -1721,7 +1786,7 @@ class InstallerTest < ActiveSupport::TestCase
 
   def run_setup(root, bundle, environment = {})
     answers = "#{root}/answers"
-    File.write(answers, "NAVISHAI_APP_HOST=install.example\n")
+    File.write(answers, "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\n")
     FileUtils.chmod(0o600, answers)
     run_installer(root, "setup", bundle, { "NAVISHAI_ANSWERS_FILE" => answers, "NAVISHAI_SETUP_ACCEPT" => "yes", "NAVISHAI_HTTPS_WAIT_SECONDS" => "0" }.merge(environment))
   end
