@@ -1,16 +1,14 @@
 # Operating-workspace phase handoff
 
-**Status:** Operator record for PRs #111–#124  
-**Updated:** 13 September 2026  
+**Status:** Operator record for merged PRs #111–#124
+**Updated:** 14 September 2026
 **Phase state:** Fixture-complete. Not launched, released, deployed, or customer-validated.
 
 This is the durable operator handoff. Slice-state bookkeeping stays in [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). Product rules stay in [PRODUCT.md](./PRODUCT.md). Evidence stays in [STATUS.md](./STATUS.md).
 
-**#124 (`cursor/phase-handoff-efe6`) is the latest integrated product tip.** It contains B+C+D+E work through E1 merge commits. It does **not** contain the A installer/memory/upgrade stack. A is a parallel stack and still needs its own merge commits into `main`.
+PRs #111–#124 were all merged into `main` on 13 September 2026; current `main` is `720a6d7`. #124 was the last C/E integrated PR tip, and A was merged separately. This is not a launch, release, deploy, or customer-validation claim.
 
-Owner authorized merge-commit integration into `main` on 13 September 2026 (merge commits only; no squash, no rebase). That authorization is not a launch, release, deploy, or customer-validation claim.
-
-**Next incomplete slice:** live-host proof (BLK-001, BLK-002, BLK-004). Not more feature work.
+Operational live-host proof remains external (BLK-001, BLK-002, BLK-004). Later deferred product work is separately tracked; it includes B2 record-specific anchors, C2 manual proposal editing, and D2 broad semantic/grouping model work.
 
 ## Stack diagram
 
@@ -41,7 +39,7 @@ E  (integration tip)
   #123 cursor/integrated-scenario-efe6     ← #122 C3
          merge --no-ff B3 feature  9c78319
          merge --no-ff D3 feature  fc8d15d
-  #124 cursor/phase-handoff-efe6           ← #123   ← latest B+C+D+E tip
+  #124 cursor/phase-handoff-efe6           ← #123   ← merged historical tip
 ```
 
 Do not merge C into D or D into C as feature stacks. E1 is the only integration point for B+C+D.
@@ -67,9 +65,21 @@ Later LibreOffice `OpenFiles`/`Processes` 512-limit commits were cherry-picked o
 | BLK-001 | open | Live self-hosted Supermemory indexing/retrieval/removal is not proved. |
 | BLK-002 | open | Live application-image digest upgrade is not proved. Docker Engine was not installed on the check host. Do not claim Docker-green. |
 | BLK-004 | open | Clean supported-host I5, public ACME, reboot/SSH interruption, and release signing remain omitted. |
-| BLK-003 | open (PR bodies only) | ManagePullRequest was unavailable. Owner later authorized merge-commit integration into `main`. |
+| BLK-003 | open (PR bodies only) | PRs #111–#124 are merged; historical PR-body writes remain unavailable to this agent. |
 
 Check-host notes that are **not** production pins: PostgreSQL **15.19** (documented `PG_MAJOR=15` override vs pinned 16); Docker Engine absent.
+
+## Current correction-pass verification
+
+The active correction branch adds three feature commits after `main` `720a6d7`: C3 scorecard current-coverage evidence, D1 support-quality evidence, and D3 knowledge follow-up association. This is engineered source proof only; it does not replace the operational gaps above.
+
+| Check | Result |
+|---|---|
+| Changed-surface Rails suite on temporary local PostgreSQL 17 + pgvector | 46 runs, 390 assertions, 0 failures, errors, or skips |
+| Full RuboCop | 667 files, no offenses |
+| Brakeman | 0 warnings |
+| `git diff --check` | clean |
+| Full `bin/ci` / broader Rails / system browser coverage | Not current or green on this host. A broader Rails run reached 1,192 tests but needs GNU `sha256sum` and `flock` and hit BSD `script` and binary-fixture I/O incompatibilities. A system run attempted 88 tests, but Chrome session creation failed. The earlier `bin/ci` at `fdd3145` predates this correction top. |
 
 ## Checks
 
@@ -124,12 +134,8 @@ Engineering = fixture/source complete. Operational = live-host proof.
 
 **#124** `cursor/phase-handoff-efe6` ← #123 — **engineering (docs + CI follow-ups).** Remaining-work ledger, inspected-preview lock cherry-pick, Brakeman bind, audit truncate, LibreOffice 512-limit, green `bin/ci` at `fdd31456a20f`, docs checkpoint `b9e0a80536c0`, and this handoff. Operational: still not launched, released, deployed, or customer-validated.
 
-## Merge into main (owner-authorized)
+## Merged state and continuation
 
-Use **merge commits only**. Order that preserves stack ancestry:
+All PRs #111–#124 merged into `main` on 13 September 2026; current `main` is `720a6d7`. The historical merge order above explains the feature ancestry, not pending operator work. This phase remains unreleased, undeployed, and unvalidated with customers.
 
-1. A: #112 → #114 → #115
-2. C/E: #118 → #120 → #122 → #123 → #124 (this last push includes this handoff)
-3. If GitHub still shows them open after #124: B #111 → #113 → #116 and D #117 → #119 → #121. Those commits may already be contained; merge commits may be empty-or-already-contained. Do not invent feature commits.
-
-This phase remains unreleased after those merges. Resume on a disposable host for BLK-001, BLK-002, and BLK-004.
+Resume operational work on a disposable supported host for BLK-001, BLK-002, and BLK-004. Separately scope any later product work, including B2 record-specific anchors, C2 manual proposal editing, and D2 broad semantic/grouping model work.

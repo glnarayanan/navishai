@@ -1,11 +1,11 @@
 # Next-phase execution record
 
-**Status:** Working ledger for the daily operating-workspace phase  
-**Updated:** 13 September 2026
+**Status:** Working ledger for the daily operating-workspace phase
+**Updated:** 14 September 2026
 
 This file tracks slice state for the phase. The operator handoff covering PRs #111–#124 is [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). Detailed product rules stay in [PRODUCT.md](./PRODUCT.md). Implementation evidence stays in [STATUS.md](./STATUS.md). Live-host proof is separate from fixture engineering.
 
-Owner authorized merge-commit integration into `main` on 13 September 2026 (A stack, then C/E including this E2 tip, then any still-open B/D PRs). That is not a launch, release, deploy, or customer-validation claim. Next incomplete slice: live-host proof (BLK-001, BLK-002, BLK-004).
+PRs #111–#124 were all merged into `main` on 13 September 2026. Current `main` is `720a6d7`. That merge is not a launch, release, deploy, or customer-validation claim. Live-host proof remains external (BLK-001, BLK-002, BLK-004), while later product work remains separately deferred.
 
 States: **not started**, **in progress**, **implemented**, **tested**, **PR open**, **merged**, **externally verified**, **blocked**.
 
@@ -13,20 +13,20 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 
 | Slice | State | Evidence | Notes |
 |---|---|---|---|
-| A1 Memory verification | PR open | [PR #112](https://github.com/glnarayanan/navishai/pull/112) `cursor/memory-verification-efe6` | Fixture-complete. Live Supermemory is BLK-001. |
-| A2 Changed-image upgrade | PR open | [PR #114](https://github.com/glnarayanan/navishai/pull/114) `cursor/app-image-upgrade-efe6` | Fixture-complete. Live Docker digest proof is BLK-002. |
-| A3 Deployment acceptance | PR open | [PR #115](https://github.com/glnarayanan/navishai/pull/115) `cursor/deployment-acceptance-efe6` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
-| B1 Portfolio queries | PR open | [PR #111](https://github.com/glnarayanan/navishai/pull/111) `cursor/account-work-queries-efe6` | Fixture-complete. Independent of A. |
-| B2 Retention queue UI | PR open | [PR #113](https://github.com/glnarayanan/navishai/pull/113) `cursor/retention-queue-ui-efe6` | Desktop/390/320 system coverage. |
-| B3 Intervention follow-up | PR open | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. Merged into E1 for the full journey. |
-| C1 Scorecard proposal | PR open | [PR #118](https://github.com/glnarayanan/navishai/pull/118) `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. |
-| C2 Proposal revision | PR open | [PR #120](https://github.com/glnarayanan/navishai/pull/120) `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. |
-| C3 Preview/backtest evidence | PR open | [PR #122](https://github.com/glnarayanan/navishai/pull/122) `cursor/scorecard-preview-efe6` | Publish bound to inspected preview under the version lock; 500-snapshot cap. |
-| D1 Support quality readout | PR open | [PR #117](https://github.com/glnarayanan/navishai/pull/117) `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Merged into E1. |
-| D2 Knowledge improvement queue | PR open | [PR #119](https://github.com/glnarayanan/navishai/pull/119) `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. Merged into E1. |
-| D3 Follow-up evidence | PR open | [PR #121](https://github.com/glnarayanan/navishai/pull/121) `cursor/knowledge-follow-up-efe6` | Stacked on D2. Assign/triage/resolve/dismiss candidates with audit. Merged into E1. |
-| E1 Integrated scenario | PR open | [PR #123](https://github.com/glnarayanan/navishai/pull/123) `cursor/integrated-scenario-efe6` | B3+C3+D3 merge commits plus the 14-step fixture journey and named failure variants. |
-| E2 Status and handoff | PR open | [PR #124](https://github.com/glnarayanan/navishai/pull/124) `cursor/phase-handoff-efe6` | Documents E1 coverage, engineering vs operational, and remaining BLK items. |
+| A1 Memory verification | merged | [PR #112](https://github.com/glnarayanan/navishai/pull/112) `cursor/memory-verification-efe6` | Fixture-complete. Live Supermemory is BLK-001. |
+| A2 Changed-image upgrade | merged | [PR #114](https://github.com/glnarayanan/navishai/pull/114) `cursor/app-image-upgrade-efe6` | Fixture-complete. Live Docker digest proof is BLK-002. |
+| A3 Deployment acceptance | merged | [PR #115](https://github.com/glnarayanan/navishai/pull/115) `cursor/deployment-acceptance-efe6` | Evidence-only omissions recorded. Clean-host/ACME/signing remain BLK-004. |
+| B1 Portfolio queries | merged | [PR #111](https://github.com/glnarayanan/navishai/pull/111) `cursor/account-work-queries-efe6` | Fixture-complete. Independent of A. |
+| B2 Retention queue UI | merged | [PR #113](https://github.com/glnarayanan/navishai/pull/113) `cursor/retention-queue-ui-efe6` | Desktop/390/320 system coverage. |
+| B3 Intervention follow-up | merged | [PR #116](https://github.com/glnarayanan/navishai/pull/116) `cursor/intervention-follow-up-efe6` | Fixture-complete. Merged into E1 for the full journey. |
+| C1 Scorecard proposal | merged | [PR #118](https://github.com/glnarayanan/navishai/pull/118) `cursor/scorecard-proposal-efe6` | Branched from verified `main` (`aa4b079`). Scripted-adapter proof. |
+| C2 Proposal revision | merged | [PR #120](https://github.com/glnarayanan/navishai/pull/120) `cursor/scorecard-revision-efe6` | Stacked on C1. Inspectable diffs, parent/run lineage, stale-tab guards. |
+| C3 Preview/backtest evidence | merged | [PR #122](https://github.com/glnarayanan/navishai/pull/122) `cursor/scorecard-preview-efe6` | Publish bound to inspected preview under the version lock; 500-snapshot cap. |
+| D1 Support quality readout | merged | [PR #117](https://github.com/glnarayanan/navishai/pull/117) `cursor/support-quality-efe6` | Branched from verified `main` (`aa4b079`). Read-only; members and viewers included. Merged into E1. |
+| D2 Knowledge improvement queue | merged | [PR #119](https://github.com/glnarayanan/navishai/pull/119) `cursor/knowledge-improvements-efe6` | Stacked on D1. Stale, deleted, retired, and failed-sync sources. Merged into E1. |
+| D3 Follow-up evidence | merged | [PR #121](https://github.com/glnarayanan/navishai/pull/121) `cursor/knowledge-follow-up-efe6` | Stacked on D2. Assign/triage/resolve/dismiss candidates with audit. Merged into E1. |
+| E1 Integrated scenario | merged | [PR #123](https://github.com/glnarayanan/navishai/pull/123) `cursor/integrated-scenario-efe6` | B3+C3+D3 merge commits plus the 14-step fixture journey and named failure variants. |
+| E2 Status and handoff | merged | [PR #124](https://github.com/glnarayanan/navishai/pull/124) `cursor/phase-handoff-efe6` | Documents E1 coverage, engineering vs operational, and remaining BLK items. |
 
 ## Decisions and blockers
 
@@ -34,7 +34,7 @@ States: **not started**, **in progress**, **implemented**, **tested**, **PR open
 |---|---|---|---|---|---|---|---|---|
 | BLK-001 | A1 | Credential/host | No live self-hosted Supermemory on this check host. | Live indexing/retrieval/removal is not operationally accepted. | Keep fixture coverage. Do not claim live engine proof. | Phase implementation is complete. | Operator-supplied self-hosted Supermemory on a disposable host. | open |
 | BLK-002 | A2 | Host | `docker` is not installed. | Changed-image upgrade is not operationally accepted. | Keep the production changed-image upgrade guard until live digest proof. | Phase implementation is complete. | Docker Engine + Compose v2. | open |
-| BLK-003 | All stacks | Tooling | Open PRs #111–#124 cover A1–E2. ManagePullRequest is unavailable in this agent. Owner authorized merge-commit integration into `main` on 13 September 2026. | PR bodies still cannot be rewritten from this agent. Merge-to-main is no longer blocked. | Record exact PR metadata. Merge with merge commits only. | Live-host proof (BLK-001, BLK-002, BLK-004). | Write-capable PR tool or owner updates PR bodies. | open for PR-body writes; merge-to-main authorized |
+| BLK-003 | All stacks | Tooling | PRs #111–#124 merged on 13 September 2026. Historical PR-body edits remain unavailable to this agent. | Merge-to-main is complete; this does not affect source behaviour. | Record exact merged state; do not reopen feature work for PR-body edits. | Live-host proof and later deferred slices. | Write-capable PR tool or owner updates historical PR bodies. | open for PR-body writes only |
 | BLK-004 | A3 | Host/credential | No Docker, public DNS, ACME, signing identity, or live SMTP/scanner/provider on this host. | I5 and live connector checks remain omitted, not passing. | Keep omissions explicit. Do not reopen installer audits. | Phase implementation is complete. | Clean supported host plus operator-owned credentials and signing identity. | open |
 | DEC-001 | A1 | Routine | Owner and Admin may start the memory check, matching the setup-checklist role gate. | Broader than Owner-only if that phrase is read strictly. | Keep Owner/Admin. | Continue. | Owner restricts to Owner-only. | accepted |
 | DEC-002 | A2 | Routine | App-image compatibility uses Docker-save manifests plus `db:migrate:status`; no schema-change claim. | Unsupported/indeterminate still rejected before stop. | Keep the guard. | Continue. | Owner expands the supported upgrade class. | accepted |
@@ -80,11 +80,11 @@ Merge strategy: on `cursor/integrated-scenario-efe6` (C3 parent), merge commits 
 | C1–C3 | Scripted-adapter scorecard proposal, revision, and inspected-preview publish on [#118](https://github.com/glnarayanan/navishai/pull/118)–[#122](https://github.com/glnarayanan/navishai/pull/122) | Live model execution is not claimed |
 | D1–D3 | Quality readout, stale-source queue, and assign/triage/resolve/dismiss candidates on [#117](https://github.com/glnarayanan/navishai/pull/117)–[#121](https://github.com/glnarayanan/navishai/pull/121) | Does not score Accounts or send messages |
 | E1 | 14-step fixture journey plus seven failure variants on [#123](https://github.com/glnarayanan/navishai/pull/123) | No live credentials. CI fixes cherry-picked; the green `bin/ci` record is on E2 |
-| E2 | Dedicated operator handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Full `bin/ci` passed at `fdd3145`; docs checkpoint `b9e0a80`. C tip `f4cb1a9` and D tip `81751bd` also passed `bin/ci`. A isolation after `bb933d9`. Docker Engine is not installed. PostgreSQL on the CI host was 15.19, not pinned 16. Owner authorized merge commits into `main`. Next incomplete slice is live-host proof (BLK-001, BLK-002, BLK-004). |
+| E2 | Dedicated operator handoff on [#124](https://github.com/glnarayanan/navishai/pull/124) | Historical `bin/ci` passed at `fdd3145`; it predates the correction top. Docker Engine was not installed and PostgreSQL on that CI host was 15.19, not pinned 16. PRs #111–#124 are merged. |
 
 ## Operator handoff
 
-See [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). **#124 is the latest integrated product tip** (B+C+D+E). **A is a separate stack** that still needs its own merges into `main`.
+See [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). #124 is the historical C/E integration record; A and all remaining phase PRs are also merged into `main`.
 
 Four independent feature stacks leave `main` (`aa4b079`). Do not merge C into D or D into C.
 
@@ -96,4 +96,14 @@ Four independent feature stacks leave `main` (`aa4b079`). Do not merge C into D 
 
 DEC-001, DEC-002, and DEC-003 are accepted. BLK-001, BLK-002, and BLK-004 stay open until live proof. Do not claim live Supermemory, Docker digest, or public ACME. Docker Engine was not installed. PostgreSQL on the CI host was 15.19, not pinned 16.
 
-Owner authorized merge-commit integration into `main`. This phase is not launched, released, deployed, or customer-validated. No live Claude/Anthropic implementation review.
+PRs #111–#124 are merged. This phase is not launched, released, deployed, or customer-validated. No live Claude/Anthropic implementation review.
+
+## Post-merge correction pass
+
+The active correction branch starts from `main` `720a6d7` and contains three feature commits: current scorecard coverage (C3), grounded support-quality evidence (D1), and post-resolution knowledge follow-up association (D3). It passed the changed-surface Rails suite on temporary local PostgreSQL 17 + pgvector (46 runs, 390 assertions, no failures, errors, or skips), full RuboCop (667 files, no offenses), Brakeman (0 warnings), and `git diff --check`. It is engineered source proof, not a new release, deployment, or live-host proof.
+
+Full `bin/ci` is not current or green for this correction top. A broader Rails run reached 1,192 tests but needs GNU `sha256sum` and `flock` and hit BSD `script` and binary-fixture I/O incompatibilities. A system run attempted 88 tests but Chrome session creation failed. The earlier E2 `bin/ci` evidence therefore remains historical only.
+
+## Later deferred product work
+
+The operational blockers do not preclude separately scoped product work. Deferred work includes B2 record-specific anchors, C2 manual proposal editing, and D2 broad semantic/grouping model work. These are not included in the merged A1–E2 phase or the correction pass.
