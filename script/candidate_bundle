@@ -38,7 +38,13 @@ NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET=build-only-placeholder
 NAVISHAI_SECRET_KEY_BASE=build-only-placeholder
 NAVISHAI_SUPERMEMORY_API_KEY=build-only-placeholder
 EOF
-"${docker[@]}" compose --env-file "$work/build.env" -f "$source/compose.yaml" build
+if [[ -n ${NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE:-} ]]; then
+  [[ -f $NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE ]] || { echo "retained infrastructure image archive is unavailable" >&2; exit 1; }
+  "${docker[@]}" image load -i "$NAVISHAI_REUSE_INFRA_IMAGES_ARCHIVE"
+  "${docker[@]}" compose --env-file "$work/build.env" -f "$source/compose.yaml" build web jobs
+else
+  "${docker[@]}" compose --env-file "$work/build.env" -f "$source/compose.yaml" build
+fi
 mkdir -p "$work/release"
 cp "$source/compose.yaml" "$work/release/compose.yaml"
 mkdir -p "$work/release/ops/compose" "$work/release/ops/installer" "$work/release/ops/runner" "$work/release/script"
