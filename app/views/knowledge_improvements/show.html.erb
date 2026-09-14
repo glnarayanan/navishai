@@ -146,7 +146,18 @@
           <li>
             <span class="improvement-list-main">
               <strong><%= item.candidate.title %></strong>
-              <span><%= item.detail %></span>
+              <span>
+                <%= item.detail %>
+                <% follow_up = item.follow_up %>
+                <% if follow_up.observed? %>
+                  Observed association only: a later artifact for the same support case cited this exact version after resolution at <%= l(follow_up.resolved_at, format: :short) %>.
+                  Claims were <%= follow_up.claim_states.to_sentence %>; cited evidence was <%= follow_up.evidence_statuses.to_sentence %>.
+                <% elsif follow_up.no_follow_up? %>
+                  No follow-up evidence: no later artifact for the same support case cited this exact version after resolution at <%= l(follow_up.resolved_at, format: :short) %>.
+                <% else %>
+                  Not comparable: this candidate has no support-case grouping key for a subsequent-evidence association.
+                <% end %>
+              </span>
             </span>
             <span class="status-badge status-success">Resolved</span>
           </li>

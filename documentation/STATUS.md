@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 13 September 2026
+**Updated:** 14 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -154,7 +154,19 @@ On `cursor/scorecard-preview-efe6`, cherry-picked onto E1 and E2. Publish and ro
 
 ### 13 September 2026 remaining-work and operator handoff (E2)
 
-On `cursor/phase-handoff-efe6` from the E1 tip. The daily operating-workspace phase is fixture-complete. E1 ([#123](https://github.com/glnarayanan/navishai/pull/123)) is the B+C+D integration point: merge commits brought B3 and D3 onto C3, then `test/integration/operating_workspace_journey_test.rb` proved the 14-step journey plus seven failure variants. This E2 branch contains B3+C3+D3 through E1 and is the latest integrated product tip. A remains a parallel stack. Owner authorized merge-commit integration into `main` on 13 September 2026; the operator record is [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). BLK-003 remains open for PR-body writes because ManagePullRequest is unavailable here. Live Supermemory, Docker digest, and clean-host/ACME/signing proof remain open (BLK-001, BLK-002, BLK-004). The production changed-image upgrade guard stays until live digest proof. Installer audits are not reopened. Scripted-adapter proof is not live model execution. Full `bin/ci` passed on this Linux check host at `fdd3145` (see the evidence note below). Docker Engine is not installed here, so Compose and image work stay omitted and are not recorded as passing. PostgreSQL on this CI host was 15.19, not pinned 16. This phase is not launched, released, deployed, or customer-validated. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md).
+PRs #111–#124 were all merged into `main` on 13 September 2026; current `main` is `720a6d7`. The daily operating-workspace phase is fixture-complete, and E1 ([#123](https://github.com/glnarayanan/navishai/pull/123)) remains its B+C+D integration record. A merged separately. BLK-003 is now limited to unavailable historical PR-body writes. Live Supermemory, Docker digest, and clean-host/ACME/signing proof remain open (BLK-001, BLK-002, BLK-004). The production changed-image upgrade guard stays until live digest proof. The earlier `bin/ci` at `fdd3145` predates the integrated correction top and is not current proof for it. This phase is not launched, released, deployed, or customer-validated. See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md).
+
+### 14 September 2026 correction pass
+
+The active correction branch contains three source changes after `main` `720a6d7`: C3 distinguishes complete current account coverage from capped scorecard history replay; D1 adds grounded support-quality workflow evidence; D3 associates later post-resolution artifacts with the resolved knowledge version. These checks prove engineered behaviour only, not operational live-host proof.
+
+| Check | Result |
+|---|---|
+| Changed-surface Rails suite on temporary local PostgreSQL 17 + pgvector | 46 runs, 390 assertions, 0 failures, errors, or skips |
+| Full RuboCop | 667 files, no offenses |
+| Brakeman | 0 warnings |
+| `git diff --check` | clean |
+| Full `bin/ci`, broader Rails suite, and system browser coverage | Not current or green on this macOS host. The broader Rails run reached 1,192 tests but lacks GNU `sha256sum` and `flock` and hit BSD `script` and binary-fixture I/O incompatibilities. The system run attempted 88 tests, but Chrome session creation failed. |
 
 ### 13 September 2026 full bin/ci on the E2 tip
 
@@ -204,7 +216,7 @@ On `cursor/knowledge-improvements-efe6` from D1. Every Workspace member, includi
 
 On `cursor/knowledge-follow-up-efe6` from D2. Adding a non-stale current version removes the source from the attention queue and records it under Recently improved with prior/current version numbers. The source page keeps immutable version lineage and states that the source left the queue. Writers can also open a knowledge improvement candidate from a blocked draft or an attention source. A Manager, Admin, or Owner triages, assigns an eligible knowledge manager, dismisses with a reason, or resolves by linking a current authorised version. Members and viewers remain read-only for those commands. Ineligible assignees (Viewer, Member, other Workspace) are rejected. Cross-Workspace paths fail closed. Focused checks: workflow, candidate controller, presenters, and related controllers 24 runs, 191 assertions; system 3 runs, 30 assertions including create-from-Quality, assign, and 320px overflow. RuboCop clean on touched Ruby files. Isolation and Docker omitted on this host.
 
-See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for A/B PR URLs, C/D/E branch state, and remaining GitHub PRs (BLK-003).
+See [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md) for the merged A–E PR record, correction-pass state, and remaining operational boundaries.
 
 ### 11 September 2026 stacked follow-up checkpoint
 
@@ -307,7 +319,7 @@ Stack checkpoints at their pre-merge feature commits:
 
 Listed in the order they unblock a pilot. None of these blocks owner review of the current source.
 
-The daily operating-workspace phase (A1–E2) is fixture-complete. Operator record: [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). **#124 was the latest C/E integrated product tip** (B+C+D+E via E1 merge commits). **A (#112/#114/#115) was a parallel stack** and is merge-committed onto `main` separately. Owner authorized merge-commit integration into `main` on 13 September 2026 (merge commits only; no squash or rebase). That is not a launch, release, deploy, or customer-validation claim. **Next incomplete slice:** live-host proof (BLK-001 self-hosted Supermemory, BLK-002 Docker digest upgrade, BLK-004 clean-host/ACME/signing), not more feature work. BLK-003 remains PR-body writes only.
+The daily operating-workspace phase (A1–E2) is fixture-complete. Operator record: [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md). PRs #111–#124 were all merged on 13 September 2026; `main` is `720a6d7`. This is not a launch, release, deploy, or customer-validation claim. Operational live-host proof remains external (BLK-001 self-hosted Supermemory, BLK-002 Docker digest upgrade, BLK-004 clean-host/ACME/signing). Later product work remains deferred: B2 record-specific anchors, C2 manual proposal editing, and D2 broad semantic/grouping model work. BLK-003 remains PR-body writes only.
 
 1. **Finish guided-installer acceptance.** The installer is merged and natively tested, not released or deployed. Scoped application-image upgrades are implemented with fixture coverage (A2); live digest, readiness, and rollback proof on a Docker-capable host remains external ([APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md](./APPLICATION_IMAGE_UPGRADE_ACCEPTANCE.md)). Memory verification is implemented with fixture coverage (A1); live Supermemory indexing/retrieval proof remains external. Remaining external outcomes: clean supported-host acceptance with real reboot and SSH loss, public DNS/ACME and renewal, external ingress isolation, an approved signing identity with trusted verification-key distribution and artifact hosting, and live ClamAV, SMTP, provider, and Supermemory validation.
 2. **Native runtime search.** **Current no-go recorded 10 September 2026.** The four approved subscription protocols lack one or more required evidence fields: machine-readable run-bound HTTPS URL, bounded source excerpt, retrieval time, optional publication date, and rejectable terminal semantics. [The protocol record](./NATIVE_RUNTIME_SEARCH_PROTOCOL.md) pins each checked source revision and documents the limit. `web_search="disabled"` remains fixed, and parser tests reject a Codex query/action-only item as a non-retryable policy denial. Query events, action URLs, generated prose, inferred URLs, and opaque output cannot become citations or satisfy grounding. This applies only to the checked current protocols; a future adapter still needs a versioned typed result contract and approved egress profile. Parallel remains unimplemented.
@@ -315,7 +327,7 @@ The daily operating-workspace phase (A1–E2) is fixture-complete. Operator reco
 4. **Live connector and personal-provider proof.** Intercom/Notion OAuth and shared sync need deployment credentials; personal Codex authentication needs a user's device-login approval. Automated suites use protocol fixtures and do not claim live account validation.
 5. **Deferred by owner decision:** Helm parity with Compose and native Linux; S3-compatible object storage.
 
-See [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md) for the PR-by-PR record, stack diagram, E1 merge strategy, and authorized merge order. Slice bookkeeping stays in [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). Live-host proof stays external.
+See [OPERATING_WORKSPACE_HANDOFF.md](./OPERATING_WORKSPACE_HANDOFF.md) for the merged PR-by-PR record, historical stack diagram, and current correction evidence. Slice bookkeeping stays in [NEXT_PHASE_EXECUTION.md](./NEXT_PHASE_EXECUTION.md). Live-host proof stays external.
 
 ## 4. External boundaries
 
