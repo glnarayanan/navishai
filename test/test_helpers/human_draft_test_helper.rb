@@ -1,7 +1,7 @@
 module HumanDraftTestHelper
   def create_draft_artifact(workspace:, support_case:, membership:, body: "Generated answer",
     artifact_kind: "draft", result_state: "complete", evidence_status: "available",
-    claim_state: nil, blocker_message: "Material claim reset policy is stale.",
+    claim_state: nil, contract_blockers: nil, blocker_message: "Material claim reset policy is stale.",
     remediation: "Refresh the cited source and run the specialist again.")
     install_crew_test_dependencies(workspace:, membership:)
     role_key = artifact_kind == "draft" ? "resolution_drafter" : "support_investigator"
@@ -25,14 +25,17 @@ module HumanDraftTestHelper
       "fresh_until" => (message.occurred_at + 365.days).iso8601(6)
     }
     available_evidence = evidence.merge("status" => "available")
-    blockers = if result_state == "complete"
-      []
-    else
-      [ {
-        "code" => "claim_#{evidence_status == 'available' ? evaluated_claim_state : evidence_status}",
-        "claim_key" => "reset_policy", "message" => blocker_message,
-        "remediation" => remediation, "severity" => result_state == "blocked" ? "blocking" : "review"
-      } ]
+    blockers = contract_blockers
+    if blockers.nil?
+      blockers = if result_state == "complete"
+        []
+      else
+        [ {
+          "code" => "claim_#{evidence_status == 'available' ? evaluated_claim_state : evidence_status}",
+          "claim_key" => "reset_policy", "message" => blocker_message,
+          "remediation" => remediation, "severity" => result_state == "blocked" ? "blocking" : "review"
+        } ]
+      end
     end
     contract = workspace.resolution_contract_families.find_by!(family_key: "support_resolution").current_version
 

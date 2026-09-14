@@ -1510,6 +1510,23 @@
   font-size: 1rem;
 }
 
+.quality-window-evidence,
+.quality-window {
+  display: grid;
+  gap: 1rem;
+}
+
+.quality-window-evidence > header,
+.quality-window h3 {
+  margin: 0;
+}
+
+.quality-methodology {
+  margin: 0;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 64rem) {
   .quality-columns {
     grid-template-columns: 1fr;
