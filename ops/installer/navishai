@@ -11,6 +11,7 @@ upgrade_kind=""
 app_image_previous=""
 answer_memory_key=""
 selected_host=""
+selected_listen_address=""
 configured_smtp_address=""
 configured_smtp_port=""
 configured_smtp_user_name=""
@@ -91,6 +92,7 @@ validate_answers() {
     seen[$key]=1
     case "$key" in
       NAVISHAI_APP_HOST) selected_host="$(validate_hostname "$value")" ;;
+      NAVISHAI_PUBLIC_LISTEN_ADDRESS) selected_listen_address="$(validate_public_listen_address "$value")" ;;
       NAVISHAI_SUPERMEMORY_API_KEY_FILE)
         secret_file="$value"
         [[ -f $secret_file && ! -L $secret_file && $(stat -c %u "$secret_file") -eq ${EUID:-$(id -u)} ]] || die "secret reference must be an owned regular file"
@@ -170,13 +172,51 @@ validate_hostname() {
   printf '%s\n' "$host"
 }
 
+validate_public_listen_address() {
+  local address="$1" octet
+  IFS=. read -r -a octets <<<"$address"
+  [[ ${#octets[@]} -eq 4 ]] || die "public listen address must be an IPv4 address"
+  for octet in "${octets[@]}"; do
+    [[ $octet =~ ^[0-9]{1,3}$ ]] && (( 10#$octet <= 255 )) || die "public listen address must be an IPv4 address"
+  done
+  # Do not allow loopback, private, link-local, carrier-grade NAT, multicast, or Tailscale ranges.
+  if (( 10#${octets[0]} == 0 || 10#${octets[0]} == 10 || 10#${octets[0]} == 127 || 10#${octets[0]} >= 224 ||
+        (10#${octets[0]} == 100 && 10#${octets[1]} >= 64 && 10#${octets[1]} <= 127) ||
+        (10#${octets[0]} == 169 && 10#${octets[1]} == 254) ||
+        (10#${octets[0]} == 172 && 10#${octets[1]} >= 16 && 10#${octets[1]} <= 31) ||
+        (10#${octets[0]} == 192 && 10#${octets[1]} == 168) )); then
+    die "public listen address must be globally routable"
+  fi
+  public_listen_address_is_default_route "$address" || die "public listen address must be the IPv4 source for the default route"
+  printf '%s\n' "$address"
+}
+
+public_listen_address_is_default_route() {
+  local address="$1" route
+  command -v ip >/dev/null || return 1
+  route="$(ip -4 route get 1.1.1.1 2>/dev/null)" || return 1
+  [[ " $route " == *" src $address "* ]]
+}
+
 prepare_setup_host() {
-  local host
-  [[ -f "$etc/env" ]] && return
+  local host address
+  if [[ -f "$etc/env" ]]; then
+    selected_host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+    selected_listen_address="$(sed -n 's/^NAVISHAI_PUBLIC_LISTEN_ADDRESS=//p' "$etc/env")"
+    [[ -n $selected_host && -n $selected_listen_address ]] || die "managed environment is missing the public host or listen address; restore the matching release before rerunning setup"
+    selected_host="$(validate_hostname "$selected_host")"
+    selected_listen_address="$(validate_public_listen_address "$selected_listen_address")"
+    return
+  fi
   if [[ -z $selected_host ]]; then
     { : </dev/tty; } 2>/dev/null || die "provide NAVISHAI_APP_HOST in a protected answer file"
     read -r -p 'Public hostname: ' host </dev/tty
     selected_host="$(validate_hostname "$host")"
+  fi
+  if [[ -z $selected_listen_address ]]; then
+    { : </dev/tty; } 2>/dev/null || die "provide NAVISHAI_PUBLIC_LISTEN_ADDRESS in a protected answer file"
+    read -r -p 'Public IPv4 listen address: ' address </dev/tty
+    selected_listen_address="$(validate_public_listen_address "$address")"
   fi
 }
 
@@ -201,7 +241,7 @@ preflight_ports() {
 # Prints why a public port cannot be used, or nothing when it is free or owned by this installation's Caddy.
 port_conflict() {
   local port="$1" listeners containers container labels binding
-  listeners="$(ss -ltnH "( sport = :$port )")"
+  listeners="$(ss -ltnH "( sport = :$port )" | awk -v endpoint="$selected_listen_address:$port" -v port="$port" '$4 == endpoint || $4 == "0.0.0.0:" port || $4 == "*:" port || $4 == "[::]:" port')"
   [[ -n $listeners ]] || return 0
   [[ -e "$prefix/current" ]] || { echo "port $port is in use; stop the service using it, then rerun setup"; return 0; }
   containers="$(docker ps --filter "publish=$port" --format '{{.ID}}')" || { echo "cannot inspect port $port ownership; retry setup"; return 0; }
@@ -398,6 +438,7 @@ write_env() {
   local memory_key="${answer_memory_key:-memory-pending-placeholder}"
   cat >"$etc/env" <<EOF
 NAVISHAI_APP_HOST=$selected_host
+NAVISHAI_PUBLIC_LISTEN_ADDRESS=$selected_listen_address
 NAVISHAI_SOURCE_COMMIT=$(cat "$prefix/current/SOURCE_COMMIT")
 NAVISHAI_DATABASE_PASSWORD=$(random)
 NAVISHAI_RUNNER_SHARED_SECRET=$(random)
@@ -529,6 +570,7 @@ doctor() {
   else
     finding failure docker "Docker Engine is missing" "rerun bootstrap to install Docker"
   fi
+  [[ ! -f "$etc/env" ]] || selected_listen_address="$(sed -n 's/^NAVISHAI_PUBLIC_LISTEN_ADDRESS=//p' "$etc/env")"
   if command -v ss >/dev/null; then
     for port in 80 443; do
       problem="$(port_conflict "$port")"
@@ -547,6 +589,13 @@ doctor() {
   if [[ -f "$etc/env" ]]; then
     host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
     finding ok installation "installed for https://$host"
+    if [[ -z $selected_listen_address ]]; then
+      finding failure public_listen_address "managed environment has no explicit public listen address" "restore the matching managed release before rerunning setup"
+    elif ! public_listen_address_is_default_route "$selected_listen_address"; then
+      finding failure public_listen_address "managed public listen address is no longer the IPv4 default-route source" "restore the matching managed release before rerunning setup"
+    else
+      finding ok public_listen_address "Caddy binds only to $selected_listen_address"
+    fi
     if [[ -L "$prefix/current" && -d "$(readlink -f "$prefix/current")" ]]; then
       release="$(basename "$(readlink -f "$prefix/current")")"
       finding ok release "current release $release"
