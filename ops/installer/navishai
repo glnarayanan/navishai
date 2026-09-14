@@ -183,7 +183,7 @@ prepare_setup_host() {
 preflight() {
   [[ $(uname -m) == x86_64 ]] || die "only x86-64 hosts are supported"
   . /etc/os-release
-  [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && $VERSION_ID == 24.04) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04"
+  [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && ($VERSION_ID == 24.04 || $VERSION_ID == 26.04)) ]] || die "supported hosts are Debian 12 and Ubuntu 24.04 or 26.04"
   command -v docker >/dev/null || die "Docker Engine is required"
   docker compose version >/dev/null || die "Docker Compose v2 is required"
   preflight_ports
@@ -521,7 +521,7 @@ doctor() {
   [[ $# -le 1 ]] || die "usage: navishai doctor [--json]"
   if [[ $(uname -m) == x86_64 ]]; then finding ok architecture "x86-64 host"; else finding failure architecture "only x86-64 hosts are supported" "install on a supported x86-64 host"; fi
   . /etc/os-release
-  if [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && $VERSION_ID == 24.04) ]]; then finding ok os "$ID $VERSION_ID is a supported host"; else finding failure os "$ID $VERSION_ID is not a supported host" "use Debian 12 or Ubuntu 24.04"; fi
+  if [[ ($ID == debian && $VERSION_ID == 12) || ($ID == ubuntu && ($VERSION_ID == 24.04 || $VERSION_ID == 26.04)) ]]; then finding ok os "$ID $VERSION_ID is a supported host"; else finding failure os "$ID $VERSION_ID is not a supported host" "use Debian 12 or Ubuntu 24.04 or 26.04"; fi
   if command -v docker >/dev/null; then
     finding ok docker "Docker Engine is installed"
     if docker compose version >/dev/null 2>&1; then finding ok compose "Docker Compose v2 is installed"; else finding failure compose "Docker Compose v2 is missing" "rerun bootstrap to install the Compose plugin"; fi

@@ -6,6 +6,12 @@ require "shellwords"
 require "json"
 
 class InstallerTest < ActiveSupport::TestCase
+  def test_installer_host_allowlists_include_supported_ubuntu_releases
+    [ Rails.root.join("ops/installer/bootstrap"), Rails.root.join("ops/installer/navishai") ].each do |path|
+      assert_includes File.read(path), "VERSION_ID == 24.04 || $VERSION_ID == 26.04"
+    end
+  end
+
   def test_second_setup_rejects_held_lock_before_docker
     Dir.mktmpdir do |root|
       lock = "#{root}/var/lib/navishai/install.lock"
