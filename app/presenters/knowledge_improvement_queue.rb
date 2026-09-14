@@ -5,7 +5,7 @@ class KnowledgeImprovementQueue
 
   Item = Data.define(:source, :reason, :label, :detail, :path, :open_candidate)
   Improved = Data.define(:source, :prior_version, :current_version, :detail, :path)
-  CandidateItem = Data.define(:candidate, :label, :detail)
+  CandidateItem = Data.define(:candidate, :label, :detail, :follow_up)
   Count = Data.define(:key, :label, :value)
 
   attr_reader :items, :improved, :candidates, :resolved_candidates, :counts, :assignees, :resolvable_sources
@@ -37,9 +37,11 @@ class KnowledgeImprovementQueue
     @candidates = open_candidates.sort_by { |candidate|
       [ CANDIDATE_STATUS_ORDER.index(candidate.status), candidate.id ]
     }.first(DETAIL_LIMIT).map { |candidate| candidate_item(candidate) }
-    @resolved_candidates = @workspace.knowledge_improvement_candidates.recently_resolved
-      .includes(:resolved_knowledge_source, :resolved_knowledge_source_version, :assigned_to_membership)
-      .limit(DETAIL_LIMIT).map { |candidate| resolved_item(candidate) }
+    resolved = @workspace.knowledge_improvement_candidates.recently_resolved
+      .includes(:resolved_knowledge_source, { resolved_knowledge_source_version: :knowledge_source }, :assigned_to_membership)
+      .limit(DETAIL_LIMIT).to_a
+    follow_ups = KnowledgeImprovementFollowUp.build(workspace: @workspace, candidates: resolved)
+    @resolved_candidates = resolved.map { |candidate| resolved_item(candidate, follow_ups.fetch(candidate.id)) }
     @assignees = @workspace.memberships.includes(:user).select(&:can_manage_work?)
     @resolvable_sources = sources.select { |source| source.current_version.present? && !source.deleted? && !source.stale? }
       .sort_by { |source| [ source.display_title, source.id ] }.first(DETAIL_LIMIT)
@@ -116,16 +118,17 @@ class KnowledgeImprovementQueue
       else
         candidate.detail
       end
-      CandidateItem.new(candidate:, label: candidate.reason_label, detail:)
+      CandidateItem.new(candidate:, label: candidate.reason_label, detail:, follow_up: nil)
     end
 
-    def resolved_item(candidate)
+    def resolved_item(candidate, follow_up)
       version = candidate.resolved_knowledge_source_version
       source = candidate.resolved_knowledge_source
       CandidateItem.new(
         candidate:,
         label: "Resolved",
-        detail: "Linked #{source.display_title} version #{version.version_number}."
+        detail: "Linked #{source.display_title} version #{version.version_number}.",
+        follow_up:
       )
     end
 end

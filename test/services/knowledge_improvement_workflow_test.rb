@@ -38,6 +38,13 @@ class KnowledgeImprovementWorkflowTest < ActiveSupport::TestCase
     assert_equal manager, resolved.assigned_to_membership
     assert_equal source, resolved.resolved_knowledge_source
     assert_equal source.current_version, resolved.resolved_knowledge_source_version
+    assert_equal support_case, resolved.support_case
+    assert_equal @at + 3.minutes, resolved.resolved_at
+    resolution_event = @workspace.audit_events.find_by!(
+      action: "knowledge.improvement_resolved", subject_type: candidate.class.name, subject_id: candidate.id
+    )
+    assert_equal({ "from_state" => "assigned", "to_state" => "resolved",
+      "knowledge_source_version_id" => source.current_version.id }, resolution_event.metadata)
     assert_equal %w[
       knowledge.improvement_created knowledge.improvement_triaged knowledge.improvement_assigned
       knowledge.improvement_resolved
