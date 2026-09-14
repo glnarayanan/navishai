@@ -8,6 +8,14 @@
   reverse_proxy app-net:3000
 }
 
+www.{$NAVISHAI_APP_HOST} {
+  redir https://{$NAVISHAI_APP_HOST}{uri} permanent
+}
+
 http://{$NAVISHAI_APP_HOST} {
   redir https://{host}{uri} permanent
+}
+
+http://www.{$NAVISHAI_APP_HOST} {
+  redir https://{$NAVISHAI_APP_HOST}{uri} permanent
 }

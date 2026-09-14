@@ -6,6 +6,14 @@ require "shellwords"
 require "json"
 
 class InstallerTest < ActiveSupport::TestCase
+  def test_caddy_redirects_www_to_the_https_apex_without_changing_apex_proxying
+    caddyfile = File.read(Rails.root.join("ops/installer/Caddyfile"))
+
+    assert_includes caddyfile, "{$NAVISHAI_APP_HOST} {\n  encode zstd gzip\n  reverse_proxy app-net:3000\n}"
+    assert_includes caddyfile, "www.{$NAVISHAI_APP_HOST} {\n  redir https://{$NAVISHAI_APP_HOST}{uri} permanent\n}"
+    assert_includes caddyfile, "http://www.{$NAVISHAI_APP_HOST} {\n  redir https://{$NAVISHAI_APP_HOST}{uri} permanent\n}"
+  end
+
   def test_installer_host_allowlists_include_supported_ubuntu_releases
     [ Rails.root.join("ops/installer/bootstrap"), Rails.root.join("ops/installer/navishai") ].each do |path|
       assert_includes File.read(path), "VERSION_ID == 24.04 || $VERSION_ID == 26.04"
