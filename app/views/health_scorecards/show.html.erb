@@ -162,34 +162,48 @@
             <strong>Preview and backtest</strong>
             <small>
               <% if @backtest %>
-                <%= pluralize(@backtest.sample_count, "snapshot") %> tested · <%= @backtest.results.fetch("summary").fetch("changed_count") %> scores changed
+                <%= pluralize(@backtest.results.fetch("summary").fetch("current_account_count", 0), "current account") %> compared · <%= @backtest.results.fetch("summary").fetch("changed_count") %> scores changed
               <% else %>
                 Compare this version with retained account snapshots.
               <% end %>
             </small>
           </span>
         </summary>
-        <header><div><h2 id="preview-title">Preview and backtest</h2><p>This preview uses at most <%= HealthScorecardBacktester::MAX_SNAPSHOTS %> retained snapshots. Publishing never rewrites those past results.</p></div></header>
+        <header><div><h2 id="preview-title">Preview and backtest</h2><p>Every current account is compared separately from a capped retained-history replay. Publishing never rewrites past results.</p></div></header>
         <% if @backtest %>
           <% summary = @backtest.results.fetch("summary") %>
           <% current_rows = @backtest.results.fetch("current") %>
           <div class="scorecard-preview-stats">
-            <div><strong><%= @backtest.sample_count %></strong><span>snapshots tested</span></div>
+            <div><strong><%= summary.fetch("current_account_count", current_rows.size) %></strong><span>current accounts</span></div>
+            <div><strong><%= summary.fetch("historical_snapshot_count", @backtest.sample_count) %></strong><span>historical snapshots</span></div>
             <div><strong><%= summary.fetch("changed_count") %></strong><span>scores changed</span></div>
+            <div><strong><%= summary.fetch("no_change_count", 0) %></strong><span>no change</span></div>
+            <div><strong><%= summary.fetch("incomparable_count", 0) %></strong><span>need inputs</span></div>
             <div><strong><%= summary.fetch("band_changed_count") %></strong><span>bands changed</span></div>
-            <div><strong><%= summary.fetch("at_risk_count") %></strong><span>at risk</span></div>
+            <div><strong><%= summary.fetch("no_data_count", 0) %></strong><span>no health data</span></div>
           </div>
           <% if current_rows.any? %>
             <div class="table-scroll scorecard-compare-scroll" role="region" tabindex="0" aria-label="Score comparison by account">
               <table class="scorecard-compare-table">
-                <thead><tr><th>Account</th><th>Published snapshot</th><th>Proposal</th><th>Change</th></tr></thead>
+                <thead><tr><th>Account</th><th>Published snapshot</th><th>Proposal</th><th>Comparison</th><th>Signal reasons</th></tr></thead>
                 <tbody>
                   <% current_rows.each do |row| %>
+                    <% comparison_status = row.fetch("comparison_status", row.fetch("existing_score") == row.fetch("proposed_score") ? "no_change" : "changed") %>
                     <tr>
                       <th scope="row"><%= row.fetch("account_name") %></th>
-                      <td><%= row.fetch("existing_score") %> · <%= row.fetch("existing_risk_level").humanize %></td>
-                      <td><strong><%= row.fetch("proposed_score") %> · <%= row.fetch("proposed_risk_level").humanize %></strong></td>
-                      <td><%= row.fetch("proposed_score") - row.fetch("existing_score") %></td>
+                      <td><%= row.fetch("existing_score") ? "#{row.fetch("existing_score")} · #{row.fetch("existing_risk_level").humanize}" : "No retained snapshot" %></td>
+                      <td><%= row.fetch("proposed_score") ? "#{row.fetch("proposed_score")} · #{row.fetch("proposed_risk_level").humanize}" : "Not comparable" %></td>
+                      <td><%= comparison_status.humanize %></td>
+                      <td>
+                        <details>
+                          <summary>Inspect</summary>
+                          <ul>
+                            <% row.fetch("signal_reasons", []).each do |reason| %>
+                              <li><strong><%= reason.fetch("signal_key").humanize %>:</strong> <%= reason.fetch("reason") %></li>
+                            <% end %>
+                          </ul>
+                        </details>
+                      </td>
                     </tr>
                   <% end %>
                 </tbody>
@@ -197,20 +211,31 @@
             </div>
             <ul class="scorecard-compare-cards">
               <% current_rows.each do |row| %>
+                <% comparison_status = row.fetch("comparison_status", row.fetch("existing_score") == row.fetch("proposed_score") ? "no_change" : "changed") %>
                 <li>
                   <h3><%= row.fetch("account_name") %></h3>
                   <dl>
-                    <div><dt>Published snapshot</dt><dd><%= row.fetch("existing_score") %> · <%= row.fetch("existing_risk_level").humanize %></dd></div>
-                    <div><dt>Proposal</dt><dd><%= row.fetch("proposed_score") %> · <%= row.fetch("proposed_risk_level").humanize %></dd></div>
-                    <div><dt>Change</dt><dd><%= row.fetch("proposed_score") - row.fetch("existing_score") %></dd></div>
+                    <div><dt>Published snapshot</dt><dd><%= row.fetch("existing_score") ? "#{row.fetch("existing_score")} · #{row.fetch("existing_risk_level").humanize}" : "No retained snapshot" %></dd></div>
+                    <div><dt>Proposal</dt><dd><%= row.fetch("proposed_score") ? "#{row.fetch("proposed_score")} · #{row.fetch("proposed_risk_level").humanize}" : "Not comparable" %></dd></div>
+                    <div><dt>Comparison</dt><dd><%= comparison_status.humanize %></dd></div>
                   </dl>
+                  <details>
+                    <summary>Signal reasons</summary>
+                    <ul>
+                      <% row.fetch("signal_reasons", []).each do |reason| %>
+                        <li><strong><%= reason.fetch("signal_key").humanize %>:</strong> <%= reason.fetch("reason") %></li>
+                      <% end %>
+                    </ul>
+                  </details>
                 </li>
               <% end %>
             </ul>
           <% end %>
           <p class="scorecard-evidence">
-            At most <%= summary.fetch("snapshot_limit", HealthScorecardBacktester::MAX_SNAPSHOTS) %> retained snapshots
-            <% if summary["truncated"] %> · older snapshots were omitted<% end %>
+            Current coverage: <%= summary.fetch("current_account_count", current_rows.size) %> Accounts, including <%= summary.fetch("no_data_count", 0) %> without a retained health assessment.
+            Historical replay: <%= summary.fetch("historical_snapshot_count", @backtest.sample_count) %> of at most <%= summary.fetch("snapshot_limit", HealthScorecardBacktester::MAX_SNAPSHOTS) %> snapshots, sampled <%= summary.fetch("historical_sampling_rule", "most recent first") %>
+            <% if summary.fetch("historical_snapshot_omitted_count", 0).positive? %> · <%= pluralize(summary.fetch("historical_snapshot_omitted_count"), "older snapshot") %> omitted<% end %>
+            <% if summary["historical_starts_at"] %> · <%= Time.iso8601(summary.fetch("historical_starts_at")).to_fs(:long) %> to <%= Time.iso8601(summary.fetch("historical_ends_at")).to_fs(:long) %><% else %> · no retained snapshots<% end %>
             · evidence digest <code><%= @backtest.source_digest %></code>
             · <%= @backtest.generated_at.to_fs(:long) %>
           </p>
@@ -239,10 +264,12 @@
         <% if @backtest %>
           <% summary = @backtest.results.fetch("summary") %>
           <dl class="case-facts">
-            <div><dt>Snapshots</dt><dd><%= @backtest.sample_count %> of at most <%= HealthScorecardBacktester::MAX_SNAPSHOTS %></dd></div>
+            <div><dt>Current Accounts</dt><dd><%= summary.fetch("current_account_count", @backtest.results.fetch("current").size) %></dd></div>
+            <div><dt>History</dt><dd><%= summary.fetch("historical_snapshot_count", @backtest.sample_count) %> of at most <%= HealthScorecardBacktester::MAX_SNAPSHOTS %></dd></div>
             <div><dt>Scores changed</dt><dd><%= summary.fetch("changed_count") %></dd></div>
+            <div><dt>No change</dt><dd><%= summary.fetch("no_change_count", 0) %></dd></div>
+            <div><dt>Needs inputs</dt><dd><%= summary.fetch("incomparable_count", 0) + summary.fetch("no_data_count", 0) %></dd></div>
             <div><dt>Bands changed</dt><dd><%= summary.fetch("band_changed_count") %></dd></div>
-            <div><dt>At risk</dt><dd><%= summary.fetch("at_risk_count") %></dd></div>
           </dl>
         <% else %>
           <p class="muted-copy">Run a preview against retained snapshots before publishing.</p>
