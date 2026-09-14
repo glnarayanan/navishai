@@ -23,6 +23,9 @@ class SupportQualityControllerTest < ActionDispatch::IntegrationTest
       assert_select "h1", "Support quality"
       assert_select ".nav-label", "Quality"
       assert_select "[data-metric=open_cases] strong", "0"
+      assert_select "[data-window-days]", 3
+      assert_select "[data-window-days='7'] [data-window-metric=known_cost]", 1
+      assert_select ".quality-window-evidence", text: /do not estimate time saved, acceptance, or AI resolution/
       sign_out
     end
   end

@@ -89,4 +89,42 @@
       <% end %>
     </section>
   </div>
+
+  <section class="quality-window-evidence" aria-labelledby="window-evidence-title">
+    <header>
+      <h2 id="window-evidence-title">Grounded workflow evidence</h2>
+      <p>Fixed windows only. Counts and durations link back to their contributing case or run; they do not estimate time saved, acceptance, or AI resolution.</p>
+    </header>
+
+    <% @readout.windows.each do |window| %>
+      <article class="quality-window" data-window-days="<%= window.days %>">
+        <h3><%= window.label %></h3>
+        <div class="quality-metrics" aria-label="<%= window.label %> workflow evidence">
+          <% window.metrics.each do |metric| %>
+            <article class="quality-metric tone-<%= metric.tone %>" data-window-metric="<%= metric.key %>">
+              <span><%= metric.label %></span>
+              <strong><%= metric.value %></strong>
+              <p><%= metric.detail %></p>
+            </article>
+          <% end %>
+        </div>
+
+        <p class="quality-methodology"><%= window.methodology %></p>
+        <% if window.rows.empty? %>
+          <p class="quality-empty">No contributing records were retained for this window.</p>
+        <% else %>
+          <ul class="quality-list" aria-label="<%= window.label %> contributing records">
+            <% window.rows.each do |row| %>
+              <li>
+                <%= link_to row.path do %>
+                  <%= row.title %>
+                  <span><%= row.detail %></span>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </article>
+    <% end %>
+  </section>
 </main>
