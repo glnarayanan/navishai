@@ -8,8 +8,15 @@ state="${managed_root:-}/var/lib/navishai"
 project="${NAVISHAI_COMPOSE_PROJECT:-navishai}"
 operator_command="${managed_root:-}/usr/local/bin/navishai"
 verified_bundle_staging=""
+upgrade_build_worktree=""
+upgrade_candidate_path=""
+update_source_checkout=""
+update_source_owner=""
+update_source_ref=""
+installer_lock_held=0
 upgrade_kind=""
 app_image_previous=""
+upgrade_recovery_backup=""
 answer_memory_key=""
 selected_host=""
 selected_listen_address=""
@@ -19,6 +26,8 @@ configured_smtp_user_name=""
 configured_smtp_password=""
 configured_smtp_from=""
 configured_scanner_address=""
+configured_update_source_path=""
+configured_update_source_ref=""
 
 die() { echo "navishai: $*" >&2; exit 1; }
 need_root() { [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 || ${EUID:-$(id -u)} -eq 0 ]] || die "run with sudo"; }
@@ -73,11 +82,13 @@ progress() {
   mv -f "$temporary" "$state/install.json"
 }
 lock() {
+  [[ $installer_lock_held -eq 1 ]] && return
   mkdir -p "$state"
   command -v flock >/dev/null || die "flock is required"
   exec {install_lock_fd}>"$state/install.lock"
   flock -n "$install_lock_fd" || die "another mutating operation is running"
-  trap '[[ -z $verified_bundle_staging ]] || rm -rf "$verified_bundle_staging"' EXIT
+  installer_lock_held=1
+  trap '[[ -z $verified_bundle_staging ]] || rm -rf "$verified_bundle_staging"; [[ -z $upgrade_candidate_path ]] || rm -f "$upgrade_candidate_path"; [[ -z $upgrade_build_worktree || -z $update_source_checkout ]] || source_git worktree remove --force "$upgrade_build_worktree" >/dev/null 2>&1 || true' EXIT
 }
 validate_answers() {
   local mode key value secret_file secret_value
@@ -114,6 +125,8 @@ validate_answers() {
       NAVISHAI_SYSTEM_SMTP_FROM) configured_smtp_from="$(validate_mailbox "$value")" ;;
       NAVISHAI_ATTACHMENT_SCANNER) [[ $value == clamd ]] || die "only the clamd attachment scanner is supported" ;;
       NAVISHAI_CLAMD_ADDRESS) configured_scanner_address="$(validate_clamd_address "$value")" ;;
+      NAVISHAI_UPDATE_SOURCE_PATH) configured_update_source_path="$(validate_update_source_path "$value")" ;;
+      NAVISHAI_UPDATE_SOURCE_REF) configured_update_source_ref="$(validate_update_source_ref "$value")" ;;
       *) die "answer file contains an unsupported field: $key" ;;
     esac
   done <"$NAVISHAI_ANSWERS_FILE"
@@ -171,6 +184,32 @@ validate_hostname() {
     [[ ${#label} -le 63 && "$label" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || die "a public hostname is required for production TLS"
   done
   printf '%s\n' "$host"
+}
+
+validate_update_source_path() {
+  local path="$1" owner
+  [[ -n $path && $path == /* && -d $path && ! -L $path && ! -L "$path/.git" && -d "$path/.git" ]] || die "update source path must be an absolute, non-symlink Git checkout"
+  owner="$(stat -c %U "$path")"
+  [[ $owner != UNKNOWN && ($owner != root || ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1) ]] || die "update source checkout must be owned by a non-root deployment user"
+  getent passwd "$owner" >/dev/null || die "update source checkout owner is unavailable"
+  update_source_checkout="$path"
+  update_source_owner="$owner"
+  source_git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "update source path must be a Git working tree"
+  printf '%s\n' "$path"
+}
+
+source_git() {
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    runuser --user "$update_source_owner" -- git -C "$update_source_checkout" "$@"
+  else
+    git -C "$update_source_checkout" "$@"
+  fi
+}
+
+validate_update_source_ref() {
+  local ref="$1"
+  [[ $ref =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && $ref != *..* && $ref != */.git* ]] || die "update source ref is invalid"
+  printf '%s\n' "$ref"
 }
 
 validate_public_listen_address() {
@@ -454,6 +493,8 @@ NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET=$(random)
 NAVISHAI_SECRET_KEY_BASE=$(random)
 NAVISHAI_SUPERMEMORY_API_KEY=$memory_key
 NAVISHAI_MEMORY_PENDING=1
+${configured_update_source_path:+NAVISHAI_UPDATE_SOURCE_PATH=$configured_update_source_path}
+${configured_update_source_ref:+NAVISHAI_UPDATE_SOURCE_REF=$configured_update_source_ref}
 NAVISHAI_BOOTSTRAP_TOKEN=$(random)
 NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)
 NAVISHAI_RUNNER_CERTS_PATH=$etc/runner
@@ -776,6 +817,7 @@ restore() {
   fi
   ln -sfn "$release" "$prefix/current" || restore_failure current_align "$?"
   install_operator_command || restore_failure current_align "$?"
+  sync_source_commit_env || restore_failure current_align "$?"
   progress restore_completed
 }
 restore_failure() {
@@ -935,12 +977,8 @@ upgrade_app_image() {
   app_image_finish
 }
 
-upgrade() {
-  need_root
-  [[ $# -eq 3 && $3 == --confirm-apply ]] || die "usage: navishai upgrade VERIFIED_BACKUP TARGET.tar --confirm-apply"
+apply_staged_upgrade() {
   local backup="$1" target="$2"
-  lock
-  stage_bundle "$target"
   validate_staged_target
   refuse_blocked_upgrade
   disk_check "$target"
@@ -979,8 +1017,119 @@ upgrade() {
   progress upgrade_completed
 }
 
+configured_update_source() {
+  local path ref
+  path="$(sed -n 's/^NAVISHAI_UPDATE_SOURCE_PATH=//p' "$etc/env")"
+  ref="$(sed -n 's/^NAVISHAI_UPDATE_SOURCE_REF=//p' "$etc/env")"
+  [[ -n $path && $(wc -l <<<"$path") -eq 1 ]] || die "configure one NAVISHAI_UPDATE_SOURCE_PATH before using navishai upgrade"
+  validate_update_source_path "$path" >/dev/null
+  if [[ -z $ref ]]; then ref=main; fi
+  [[ $(wc -l <<<"$ref") -eq 1 ]] || die "configure one NAVISHAI_UPDATE_SOURCE_REF before using navishai upgrade"
+  validate_update_source_ref "$ref" >/dev/null
+  source_git remote get-url origin >/dev/null 2>&1 || die "update source checkout must have an origin remote"
+  update_source_ref="$ref"
+}
+
+build_update_candidate() {
+  local source="$1" ref="$2" owner="$3" commit worktree candidate current
+  update_source_checkout="$source"
+  update_source_owner="$owner"
+  source_git fetch --quiet origin "$ref" || die "could not fetch the configured update source"
+  commit="$(source_git rev-parse --verify FETCH_HEAD^{commit})" || die "configured update source did not resolve to a commit"
+  [[ $commit =~ ^[0-9a-f]{40}$ ]] || die "configured update source resolved to an invalid commit"
+  current="$(tr -d '\n' <"$prefix/current/SOURCE_COMMIT")"
+  [[ $current == "$commit" ]] && { echo "Already current at source commit $commit."; return 10; }
+  source_git merge-base --is-ancestor "$current" "$commit" || die "configured update target is not a descendant of the installed source commit"
+  worktree="$(mktemp -d)"
+  rmdir "$worktree"
+  source_git worktree add --detach "$worktree" "$commit" >/dev/null || die "could not create an immutable update worktree"
+  upgrade_build_worktree="$worktree"
+  candidate="$(mktemp --suffix=.tar)"
+  upgrade_candidate_path="$candidate"
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then chown "$owner" "$candidate" || die "could not prepare the update candidate destination"; fi
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then runuser --user "$owner" -- "$worktree/script/candidate_bundle" "$candidate" "$commit"; else "$worktree/script/candidate_bundle" "$candidate" "$commit"; fi || die "could not build the immutable update candidate"
+  stage_bundle "$candidate"
+  rm -f "$candidate"
+  upgrade_candidate_path=""
+  [[ $(tr -d '\n' <"$verified_bundle_staging/release/SOURCE_COMMIT") == "$commit" ]] || die "built update candidate source commit does not match its resolved source"
+}
+
+automatic_upgrade_backup() {
+  local commit="$1" backup_root backup_path
+  backup_root="${NAVISHAI_BACKUP_ROOT:-${managed_root:-}/var/backups/navishai}"
+  mkdir -p "$backup_root"
+  backup_path="$backup_root/pre-upgrade-${commit}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  operation "$prefix/current/ops/compose/backup" "$backup_path" >&2
+  operation "$prefix/current/ops/compose/verify_backup" "$backup_path" >&2
+  printf '%s\n' "$backup_path"
+}
+
+upgrade_from_source() {
+  local requested_ref="${1:-}" source ref owner target_commit backup host build_status
+  [[ -f "$etc/env" && -L "$prefix/current" && -f "$prefix/current/SOURCE_COMMIT" ]] || die "not installed"
+  lock
+  configured_update_source
+  source="$update_source_checkout"
+  ref="$update_source_ref"
+  owner="$update_source_owner"
+  if [[ -n $requested_ref ]]; then
+    validate_update_source_ref "$requested_ref" >/dev/null
+    ref="$requested_ref"
+  fi
+  if build_update_candidate "$source" "$ref" "$owner"; then :; else build_status=$?; [[ $build_status -eq 10 ]] && return 0; return "$build_status"; fi
+  target_commit="$(tr -d '\n' <"$verified_bundle_staging/release/SOURCE_COMMIT")"
+  validate_staged_target
+  refuse_blocked_upgrade
+  disk_check "$verified_bundle_staging/images.tar"
+  backup="$(automatic_upgrade_backup "$target_commit")"
+  upgrade_recovery_backup="$backup"
+  apply_staged_upgrade "$backup" "$verified_bundle_staging/images.tar"
+  host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+  if ! verify_https "$host"; then
+    echo "navishai: upgraded release failed public HTTPS health; restoring the verified pre-upgrade backup" >&2
+    if restore "$backup" --confirm-destroy && verify_https "$host"; then
+      die "upgraded release failed public HTTPS health; the verified pre-upgrade release was restored"
+    fi
+    die "upgraded release failed public HTTPS health and automatic recovery failed; restore $backup --confirm-destroy"
+  fi
+  echo "Upgrade completed: source commit $(cat "$prefix/current/SOURCE_COMMIT"), release $(basename "$(readlink -f "$prefix/current")")."
+  echo "Verified recovery backup: $backup (restore with: navishai restore $backup --confirm-destroy)"
+  upgrade_recovery_backup=""
+}
+
+upgrade() {
+  need_root
+  if [[ $# -eq 0 ]]; then
+    upgrade_from_source
+    return
+  fi
+  if [[ $# -eq 2 && $1 == --target ]]; then
+    upgrade_from_source "$2"
+    return
+  fi
+  [[ ${NAVISHAI_TEST_ALLOW_UNPRIVILEGED:-} == 1 ]] || die "usage: navishai upgrade"
+  [[ $# -eq 3 && $3 == --confirm-apply ]] || die "usage: navishai upgrade"
+  local backup="$1" target="$2"
+  lock
+  stage_bundle "$target"
+  apply_staged_upgrade "$backup" "$target"
+}
+
 upgrade_failure() {
   local phase="$1" status="$2"
+  if [[ -n $upgrade_recovery_backup ]]; then
+    echo "navishai: upgrade $phase failed; restoring verified pre-upgrade backup" >&2
+    if restore "$upgrade_recovery_backup" --confirm-destroy; then
+      local host
+      host="$(sed -n 's/^NAVISHAI_APP_HOST=//p' "$etc/env")"
+      if verify_https "$host"; then
+        progress upgrade_recovered
+        printf 'navishai: upgrade %s failed; the verified pre-upgrade release was restored from %s\n' "$phase" "$upgrade_recovery_backup" >&2
+        exit "$status"
+      fi
+    fi
+    printf 'navishai: upgrade %s failed and automatic recovery was unsuccessful; restore %s --confirm-destroy\n' "$phase" "$upgrade_recovery_backup" >&2
+  fi
   compose stop caddy jobs web runner supermemory || true
   progress "upgrade_${phase}_restore_required"
   printf 'navishai: upgrade %s failed; restore from the verified backup before retrying\n' "$phase" >&2
