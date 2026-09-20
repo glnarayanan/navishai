@@ -66,4 +66,4 @@ gem "bigdecimal", ">= 4.0", require: false
 
 # Rails 8.1.3.1 passes JSON.parse options positionally, which json 3.0 rejects on
 # every jsonb read. Remove this cap once a Rails release supports json 3.
-gem "json", "< 3", require: false
+gem "json", "< 4", require: false
