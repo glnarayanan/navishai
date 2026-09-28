@@ -20,8 +20,11 @@ class KnowledgeImprovementQueue
 
   def build
     sources = @workspace.knowledge_sources.includes(
-      :current_version, :versions, :knowledge_sync_observation, :intercom_connection, :notion_knowledge_connection
+      :knowledge_sync_observation, :intercom_connection, :notion_knowledge_connection
     )
+    ActiveRecord::Associations::Preloader.new(
+      records: sources.to_a, associations: [ :current_version, :versions ], scope: KnowledgeSourceVersion.metadata
+    ).call
     failed_intercom = failed_connection_ids(:intercom_connection_id)
     failed_notion = failed_connection_ids(:notion_knowledge_connection_id)
     open_candidates = @workspace.knowledge_improvement_candidates.open_work

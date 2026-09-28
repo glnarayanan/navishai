@@ -31,6 +31,25 @@ class KnowledgeSourcesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#new-version-title", count: 0
   end
 
+  test "library metadata omits document bodies without narrowing search or detail reads" do
+    sign_in_as users(:owner)
+    queries = []
+    ActiveSupport::Notifications.subscribed(->(event) { queries << event.payload[:sql] }, "sql.active_record") do
+      get workspace_knowledge_sources_path(@workspace)
+    end
+    assert_response :success
+    assert_select ".knowledge-source-main strong", "Account access"
+    loads = queries.grep(/SELECT .* FROM "knowledge_source_versions"/)
+    assert_not_empty loads
+    assert loads.none? { |sql| sql.match?(/"knowledge_source_versions"\.\*|"content"|"search_vector"/) }
+
+    get workspace_knowledge_sources_path(@workspace), params: { q: "recovery" }
+    assert_select ".knowledge-results", text: /owner recovery link/
+    get workspace_knowledge_source_path(@workspace, @source)
+    assert_response :success
+    assert_match "Use the owner recovery link.", response.body
+  end
+
   test "a manager creates, versions, and deletes a source with durable history" do
     manager = @workspace.memberships.create!(
       user: User.create!(email_address: "knowledge-manager@example.com", password: "password12345", verified_at: Time.current),

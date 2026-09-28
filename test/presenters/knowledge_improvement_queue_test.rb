@@ -89,8 +89,11 @@ class KnowledgeImprovementQueueTest < ActiveSupport::TestCase
     assert_equal source, improved.source
     assert_equal prior, improved.prior_version
     assert_equal source.current_version, improved.current_version
+    assert_not improved.prior_version.has_attribute?(:content)
+    assert_not improved.current_version.has_attribute?(:search_vector)
     assert_equal 2, source.versions.size
     assert prior.reload.stale?
+    assert_equal "Legacy cancellation steps", prior.content
     assert_not source.current_version.stale?
     assert_equal 1, metric(queue, "improved").value
     assert_equal 0, metric(queue, "attention").value
