@@ -98,13 +98,13 @@ class AccountHealth
       signals = [
         number_signal("open_cases", open_count,
           "support_cases", "account://#{account.id}/cases", nil, at,
-          references_for("support_case", open_cases)),
+          references_for("support_case", open_cases, count: open_count)),
         number_signal("sla_breaches", breach_count,
           "sla", "account://#{account.id}/slas", nil, at,
-          references_for("case_sla", breached_slas)),
+          references_for("case_sla", breached_slas, count: breach_count)),
         number_signal("internal_notes_90d", note_count,
           "case_notes", "account://#{account.id}/notes", notes_since, at,
-          references_for("case_note", notes)),
+          references_for("case_note", notes, count: note_count)),
         number_signal("customer_inactivity_days", inactivity_days,
           "conversation", "account://#{account.id}/conversations", last_inbound, at,
           references_for("conversation_message", inbound.order(occurred_at: :desc, id: :desc).limit(1))),
@@ -181,8 +181,7 @@ class AccountHealth
       scope.where(tag_id: repeated_tag_ids)
     end
 
-    def references_for(kind, relation)
-      count = relation.count
+    def references_for(kind, relation, count: relation.count)
       ids = relation.reorder(:id).limit(MAX_EVIDENCE_REFS).pluck(:id)
       [ ids.map { |id| { "kind" => kind, "id" => id } }, [ count - ids.size, 0 ].max ]
     end
