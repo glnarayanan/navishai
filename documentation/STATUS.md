@@ -148,7 +148,11 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
-### 28 September 2026 read-path optimization (local, uncommitted)
+### 28 September 2026 knowledge metadata reads
+
+Knowledge library and improvement-queue reads preload version metadata without document content or search vectors. Search excerpts and source-detail pages still read full versions; ordering, counts, permissions, and displayed actions are unchanged. Eleven focused Rails tests passed (118 assertions), five browser journeys passed (56 assertions), and RuboCop passed. A warm, uncached queue benchmark with 100 sources and five versions per source omitted 36,000,700 bytes of historical content, excluding current-version duplication and search vectors. Across 15 alternating measured pairs after two warm-up pairs, median latency fell from 94.33 to 55.90 ms and p95 from 189.69 to 76.05 ms. Attention rows, improved-version IDs, counts, and resolvable-source order matched. These are local fixture results, not production HTTP measurements.
+
+### 28 September 2026 read-path optimization
 
 Quality duration details now batch-load Workspace-scoped cases and conversations, retaining exact aggregate counts, medians, detail limits, and row order. Sent-lineage totals use a SQL count instead of loading every lineage into Ruby. Account health reuses three counts inside the existing locked calculation. Four Go adapters share event sequencing; provider-specific process, cancellation, policy, and usage handling remain separate. No CSS, views, or browser interactions changed.
 
@@ -156,7 +160,7 @@ A local, warm benchmark compared the full 7/30/90-day Quality readout against th
 
 Focused and related Rails checks passed: 59 runs, 567 assertions, including scorecard publish concurrency and bounded evidence. Five Quality, account-health, and account-queue browser journeys passed with 73 assertions. The new duration regression test fails against the original loader and passes against the batch loader. RuboCop, Go formatting, `go vet ./...`, `go test ./...`, adapter race tests, and `git diff --check` passed. The full `bin/ci` and post-optimization coverage measurement have not run; prior coverage figures below apply only to test pruning. Ponytail Audit and CE Code Review were unavailable; direct diff and risk-based review covered these changes.
 
-These production edits remove a net 27 lines, not 20% of the codebase. The broader queue/conditional-aggregate rewrite, renewal prefetch, and CSS/view consolidation remain unimplemented: query-plan evidence, lock-boundary equivalence, and cascade/render equivalence still need proof. The 20% code-reduction and whole-application performance targets remain unmet. Nothing from this optimization pass is committed, pushed, or deployed.
+These production edits remove a net 27 lines, not 20% of the codebase. The broader queue/conditional-aggregate rewrite, renewal prefetch, and CSS/view consolidation remain unimplemented: query-plan evidence, lock-boundary equivalence, and cascade/render equivalence still need proof. The 20% code-reduction and whole-application performance targets remain unmet. The owner requested atomic commits and stacked PRs on 28 September; these changes are not deployed.
 
 ### 28 September 2026 test pruning
 

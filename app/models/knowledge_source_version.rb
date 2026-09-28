@@ -16,6 +16,8 @@ class KnowledgeSourceVersion < ApplicationRecord
   validate :actor_matches_membership
   validate :url_matches_source
 
+  scope :metadata, -> { select(column_names - %w[content search_vector]) }
+
   def readonly?
     persisted?
   end

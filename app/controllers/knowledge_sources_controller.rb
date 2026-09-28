@@ -80,7 +80,10 @@ class KnowledgeSourcesController < ApplicationController
       workspace = Current.require_workspace!
       @query = params[:q].to_s
       @support_case = workspace.support_cases.find(params[:support_case_id]) if params[:support_case_id].present?
-      @sources = KnowledgeApplicabilityScope.new(workspace:, support_case: @support_case).sources.includes(:current_version, :knowledge_sync_observation).order(deleted_at: :asc, title: :asc, id: :asc)
+      @sources = KnowledgeApplicabilityScope.new(workspace:, support_case: @support_case).sources.includes(:knowledge_sync_observation).order(deleted_at: :asc, title: :asc, id: :asc)
+      ActiveRecord::Associations::Preloader.new(
+        records: @sources.to_a, associations: :current_version, scope: KnowledgeSourceVersion.metadata
+      ).call
       @results = KnowledgeSearch.search(workspace:, query: @query, support_case: @support_case)
       @can_manage = Current.require_membership!.can_manage_work?
     end
