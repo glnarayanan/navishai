@@ -161,6 +161,33 @@ class ReliabilityCockpitTest < ActiveSupport::TestCase
       /SELECT DISTINCT "execution_runs"\."crew_task_id" FROM "execution_runs"/
     )
     assert_equal 1, active_task_queries.size
+    assert_equal "1 unconfirmed admission, 2 retryable failures, and 2 terminal runs.",
+      cockpit.groups.index_by(&:key).fetch("execution").summary
+    assert_equal 1, queries.grep(/SELECT COUNT.*FROM "execution_runs"/).size
+  end
+
+  test "memory aggregates include rows beyond the detail cap and preserve timestamp and priority" do
+    (Array.new(21, "unknown") + %w[failed pending indexing queued indexed]).each_with_index do |status, index|
+      @workspace.memory_index_entries.create!(
+        memory_record: create_memory("Memory #{index}"), status:,
+        attempt_count: status == "pending" ? 0 : 1,
+        failure_code: %w[failed unknown].include?(status) ? "remote_unavailable" : nil,
+        external_document_id: %w[queued indexed].include?(status) ? "document-#{index}" : nil,
+        external_status: status == "queued" ? "queued" : (status == "indexed" ? "done" : nil),
+        indexed_at: status == "indexed" ? @now - 4.minutes : nil,
+        last_attempted_at: status == "pending" ? nil : @now - (30 - index).minutes
+      )
+    end
+    cockpit = nil
+    queries = capture_sql { cockpit = build_cockpit }
+    group = cockpit.groups.index_by(&:key).fetch("memory")
+
+    assert_equal "blocked", group.status
+    assert_equal "3 queued or active index operations, 1 failed index operation, and 21 unknown index operations.", group.summary
+    assert_equal @now - 5.minutes, group.items.first.occurred_at
+    assert_equal "reconstruct_memory", group.items.first.action
+    assert_equal ReliabilityCockpit::DETAIL_LIMIT + 1, group.items.size
+    assert_equal 1, queries.grep(/SELECT COUNT.*FROM "memory_index_entries"/).size
   end
 
   test "denies non-managers and foreign memberships at the read seam" do
