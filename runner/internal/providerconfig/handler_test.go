@@ -474,6 +474,28 @@ func TestHandlerModelsRequiresSignedExactWorkspaceAndAdapterRequest(t *testing.T
 	if len(source.workspaces) != 0 {
 		t.Fatalf("valid unknown adapter invoked discovery source: workspaces=%v", source.workspaces)
 	}
+	for _, check := range []struct {
+		workspace, adapter, mode string
+		requireConfigured        any
+		status                   int
+	}{
+		{workspaceOne, "future_provider", protocol.ExecutionModeBounded, true, http.StatusNotFound},
+		{workspaceTwo, CodexAdapterKey, protocol.ExecutionModeBounded, true, http.StatusNotFound},
+		{workspaceOne, CodexAdapterKey, protocol.ExecutionModeHostTrusted, true, http.StatusConflict},
+		{workspaceOne, CodexAdapterKey, protocol.ExecutionModeBounded, "true", http.StatusUnprocessableEntity},
+		{workspaceOne, CodexAdapterKey, protocol.ExecutionModeBounded, true, http.StatusOK},
+	} {
+		response := serve(t, handler, ModelsPath, map[string]any{
+			"protocol_version": protocol.Version, "workspace_key": check.workspace, "adapter_key": check.adapter,
+			"execution_mode": check.mode, "require_configured": check.requireConfigured,
+		}, now, testSecret)
+		if response.Code != check.status {
+			t.Fatalf("configured discovery %+v: status=%d body=%s", check, response.Code, response.Body.String())
+		}
+	}
+	if len(source.workspaces) != 1 || source.workspaces[0] != workspaceOne {
+		t.Fatalf("only the configured matching boundary may discover: %v", source.workspaces)
+	}
 }
 
 func serve(t *testing.T, handler http.Handler, path string, input map[string]any, now time.Time, secret []byte) *httptest.ResponseRecorder {

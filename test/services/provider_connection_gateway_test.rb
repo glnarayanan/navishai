@@ -100,7 +100,7 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     assert_equal 20, read_timeout
     assert_equal(
       { "protocol_version" => "v1", "workspace_key" => workspace_key, "adapter_key" => adapter_key,
-        "execution_mode" => "bounded" },
+        "execution_mode" => "bounded", "require_configured" => true },
       JSON.parse(request.body)
     )
     assert_equal RunnerProtocol.signature(
@@ -112,6 +112,16 @@ class ProviderConnectionGatewayTest < ActiveSupport::TestCase
     assert_equal "bounded", result.fetch("execution_mode")
     assert result.fetch("models").all? { |model| model.keys.sort == %w[default id label] }
     refute result.key?("api_key")
+  end
+
+  test "maps an unconfigured discovery response to not found" do
+    gateway = ProviderConnectionGateway.new(secret: "s" * 32)
+    gateway.define_singleton_method(:perform) do |*, **|
+      RunnerClient::Response.new(code: 404, body: '{"code":"provider_not_configured"}')
+    end
+    assert_raises(RunnerClient::NotFound) do
+      gateway.models(workspace_key: "c9bb966b-1fe9-4304-bd51-404e4fd9a09c", adapter_key: "codex", execution_mode: "bounded")
+    end
   end
 
   test "rejects malformed model discovery responses" do

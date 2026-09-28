@@ -9,7 +9,7 @@ class ProviderConnectionGateway < RunnerClient
 
   def models(workspace_key:, adapter_key:, execution_mode:)
     body = JSON.generate(
-      protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, adapter_key:, execution_mode:
+      protocol_version: ProviderConnectionProtocol::VERSION, workspace_key:, adapter_key:, execution_mode:, require_configured: true
     )
     response = signed_provider_post(
       ProviderConnectionProtocol::MODELS_PATH, body:, read_timeout: 20, timeout_error: Unavailable

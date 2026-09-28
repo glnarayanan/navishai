@@ -10,6 +10,7 @@ class RunnerClient
   class AmbiguousResult < Error; end
   class AuthenticationError < Error; end
   class PolicyDenied < Error; end
+  class NotFound < Error; end
   class Conflict < Error; end
   class MalformedResponse < Error; end
 
@@ -267,6 +268,7 @@ class RunnerClient
     case response.code
     when 401 then raise AuthenticationError, message
     when 403 then raise PolicyDenied, message
+    when 404 then raise NotFound, message
     when 409 then raise Conflict, message
     when 413, 415, 422 then raise ConfigurationError, message
     when 400..499 then raise Error, message

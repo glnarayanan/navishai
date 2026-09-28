@@ -148,6 +148,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 28 September 2026 model-discovery round trip
+
+Rails now requests model discovery with `require_configured: true` instead of first fetching the full provider catalog. The runner checks the current Workspace connection and execution mode before calling discovery. Unknown/unconfigured providers still produce HTTP 404 in Rails; stale modes still produce 409. The additive request field leaves existing four-field v1 callers unchanged. No credential or model cache was added. Focused Ruby checks passed (57 runs, 441 assertions), three runtime browser journeys passed (55 assertions), and provider/execution Go race tests and RuboCop passed. Controller tests prove one runner call rather than two; no live-provider latency percentage is claimed. Matching Rails and runner versions must ship together.
+
 ### 28 September 2026 runner persistence measurements
 
 The admission benchmarks now cover a real persisted admit/acknowledge/claim/start/acknowledge/complete/acknowledge lifecycle and scans past delivered terminal history. Three measured runs took 15.48–15.70 ms per lifecycle at 100 retained records (205,401 bytes) and 101.08–105.15 ms at 1,000 records (2,054,001 bytes). A separate integration rerun measured 16.06 and 107.32 ms. At 10,000 retained records, end-of-history or empty scans took about 0.32–0.39 ms. The benchmarks keep fsync and full-store writes in timed operations and setup outside them.
