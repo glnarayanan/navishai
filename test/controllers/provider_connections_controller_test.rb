@@ -48,6 +48,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       }, JSON.parse(response.body)
     )
     assert_equal [ [ @workspace.runner_key, "codex", "bounded" ] ], @gateway.models_calls
+    assert_equal 0, @gateway.catalog_calls
     assert_not_includes response.body, "must-not-leak"
   end
 
@@ -67,8 +68,9 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "model discovery rejects a stale execution boundary before calling the runner" do
+  test "model discovery preserves the runner rejection of a stale execution boundary" do
     sign_in_as users(:owner)
+    @gateway.models_error = RunnerClient::Conflict.new("provider settings changed")
 
     with_gateway(@gateway) do
       post models_workspace_provider_connections_path(@workspace), params: {
@@ -78,22 +80,24 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :conflict
     assert_equal({ "status" => "failed", "models" => [] }, JSON.parse(response.body))
-    assert_empty @gateway.models_calls
+    assert_equal [ [ @workspace.runner_key, "codex", "host_trusted" ] ], @gateway.models_calls
   end
 
-  test "unknown, unconfigured, and invalid adapters return not found without discovery" do
+  test "unknown unconfigured and invalid adapters still return not found" do
     sign_in_as users(:owner)
+    @gateway.models_error = RunnerClient::NotFound.new("provider is not configured")
 
     with_gateway(@gateway) do
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "missing" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "missing", execution_mode: "bounded" }
       assert_response :not_found
-      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "claude" }
+      post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "claude", execution_mode: "bounded" }
       assert_response :not_found
       post models_workspace_provider_connections_path(@workspace), params: { adapter_key: "A" * 65 }
       assert_response :not_found
     end
 
-    assert_empty @gateway.models_calls
+    assert_equal %w[missing claude], @gateway.models_calls.map(&:second)
+    assert_equal 0, @gateway.catalog_calls
   end
 
   test "unavailable and malformed discovery responses are stable and sanitized" do
@@ -863,10 +867,11 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
     class FakeProviderGateway
       attr_accessor :configure_after_persist_error, :detect_error, :models_error,
         :models_result, :remove_after_persist_error, :test_error, :test_result
-      attr_reader :configure_calls, :remove_calls, :models_calls, :test_calls
+      attr_reader :configure_calls, :remove_calls, :models_calls, :test_calls, :catalog_calls
 
       def initialize(catalog)
         @catalog = catalog
+        @catalog_calls = 0
         @configure_calls = []
         @remove_calls = []
         @models_calls = []
@@ -875,6 +880,7 @@ class ProviderConnectionsControllerTest < ActionDispatch::IntegrationTest
       end
 
       def catalog(workspace_key:)
+        @catalog_calls += 1
         @catalog
       end
 

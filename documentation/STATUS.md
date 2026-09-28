@@ -148,6 +148,16 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 28 September 2026 combined performance checks
+
+The five-branch performance stack passed `bin/rubocop` (666 files, no offenses), Go formatting, `go vet ./...`, `NAVISHAI_REQUIRE_ISOLATION_TESTS=1 go test -count=1 ./...`, Brakeman (no errors or warnings), and `script/runner_contract` (scripted execution, provider catalog, and legacy Word conversion). Focused checks and measurements appear below. No live provider calls or deployment checks ran.
+
+With one worker and seed `20260928`, the full Rails suite completed 1,208 tests and 8,893 assertions with two failures; the full browser suite completed 87 tests and 1,402 assertions with one failure. All three match the baseline failures recorded under test pruning: installer host-memory expectations, bootstrap HTTP 416 error wording, and obsolete scorecard text. The stack changes none of those failing paths. The full `bin/ci` has not passed; gem/Importmap audits, seeds, and the SBOM check were not rerun. Draft PRs keep these limits visible rather than claiming a green handoff. The changes are not merged or deployed.
+
+### 28 September 2026 model-discovery round trip
+
+Rails now requests model discovery with `require_configured: true` instead of first fetching the full provider catalog. The runner checks the current Workspace connection and execution mode before calling discovery. Unknown/unconfigured providers still produce HTTP 404 in Rails; stale modes still produce 409. The additive request field leaves existing four-field v1 callers unchanged. No credential or model cache was added. Focused Ruby checks passed (57 runs, 441 assertions), three runtime browser journeys passed (55 assertions), and provider/execution Go race tests and RuboCop passed. Controller tests prove one runner call rather than two; no live-provider latency percentage is claimed. Matching Rails and runner versions must ship together.
+
 ### 28 September 2026 runner persistence measurements
 
 The admission benchmarks now cover a real persisted admit/acknowledge/claim/start/acknowledge/complete/acknowledge lifecycle and scans past delivered terminal history. Three measured runs took 15.48–15.70 ms per lifecycle at 100 retained records (205,401 bytes) and 101.08–105.15 ms at 1,000 records (2,054,001 bytes). A separate integration rerun measured 16.06 and 107.32 ms. At 10,000 retained records, end-of-history or empty scans took about 0.32–0.39 ms. The benchmarks keep fsync and full-store writes in timed operations and setup outside them.

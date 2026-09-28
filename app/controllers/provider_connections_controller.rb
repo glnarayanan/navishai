@@ -63,17 +63,12 @@ class ProviderConnectionsController < ApplicationController
       execution_mode.is_a?(String) && RuntimeInstallation::KNOWN_EXECUTION_MODES.include?(execution_mode)
 
     gateway = ProviderConnectionGateway.new
-    provider = gateway.catalog(workspace_key: workspace.runner_key).find do |candidate|
-      candidate.fetch("adapter_key") == adapter_key
-    end
-    return head :not_found unless provider&.fetch("configured")
-    return render json: { status: "failed", models: [] }, status: :conflict unless
-      provider.fetch("execution_mode") == execution_mode
-
     discovery = gateway.models(
       workspace_key: workspace.runner_key, adapter_key:, execution_mode:
     )
     render json: discovery.slice("status", "checked_at", "models")
+  rescue RunnerClient::NotFound
+    head :not_found
   rescue RunnerClient::Conflict
     render json: { status: "failed", models: [] }, status: :conflict
   rescue RunnerClient::Unavailable

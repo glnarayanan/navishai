@@ -121,7 +121,8 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 }
 
 func (handler *Handler) models(response http.ResponseWriter, request *http.Request, input map[string]any) {
-	if len(input) != 4 || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) ||
+	requireConfigured := input["require_configured"] == true
+	if (len(input) != 4 && !(len(input) == 5 && requireConfigured)) || input["protocol_version"] != protocol.Version || !validUUID(stringValue(input["workspace_key"])) ||
 		!validKnownExecutionMode(stringValue(input["execution_mode"])) {
 		handler.invalid(response)
 		return
@@ -134,8 +135,13 @@ func (handler *Handler) models(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	result := ModelDiscovery{Status: ModelDiscoveryUnsupported}
-	if _, ok := Lookup(adapterKey); ok {
-		connection, configured := handler.store.Get(workspaceKey, adapterKey)
+	_, known := Lookup(adapterKey)
+	connection, configured := handler.store.Get(workspaceKey, adapterKey)
+	if requireConfigured && (!known || !configured) {
+		handler.writeError(response, http.StatusNotFound, "provider_not_configured", "Provider is not configured in this Workspace.")
+		return
+	}
+	if known {
 		if !configured || connection.ExecutionMode != executionMode {
 			handler.writeError(response, http.StatusConflict, "provider_configuration_changed", "Provider configuration changed. Find providers again before discovering models.")
 			return
