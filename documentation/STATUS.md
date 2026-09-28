@@ -148,6 +148,12 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 28 September 2026 web-search concurrency
+
+The runner no longer holds the search-record mutex during provider I/O or disk persistence. It admits at most four concurrent provider calls, shares matching in-flight requests, rejects conflicting digests, and reserves record-count capacity before calling a provider. Persistence remains serialized; successful responses become replayable only after the existing durable write completes. Provider failures release waiters and allow retries. This does not claim exactly-once external requests across crashes or persistence failures.
+
+Channel-controlled tests with Go's `testing/synctest` cover duplicate requests, conflicts, failure release, replay during blocked searches, the concurrency bound, and preservation of concurrent records after reopening. Capacity and persistence-failure checks also pass. `go test -race -count=1 ./runner/internal/websearch`, `go vet ./...`, and `go test ./...` passed. The blocked-provider replay microbenchmark measured 41.40 ns/op with zero allocations on this orb; before this change, that replay waited for the unrelated provider call. This is an in-process lookup measurement, not HTTP or provider latency.
+
 ### 28 September 2026 reliability aggregates
 
 Execution summary counts and status priority now share one Workspace-scoped aggregate. Memory totals, status, and latest attempt time also share one aggregate; bounded detail and recovery-action checks remain separate. The redundant stale-backlog count is gone: every non-empty backlog already produces attention. Fifteen presenter/controller tests passed (97 assertions), the browser journey passed (29 assertions), and RuboCop passed. A 10,000-entry memory fixture compared full cockpit projections and preserved their output. In 30 alternating warm, uncached pairs, SQL reads fell from 43 to 33 and median time from 41.53 to 31.29 ms; p95 increased from 48.72 to 52.00 ms. This sample does not establish a p95 improvement. No index, cache, or UI changes were made.
