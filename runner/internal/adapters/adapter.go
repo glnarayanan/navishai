@@ -2,7 +2,9 @@ package adapters
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"time"
 
 	"github.com/glnarayanan/navishai/runner/internal/protocol"
 	"github.com/glnarayanan/navishai/runner/internal/supervisor"
@@ -10,6 +12,22 @@ import (
 
 type ProcessRunner interface {
 	Run(context.Context, supervisor.Request) (supervisor.Result, error)
+}
+
+// EventEmitter starts after admission (sequence 1) and advances only after delivery.
+func EventEmitter(runID string, now func() time.Time, emit func(protocol.CanonicalEvent) error) func(string, map[string]any) error {
+	sequence := 2
+	return func(eventType string, data map[string]any) error {
+		event, err := protocol.NewCanonicalEvent(runID, sequence, eventType, now(), data)
+		if err != nil {
+			return err
+		}
+		if err := emit(event); err != nil {
+			return fmt.Errorf("emit %s: %w", eventType, err)
+		}
+		sequence++
+		return nil
+	}
 }
 
 func WithinUnitBudget(admission protocol.AdmissionRequest, inputUnits, outputUnits int) bool {

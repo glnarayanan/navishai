@@ -3,11 +3,6 @@ require "test_helper"
 class PasswordsControllerTest < ActionDispatch::IntegrationTest
   setup { @user = User.take }
 
-  test "new" do
-    get new_password_path
-    assert_response :success
-  end
-
   test "create" do
     post passwords_path, params: { email_address: @user.email_address }
     assert_enqueued_email_with PasswordsMailer, :reset, args: [ @user ]
@@ -41,16 +36,12 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
     singleton&.define_method(:record!, original_record) if original_record
   end
 
-  test "edit" do
-    get edit_password_path(token: @user.password_reset_token)
-    assert_response :success
-  end
-
   test "edit with invalid password reset token" do
     get edit_password_path(token: "invalid token")
     assert_redirected_to new_password_path
 
     follow_redirect!
+    assert_response :success
     assert_notice "reset link is invalid"
   end
 
@@ -95,6 +86,7 @@ class PasswordsControllerTest < ActionDispatch::IntegrationTest
     end
 
     follow_redirect!
+    assert_response :success
     assert_notice "Passwords did not match"
   end
 

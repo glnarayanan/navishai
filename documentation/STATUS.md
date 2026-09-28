@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 14 September 2026
+**Updated:** 28 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -147,6 +147,24 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 ## 2. Evidence
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
+
+### 28 September 2026 read-path optimization (local, uncommitted)
+
+Quality duration details now batch-load Workspace-scoped cases and conversations, retaining exact aggregate counts, medians, detail limits, and row order. Sent-lineage totals use a SQL count instead of loading every lineage into Ruby. Account health reuses three counts inside the existing locked calculation. Four Go adapters share event sequencing; provider-specific process, cancellation, policy, and usage handling remain separate. No CSS, views, or browser interactions changed.
+
+A local, warm benchmark compared the full 7/30/90-day Quality readout against the unchanged source on 21 cases with Draft Ready transitions. With SQL caching off, two warm-up pairs and 30 alternating measured pairs, median latency fell from 144.282 to 90.025 ms (37.6%); p95 fell from 160.101 to 109.182 ms (31.8%). SQL reads fell from 179 to 65. Reported metrics, linked rows, and methodology matched. This measures this fixture and presenter, not HTTP latency, production traffic, human-send workloads, or whole-application performance.
+
+Focused and related Rails checks passed: 59 runs, 567 assertions, including scorecard publish concurrency and bounded evidence. Five Quality, account-health, and account-queue browser journeys passed with 73 assertions. The new duration regression test fails against the original loader and passes against the batch loader. RuboCop, Go formatting, `go vet ./...`, `go test ./...`, adapter race tests, and `git diff --check` passed. The full `bin/ci` and post-optimization coverage measurement have not run; prior coverage figures below apply only to test pruning. Ponytail Audit and CE Code Review were unavailable; direct diff and risk-based review covered these changes.
+
+These production edits remove a net 27 lines, not 20% of the codebase. The broader queue/conditional-aggregate rewrite, renewal prefetch, and CSS/view consolidation remain unimplemented: query-plan evidence, lock-boundary equivalence, and cascade/render equivalence still need proof. The 20% code-reduction and whole-application performance targets remain unmet. Nothing from this optimization pass is committed, pushed, or deployed.
+
+### 28 September 2026 test pruning
+
+The owner approved a smaller cut instead of the original 20% target. The change removes six overlapping tests: three form-render smoke tests, the Account canonical-record smoke test, the duplicate knowledge-improvement controller journey, and the browser health check. Existing redirect flows retain all three form response assertions. Merger tests retain canonical-record checks; knowledge presenter and browser tests retain queue transitions and version history; the HTTP health test remains. Production code and security, tenant, concurrency, and boundary checks are unchanged.
+
+The standard-library Ruby coverage comparison used the same loaded `app/` and `lib/` files and fixed denominators before and after: 14,144 of 15,367 lines in both runs (92.04%); branches 4,251 → 4,252 of 6,053 (70.23% → 70.25%). The after run covered every line and branch hit by the baseline. Native Go coverage stayed at 3,525 of 5,126 statements (68.77%). These figures do not measure templates, JavaScript, shell scripts, PostgreSQL functions, or unrequired Ruby files.
+
+Final focused checks passed: 30 runs, 215 assertions; RuboCop found no offenses in the four changed Ruby files. With one worker and seed `20260928`, the full Rails suite ran 1,204 tests (five fewer) and the browser suite ran 87 (one fewer). Both reproduced the baseline failures: installer doctor expects healthy on a host that reports a memory warning; bootstrap expects a checksum error after HTTP 416 but receives a download error; the scorecard browser test expects the old `snapshots tested` copy. `go test -count=1 -coverprofile=tmp/pruning-go-after.cover ./...` passed. These checks do not establish a passing full `bin/ci` run; mandatory isolation, live-provider, and deployment checks were not part of this test-only change.
 
 ### 13 September 2026 inspected-preview lock follow-up (C3)
 

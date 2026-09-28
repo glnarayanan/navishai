@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -73,18 +72,7 @@ func (adapter *Adapter) Execute(ctx context.Context, invocation Invocation, runn
 		invocation.Model == "" || invocation.EgressProfileKey == "" {
 		return Result{}, errors.New("invalid Grok invocation")
 	}
-	sequence := 2
-	emitEvent := func(eventType string, data map[string]any) error {
-		event, err := protocol.NewCanonicalEvent(invocation.Admission.RunID, sequence, eventType, adapter.now(), data)
-		if err != nil {
-			return err
-		}
-		if err := emit(event); err != nil {
-			return fmt.Errorf("emit %s: %w", eventType, err)
-		}
-		sequence++
-		return nil
-	}
+	emitEvent := adapters.EventEmitter(invocation.Admission.RunID, adapter.now, emit)
 	if err := emitEvent("run.started", map[string]any{"adapter": AdapterKey, "scenario": "subscription", "attempt": invocation.Admission.Task.Attempt}); err != nil {
 		return Result{}, err
 	}

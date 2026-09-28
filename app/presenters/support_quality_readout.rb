@@ -232,7 +232,7 @@ class SupportQualityReadout
     end
 
     def sent_lineage_evidence(starts_at)
-      count = sent_lineage_rows(starts_at).count
+      count = @workspace.account_health_signals.connection.select_value("SELECT COUNT(*) FROM (#{sent_lineage_sql(starts_at)}) sent_lineages").to_i
       rows = sent_lineage_rows(starts_at, limit: DETAIL_LIMIT)
       artifacts = CrewArtifact.includes(crew_task: { support_case: :conversation }).where(id: rows.map { |row| row.fetch("artifact_id") }).index_by(&:id)
       records = rows.filter_map do |row|
@@ -245,16 +245,20 @@ class SupportQualityReadout
     def intake_duration_evidence(starts_at)
       scope = intake_duration_scope(starts_at)
       aggregate = duration_aggregate(scope)
-      records = scope.order("duration_seconds DESC, support_case_id DESC").limit(DETAIL_LIMIT).map do |row|
-        { case: SupportCase.includes(:conversation).find(row.support_case_id), duration: row.duration_seconds.to_f }
+      rows = scope.order("duration_seconds DESC, support_case_id DESC").limit(DETAIL_LIMIT).to_a
+      cases = @workspace.support_cases.includes(:conversation).find(rows.map(&:support_case_id)).index_by(&:id)
+      records = rows.map do |row|
+        { case: cases.fetch(row.support_case_id), duration: row.duration_seconds.to_f }
       end
       aggregate.merge(records:)
     end
 
     def send_duration_evidence(starts_at)
       aggregate = duration_aggregate(sent_duration_sql(starts_at))
-      records = @workspace.account_health_signals.connection.select_all("#{sent_duration_sql(starts_at)} LIMIT #{DETAIL_LIMIT}").filter_map do |row|
-        support_case = SupportCase.includes(:conversation).find_by(id: row.fetch("support_case_id"))
+      rows = @workspace.account_health_signals.connection.select_all("#{sent_duration_sql(starts_at)} LIMIT #{DETAIL_LIMIT}")
+      cases = @workspace.support_cases.includes(:conversation).where(id: rows.map { |row| row.fetch("support_case_id") }).index_by(&:id)
+      records = rows.filter_map do |row|
+        support_case = cases[row.fetch("support_case_id").to_i]
         support_case && { case: support_case, duration: row.fetch("duration_seconds").to_f, sent_at: row.fetch("sent_at").in_time_zone }
       end
       aggregate.merge(records:)

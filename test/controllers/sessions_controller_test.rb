@@ -3,11 +3,6 @@ require "test_helper"
 class SessionsControllerTest < ActionDispatch::IntegrationTest
   setup { @user = User.take }
 
-  test "new" do
-    get new_session_path
-    assert_response :success
-  end
-
   test "create with valid credentials" do
     assert_difference "AuditEvent.count", 1 do
       post session_path, params: { email_address: @user.email_address, password: "password12345" }
@@ -64,6 +59,7 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
     post session_path, params: { email_address: @user.email_address, password: "wrong" }
     assert_redirected_to new_session_path
     follow_redirect!
+    assert_response :success
     assert_select ".flash-alert", text: /Try again later/
   ensure
     cache&.singleton_class&.remove_method(:increment)

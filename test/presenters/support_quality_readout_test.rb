@@ -306,6 +306,33 @@ class SupportQualityReadoutTest < ActiveSupport::TestCase
     assert_operator week.rows.count { |row| row.detail == "Completed draft" }, :<=, SupportQualityReadout::DETAIL_LIMIT
   end
 
+  test "duration detail loading stays bounded and retains exact count median and ordering" do
+    now = Time.utc(2026, 9, 14, 12)
+    cases = 21.times.map do |index|
+      support_case = travel_to(now - 2.hours) { create_support_case(subject: "Duration #{index}") }
+      support_case.status_changes.create!(
+        workspace: @workspace, from_status: "investigating", to_status: "draft_ready",
+        actor_kind: "system", source: "integration", reason: "Draft prepared", occurred_at: now - 2.hours + (index + 1).minutes
+      )
+      support_case
+    end
+    queries = []
+    readout = SupportQualityReadout.new(workspace: @workspace, now:)
+    evidence = nil
+    ActiveRecord::Base.uncached do
+      ActiveSupport::Notifications.subscribed(->(event) { queries << event.payload[:sql] if event.payload[:sql].start_with?("SELECT") }, "sql.active_record") do
+        evidence = readout.send(:intake_duration_evidence, now - 7.days)
+        evidence.fetch(:records).each { |item| item.fetch(:case).conversation.subject }
+      end
+    end
+
+    assert_equal 21, evidence.fetch(:count)
+    assert_equal 660, evidence.fetch(:median)
+    assert_equal cases.reverse.first(20).map(&:id), evidence.fetch(:records).map { |item| item.fetch(:case).id }
+    assert_equal (2..21).to_a.reverse.map { |minutes| minutes * 60 }, evidence.fetch(:records).map { |item| item.fetch(:duration) }
+    assert_operator queries.size, :<=, 4
+  end
+
   private
     def metric(readout, key)
       readout.metrics.find { |item| item.key == key }
