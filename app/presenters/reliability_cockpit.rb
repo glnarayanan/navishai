@@ -1,6 +1,5 @@
 class ReliabilityCockpit
   CONNECTOR_FRESH_FOR = 24.hours
-  INDEX_BACKLOG_LIMIT = 5.minutes
   OPERATIONAL_CHECK_FRESH_FOR = 30.days
   DETAIL_LIMIT = 20
   STATUS_PRIORITY = {
@@ -181,12 +180,23 @@ class ReliabilityCockpit
     def execution_group
       installations = runtime_installations_for_detail
       runtime_items = installations.map { |installation| runtime_item(installation) }
-      unconfirmed = @workspace.execution_runs.where(status: :admitting).count
-      retryable = @workspace.execution_runs.where(status: :failed, retryable: true).count
-      terminal = @workspace.execution_runs.terminal.count
+      unconfirmed, retryable, terminal, blocked = @workspace.execution_runs.pick(Arel.sql(
+        "COUNT(*) FILTER (WHERE status = 'admitting'), " \
+        "COUNT(*) FILTER (WHERE status = 'failed' AND retryable = TRUE), " \
+        "COUNT(*) FILTER (WHERE status IN (?)), " \
+        "COUNT(*) FILTER (WHERE status IN ('timed_out', 'policy_denied') OR (status = 'failed' AND retryable = FALSE))",
+        ExecutionRun::TERMINAL_STATUSES
+      ))
+      run_status = if blocked.positive?
+        "blocked"
+      elsif unconfirmed.positive?
+        "unknown"
+      elsif retryable.positive?
+        "attention"
+      end
       run_items = execution_run_items
       items = runtime_items + run_items
-      statuses = [ runtime_group_status, execution_run_group_status ].compact
+      statuses = [ runtime_group_status, run_status ].compact
       status = statuses.empty? ? "not_configured" : strongest_status(statuses)
       summary = "#{counted(unconfirmed, 'unconfirmed admission')}, #{counted(retryable, 'retryable failure')}, and " \
         "#{counted(terminal, 'terminal run')}."
@@ -290,15 +300,6 @@ class ReliabilityCockpit
       end
     end
 
-    def execution_run_group_status
-      runs = @workspace.execution_runs
-      return "blocked" if runs.where(status: %w[timed_out policy_denied]).exists? ||
-        runs.where(status: :failed, retryable: false).exists?
-      return "unknown" if runs.where(status: :admitting).exists?
-
-      "attention" if runs.where(status: :failed, retryable: true).exists?
-    end
-
     def send_group
       email_scope = @workspace.outbound_email_deliveries.where(status: %w[sending unknown])
       intercom_scope = @workspace.intercom_outbound_deliveries.where(status: %w[sending unknown])
@@ -326,18 +327,18 @@ class ReliabilityCockpit
 
     def memory_group
       entries = @workspace.memory_index_entries
-      failed = entries.where(status: :failed).count
-      unknown = entries.where(status: :unknown).count
-      backlog = entries.where(status: %w[pending indexing queued]).count
-      stale_backlog = entries.where(status: %w[pending indexing queued])
-        .where("COALESCE(last_attempted_at, created_at) < ?", @now - INDEX_BACKLOG_LIMIT).count
+      total, failed, unknown, backlog, last_attempted_at = entries.pick(Arel.sql(
+        "COUNT(*), COUNT(*) FILTER (WHERE status = 'failed'), " \
+        "COUNT(*) FILTER (WHERE status = 'unknown'), " \
+        "COUNT(*) FILTER (WHERE status IN ('pending', 'indexing', 'queued')), MAX(last_attempted_at)"
+      ))
       status = if failed.positive?
         "blocked"
       elsif unknown.positive?
         "unknown"
-      elsif stale_backlog.positive? || backlog.positive?
+      elsif backlog.positive?
         "attention"
-      elsif entries.exists?
+      elsif total.positive?
         "healthy"
       else
         "not_configured"
@@ -356,7 +357,7 @@ class ReliabilityCockpit
       end
       overview = Item.new(
         key: "memory-index", title: "Memory index", status:, summary:,
-        detail: "Backlog becomes stale after five minutes.", occurred_at: entries.maximum(:last_attempted_at),
+        detail: "Backlog becomes stale after five minutes.", occurred_at: last_attempted_at,
         record: nil, action: (failed + unknown).positive? ? "reconstruct_memory" : nil
       )
       Group.new(key: "memory", title: "Memory index", status:, summary:, items: [ overview, *detail_items ])

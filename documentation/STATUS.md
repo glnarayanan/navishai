@@ -148,6 +148,10 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 28 September 2026 reliability aggregates
+
+Execution summary counts and status priority now share one Workspace-scoped aggregate. Memory totals, status, and latest attempt time also share one aggregate; bounded detail and recovery-action checks remain separate. The redundant stale-backlog count is gone: every non-empty backlog already produces attention. Fifteen presenter/controller tests passed (97 assertions), the browser journey passed (29 assertions), and RuboCop passed. A 10,000-entry memory fixture compared full cockpit projections and preserved their output. In 30 alternating warm, uncached pairs, SQL reads fell from 43 to 33 and median time from 41.53 to 31.29 ms; p95 increased from 48.72 to 52.00 ms. This sample does not establish a p95 improvement. No index, cache, or UI changes were made.
+
 ### 28 September 2026 knowledge metadata reads
 
 Knowledge library and improvement-queue reads preload version metadata without document content or search vectors. Search excerpts and source-detail pages still read full versions; ordering, counts, permissions, and displayed actions are unchanged. Eleven focused Rails tests passed (118 assertions), five browser journeys passed (56 assertions), and RuboCop passed. A warm, uncached queue benchmark with 100 sources and five versions per source omitted 36,000,700 bytes of historical content, excluding current-version duplication and search vectors. Across 15 alternating measured pairs after two warm-up pairs, median latency fell from 94.33 to 55.90 ms and p95 from 189.69 to 76.05 ms. Attention rows, improved-version IDs, counts, and resolvable-source order matched. These are local fixture results, not production HTTP measurements.
