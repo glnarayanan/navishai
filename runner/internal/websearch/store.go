@@ -109,8 +109,9 @@ func (store *Store) Resolve(key, digest string, search func() (Response, error))
 	store.mu.Unlock()
 
 	store.searches <- struct{}{}
+	// Bound completed responses waiting for persistence as well as provider calls.
+	defer func() { <-store.searches }()
 	response, err := search()
-	<-store.searches
 	if err == nil && (response.RequestKey != key || response.Validate(protocol.Version) != nil) {
 		err = ErrInvalidRequest
 	}
