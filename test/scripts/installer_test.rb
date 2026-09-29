@@ -1684,7 +1684,7 @@ class InstallerTest < ActiveSupport::TestCase
       File.write("#{root}/etc/navishai/env", "NAVISHAI_APP_HOST=install.example\nNAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.10\nNAVISHAI_DATABASE_PASSWORD=db-secret\nNAVISHAI_MEMORY_PENDING=1\n")
       File.write("#{root}/var/lib/navishai/install.json", "{\"schema\":1,\"release\":\"pending\",\"step\":\"https_unverified\"}\n")
 
-      stdout, stderr, status = run_installer(root, "doctor", "--json", "FAKE_PORT_80" => "LISTEN\n")
+      stdout, stderr, status = run_installer(root, "doctor", "--json", "FAKE_PORT_80" => "LISTEN\n", "FAKE_MEMORY_MIB" => "7167")
 
       assert_not status.success?
       assert_empty stderr
@@ -1692,6 +1692,8 @@ class InstallerTest < ActiveSupport::TestCase
       assert_equal 1, report["schema"]
       assert_equal "attention", report["result"]
       findings = report["findings"].index_by { |finding| finding["key"] }
+      assert_equal "warning", findings["memory"]["status"]
+      assert_includes findings["memory"]["action"], "expect slower startup"
       assert_equal "failure", findings["port_80"]["status"]
       assert_includes findings["port_80"]["message"], "port 80 is in use"
       assert_equal "failure", findings["install_step"]["status"]
@@ -1865,6 +1867,8 @@ class InstallerTest < ActiveSupport::TestCase
     FileUtils.chmod(0o755, "#{bin}/docker")
     File.write("#{bin}/ss", "#!/bin/sh\ncase \"$*\" in *:80*) value=\"${FAKE_PORT_80:-}\"; port=80;; *:443*) value=\"${FAKE_PORT_443:-}\"; port=443;; esac\nlistener=$(printf '%s' \"$value\")\nif [ \"$listener\" = LISTEN ]; then printf 'LISTEN 0 0 %s:%s 0.0.0.0:*\\n' \"${FAKE_LISTEN_ADDRESS:-203.0.113.10}\" \"$port\"; else printf '%s' \"$value\"; fi\n")
     FileUtils.chmod(0o755, "#{bin}/ss")
+    File.write("#{bin}/free", "#!/bin/sh\nprintf 'Mem: %s\\n' \"${FAKE_MEMORY_MIB:-7168}\"\n")
+    FileUtils.chmod(0o755, "#{bin}/free")
     File.write("#{bin}/ip", "#!/bin/sh\nprintf '1.1.1.1 via 203.0.113.1 dev eth0 src %s\\n' \"${FAKE_ROUTE_SOURCE:-203.0.113.10}\"\n")
     FileUtils.chmod(0o755, "#{bin}/ip")
     File.write("#{bin}/curl", <<~SH)
