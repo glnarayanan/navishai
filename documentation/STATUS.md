@@ -2,7 +2,7 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 28 September 2026
+**Updated:** 29 September 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
 
@@ -148,11 +148,19 @@ Reconciliation of [INSTALLER_PLAN.md](./INSTALLER_PLAN.md) slices I0–I5 agains
 
 `bin/ci` is the source checkpoint: Ruby and Go style, gem and Importmap audits, Brakeman, the full Rails and browser suites, Go vet and tests with the process-isolation suite required, the Rails-to-runner contract, seeds, and the SBOM check. Record host omissions rather than treating a partial run as green.
 
+### 29 September 2026 baseline failure fixes
+
+Bootstrap now handles curl exit 22 with HTTP 416 by checking the retained partial against the trusted SHA-256. A matching file proceeds to setup; a mismatch removes the partial so the next attempt starts fresh. Other HTTP failures still stop before setup. This fixes a recovery loop, not just error wording. HTTPS-only transfers, redirects, and checksum enforcement remain unchanged. Real HTTPS fixture tests cover both checksum outcomes, a fresh retry after removal, and rejection of an HTTP 404 even when the partial matches.
+
+Installer tests now supply fixed RAM values on both sides of the existing 7,168 MiB warning threshold; production checks are unchanged. The scorecard browser journey checks current-account and historical-snapshot counts and the current comparison heading while retaining publish, rollback, and desktop/mobile checks. No application UI changed.
+
+Focused installer/bootstrap checks passed (131 tests, 981 assertions), as did all three scorecard browser journeys (54 assertions). With one worker and seed `20260928`, the full Rails suite passed 1,210 tests and 8,918 assertions; the full browser suite passed 87 tests and 1,426 assertions. Both had no failures, errors, or skips. RuboCop passed across 666 files; Bash syntax and diff whitespace checks passed. The full `bin/ci` was not rerun. Direct code review found no blockers; Ponytail Audit and CE Code Review were unavailable in this session.
+
 ### 28 September 2026 combined performance checks
 
 The five-branch performance stack passed `bin/rubocop` (666 files, no offenses), Go formatting, `go vet ./...`, `NAVISHAI_REQUIRE_ISOLATION_TESTS=1 go test -count=1 ./...`, Brakeman (no errors or warnings), and `script/runner_contract` (scripted execution, provider catalog, and legacy Word conversion). Focused checks and measurements appear below. No live provider calls or deployment checks ran.
 
-With one worker and seed `20260928`, the full Rails suite completed 1,208 tests and 8,893 assertions with two failures; the full browser suite completed 87 tests and 1,402 assertions with one failure. All three match the baseline failures recorded under test pruning: installer host-memory expectations, bootstrap HTTP 416 error wording, and obsolete scorecard text. The stack changes none of those failing paths. The full `bin/ci` has not passed; gem/Importmap audits, seeds, and the SBOM check were not rerun. Draft PRs keep these limits visible rather than claiming a green handoff. The changes are not merged or deployed.
+With one worker and seed `20260928`, the full Rails suite completed 1,208 tests and 8,893 assertions with two failures; the full browser suite completed 87 tests and 1,402 assertions with one failure. All three matched the baseline failures recorded under test pruning: installer host-memory expectations, bootstrap HTTP 416 recovery, and obsolete scorecard text. The stack changed none of those failing paths. The full `bin/ci` did not pass; gem/Importmap audits, seeds, and the SBOM check were not rerun. PRs #135–#139 opened as drafts with these limits documented, then merged in order after owner approval and code review. No deployment ran. The later baseline-fix evidence appears above.
 
 ### 28 September 2026 model-discovery round trip
 
