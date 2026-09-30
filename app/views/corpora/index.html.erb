@@ -1,0 +1,20 @@
+<% content_for :title, "Corpora — NavishAI" %>
+<main class="page-shell">
+  <%= link_to Current.workspace.name, workspace_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading"><div><h1>Corpora</h1><p>Your company's historical conversations and knowledge, kept apart from every other workspace.</p></div></div>
+  <ul class="workspace-list" role="list">
+    <% @corpora.each do |corpus| %>
+      <li class="workspace-card"><%= link_to corpus.name, workspace_corpus_path(Current.workspace, corpus) %></li>
+    <% end %>
+  </ul>
+  <% if @corpora.empty? %><p>No corpus yet. Start with one support export and the documentation used to resolve those cases.</p><% end %>
+  <% if Current.require_membership!.can_write? %>
+    <section class="section-block config-panel"><h2>Create a corpus</h2>
+      <%= render "shared/form_errors", record: @corpus %>
+      <%= form_with model: [ Current.workspace, @corpus ], class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :name, "Corpus name" %><%= form.text_field :name, required: true, maxlength: 100 %></div>
+        <%= form.submit "Create corpus", class: "button button-primary" %>
+      <% end %>
+    </section>
+  <% end %>
+</main>

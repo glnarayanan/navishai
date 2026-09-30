@@ -77,6 +77,12 @@ td, th { padding: .75rem .5rem; border-bottom: 1px solid var(--border); }
 .auth-alternative { display: grid; gap: .75rem; margin-top: 1.5rem; }
 .visually-hidden, .skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip-link:focus { position: fixed; top: .5rem; left: .5rem; padding: .75rem; background: var(--background); z-index: 30; }
+.source-record { padding: 1rem 0; border-bottom: 1px solid var(--border); }
+.source-record summary { padding: .5rem 0; overflow-wrap: anywhere; }
+.source-metadata dd { overflow-wrap: anywhere; margin-bottom: .75rem; }
+.evidence-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: "Geist Mono", monospace; font-size: .9rem; padding: 1rem; background: var(--surface); max-width: 80ch; }
+::selection { background: var(--accent); color: var(--background); }
+input, textarea { caret-color: var(--accent); }
 @media (max-width: 40rem) {
   .lab-container { padding: 0 1rem; }
   .lab-header { gap: .5rem; }

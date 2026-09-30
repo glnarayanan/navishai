@@ -12,6 +12,8 @@ class AuditEvent < ApplicationRecord
     "installation.bootstrapped" => {},
     "password_reset.completed" => {},
     "password_reset.requested" => {},
+    "corpus.imported" => { "record_count" => Integer },
+    "source.deleted" => {},
     "workspace.created" => { "organization_id" => Integer },
     "workspace.updated" => {
       "previous_name" => String, "previous_slug" => String, "name" => String, "slug" => String

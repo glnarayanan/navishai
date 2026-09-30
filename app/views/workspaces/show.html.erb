@@ -8,16 +8,17 @@
   </div>
   <nav class="workspace-tabs" aria-label="Workspace">
     <%= link_to "Overview", workspace_path(@workspace), aria: { current: "page" } %>
+    <%= link_to "Corpora", workspace_corpora_path(@workspace) %>
     <% if @membership.owner? || @membership.admin? %>
       <%= link_to "People and access", workspace_workspace_invitations_path(@workspace) %>
     <% end %>
     <% if @membership.owner? %><%= link_to "Settings", edit_workspace_path(@workspace) %><% end %>
   </nav>
   <section class="lab-empty" aria-labelledby="empty-title">
-    <p class="eyebrow">Workspace ready</p>
     <h2 id="empty-title">A clean starting point</h2>
-    <p>This lab has no evaluation content. Corpus intake, scenario review and evaluation runs are not yet available.</p>
-    <p class="muted-copy">For now, you can manage workspace access. No customer data is processed or sent to an evaluation target.</p>
+    <p>Build a corpus from historical conversations and documentation. Each import keeps its source, digest and fixed snapshot.</p>
+    <p class="muted-copy">Intake stays local. Scenario review and evaluation runs are not yet available.</p>
+    <%= link_to "Open corpora", workspace_corpora_path(@workspace), class: "button button-primary" %>
     <% if @membership.owner? || @membership.admin? %>
       <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
     <% end %>

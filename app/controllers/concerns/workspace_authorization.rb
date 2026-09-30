@@ -1,6 +1,10 @@
 module WorkspaceAuthorization
   extend ActiveSupport::Concern
 
+  included do
+    rescue_from Current::RoleAccessDenied, with: :forbidden
+  end
+
   private
     def select_workspace(workspace)
       Current.workspace = Current.user.workspaces.find(workspace.id)

@@ -22,6 +22,16 @@ END;
 $$;
 
 
+--
+-- Name: prevent_lab_version_update(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_lab_version_update() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN RAISE EXCEPTION 'lab versions are immutable'; END; $$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -57,9 +67,9 @@ CREATE TABLE public.audit_events (
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT audit_events_action_format CHECK (((action)::text ~ '^[a-z0-9]+([._][a-z0-9]+)*$'::text)),
-    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying, 'system'::character varying, 'anonymous'::character varying])::text[]))),
-    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying])::text[])) = (actor_id IS NOT NULL))),
-    CONSTRAINT audit_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'integration'::character varying, 'system'::character varying])::text[])))
+    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text, ('system'::character varying)::text, ('anonymous'::character varying)::text]))),
+    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text])) = (actor_id IS NOT NULL))),
+    CONSTRAINT audit_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('job'::character varying)::text, ('task'::character varying)::text, ('integration'::character varying)::text, ('system'::character varying)::text])))
 );
 
 
@@ -80,6 +90,75 @@ CREATE SEQUENCE public.audit_events_id_seq
 --
 
 ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
+
+
+--
+-- Name: corpora; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpora (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: corpora_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpora_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpora_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpora_id_seq OWNED BY public.corpora.id;
+
+
+--
+-- Name: corpus_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpus_items (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    source_snapshot_id bigint NOT NULL,
+    external_id character varying NOT NULL,
+    title character varying NOT NULL,
+    content text NOT NULL,
+    context jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_ab75a1fb7b CHECK (((jsonb_typeof(context) = 'object'::text) AND ((length(content) >= 1) AND (length(content) <= 100000))))
+);
+
+
+--
+-- Name: corpus_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpus_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpus_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpus_items_id_seq OWNED BY public.corpus_items.id;
 
 
 --
@@ -126,7 +205,7 @@ CREATE TABLE public.memberships (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     role character varying NOT NULL,
-    CONSTRAINT memberships_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[])))
+    CONSTRAINT memberships_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text])))
 );
 
 
@@ -160,7 +239,7 @@ CREATE TABLE public.oidc_identities (
     subject character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT oidc_identities_lengths CHECK ((((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048)) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
+    CONSTRAINT oidc_identities_lengths CHECK (((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
 );
 
 
@@ -238,7 +317,7 @@ CREATE TABLE public.sessions (
     updated_at timestamp(6) without time zone NOT NULL,
     authentication_method character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY ((ARRAY['local'::character varying, 'oidc'::character varying, 'break_glass'::character varying])::text[])))
+    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('oidc'::character varying)::text, ('break_glass'::character varying)::text])))
 );
 
 
@@ -259,6 +338,81 @@ CREATE SEQUENCE public.sessions_id_seq
 --
 
 ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
+
+
+--
+-- Name: source_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_snapshots (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    source_id bigint NOT NULL,
+    number integer NOT NULL,
+    digest character varying NOT NULL,
+    redaction character varying NOT NULL,
+    processing_version character varying NOT NULL,
+    imported_by_id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[]))))
+);
+
+
+--
+-- Name: source_snapshots_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.source_snapshots_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: source_snapshots_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.source_snapshots_id_seq OWNED BY public.source_snapshots.id;
+
+
+--
+-- Name: sources; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sources (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    name character varying NOT NULL,
+    kind character varying NOT NULL,
+    current_snapshot_id bigint,
+    expires_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_5a3ed6bc52 CHECK (((kind)::text = ANY ((ARRAY['conversations'::character varying, 'document'::character varying])::text[])))
+);
+
+
+--
+-- Name: sources_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.sources_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sources_id_seq OWNED BY public.sources.id;
 
 
 --
@@ -312,8 +466,8 @@ CREATE TABLE public.workspace_invitations (
     accepted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[]))),
-    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[])))
+    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text]))),
+    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('accepted'::character varying)::text, ('revoked'::character varying)::text, ('expired'::character varying)::text])))
 );
 
 
@@ -377,6 +531,20 @@ ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: corpora id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpora ALTER COLUMN id SET DEFAULT nextval('public.corpora_id_seq'::regclass);
+
+
+--
+-- Name: corpus_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_items ALTER COLUMN id SET DEFAULT nextval('public.corpus_items_id_seq'::regclass);
+
+
+--
 -- Name: installation_states id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -409,6 +577,20 @@ ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
+
+
+--
+-- Name: source_snapshots id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_snapshots ALTER COLUMN id SET DEFAULT nextval('public.source_snapshots_id_seq'::regclass);
+
+
+--
+-- Name: sources id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sources ALTER COLUMN id SET DEFAULT nextval('public.sources_id_seq'::regclass);
 
 
 --
@@ -446,6 +628,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: corpora corpora_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpora
+    ADD CONSTRAINT corpora_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: corpus_items corpus_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_items
+    ADD CONSTRAINT corpus_items_pkey PRIMARY KEY (id);
 
 
 --
@@ -494,6 +692,22 @@ ALTER TABLE ONLY public.schema_migrations
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_snapshots source_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_snapshots
+    ADD CONSTRAINT source_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sources sources_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT sources_pkey PRIMARY KEY (id);
 
 
 --
@@ -560,6 +774,34 @@ CREATE INDEX index_audit_events_on_workspace_id ON public.audit_events USING btr
 --
 
 CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_events USING btree (workspace_id, occurred_at);
+
+
+--
+-- Name: index_corpora_on_workspace_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_corpora_on_workspace_id ON public.corpora USING btree (workspace_id);
+
+
+--
+-- Name: index_corpora_on_workspace_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpora_on_workspace_id_and_id ON public.corpora USING btree (workspace_id, id);
+
+
+--
+-- Name: index_corpus_items_on_source_snapshot_id_and_external_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_items_on_source_snapshot_id_and_external_id ON public.corpus_items USING btree (source_snapshot_id, external_id);
+
+
+--
+-- Name: index_corpus_items_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_items_on_workspace_id_and_corpus_id_and_id ON public.corpus_items USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -640,6 +882,55 @@ CREATE INDEX index_sessions_on_user_id ON public.sessions USING btree (user_id);
 
 
 --
+-- Name: index_source_snapshots_on_imported_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_snapshots_on_imported_by_id ON public.source_snapshots USING btree (imported_by_id);
+
+
+--
+-- Name: index_source_snapshots_on_source_id_and_digest_and_redaction; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_snapshots_on_source_id_and_digest_and_redaction ON public.source_snapshots USING btree (source_id, digest, redaction);
+
+
+--
+-- Name: index_source_snapshots_on_source_id_and_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_snapshots_on_source_id_and_number ON public.source_snapshots USING btree (source_id, number);
+
+
+--
+-- Name: index_source_snapshots_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_snapshots_on_workspace_id_and_corpus_id_and_id ON public.source_snapshots USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_source_snapshots_on_workspace_id_and_source_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_snapshots_on_workspace_id_and_source_id_and_id ON public.source_snapshots USING btree (workspace_id, source_id, id);
+
+
+--
+-- Name: index_sources_on_corpus_id_and_name_and_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sources_on_corpus_id_and_name_and_kind ON public.sources USING btree (corpus_id, name, kind);
+
+
+--
+-- Name: index_sources_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sources_on_workspace_id_and_corpus_id_and_id ON public.sources USING btree (workspace_id, corpus_id, id);
+
+
+--
 -- Name: index_users_on_lower_email_address; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -703,6 +994,28 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: corpus_items corpus_items_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_items_immutable BEFORE UPDATE ON public.corpus_items FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: source_snapshots source_snapshots_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER source_snapshots_immutable BEFORE UPDATE ON public.source_snapshots FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: source_snapshots fk_rails_31de20a847; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_snapshots
+    ADD CONSTRAINT fk_rails_31de20a847 FOREIGN KEY (workspace_id, corpus_id, source_id) REFERENCES public.sources(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: workspaces fk_rails_3e6d59991e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -735,6 +1048,22 @@ ALTER TABLE ONLY public.workspace_invitations
 
 
 --
+-- Name: sources fk_rails_7832bc1c85; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT fk_rails_7832bc1c85 FOREIGN KEY (workspace_id, id, current_snapshot_id) REFERENCES public.source_snapshots(workspace_id, source_id, id);
+
+
+--
+-- Name: source_snapshots fk_rails_7856a7f759; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_snapshots
+    ADD CONSTRAINT fk_rails_7856a7f759 FOREIGN KEY (imported_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: memberships fk_rails_99326fb65d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -743,11 +1072,35 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: corpus_items fk_rails_a030d050b9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_items
+    ADD CONSTRAINT fk_rails_a030d050b9 FOREIGN KEY (workspace_id, corpus_id, source_snapshot_id) REFERENCES public.source_snapshots(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: corpora fk_rails_a618c606d9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpora
+    ADD CONSTRAINT fk_rails_a618c606d9 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
 -- Name: workspace_invitations fk_rails_aa0ff4982f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.workspace_invitations
     ADD CONSTRAINT fk_rails_aa0ff4982f FOREIGN KEY (accepted_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: sources fk_rails_af1ed8e28f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sources
+    ADD CONSTRAINT fk_rails_af1ed8e28f FOREIGN KEY (workspace_id, corpus_id) REFERENCES public.corpora(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -789,6 +1142,7 @@ ALTER TABLE ONLY public.oidc_identities
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930010000'),
 ('20260824230700'),
 ('20260823200303'),
 ('20260823200302'),

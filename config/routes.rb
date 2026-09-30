@@ -2,6 +2,9 @@ Rails.application.routes.draw do
   root "pages#show"
   resources :workspaces, only: %i[index show new create edit update] do
     resources :workspace_invitations, only: %i[index create destroy]
+    resources :corpora, only: %i[index create show] do
+      resources :sources, only: %i[create show destroy]
+    end
   end
   get "invitations", to: "workspace_invitation_acceptances#show", as: :workspace_invitation_acceptance
   post "invitations", to: "workspace_invitation_acceptances#create"

@@ -1,0 +1,39 @@
+<% content_for :title, "#{@corpus.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. No external model calls.</p></div></div>
+  <section aria-labelledby="sources-title"><h2 id="sources-title">Sources</h2>
+    <ul class="workspace-list" role="list">
+      <% @sources.each do |source| %>
+        <li class="workspace-card"><% if source.expires_at > Time.current %><%= link_to source.name, workspace_corpus_source_path(Current.workspace, @corpus, source) %><% else %><%= source.name %> (expired; awaiting deletion)<% end %>
+          <span>Snapshot <%= source.current_snapshot.number %> · <%= source.kind.humanize %> · expires <%= source.expires_at.to_date %></span></li>
+      <% end %>
+    </ul>
+    <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
+  </section>
+  <% if Current.require_membership!.can_write? %>
+    <section class="section-block config-panel"><h2>Add company data</h2>
+      <p>UTF-8 JSON conversation exports, or plain text/Markdown documents. 10 MiB and 2000 records per upload. A changed upload with the same name adds a snapshot; an exact repeat reuses it.</p>
+      <%= form_with url: workspace_corpus_sources_path(Current.workspace, @corpus), multipart: true, class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 180 %></div>
+        <div class="field-grid">
+          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Text / Markdown", "document"]] %></div>
+          <div class="field"><%= form.label :redaction, "Redaction" %><%= form.select :redaction, [["Mask email addresses", "email"], ["Keep original text", "none"]] %></div>
+        </div>
+        <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Original files are not stored; snapshots retain normalised text and an input digest.</p>
+        <div class="field-grid">
+          <div class="field"><%= form.label :file, "Company data file" %><%= form.file_field :file, required: true, accept: ".json,.txt,.md" %></div>
+          <div class="field"><%= form.label :retention_days, "Retention days" %><%= form.number_field :retention_days, value: 365, min: 1, max: 3650, required: true %></div>
+        </div>
+        <%= form.submit "Import source", class: "button button-primary" %>
+      <% end %>
+      <details class="section-block"><summary>Conversation export format</summary><p>A JSON array of objects with id, title, content and an optional context object. Intercom conversations with source/parts and Zendesk tickets with description/comments also work. HTML inside export fields stays untrusted text.</p>
+        <pre class="evidence-text">[{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}]</pre>
+      </details>
+    </section>
+  <% end %>
+  <section class="section-block"><h2>Current corpus records</h2><p>Page <%= @page %> · up to 50 records from current, unexpired snapshots.</p>
+    <% @items.each do |item| %><details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary><pre class="evidence-text"><%= item.content %></pre></details><% end %>
+    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  </section>
+</main>
