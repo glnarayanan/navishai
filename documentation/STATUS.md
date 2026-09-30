@@ -21,8 +21,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   bindings, versioned deterministic/rubric definitions and bounded suite membership.
 - [#147](https://github.com/glnarayanan/navishai/pull/147), based on #146: fixed output samples, authoritative expert
   label history, held-out/development reports and measured disagreement.
-- `rebuild/08-evaluation-loop`, based on #147: scripted targets, fixed runs/results,
+- [#148](https://github.com/glnarayanan/navishai/pull/148), based on #147: scripted targets, fixed runs/results,
   explained failures and human-reviewed regression admissions.
+- `rebuild/09-http-target`, based on #148: generic HTTPS targets, per-workspace
+  operator approval, human disclosure confirmation and bounded non-retrying calls.
 
 ## Built and checked
 
@@ -37,7 +39,7 @@ processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
 links. Local term analysis, expert labels, versioned scenarios, controlled variants,
 fixed eval definitions, deterministic checks and expert calibration are built;
-local scripted evaluation and regression are built. HTTP and judge execution are next.
+scripted/HTTP evaluation and regression are built. Judge execution is next.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -121,9 +123,32 @@ its teardown now removes its own records without changing production controls.
 Final focused browser check: 1 test / 43 assertions. The expanded source-deletion
 warning and updated home copy were also rendered and inspected on mobile.
 
+HTTP target `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 1m45.34s;
+198 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors,
+eager load passes. 194 Rails tests / 1540 assertions and 9 browser tests / 277
+assertions, no failures/errors/skips. Real local TLS checks cover a trusted stream,
+wrong hostname and redirect refusal; unit checks cover exact workspace/URL approval,
+credential isolation, mixed/private/translated DNS, address pinning, no proxy/retry,
+input/stream bounds, bad encoding/schema, DNS-inclusive deadline and unknown outcome.
+Run tests prove separate disclosure confirmation, frozen visible-only inputs,
+immutable UUID/metadata, operator revocation, no duplicate delivery, no regression
+from execution errors and discarded output after changed approval/evidence. A
+two-case concurrent test acquires corpus/membership locks during the network wait,
+expires a source and proves no retained response or second call. No external target
+ran. Browser checks cover retained HTTP form errors, disclosure blocking and unknown
+results on desktop/mobile without overflow/CSP violations. Captures were inspected;
+the prior-attempt notice now says the run did not start. The detector reported only
+existing Geist font warnings; the lab's visual system remains unchanged. Compose
+and orb service YAML parse; this is not a clean-host deployment check. Direct risk
+review/native audits replace unavailable Ponytail Audit and CE Code Review. Early
+focused failures came from test helper binding/scope and an unsupported browser
+assertion; corrections did not weaken product controls.
+Final focused browser check: 1 test / 50 assertions, including Space-key disclosure
+confirmation, no failures/errors/skips. No product code changed after full CI.
+
 ## Next and limits
 
-Next: bounded generic HTTP target and versioned judge execution/calibration.
+Next: versioned judge execution/calibration, then the complete P0 acceptance demo.
 Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;

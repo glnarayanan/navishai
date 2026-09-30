@@ -2,7 +2,7 @@
 
 The lab runs Rails 8.1, Ruby 4.0.6 and PostgreSQL 16. No Go source, process runner,
 Supermemory, vector extension, document converters or provider services remain.
-Solid Queue owns bounded evaluation batches; HTTP will use the Ruby standard library.
+Solid Queue owns bounded evaluation batches; HTTP uses the Ruby standard library.
 A separate worker language needs measured workload or isolation evidence.
 
 ## Fresh baseline
@@ -150,7 +150,7 @@ Compiler desktop/mobile/error captures live under `.amp/in/artifacts/compiler/`.
 Managing roles define a target with `rules` and `default_output` JSON. Up to 20
 ordered rules compare one named visible known fact with an exact scalar value and
 return a support-output-v1 fixture. Missing is not null; false is not absent. The
-first match wins. A target cannot run code, call a model or send data externally.
+first match wins. A scripted target cannot run code, call a model or send data externally.
 Target edits create versions with fixed configuration and processing version;
 stale forms need a reload. This adapter proves machinery, not support-agent quality.
 
@@ -163,7 +163,8 @@ Repeated/concurrent job delivery claims once, never repeats execution. A worker
 crash leaves an unknown/interrupted run; it does not justify an automatic retry.
 An expert can interrupt a queued run or one started over ten minutes ago, then
 deliberately start a separate run. Access, approval and source lifetime are checked
-before each case. Unavailable processing versions stop rather than reinterpret history.
+before each case and before retaining its output. Network calls hold no corpus or
+membership locks. Unavailable processing versions stop rather than reinterpret history.
 
 Results retain output and each exact check's pass, fail or abstention, reason and
 confidence. Rubrics without a judge abstain. A case fails on any failed check,
@@ -176,7 +177,60 @@ admission retains the result, case, human and rationale; repeat submissions reus
 it. Removing membership leaves the admission history. The next target version
 tests the same fixed case. Purge removes target/output/rationale copies; expiry
 hides them, including suite history, before purge. Inspected browser captures live
-under `.amp/in/artifacts/evaluation/`. HTTP targets and model judges are not built yet.
+under `.amp/in/artifacts/evaluation/`. Model judges are not built yet.
+
+## Generic HTTP target
+
+The operator sets `NAVISHAI_EVALUATION_ENDPOINTS` in both web and jobs as a JSON
+array. The default `[]` denies all HTTP targets. Each entry binds an exact URL to
+a numeric workspace ID, with an optional bearer token:
+
+```json
+[{"workspace_id": 123, "endpoint": "https://agent.example.com/evaluate"}]
+```
+
+This is an example, not a configured endpoint. If authentication is needed, add
+`bearer_token` to that entry through your private secret environment. Never paste
+it into the target form, commit the registry, or print it in logs. Rotate secrets
+with the environment, not a new case; credentials are not dataset artifacts.
+No key or credential reaches a target version, result, audit event or browser.
+The registry must be consistent across web/jobs; removal blocks future dispatch.
+
+A Manager/Admin/Owner chooses HTTP and saves `{"endpoint":"https://…"}`. Saving
+does not connect. A writer reviews the fixed visible inputs and exact endpoint,
+checks disclosure confirmation and starts a run. Each POST sends:
+
+```json
+{"schema":"support-target-v1","input":{"situation":"…","known_facts":{},"knowledge":[]}}
+```
+
+Input is the fixed case preview, including permitted knowledge references/excerpts.
+No expectations, title, hidden facts or workspace identity enter the body. Experts
+must remove sensitive data or answers from that preview. The endpoint returns the
+six-field support-output-v1 JSON documented above, not a provider-specific payload.
+`Idempotency-Key` is the item's fixed UUID; the endpoint owns remote deduplication.
+
+HTTPS port 443 only; no URL credentials, query or fragment. Every call checks all
+DNS answers, rejects private/special-use/translated addresses and pins one approved
+public address while retaining TLS hostname/certificate verification. No redirects,
+proxy inheritance, address fallback, compression or automatic retries. A 30-second
+total deadline includes DNS; open/read/write bounds are 5/10/10 seconds. Input is
+at most 1 MiB; streamed JSON output is at most 100 KiB and must be valid UTF-8.
+Deployment network rules must also deny private destinations; address checks are
+not a substitute for operator egress policy. Internal/private targets are not supported.
+
+Result metadata records adapter, processing version and elapsed time including
+checks. Cost remains unknown. HTTP, timeout and schema errors are execution errors,
+not support failures or regression candidates. A timeout may mean the remote
+system acted despite no retained response. Refresh/duplicate delivery never sends
+again; a deliberately new run has a new request key and may incur another charge.
+Stopping, expiry or deletion cannot recall an in-flight or already delivered
+request. Changes after dispatch discard its local result and block later cases.
+The remote endpoint has its own retention/deletion policy.
+
+Tests use stubbed DNS/streams and a real local TLS socket with test-only routing,
+never a customer endpoint. Desktop/mobile setup, approval and unknown-outcome
+captures live under `.amp/in/artifacts/http-target/`.
 
 ## Expert calibration
 

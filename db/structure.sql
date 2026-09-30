@@ -549,7 +549,9 @@ CREATE TABLE public.evaluation_results (
     decisions jsonb DEFAULT '[]'::jsonb NOT NULL,
     error text,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'incomplete'::character varying, 'error'::character varying])::text[])) AND (jsonb_typeof(decisions) = 'array'::text)))
+    execution jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT chk_rails_5576047e12 CHECK ((jsonb_typeof(execution) = 'object'::text)),
+    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('incomplete'::character varying)::text, ('error'::character varying)::text])) AND (jsonb_typeof(decisions) = 'array'::text)))
 );
 
 
@@ -583,6 +585,7 @@ CREATE TABLE public.evaluation_run_items (
     evaluation_run_id bigint NOT NULL,
     eval_case_id bigint NOT NULL,
     target_input jsonb NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
     CONSTRAINT chk_rails_9070c2469e CHECK ((jsonb_typeof(target_input) = 'object'::text))
 );
 
@@ -623,7 +626,7 @@ CREATE TABLE public.evaluation_runs (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
 
@@ -661,7 +664,7 @@ CREATE TABLE public.evaluation_target_versions (
     processing_version character varying NOT NULL,
     configuration jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_775d9f7766 CHECK (((number > 0) AND ((adapter)::text = 'scripted'::text) AND (jsonb_typeof(configuration) = 'object'::text)))
+    CONSTRAINT chk_rails_6e450cf67b CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -2349,6 +2352,13 @@ CREATE UNIQUE INDEX index_evaluation_results_on_evaluation_run_item_id ON public
 
 
 --
+-- Name: index_evaluation_run_items_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_evaluation_run_items_on_request_key ON public.evaluation_run_items USING btree (request_key);
+
+
+--
 -- Name: index_evaluation_runs_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3399,6 +3409,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930070000'),
 ('20260930060000'),
 ('20260930050000'),
 ('20260930040000'),
