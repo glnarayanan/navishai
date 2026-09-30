@@ -13,9 +13,17 @@ class ScenariosController < ApplicationController
   end
 
   def create
-    analysis = @corpus.corpus_analyses.find(params[:analysis_id])
-    ScenarioMining.call(analysis:, membership: Current.require_membership!)
-    redirect_to workspace_corpus_scenarios_path(Current.workspace, @corpus), notice: "Candidates created. Historical answers are evidence, not approved expectations.", status: :see_other
+    if params[:trace_item_id].present?
+      item = @corpus.corpus_items.find(params[:trace_item_id])
+      scenario = SupportTrace.propose!(item:, membership: Current.require_membership!)
+      redirect_to workspace_corpus_scenario_path(Current.workspace, @corpus, scenario), notice: "Trace candidate ready. Correct its expectations and company evidence before approval.", status: :see_other
+    else
+      analysis = @corpus.corpus_analyses.find(params[:analysis_id])
+      ScenarioMining.call(analysis:, membership: Current.require_membership!)
+      redirect_to workspace_corpus_scenarios_path(Current.workspace, @corpus), notice: "Candidates created. Historical answers are evidence, not approved expectations.", status: :see_other
+    end
+  rescue CorpusIntake::Invalid => error
+    invalid_input(error)
   end
 
   def show

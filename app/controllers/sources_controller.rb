@@ -25,6 +25,7 @@ class SourcesController < ApplicationController
     @items = @snapshot.corpus_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
     @more = @items.size > 50
     @items = @items.first(50)
+    @trace_scenarios = @corpus.scenarios.where(corpus_item_id: @items.map(&:id), parent_version_id: nil).index_by(&:corpus_item_id) if @source.kind == "traces"
   end
 
   def destroy

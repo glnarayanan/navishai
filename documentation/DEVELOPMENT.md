@@ -57,6 +57,25 @@ retained: normalised records, SHA-256 input digest and processing version are.
 Email masking is the default, not complete PII removal; review other sensitive data
 before upload. Email IDs become distinct digest-based record IDs.
 
+Production traces use a JSON array of `support-trace-v1` objects with exactly
+`schema`, `id`, `title`, `target_version`, `observed_at`, `input`, `output`,
+`observed_failure` and `human_correction`. Observation time must include a timezone.
+Input has exactly `situation`, `known_facts` and `knowledge`; each knowledge entry
+has `reference` and `content`. Output uses the six-field `support-output-v1` shape
+below. Each trace is at most 100 KiB, including metadata; the record text limit
+also applies. Failure/correction are text, may be empty, and are source reports,
+not expert labels. Unknown fields and hidden expectation fields are rejected.
+`test/fixtures/files/production_traces.json` shows the format with synthetic data.
+
+Intake masks nested trace input/output and corrections too, then revalidates the
+retained payload. A malformed batch leaves no partial records. Trace source pages
+show input, output, reported version/time and corrections. A writer may propose a
+scenario from a reported failure; repeats reuse its root identity. The proposal
+copies situation/facts, leaves requirements empty and does not grant recorded
+knowledge. Experts choose current documents, write expectations and approve the
+exact version. A trace without a reported failure cannot seed this proposal path.
+Trace payloads do not enter the conversation/document term-discovery baseline.
+
 Retention is 1–3650 days from the latest import, including a repeat. Expired content
 leaves exploration immediately; `SourceRetentionJob` deletes it hourly through
 Solid Queue in production. Managers/Admins/Owners can delete a source by typing its
@@ -76,7 +95,8 @@ issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
 
 Deleting any source clears corpus analyses and taxonomy revisions because they
-describe the full input collection. It also deletes their scenarios, variants,
+describe the full input collection. It also deletes all scenarios, including trace
+proposals with no analysis parent, and their variants,
 versions, evidence, reviews, compiled cases and graders. Grader text may contain
 company evidence, so purge clears the corpus-wide library too, including calibration
 outputs/labels, targets, runs, results and regression admissions. Suite names remain

@@ -5,12 +5,16 @@ class CorpusIntake
   PROCESSING_VERSION = "support-export-v1"
 
   def self.call(corpus:, membership:, name:, kind:, bytes:, redaction: "email", retention_days: 365)
-    raise Invalid, "Choose conversations or document." unless %w[conversations document].include?(kind)
+    raise Invalid, "Choose conversations, document or traces." unless %w[conversations document traces].include?(kind)
     raise Invalid, "Choose email redaction or none." unless %w[email none].include?(redaction)
     raise Invalid, "Retention must be 1–3650 days." unless retention_days.to_s.match?(/\A[0-9]+\z/) && retention_days.to_i.between?(1, 3650)
     text = bytes.dup.force_encoding(Encoding::UTF_8)
     raise Invalid, "Upload valid UTF-8 text, at most 10 MiB, without null bytes." if text.bytesize > MAX_BYTES || !text.valid_encoding? || text.include?("\0")
-    records = kind == "document" ? [ { "id" => "document", "title" => name, "content" => text, "context" => {} } ] : conversations(text)
+    records = case kind
+    when "document" then [ { "id" => "document", "title" => name, "content" => text, "context" => {} } ]
+    when "traces" then SupportTrace.records(text)
+    else conversations(text)
+    end
     raise Invalid, "An upload needs 1–2000 records with unique IDs." unless records.size.between?(1, MAX_ITEMS) && records.map { |record| record["id"].to_s }.uniq.size == records.size
     records.each do |record|
       unless record["id"].is_a?(String) || record["id"].is_a?(Integer)
@@ -33,7 +37,7 @@ class CorpusIntake
       unless snapshot
         snapshot = source.source_snapshots.create!(workspace: corpus.workspace, corpus:,
           number: (source.source_snapshots.maximum(:number) || 0) + 1, digest:, redaction:,
-          processing_version: PROCESSING_VERSION, imported_by: membership.user, created_at: Time.current)
+          processing_version: kind == "traces" ? SupportTrace::VERSION : PROCESSING_VERSION, imported_by: membership.user, created_at: Time.current)
         records.each do |record|
           fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
             content: record.fetch("content"), context: record.fetch("context", {}) }
@@ -41,6 +45,7 @@ class CorpusIntake
             fields = redact(fields)
             fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
           end
+          SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
           snapshot.corpus_items.create!(fields.merge(workspace: corpus.workspace, corpus:, created_at: Time.current))
         end
       end
@@ -50,7 +55,7 @@ class CorpusIntake
       snapshot
     end
   rescue JSON::ParserError, KeyError, TypeError
-    raise Invalid, "Use a supported conversation export with id, title and content for each record."
+    raise Invalid, "Use a supported conversation export or support-trace-v1 array. Check the source type and required fields."
   end
 
   def self.conversations(text)
