@@ -20,7 +20,8 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Evidence | Link to an exact source snapshot/item and the excerpt that supports a claim. |
 | Review | Expert decision on an exact proposed version: approve, reject, amend, or merge. |
 | Eval contract | Structured requirements and prohibitions compiled from a reviewed scenario version. |
-| Eval case | Executable scenario version plus contract and grader versions. |
+| Eval case | Fixed compilation of an approved scenario version, its contract, check bindings and grader versions. |
+| Check binding | One contract statement paired with an exact grader version and evidence from that scenario version. |
 | Eval suite | Named selection of cases; a run freezes its membership and versions. |
 | Grader | A check of one behaviour. Deterministic checks and rubric judges have distinct evidence and limits. |
 | Grader version | Fixed check definition, rubric, threshold, and optional model settings. |
@@ -44,3 +45,5 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Expectation evidence stays hidden from a target; knowledge evidence is an explicit excerpt the expert permits it to use.
 - A source-backed human expectation is not a claim that the historic answer was correct. Mining cannot approve it.
 - A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
+- Compilation covers every contract statement exactly once. A case retains its exact approval and bindings; an edit creates a new definition.
+- A deterministic trace check is not proof that an external tool ran or that a response is semantically correct.

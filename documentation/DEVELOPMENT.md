@@ -71,7 +71,10 @@ taxonomy revisions. Refresh queued results; production needs the jobs service.
 
 Deleting any source clears corpus analyses and taxonomy revisions because they
 describe the full input collection. It also deletes their scenarios, variants,
-versions, evidence and reviews. Source records from other sources remain.
+versions, evidence, reviews, compiled cases and graders. Grader text may contain
+company evidence, so purge clears the corpus-wide library too. Suite names remain
+without cases. Source records from other sources remain. Expiry blocks definition
+reads and writes before the hourly purge.
 
 ## Scenario review
 
@@ -96,6 +99,49 @@ difference. The child keeps parent evidence, requires an expert revision and get
 its own approval. No external processing occurs. Expired evidence hides scenario
 reads and blocks writes before purge. Full-page review/variant/error captures live
 under `.amp/in/artifacts/scenarios/` when `CAPTURE_LAB_SCREENSHOTS=1`.
+
+## Eval Compiler
+
+Define corpus-owned graders, then compile a current approved scenario. Map every
+statement to exactly one grader version and one evidence excerpt from that same
+scenario version. Missing, duplicate, foreign, stale or expired mappings fail.
+Compilation stores the exact approval, contract, bindings and compiler version.
+Repeated submissions with the same bindings reuse the case. A changed binding
+creates another numbered definition; later grader edits cannot rewrite it.
+
+Deterministic definitions use `type` and `value`: tool_called, forbidden_tool,
+field_collected, citation_present, escalation, policy_branch, text_contains,
+text_absent or tool_before. Names/branches match exactly; text checks ignore case
+and inspect assistant messages only. A collected value may be false or zero, but
+not null or empty. A citation needs an exact quote in permitted knowledge with
+the matching corpus-item reference. Tool order uses the first occurrence of each
+of two distinct names. These checks verify reported traces, not tool execution or
+semantic correctness. Text mentions do not prove a sound diagnosis.
+
+Rubric-judge definitions store a company rubric and a 0–1 abstention threshold.
+Saving does not call a model. Self-reported confidence is not a calibrated
+probability. Calibration and judge execution are the next slices, not built proof.
+
+The `support-output-v1` shape is bounded to 100 KiB and 100 messages/tool calls/
+citations. It requires all six fields and rejects extra fields and wrong types:
+
+```json
+{
+  "messages": [{"role": "assistant", "content": "Please share the expiry date."}],
+  "tool_calls": [{"name": "collect_expiry", "arguments": {}}],
+  "collected_fields": {"admin": false},
+  "citations": [],
+  "escalation": {"triggered": false, "team": null},
+  "policy_branch": null
+}
+```
+
+The target-visible preview contains only situation, known facts and permitted
+knowledge excerpts with corpus-item references. It omits title, hidden facts and
+expectation fields. Experts must remove answers from the starting context.
+Suites group up to 50 fixed cases; adding a case rechecks approval, evidence,
+current scenario version and check completeness. Runs do not exist yet.
+Compiler desktop/mobile/error captures live under `.amp/in/artifacts/compiler/`.
 
 For first-Owner setup configure a random 32+ byte `NAVISHAI_BOOTSTRAP_TOKEN` and a
 future ISO 8601 `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT`; use `/setup`. Remove them after

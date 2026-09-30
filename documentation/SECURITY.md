@@ -41,6 +41,16 @@ cannot inherit approval. Source expiry hides their content at read time, and pur
 also deletes all corpus scenarios through analysis relationships. Request logs
 filter scenario text, decisions, excerpts and mutations. No target receives any data.
 
+Compiled cases/check bindings and grader versions reject updates in Ruby and SQL.
+Composite relationships bind evidence and approval to the exact scenario version
+and keep graders within the corpus/workspace. Compilation checks full coverage,
+current approval and source lifetime under the corpus and membership locks. Suite
+admission rechecks these facts rather than trusting cached records. Grader edits
+need a current-version token. Request logs filter grader forms and definitions.
+Source purge removes compiled cases and all corpus graders; expiry hides grader
+text and case inputs before purge. Suite names survive without sensitive cases.
+No calibration or external execution exists yet.
+
 Analysis inputs and cluster members have workspace/corpus foreign keys and
 immutable updates. Jobs recheck the requester's membership. Source deletion also
 clears corpus-wide analyses/taxonomy revisions; expired inputs block analysis reads

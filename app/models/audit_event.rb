@@ -19,6 +19,11 @@ class AuditEvent < ApplicationRecord
     "scenario.revised" => { "version" => Integer },
     "scenario.reviewed" => { "version" => Integer },
     "scenario.variant_created" => { "version" => Integer },
+    "grader.version_created" => { "version" => Integer },
+    "eval.compiled" => { "version" => Integer },
+    "eval_suite.created" => {},
+    "eval_suite.case_added" => {},
+    "eval_suite.case_removed" => {},
     "workspace.created" => { "organization_id" => Integer },
     "workspace.updated" => {
       "previous_name" => String, "previous_slug" => String, "name" => String, "slug" => String

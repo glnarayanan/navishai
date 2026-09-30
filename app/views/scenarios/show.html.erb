@@ -7,6 +7,8 @@
   <nav class="workspace-tabs" aria-label="Scenario versions"><% @versions.each do |version| %><%= link_to "Version #{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: version.number), aria: { current: version == @version ? "page" : nil } %><% end %></nav>
   <p><%= @version.selection_reason %></p>
   <% if @scenario.parent_version %><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre><% end %>
+  <% if Current.require_membership!.can_write? && @version.approved? && !@version.stale? && @scenario.current_version_id == @version.id %><p><%= link_to "Compile eval", new_workspace_corpus_eval_case_path(Current.workspace, @corpus, scenario_id: @scenario.id), class: "button button-primary" %></p><% end %>
+  <% @version.eval_cases.order(number: :desc).limit(10).each do |item| %><p><%= link_to "Eval case #{item.id} · definition #{item.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %></p><% end %>
   <div class="review-layout">
     <section aria-labelledby="definition-title"><h2 id="definition-title">Scenario definition</h2>
       <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>

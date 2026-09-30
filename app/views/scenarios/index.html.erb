@@ -2,6 +2,7 @@
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1>Scenarios</h1><p>Real-source cases and controlled variants. Experts own the expected behaviour.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "scenarios" %>
   <% if @scenarios.empty? %><p>No candidates yet. Analyse a corpus, inspect its selection, then create scenarios.</p><% end %>
   <ul class="workspace-list" role="list"><% @scenarios.each do |scenario| %><li class="workspace-card">
     <%= link_to scenario.current_version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, scenario) %>

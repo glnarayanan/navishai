@@ -1,0 +1,8 @@
+<% content_for :title, "#{@grader.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Graders", workspace_corpus_graders_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @grader.name %></h1><p>Version <%= @version.number %> · <%= @version.kind.humanize %> · <%= @version.processing_version %></p></div></div>
+  <nav class="workspace-tabs" aria-label="Grader versions"><% @versions.each do |version| %><%= link_to "Version #{version.number}", workspace_corpus_grader_path(Current.workspace, @corpus, @grader, version: version.number), aria: { current: version.id == @version.id ? "page" : nil } %><% end %></nav>
+  <section class="section-block"><h2>Fixed definition</h2><p>Authored by expert #<%= @version.created_by_id %> on <%= @version.created_at.to_fs(:long) %>. Cases retain this version even if the grader changes.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.definition) %></pre></section>
+  <% if Current.require_membership!.can_write? && @version.id == @grader.current_version_id %><section class="section-block"><h2>Revise the grader</h2><p>A change creates a new version. It does not rewrite prior cases or results.</p><%= render "form", url: workspace_corpus_grader_path(Current.workspace, @corpus, @grader), method: :patch %></section><% end %>
+</main>
