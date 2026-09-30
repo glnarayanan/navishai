@@ -10,6 +10,27 @@ class EvaluationRun < ApplicationRecord
   attr_readonly :workspace_id, :corpus_id, :eval_suite_id, :evaluation_target_version_id, :requested_by_id, :processing_version, :judge_disclosure, :created_at
   validates :state, inclusion: { in: %w[queued running complete interrupted] }
 
+  def compare_with(baseline:)
+    raise EvalCase::Invalid, "Compare distinct runs from the same corpus." if baseline.id == id || baseline.corpus_id != corpus_id
+    raise ActiveRecord::RecordNotFound, "Corpus evidence has expired." if corpus.eval_definitions_expired?
+
+    before_items = baseline.evaluation_run_items.order(:id).includes(:evaluation_result, eval_case: { scenario_version: :scenario }).to_a
+    after_items = evaluation_run_items.order(:id).includes(:evaluation_result, eval_case: { scenario_version: :scenario }).to_a
+    rows = after_items.map do |after|
+      before = before_items.find { |item| item.eval_case_id == after.eval_case_id && item.target_input == after.target_input }
+      before_items.delete(before) if before
+      statuses = [ before&.evaluation_result&.status, after.evaluation_result&.status ]
+      change = if before.nil?
+        "unmatched"
+      else
+        { [ "pass", "fail" ] => "regression", [ "fail", "pass" ] => "recovery",
+          [ "pass", "pass" ] => "unchanged_pass", [ "fail", "fail" ] => "unchanged_fail" }.fetch(statuses, "unresolved")
+      end
+      { before:, after:, change: }
+    end
+    rows + before_items.map { |before| { before:, after: nil, change: "unmatched" } }
+  end
+
   def self.request!(suite:, membership:, target_version_id:, disclose: false, judge_disclose: false, suite_digest: nil)
     suite.corpus.with_lock do
       corpus = suite.corpus

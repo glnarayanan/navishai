@@ -88,6 +88,11 @@ td, th { padding: .75rem .5rem; border-bottom: 1px solid var(--border); }
 .evidence-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: "Geist Mono", monospace; font-size: .9rem; padding: 1rem; background: var(--surface); max-width: 80ch; }
 .review-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 2.5rem; }
 .review-layout > section { min-width: 0; }
+#source-impact, #run-comparison { overflow-wrap: anywhere; }
+#source-impact .workspace-card { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr); align-items: start; }
+#source-impact h4, .comparison-row h4 { font-weight: 600; margin: 0 0 .5rem; }
+.comparison-row h3 { margin: 0 0 .5rem; }
+.comparison-row .review-layout { gap: 1rem 2.5rem; }
 ::selection { background: var(--accent); color: var(--background); }
 input, textarea { caret-color: var(--accent); }
 @media (max-width: 60rem) { .review-layout { grid-template-columns: minmax(0, 1fr); } }
@@ -101,4 +106,5 @@ input, textarea { caret-color: var(--accent); }
   .field-hint, small, .eyebrow, .repository-path { font-size: 1rem; }
   .workspace-tabs { gap: 1.25rem; }
   .lab-empty { padding-top: 2rem; }
+  #source-impact .workspace-card { grid-template-columns: minmax(0, 1fr); }
 }

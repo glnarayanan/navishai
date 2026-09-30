@@ -104,6 +104,21 @@ no analysis parent, before deleting their evidence. No semantic failure matching
 automatic authoritative correction, provider call or classifier training follows
 from importing a trace.
 
+## Source impact and run comparisons
+
+Keep impact queries on `Source`: follow exact snapshot/item evidence into fixed
+scenario versions, cases and suite membership. Show current and historical
+dependencies. A changed document makes its old evidence stale; a changed export
+does not invalidate history. Do not infer semantic impact or rewrite expectations.
+Expired corpus sources hide these derived records under the existing lifetime gate.
+
+Keep comparisons on `EvaluationRun`: join only the same fixed case and identical
+frozen visible input within one corpus. Changed definitions or inputs stay
+unmatched. Pass → fail is a reported regression; fail → pass is recovery. Missing,
+error and incomplete results stay unresolved, not improvements. Link the exact
+results and disclose unmatched membership rather than inventing a support score.
+These read-only views need no new tables, provider calls or dependencies.
+
 ## Isolation, deletion, and hosting
 
 Every controller and job starts from a checked workspace. Composite relationships prevent foreign evidence and definitions. These checks are not PostgreSQL RLS and must not be described as such. Source retention/deletion must remove content and dependent disclosed copies under explicit policy while preserving a minimal non-content audit. Raw data, redacted snapshots, labels, and outputs have separate lifetimes.

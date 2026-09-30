@@ -30,4 +30,14 @@ module RecordedEvaluationTestHelper
     @suite.add_case!(membership: @membership, case_id: @case.id)
     @target = EvaluationTarget.define!(corpus: @corpus, membership: @membership, name: "Recorded SSO failure", adapter: "recorded", configuration: {}, trace_item_id: @trace_item.id)
   end
+
+  def build_compared_evaluation
+    build_recorded_evaluation
+    @before = request_run
+    EvaluationRunJob.perform_now(@before.id)
+    @target.revise!(membership: @membership, version_id: @target.current_version_id, adapter: "scripted",
+      configuration: script_configuration(output: support_output(tools: [ "collect_expiry" ])))
+    @after = request_run
+    EvaluationRunJob.perform_now(@after.id)
+  end
 end
