@@ -32,6 +32,11 @@ remain separate Rails-native production databases. No RLS is installed.
   until delivered to the default branch.
 - `bin/ci` runs setup, RuboCop, gem/importmap audits, Brakeman, eager-load checks,
   full Rails tests and system tests. No checks reference deleted Go code.
+- `bin/rails test test/services/support_lab_acceptance_test.rb` checks one fresh
+  technical-Support fixture through intake, discovery, expert taxonomy/scenario
+  review, mixed deterministic/judge checks, held-out labels, HTTP execution and
+  same-case regression replay. Network responses and expert judgments are fixtures;
+  this proves the engineering loop, not discovery quality or live-model accuracy.
 - `CAPTURE_LAB_SCREENSHOTS=1 bin/rails test:system` records lab/auth/error states at
   1280, 390 and 320px under `.amp/in/artifacts/phase-a/` and intake/evidence states
   under `.amp/in/artifacts/corpus/`.
@@ -56,7 +61,7 @@ Retention is 1–3650 days from the latest import, including a repeat. Expired c
 leaves exploration immediately; `SourceRetentionJob` deletes it hourly through
 Solid Queue in production. Managers/Admins/Owners can delete a source by typing its
 name. In development run `bin/rails runner 'SourceRetentionJob.perform_now'` to
-enforce expiry. No export route or external processing exists in this slice.
+enforce expiry. No export route exists; intake stays local.
 
 ## Local discovery
 
