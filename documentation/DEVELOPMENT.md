@@ -120,7 +120,7 @@ semantic correctness. Text mentions do not prove a sound diagnosis.
 
 Rubric-judge definitions store a company rubric and a 0–1 abstention threshold.
 Saving does not call a model. Self-reported confidence is not a calibrated
-probability. Calibration and judge execution are the next slices, not built proof.
+probability. Judge execution is the next slice, not built proof.
 
 The `support-output-v1` shape is bounded to 100 KiB and 100 messages/tool calls/
 citations. It requires all six fields and rejects extra fields and wrong types:
@@ -142,6 +142,30 @@ expectation fields. Experts must remove answers from the starting context.
 Suites group up to 50 fixed cases; adding a case rechecks approval, evidence,
 current scenario version and check completeness. Runs do not exist yet.
 Compiler desktop/mobile/error captures live under `.amp/in/artifacts/compiler/`.
+
+## Expert calibration
+
+Create a set for one exact grader version. Add up to 100 support-output-v1 samples
+bound to compiled checks using that version. Choose development or held-out before
+review; an identical JSON output on the same check reuses its sample regardless of
+key order and cannot change cohorts. Creation rechecks current scenario approval
+and source evidence. Deterministic predictions run locally; rubric samples have no
+prediction until judge execution exists. Neither upload nor label sends data out.
+
+Experts label pass, fail or uncertain and give their evidence. The first judgment
+view hides machine and other experts' labels to reduce anchoring, not to promise a
+double-blind experiment. Corrections append records and reject stale form tokens.
+Reports use the latest label per expert; conflicting or uncertain judgments cannot
+supply ground truth. Held-out and development counts never mix. Failure is positive
+in confusion counts, precision/recall and machine/expert disagreement. Zero
+denominators show no evidence, not 0% or 100%. Pairwise agreement uses only certain
+expert-label pairs and is not chance-corrected. Small selected sets do not establish
+population accuracy. Do not tune on held-out samples.
+
+Calibration sets, samples, predictions and labels reject Ruby/SQL updates and use
+composite same-corpus/grader relationships. Expiry hides them before purge; source
+purge removes them through case and grader relationships. Audit keeps no outputs
+or label rationale. Screenshots live under `.amp/in/artifacts/calibration/`.
 
 For first-Owner setup configure a random 32+ byte `NAVISHAI_BOOTSTRAP_TOKEN` and a
 future ISO 8601 `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT`; use `/setup`. Remove them after

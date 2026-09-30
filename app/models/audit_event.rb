@@ -24,6 +24,9 @@ class AuditEvent < ApplicationRecord
     "eval_suite.created" => {},
     "eval_suite.case_added" => {},
     "eval_suite.case_removed" => {},
+    "calibration.created" => {},
+    "calibration.sample_added" => {},
+    "calibration.labelled" => {},
     "workspace.created" => { "organization_id" => Integer },
     "workspace.updated" => {
       "previous_name" => String, "previous_slug" => String, "name" => String, "slug" => String

@@ -8,6 +8,11 @@ Rails.application.routes.draw do
       resources :graders, only: %i[index create show update]
       resources :eval_cases, only: %i[new create show]
       resources :eval_suites, only: %i[index create show update]
+      resources :calibration_sets, only: %i[index create show] do
+        resources :calibration_samples, only: %i[new create show] do
+          post :label, on: :member
+        end
+      end
       resources :scenarios, only: %i[index create show update] do
         post :review, on: :member
         post :variant, on: :member

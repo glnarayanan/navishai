@@ -9,6 +9,7 @@ class Corpus < ApplicationRecord
   has_many :grader_versions
   has_many :eval_cases
   has_many :eval_suites
+  has_many :calibration_sets
   normalizes :name, with: ->(name) { name.strip }
   validates :name, presence: true, length: { maximum: 100 }
 

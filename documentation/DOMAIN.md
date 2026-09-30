@@ -26,7 +26,9 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Grader | A check of one behaviour. Deterministic checks and rubric judges have distinct evidence and limits. |
 | Grader version | Fixed check definition, rubric, threshold, and optional model settings. |
 | Human label | Attributable expert judgment on exact evidence/output and definition versions. |
-| Calibration set | Labelled examples used to measure a grader; training and held-out examples stay distinct. |
+| Calibration set | Output samples for one fixed grader version; development and held-out samples stay distinct. |
+| Calibration sample | Fixed recorded output, cohort and compiled check that experts judge. |
+| Calibration prediction | Machine decision on a fixed sample, distinct from authoritative human labels. |
 | Evaluation target | System under test, not a NavishAI support persona. |
 | Evaluation run | One attributable execution against frozen target settings, cases, and graders. |
 | Evaluation result | Retained target output and individual grader decisions, evidence, uncertainty, and execution errors. |
@@ -47,3 +49,6 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
 - Compilation covers every contract statement exactly once. A case retains its exact approval and bindings; an edit creates a new definition.
 - A deterministic trace check is not proof that an external tool ran or that a response is semantically correct.
+- Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
+- Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
+- Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.

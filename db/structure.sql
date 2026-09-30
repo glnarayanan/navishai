@@ -93,6 +93,114 @@ ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
 
 
 --
+-- Name: calibration_predictions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calibration_predictions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    calibration_sample_id bigint NOT NULL,
+    result jsonb NOT NULL,
+    processing_version character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_85764e7b74 CHECK (((jsonb_typeof(result) = 'object'::text) AND ((result ->> 'decision'::text) = ANY (ARRAY['pass'::text, 'fail'::text, 'abstain'::text, 'error'::text]))))
+);
+
+
+--
+-- Name: calibration_predictions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calibration_predictions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calibration_predictions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calibration_predictions_id_seq OWNED BY public.calibration_predictions.id;
+
+
+--
+-- Name: calibration_samples; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calibration_samples (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    calibration_set_id bigint NOT NULL,
+    grader_version_id bigint NOT NULL,
+    eval_case_check_id bigint NOT NULL,
+    created_by_id bigint NOT NULL,
+    cohort character varying NOT NULL,
+    output_digest character varying NOT NULL,
+    output jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY ((ARRAY['development'::character varying, 'held_out'::character varying])::text[])) AND (jsonb_typeof(output) = 'object'::text)))
+);
+
+
+--
+-- Name: calibration_samples_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calibration_samples_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calibration_samples_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calibration_samples_id_seq OWNED BY public.calibration_samples.id;
+
+
+--
+-- Name: calibration_sets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calibration_sets (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    grader_version_id bigint NOT NULL,
+    created_by_id bigint NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: calibration_sets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calibration_sets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calibration_sets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calibration_sets_id_seq OWNED BY public.calibration_sets.id;
+
+
+--
 -- Name: cluster_members; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -280,7 +388,7 @@ CREATE TABLE public.eval_case_checks (
     grader_version_id bigint NOT NULL,
     requirement_kind character varying NOT NULL,
     requirement_index integer NOT NULL,
-    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY ((ARRAY['outcomes'::character varying, 'actions'::character varying, 'forbidden'::character varying, 'escalation'::character varying, 'grounding'::character varying])::text[])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
+    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY (ARRAY[('outcomes'::character varying)::text, ('actions'::character varying)::text, ('forbidden'::character varying)::text, ('escalation'::character varying)::text, ('grounding'::character varying)::text])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
 );
 
 
@@ -386,7 +494,7 @@ CREATE TABLE public.eval_suites (
     kind character varying DEFAULT 'evaluation'::character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY ((ARRAY['evaluation'::character varying, 'regression'::character varying])::text[])))
+    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY (ARRAY[('evaluation'::character varying)::text, ('regression'::character varying)::text])))
 );
 
 
@@ -424,7 +532,7 @@ CREATE TABLE public.grader_versions (
     processing_version character varying NOT NULL,
     definition jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY ((ARRAY['deterministic'::character varying, 'rubric_judge'::character varying])::text[])) AND (jsonb_typeof(definition) = 'object'::text)))
+    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY (ARRAY[('deterministic'::character varying)::text, ('rubric_judge'::character varying)::text])) AND (jsonb_typeof(definition) = 'object'::text)))
 );
 
 
@@ -479,6 +587,42 @@ CREATE SEQUENCE public.graders_id_seq
 --
 
 ALTER SEQUENCE public.graders_id_seq OWNED BY public.graders.id;
+
+
+--
+-- Name: human_labels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.human_labels (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    calibration_sample_id bigint NOT NULL,
+    labelled_by_id bigint NOT NULL,
+    decision character varying NOT NULL,
+    rationale text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'uncertain'::character varying])::text[])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
+);
+
+
+--
+-- Name: human_labels_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.human_labels_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: human_labels_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.human_labels_id_seq OWNED BY public.human_labels.id;
 
 
 --
@@ -1073,6 +1217,27 @@ ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: calibration_predictions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_predictions ALTER COLUMN id SET DEFAULT nextval('public.calibration_predictions_id_seq'::regclass);
+
+
+--
+-- Name: calibration_samples id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples ALTER COLUMN id SET DEFAULT nextval('public.calibration_samples_id_seq'::regclass);
+
+
+--
+-- Name: calibration_sets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_sets ALTER COLUMN id SET DEFAULT nextval('public.calibration_sets_id_seq'::regclass);
+
+
+--
 -- Name: cluster_members id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1147,6 +1312,13 @@ ALTER TABLE ONLY public.grader_versions ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.graders ALTER COLUMN id SET DEFAULT nextval('public.graders_id_seq'::regclass);
+
+
+--
+-- Name: human_labels id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.human_labels ALTER COLUMN id SET DEFAULT nextval('public.human_labels_id_seq'::regclass);
 
 
 --
@@ -1278,6 +1450,30 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: calibration_predictions calibration_predictions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_predictions
+    ADD CONSTRAINT calibration_predictions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calibration_samples calibration_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT calibration_samples_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calibration_sets calibration_sets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_sets
+    ADD CONSTRAINT calibration_sets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cluster_members cluster_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1363,6 +1559,14 @@ ALTER TABLE ONLY public.grader_versions
 
 ALTER TABLE ONLY public.graders
     ADD CONSTRAINT graders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: human_labels human_labels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.human_labels
+    ADD CONSTRAINT human_labels_pkey PRIMARY KEY (id);
 
 
 --
@@ -1502,6 +1706,20 @@ ALTER TABLE ONLY public.workspaces
 
 
 --
+-- Name: calibration_sample_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX calibration_sample_identity ON public.calibration_samples USING btree (calibration_set_id, eval_case_check_id, output_digest);
+
+
+--
+-- Name: idx_on_calibration_sample_id_labelled_by_id_id_848426ae0f; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_calibration_sample_id_labelled_by_id_id_848426ae0f ON public.human_labels USING btree (calibration_sample_id, labelled_by_id, id);
+
+
+--
 -- Name: idx_on_corpus_analysis_id_corpus_item_id_454c89de9d; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1527,6 +1745,20 @@ CREATE UNIQUE INDEX idx_on_scenario_version_id_corpus_item_id_kind_455675656f ON
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_grader_id_id_69031213be ON public.grader_versions USING btree (workspace_id, corpus_id, grader_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_grader_version_id_a2829702f1; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_grader_version_id_a2829702f1 ON public.eval_case_checks USING btree (workspace_id, corpus_id, id, grader_version_id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_grader_version_id_b83f9fb296; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_grader_version_id_b83f9fb296 ON public.calibration_sets USING btree (workspace_id, corpus_id, id, grader_version_id);
 
 
 --
@@ -1597,6 +1829,34 @@ CREATE INDEX index_audit_events_on_workspace_id ON public.audit_events USING btr
 --
 
 CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_events USING btree (workspace_id, occurred_at);
+
+
+--
+-- Name: index_calibration_predictions_on_calibration_sample_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calibration_predictions_on_calibration_sample_id ON public.calibration_predictions USING btree (calibration_sample_id);
+
+
+--
+-- Name: index_calibration_samples_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calibration_samples_on_created_by_id ON public.calibration_samples USING btree (created_by_id);
+
+
+--
+-- Name: index_calibration_samples_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calibration_samples_on_workspace_id_and_corpus_id_and_id ON public.calibration_samples USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_calibration_sets_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calibration_sets_on_created_by_id ON public.calibration_sets USING btree (created_by_id);
 
 
 --
@@ -1730,6 +1990,13 @@ CREATE UNIQUE INDEX index_grader_versions_on_workspace_id_and_corpus_id_and_id O
 --
 
 CREATE UNIQUE INDEX index_graders_on_workspace_id_and_corpus_id_and_id ON public.graders USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_human_labels_on_labelled_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_human_labels_on_labelled_by_id ON public.human_labels USING btree (labelled_by_id);
 
 
 --
@@ -1992,6 +2259,27 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: calibration_predictions calibration_predictions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calibration_predictions_immutable BEFORE UPDATE ON public.calibration_predictions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: calibration_samples calibration_samples_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calibration_samples_immutable BEFORE UPDATE ON public.calibration_samples FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: calibration_sets calibration_sets_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calibration_sets_immutable BEFORE UPDATE ON public.calibration_sets FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: cluster_members cluster_members_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2031,6 +2319,13 @@ CREATE TRIGGER eval_cases_immutable BEFORE UPDATE ON public.eval_cases FOR EACH 
 --
 
 CREATE TRIGGER grader_versions_immutable BEFORE UPDATE ON public.grader_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: human_labels human_labels_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER human_labels_immutable BEFORE UPDATE ON public.human_labels FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
 
 
 --
@@ -2076,11 +2371,27 @@ CREATE TRIGGER taxonomy_versions_immutable BEFORE UPDATE ON public.taxonomy_vers
 
 
 --
+-- Name: calibration_sets fk_rails_03578f8e6c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_sets
+    ADD CONSTRAINT fk_rails_03578f8e6c FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: taxonomy_versions fk_rails_099165acfd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.taxonomy_versions
     ADD CONSTRAINT fk_rails_099165acfd FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: calibration_samples fk_rails_0ec147bff8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT fk_rails_0ec147bff8 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2129,6 +2440,14 @@ ALTER TABLE ONLY public.scenario_reviews
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT fk_rails_3e6d59991e FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: human_labels fk_rails_3e83bdefb2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.human_labels
+    ADD CONSTRAINT fk_rails_3e83bdefb2 FOREIGN KEY (workspace_id, corpus_id, calibration_sample_id) REFERENCES public.calibration_samples(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -2201,6 +2520,14 @@ ALTER TABLE ONLY public.workspace_invitations
 
 ALTER TABLE ONLY public.eval_cases
     ADD CONSTRAINT fk_rails_6d522a3523 FOREIGN KEY (workspace_id, corpus_id, scenario_version_id, scenario_review_id) REFERENCES public.scenario_reviews(workspace_id, corpus_id, scenario_version_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: calibration_predictions fk_rails_73dcb2bb89; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_predictions
+    ADD CONSTRAINT fk_rails_73dcb2bb89 FOREIGN KEY (workspace_id, corpus_id, calibration_sample_id) REFERENCES public.calibration_samples(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -2284,6 +2611,14 @@ ALTER TABLE ONLY public.scenario_evidence
 
 
 --
+-- Name: calibration_sets fk_rails_93f1ed4933; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_sets
+    ADD CONSTRAINT fk_rails_93f1ed4933 FOREIGN KEY (workspace_id, corpus_id, grader_version_id) REFERENCES public.grader_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: scenarios fk_rails_954ce30522; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2332,6 +2667,14 @@ ALTER TABLE ONLY public.scenarios
 
 
 --
+-- Name: calibration_samples fk_rails_a4968599f3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT fk_rails_a4968599f3 FOREIGN KEY (workspace_id, corpus_id, eval_case_check_id, grader_version_id) REFERENCES public.eval_case_checks(workspace_id, corpus_id, id, grader_version_id) ON DELETE CASCADE;
+
+
+--
 -- Name: corpora fk_rails_a618c606d9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2361,6 +2704,14 @@ ALTER TABLE ONLY public.sources
 
 ALTER TABLE ONLY public.grader_versions
     ADD CONSTRAINT fk_rails_afa015c295 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: human_labels fk_rails_c25eaef411; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.human_labels
+    ADD CONSTRAINT fk_rails_c25eaef411 FOREIGN KEY (labelled_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2444,6 +2795,14 @@ ALTER TABLE ONLY public.scenario_reviews
 
 
 --
+-- Name: calibration_samples fk_rails_f5bc28b28d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT fk_rails_f5bc28b28d FOREIGN KEY (workspace_id, corpus_id, calibration_set_id, grader_version_id) REFERENCES public.calibration_sets(workspace_id, corpus_id, id, grader_version_id) ON DELETE CASCADE;
+
+
+--
 -- Name: eval_case_checks fk_rails_f6f209f707; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2482,6 +2841,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930050000'),
 ('20260930040000'),
 ('20260930030000'),
 ('20260930020000'),

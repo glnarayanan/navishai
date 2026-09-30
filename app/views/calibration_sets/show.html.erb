@@ -1,0 +1,19 @@
+<% content_for :title, "#{@set.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @set.name %></h1><p><%= link_to @set.grader_version.grader.name, workspace_corpus_grader_path(Current.workspace, @corpus, @set.grader_version.grader, version: @set.grader_version.number) %> · fixed version <%= @set.grader_version.number %></p></div></div>
+  <nav class="workspace-tabs" aria-label="Calibration cohorts"><% %w[held_out development].each do |cohort| %><%= link_to cohort.humanize, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort:), aria: { current: cohort == @cohort ? "page" : nil } %><% end %></nav>
+  <section class="section-block"><h2><%= @cohort.humanize %> evidence</h2>
+    <p><%= @report[:samples] %> samples · <%= @report[:labelled] %> labelled · <%= @report[:compared] %> compared. Excluded: <%= @report[:disputed] %> disputed, <%= @report[:uncertain] %> uncertain, <%= @report[:abstained] %> abstained and <%= @report[:unpredicted] %> without a usable prediction.</p>
+    <p>“Fail” is positive: false positives flag good support; false negatives miss bad support. Counts use the latest label per expert. Disputed or uncertain samples cannot supply ground truth.</p>
+    <div class="table-wrap"><table><caption>Failure detection confusion matrix</caption><thead><tr><th scope="col">Prediction</th><th scope="col">Expert fail</th><th scope="col">Expert pass</th></tr></thead><tbody><tr><th scope="row">Fail</th><td><%= @report[:true_positive] %> true positives</td><td><%= @report[:false_positive] %> false positives</td></tr><tr><th scope="row">Pass</th><td><%= @report[:false_negative] %> false negatives</td><td><%= @report[:true_negative] %> true negatives</td></tr></tbody></table></div>
+    <dl class="source-metadata"><% { precision: "Failure precision", recall: "Failure recall", disagreement_rate: "Machine / expert disagreement", inter_rater_agreement: "Pairwise expert agreement" }.each do |key, name| %><dt><%= name %></dt><dd><%= @report[key].nil? ? "Not enough evidence" : number_to_percentage(@report[key] * 100, precision: 1) %></dd><% end %></dl>
+    <p class="muted-copy">Pairwise agreement uses <%= @report[:pairs] %> pairs of certain expert labels; it is not chance-corrected. A small or selected sample does not prove accuracy across the company corpus. Do not tune on held-out samples.</p>
+    <% if @set.grader_version.kind == "rubric_judge" %><p role="status">Judge execution is not built yet. These expert labels establish a calibration set, not judge accuracy.</p><% end %>
+  </section>
+  <section class="section-block"><h2>Review samples</h2>
+    <% if @samples.empty? %><p>No samples in this cohort. Add a recorded output, choosing its cohort before review.</p><% end %>
+    <ul class="workspace-list" role="list"><% @samples.each do |sample| %><li class="workspace-card"><%= link_to "Sample #{sample.id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample) %><span>Check #<%= sample.eval_case_check_id %> · <%= sample.latest_labels.count %> expert labels</span></li><% end %></ul>
+  </section>
+  <% if Current.require_membership!.can_write? %><p class="section-block"><%= link_to "Add output sample", new_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set), class: "button button-primary" %></p><% end %>
+</main>

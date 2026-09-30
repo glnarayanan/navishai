@@ -1,0 +1,13 @@
+<% content_for :title, "Add calibration sample — NavishAI" %>
+<main class="page-shell config-panel">
+  <%= link_to @set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set), class: "back-link" %>
+  <div class="page-heading"><div><h1>Add output sample</h1><p><%= @set.grader_version.grader.name %> · fixed version <%= @set.grader_version.number %></p></div></div>
+  <p>Use support-output-v1 JSON. A set holds at most 100 samples. Duplicate outputs on the same check reuse a sample and cannot move between cohorts.</p>
+  <details><summary>Read the case requirements</summary><dl class="source-metadata"><% @checks.each do |check| %><dt><%= link_to "Case #{check.eval_case_id} · #{check.requirement_kind.humanize} #{check.requirement_index + 1}", workspace_corpus_eval_case_path(Current.workspace, @corpus, check.eval_case) %></dt><dd><%= check.requirement %></dd><% end %></dl></details>
+  <%= form_with url: workspace_corpus_calibration_set_calibration_samples_path(Current.workspace, @corpus, @set), class: "form-stack" do |form| %>
+    <div class="field"><%= form.label :check_id, "Case check" %><%= form.select :check_id, @checks.map { |check| [ "Case #{check.eval_case_id} · #{check.requirement_kind.humanize} #{check.requirement_index + 1}", check.id ] }, { include_blank: "Choose a compiled check", selected: params[:check_id] }, required: true %></div>
+    <div class="field"><%= form.label :cohort, "Sample cohort" %><%= form.select :cohort, [["Held out — measure, do not tune", "held_out"], ["Development — tune here", "development"]], { selected: params[:cohort] } %></div>
+    <div class="field"><%= form.label :output, "Output JSON" %><%= form.text_area :output, required: true, rows: 10, value: params[:output] %><small>Only upload outputs you may retain with this corpus. Source expiry and deletion also remove these copies.</small></div>
+    <%= form.submit "Add sample", class: "button button-primary", data: { turbo_submits_with: "Adding…" } %>
+  <% end %>
+</main>
