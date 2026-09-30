@@ -221,6 +221,50 @@ class BootstrapTest < ActiveSupport::TestCase
       refute File.exist?("#{destination}.part")
       refute File.exist?(destination)
       refute_path_exists File.join(root, "commands.log")
+      assert_equal [ "bytes=100000-" ], server.requests.map { |request| request[:range] }
+
+      _stdout, stderr, retry_status = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+      assert retry_status.success?, stderr
+      assert_equal body, File.binread(destination)
+      assert_equal [ "bytes=100000-", nil ], server.requests.map { |request| request[:range] }
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_complete_verified_partial_is_accepted_after_a_416_reply
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite("#{destination}.part", body)
+
+      _stdout, stderr, status = run_bootstrap(root, server.url, real_curl: true, **https_environment(server, checksum, destination))
+
+      assert status.success?, stderr
+      assert_equal body, File.binread(destination)
+      refute File.exist?("#{destination}.part")
+      assert_equal [ "bytes=100000-" ], server.requests.map { |request| request[:range] }
+      assert_includes File.read(File.join(root, "commands.log")), "setup #{destination}"
+    ensure
+      server&.stop
+    end
+  end
+
+  def test_other_http_errors_do_not_accept_even_a_checksum_matching_partial
+    Dir.mktmpdir do |root|
+      body = SecureRandom.random_bytes(100_000)
+      server = CandidateHttpsServer.new(root, body:)
+      checksum, destination = trusted_candidate(root, body)
+      File.binwrite("#{destination}.part", body)
+
+      _stdout, stderr, status = run_bootstrap(root, server.url("/missing"), real_curl: true, **https_environment(server, checksum, destination))
+
+      assert_not status.success?
+      assert_includes stderr, "candidate download failed"
+      assert_equal body, File.binread("#{destination}.part")
+      refute File.exist?(destination)
+      refute_path_exists File.join(root, "commands.log")
     ensure
       server&.stop
     end

@@ -20,8 +20,9 @@ class HealthScorecardTest < ApplicationSystemTestCase
     assert_text "Open support cases carries up to 40 points"
     click_button "Run preview and backtest"
     assert_text "Preview and historical backtest saved"
-    assert_text "snapshots tested"
-    assert_text "at most 500 retained snapshots"
+    assert_selector ".scorecard-preview-stats div", text: /\A2\s+current accounts\z/
+    assert_selector ".scorecard-preview-stats div", text: /\A1\s+historical snapshots\z/
+    assert_selector ".scorecard-evidence", text: "Historical replay: 1 of at most 500 snapshots"
 
     page.current_window.resize_to(1024, 900)
     assert_no_horizontal_overflow
@@ -29,7 +30,7 @@ class HealthScorecardTest < ApplicationSystemTestCase
     assert_includes %w[auto scroll], compare.evaluate_script("getComputedStyle(this).overflowX")
     assert_operator compare.evaluate_script("this.scrollWidth"), :>=, compare.evaluate_script("this.clientWidth")
     assert_selector ".scorecard-compare-table th", text: /Proposal/i
-    assert_selector ".scorecard-compare-table th", text: /Change/i
+    assert_selector ".scorecard-compare-table th", text: /Comparison/i
     assert_not_equal "hidden", find(".scorecard-preview").evaluate_script("getComputedStyle(this).overflowX")
     page.current_window.resize_to(1440, 1100)
 
