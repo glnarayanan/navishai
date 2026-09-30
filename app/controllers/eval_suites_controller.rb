@@ -21,7 +21,14 @@ class EvalSuitesController < ApplicationController
 
   def show
     @suite = @corpus.eval_suites.find(params[:id])
-    @cases = @suite.eval_cases.where(scenario_version: ScenarioVersion.unexpired).includes(:scenario_version).order(:id)
+    if @corpus.eval_definitions_expired?
+      @cases = @targets = @regressions = @runs = []
+    else
+      @cases = @suite.eval_cases.includes(:scenario_version).order(:id)
+      @targets = @corpus.evaluation_targets.includes(:current_version).order(:name).limit(100)
+      @regressions = RegressionCase.where(eval_suite: @suite).includes(:evaluation_result).order(:id)
+      @runs = @corpus.evaluation_runs.where(eval_suite: @suite).order(id: :desc).limit(20)
+    end
   end
 
   def update

@@ -4,4 +4,6 @@
   <%= link_to "Graders", workspace_corpus_graders_path(Current.workspace, @corpus), aria: { current: active == "graders" ? "page" : nil } %>
   <%= link_to "Calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus), aria: { current: active == "calibration" ? "page" : nil } %>
   <%= link_to "Eval suites", workspace_corpus_eval_suites_path(Current.workspace, @corpus), aria: { current: active == "suites" ? "page" : nil } %>
+  <%= link_to "Targets", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus), aria: { current: active == "targets" ? "page" : nil } %>
+  <%= link_to "Runs", workspace_corpus_evaluation_runs_path(Current.workspace, @corpus), aria: { current: active == "runs" ? "page" : nil } %>
 </nav>

@@ -41,9 +41,20 @@ Machine proposals never approve themselves. Experts correct taxonomy and scenari
 
 ## External execution
 
-Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. If Go performs target or judge HTTP calls, use bounded signed requests, explicit endpoint approval, TLS, DNS/IP checks, no redirects, timeouts, bounded output, and no credentials in logs. The domain branches on check/capability types, not vendor names.
+Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The later HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.
 
 Provider disclosure is off unless an authorised human configures and starts it. Do not send hidden expected outcomes to a target. Send only the case's visible context and permitted knowledge. Judge calls may receive the frozen rubric and relevant evidence; source content remains untrusted. Record model/settings, attempts, usage when supplied, and unknown cost honestly.
+
+The first execution proof uses a local declarative script: ordered rules compare one
+known fact and return a validated support-output-v1 fixture. It cannot run code or
+read hidden expectations. Call it a scripted fixture, never a live agent or judge.
+Runs freeze target versions, case membership and target-visible input, and contain
+at most 50 cases and 100 checks. A job claims a run once; repeated delivery cannot
+execute it again. A crash after claiming leaves an interrupted/unknown outcome,
+not permission to retry an external call. An expert may stop an old claimed run
+and deliberately start a new run. Immutable results distinguish reported behaviour,
+abstention and execution errors. A regression records the exact failed result,
+case, human and reason; adding it never silently rewrites the case.
 
 ## Isolation, deletion, and hosting
 

@@ -6,4 +6,4 @@ services:
     portal:
       url: /
       title: NavishAI evaluation lab
-      description: Support corpus, local discovery and expert scenario review. Evaluation execution is not yet built.
+      description: Support corpus, scenario review, expert calibration and scripted evaluation/regression proof. Live targets and judges are next.

@@ -8,8 +8,7 @@ disabled feature buttons or invented evaluation results.
 The workspace overview links to corpus intake and source evidence. Import forms
 name supported formats, bounds, email masking limits and retention. Source pages
 show the fixed snapshot, input digest, processing version and historical versions;
-record lists paginate. Errors state the rejected input and recovery path. No target
-execution exists yet. Analysis pages distinguish term
+record lists paginate. Errors state the rejected input and recovery path. Analysis pages distinguish term
 proposals from expert taxonomy revisions, disclose bounds and selection reasons,
 and link each example to its source snapshot. Queued jobs have a refresh action;
 failures have a recovery message. Light and dark modes retain the native
@@ -31,8 +30,8 @@ Compiler rows pair each statement with a named grader version and source referen
 The fixed contract sits beside its target-visible preview on desktop and stacks on
 mobile. Grader edits keep prior definitions visible and preserve invalid input.
 Native labelled fieldsets distinguish deterministic checks from judge rubrics;
-copy names each check's limits. Suites show case membership, not invented scores
-or run buttons. Approval, source changes and expiry block unsafe compilation.
+copy names each check's limits. Suites show fixed case membership, not invented
+scores. Approval, source changes and expiry block unsafe compilation and execution.
 
 Calibration uses the same evidence/review split. The first-label state hides machine
 and other expert decisions; after saving, their disagreement appears below the form.
@@ -41,7 +40,15 @@ matrix and explicit unknown rates. It shows sample counts and exclusions, not a
 universal support score. Upload errors retain the output; compact case-check options
 link to full requirements in a native disclosure. Mobile stacks review sections.
 
+Suite runs ask for a target version through a labelled picker with a clear prompt.
+Queued/running views offer refresh, not silent resubmission. Results pair individual
+decisions and source evidence with recorded output; mobile stacks these sections.
+Copy distinguishes fixtures, abstentions and execution errors from support quality.
+Failure groups disclose their exact-grader grouping. A regression needs the expert's
+reason and retains the source result, case and author. Target JSON errors preserve
+the edit; prior versions stay inspectable. The existing visual system remains unchanged.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,
-not proof of the future evaluation workflow.
+not proof of live-target quality or grader accuracy.
