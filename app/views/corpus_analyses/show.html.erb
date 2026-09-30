@@ -1,0 +1,34 @@
+<% content_for :title, "Corpus analysis — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", request.path, class: "button" %></div>
+  <p>Local term clustering, not semantic diagnosis. It uses titles and the first 4000 characters of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
+  <% if @analysis.state == "failed" %><p role="alert" class="inline-error"><%= @analysis.error %></p><% end %>
+  <% if @analysis.state == "queued" %><p role="status">Waiting for the local processing job. No data leaves this deployment.</p><% end %>
+  <% if @analysis.state == "complete" %>
+    <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> term clusters represented. This measures this method's selection, not verified issue-family coverage.</p>
+    <p>Taxonomy: <%= @taxonomy ? "expert revision #{@taxonomy.number}" : "unreviewed proposals" %>. A possible documentation gap means no overlap between three cluster terms and the uploaded documents; experts must check it.</p>
+    <% @clusters.each do |cluster| %>
+      <section class="section-block" aria-labelledby="cluster-<%= cluster.id %>">
+        <h2 id="cluster-<%= cluster.id %>"><%= @taxonomy&.labels&.fetch(cluster.id.to_s, nil) || cluster.proposed_label %></h2>
+        <p><%= pluralize(cluster.signals["count"], "conversation") %> · <%= @taxonomy&.labels&.key?(cluster.id.to_s) ? "Expert-reviewed label" : "Proposed label" %><% if cluster.signals["possible_documentation_gap"] %> · possible documentation gap<% end %></p>
+        <% cluster.cluster_members.sort_by { |member| member.selection_reason ? 0 : 1 }.first(10).each do |member| %>
+          <details class="source-record"><summary><%= member.corpus_item.title %><%= member.selection_reason ? " — selected candidate" : "" %></summary>
+            <p><%= member.signals.join(" · ") %></p><% if member.selection_reason %><p><%= member.selection_reason %></p><% end %>
+            <%= link_to "Inspect source snapshot", source_evidence_path(member.corpus_item) %>
+            <pre class="evidence-text"><%= member.corpus_item.content %></pre>
+          </details>
+        <% end %>
+        <% if cluster.cluster_members.size > 10 %><p>Showing 10 examples. Inspect the source pages for all records.</p><% end %>
+        <% if Current.require_membership!.can_write? %>
+          <%= form_with url: workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), method: :patch, class: "form-stack config-panel section-block" do |form| %>
+            <%= form.hidden_field :cluster_id, value: cluster.id %>
+            <div class="field"><%= form.label :label, "Expert issue label", for: "label-#{cluster.id}" %><%= form.text_field :label, id: "label-#{cluster.id}", value: @taxonomy&.labels&.fetch(cluster.id.to_s, nil) || cluster.proposed_label, required: true, maxlength: 120 %></div>
+            <%= form.submit "Save expert label", class: "button" %>
+          <% end %>
+        <% end %>
+      </section>
+    <% end %>
+    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  <% end %>
+</main>

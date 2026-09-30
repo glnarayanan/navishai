@@ -11,6 +11,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Corpus | A named collection of source-backed records to analyse together. |
 | Corpus item | One historical conversation or document, not a live ticket. |
 | Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
+| Taxonomy version | Fixed expert labels for some or all clusters from one corpus analysis. Unreviewed clusters stay proposals. |
 | Issue cluster | Related corpus items with a proposed issue label, examples, and disclosed selection method. |
 | Scenario | Stable identity of a testable support situation, separate from its evidence and revisions. |
 | Scenario version | Fixed context, facts, expected behaviour, importance, and source evidence at one revision. |

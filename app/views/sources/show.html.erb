@@ -5,11 +5,11 @@
   <dl class="source-metadata"><dt>Input SHA-256</dt><dd><code><%= @snapshot.digest %></code></dd><dt>Processing</dt><dd><%= @snapshot.processing_version %></dd><dt>Retention ends</dt><dd><%= @source.expires_at.to_date %></dd></dl>
   <nav class="workspace-tabs" aria-label="Source snapshots"><% @snapshots.each do |snapshot| %><%= link_to "Snapshot #{snapshot.number}", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: snapshot.number), aria: { current: snapshot.id == @snapshot.id ? "page" : nil } %><% end %></nav>
   <section class="section-block"><h2>Source evidence</h2><p>Page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
-    <% @items.each do |item| %><article class="source-record"><h3><%= item.title %></h3><p class="muted-copy">Source record <%= item.external_id %></p><pre class="evidence-text"><%= item.content %></pre><details><summary>Context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details></article><% end %>
+    <% @items.each do |item| %><article id="record-<%= item.id %>" class="source-record"><h3><%= item.title %></h3><p class="muted-copy">Source record <%= item.external_id %></p><pre class="evidence-text"><%= item.content %></pre><details><summary>Context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details></article><% end %>
     <%= render "shared/record_pagination", more: @more, page_number: @page %>
   </section>
   <% if Current.require_membership!.can_manage_work? %>
-    <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record. This cannot be undone.</p>
+    <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record, plus all analyses and taxonomy revisions in this corpus because they depend on the full collection. This cannot be undone.</p>
       <%= form_with url: workspace_corpus_source_path(Current.workspace, @corpus, @source), method: :delete, class: "form-stack config-panel" do |form| %>
         <div class="field"><%= form.label :confirmation, "Type #{@source.name} to confirm" %><%= form.text_field :confirmation, required: true, autocomplete: "off" %></div>
         <%= form.submit "Delete source and records", class: "button" %>

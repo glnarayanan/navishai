@@ -3,13 +3,13 @@ class SourcePurge
     source.corpus.with_lock do
       source.lock!
       if membership
-        membership.lock!
-        raise Current::RoleAccessDenied unless membership.workspace_id == source.workspace_id && membership.can_manage_work?
+        source.corpus.authorize_writer!(membership, manage: true)
       else
         return if source.expires_at > Time.current
       end
       AuditEvent.record!(action: "source.deleted", source: membership ? :web : :job,
         workspace: source.workspace, actor: membership&.user, actor_kind: "system", subject: source)
+      source.corpus.corpus_analyses.delete_all(:delete_all)
       source.delete
     end
   end

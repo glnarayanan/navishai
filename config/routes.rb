@@ -4,6 +4,7 @@ Rails.application.routes.draw do
     resources :workspace_invitations, only: %i[index create destroy]
     resources :corpora, only: %i[index create show] do
       resources :sources, only: %i[create show destroy]
+      resources :corpus_analyses, only: %i[create show update]
     end
   end
   get "invitations", to: "workspace_invitation_acceptances#show", as: :workspace_invitation_acceptance

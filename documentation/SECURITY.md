@@ -33,6 +33,9 @@ and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
 There is no source export, evaluation execution, external disclosure or calibration
-yet. Later derivatives must participate in source deletion. OIDC provider and
+yet. Analysis inputs and cluster members have workspace/corpus foreign keys and
+immutable updates. Jobs recheck the requester's membership. Source deletion also
+clears corpus-wide analyses/taxonomy revisions; expired inputs block analysis reads
+and edits before the hourly purge. Later derivatives must join this policy. OIDC provider and
 SMTP tests use local stubs; no live identity provider or mail delivery was verified.
 Direct risk-based review replaces unavailable Ponytail Audit and CE Code Review.

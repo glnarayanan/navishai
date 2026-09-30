@@ -57,6 +57,21 @@ Solid Queue in production. Managers/Admins/Owners can delete a source by typing 
 name. In development run `bin/rails runner 'SourceRetentionJob.perform_now'` to
 enforce expiry. No export route or external processing exists in this slice.
 
+## Local discovery
+
+Request analysis with a 1–100 candidate limit. The job freezes current source-backed
+inputs, rechecks workspace access and commits cluster proposals atomically. A
+duplicate job does not recreate them. Limits: 2000 records and 10 MiB of source text.
+TF-IDF seed clustering uses titles plus the first 4000 conversation characters;
+cosine similarity ≥0.3 joins a seed cluster. Explicit critical/risk/reopen mentions
+precede nearest-centroid representatives. Every selection retains its reason.
+Keyword signals, term clusters and document-term gaps are hypotheses, not measured
+issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
+taxonomy revisions. Refresh queued results; production needs the jobs service.
+
+Deleting any source clears corpus analyses and taxonomy revisions because they
+describe the full input collection. Source records from other sources remain.
+
 For first-Owner setup configure a random 32+ byte `NAVISHAI_BOOTSTRAP_TOKEN` and a
 future ISO 8601 `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT`; use `/setup`. Remove them after
 bootstrap. No demo identity or customer content is seeded. Authentication fixtures
