@@ -55,6 +55,15 @@ the notice says when a prior request did not start. The endpoint and confirmatio
 wrap on mobile. Execution-error views show unknown remote outcome/cost, no retained
 output and no regression action. No credentials enter these pages.
 
+Judge configuration sits in a native disclosure under the rubric; invalid JSON
+retains its text and original version token. Calibration and suite setup use
+separate, labelled judge-consent checkboxes with the fixed model/endpoint and data
+scope visible. A stale suite cannot expand that consent. Completed calibration
+keeps the first-label hiding rule; refresh shows state without a new send. Results
+retain judge quotes, raw/effective decisions and reported usage/cost in an inspectable
+record beside source evidence. Mobile stacks the same sections. A judge error or
+abstention cannot pass; neither establishes a behavioural failure on its own.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,

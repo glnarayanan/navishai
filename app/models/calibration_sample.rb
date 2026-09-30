@@ -6,6 +6,7 @@ class CalibrationSample < ImmutableRecord
   belongs_to :eval_case_check
   belongs_to :created_by, class_name: "User"
   has_one :calibration_prediction
+  has_one :calibration_judge_run
   has_many :human_labels
   validates :cohort, inclusion: { in: %w[development held_out] }
   validate -> { SupportOutput.validate!(output) }

@@ -37,7 +37,7 @@ class HttpEvaluationJourneyTest < ApplicationSystemTestCase
       assert_selector "h1", text: /Run/
       run = EvaluationRun.order(:id).last
       with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
-        with_test_method(HttpTarget, :perform, ->(*) { raise Net::ReadTimeout }) { EvaluationRunJob.perform_now(run.id) }
+        with_test_method(EvaluationHttp, :perform, ->(*) { raise Net::ReadTimeout }) { EvaluationRunJob.perform_now(run.id) }
       end
       click_link "Refresh run"
       click_link @scenario.current_version.title, match: :first

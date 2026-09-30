@@ -29,6 +29,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Calibration set | Output samples for one fixed grader version; development and held-out samples stay distinct. |
 | Calibration sample | Fixed recorded output, cohort and compiled check that experts judge. |
 | Calibration prediction | Machine decision on a fixed sample, distinct from authoritative human labels. |
+| Calibration judge attempt | One consented, once-claimed execution on a fixed sample. It cannot overwrite a prediction or label. |
 | Evaluation target | System under test, not a NavishAI support persona. |
 | Evaluation run | One attributable execution against frozen target settings, cases, and graders. |
 | Evaluation result | Retained target output and individual grader decisions, evidence, uncertainty, and execution errors. |

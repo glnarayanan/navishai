@@ -122,7 +122,8 @@ semantic correctness. Text mentions do not prove a sound diagnosis.
 
 Rubric-judge definitions store a company rubric and a 0–1 abstention threshold.
 Saving does not call a model. Self-reported confidence is not a calibrated
-probability. Judge execution is the next slice, not built proof.
+probability. An optional fixed execution configuration enables the generic judge
+interface below; an offline rubric remains valid and abstains during runs.
 
 The `support-output-v1` shape is bounded to 100 KiB and 100 messages/tool calls/
 citations. It requires all six fields and rejects extra fields and wrong types:
@@ -177,7 +178,8 @@ admission retains the result, case, human and rationale; repeat submissions reus
 it. Removing membership leaves the admission history. The next target version
 tests the same fixed case. Purge removes target/output/rationale copies; expiry
 hides them, including suite history, before purge. Inspected browser captures live
-under `.amp/in/artifacts/evaluation/`. Model judges are not built yet.
+under `.amp/in/artifacts/evaluation/`. Configured rubric judges require separate
+disclosure confirmation; their errors do not become behavioural failures.
 
 ## Generic HTTP target
 
@@ -232,14 +234,80 @@ Tests use stubbed DNS/streams and a real local TLS socket with test-only routing
 never a customer endpoint. Desktop/mobile setup, approval and unknown-outcome
 captures live under `.amp/in/artifacts/http-target/`.
 
+## Generic model judge
+
+A rubric version may add `execution` through the optional Judge configuration JSON
+field. This example is not a configured endpoint:
+
+```json
+{
+  "endpoint": "https://judge.example.com/grade",
+  "model": "company-judge-2026-09",
+  "settings": {"temperature": 0, "max_output_tokens": 1024, "seed": null}
+}
+```
+
+Only these fields are accepted. Use a pinned model identifier; the lab cannot
+prove that an endpoint actually uses it. Output-token bounds are 256–4096; seed
+is null or an integer from 0 to 2147483647. The endpoint must honor the fixed
+settings, reject unsupported settings and return its reported model. Temperature
+zero and a seed do not make a model reproducible; fixed inputs/settings and retained
+decisions make the attempt inspectable. Changing any definition creates a version;
+compiled cases and calibration sets keep the old one.
+
+The private `NAVISHAI_EVALUATION_ENDPOINTS` registry must separately approve the
+judge's exact URL/workspace in web and jobs. The shared JSON transport applies all
+target TLS, DNS, bounds, timeout and no-retry controls to judge calls. Saving checks
+approval but sends nothing. No direct vendor payload or model CLI is built in.
+Operators supply a customer-controlled model gateway implementing this contract;
+the gateway must not silently fall back to a different model or settings.
+
+`support-judge-v1` POSTs contain schema, fixed instructions, model, settings, rubric,
+requirement, context (the target-visible preview), company_evidence (the exact check
+excerpt), and target_output (support-output-v1). Hidden facts, full corpus, labels
+and other predictions are absent. Evidence/output are untrusted data, not commands.
+The gateway must enforce that separation; a prompt alone does not prevent injection.
+
+Response fields are exactly schema, model, decision, reason, confidence, quotes,
+usage and cost. Schema/model must match. Decision is pass/fail/abstain; reason is
+1–2000 characters; confidence is a finite number from 0 to 1. At most ten quotes
+contain only reference and quote (1–2000 characters). References are
+`company_evidence` or `target_output`; quotes must occur exactly in the sent excerpt
+or the JSON-serialized output. Pass/fail need quotes from both. This checks citation
+existence, not whether a quote supports the judgment.
+
+Usage is null or `{ "input_tokens": 300, "output_tokens": 70 }` with non-negative
+integers up to one billion. Cost is null or `{ "currency": "USD", "micro_units": 27 }`
+with a three-letter uppercase currency and 0–one trillion micro-units. Both are
+endpoint reports, not verified charges. Unknown values stay null. Low confidence
+becomes abstention; the raw decision remains inspectable. Invalid schema/model,
+invented quotes and transport failures are errors, never behavioural labels.
+
+Suite runs require their own judge-disclosure checkbox, separate from target
+disclosure. A case-list digest binds consent to the definitions and judge endpoints
+shown; changed membership requires a reload and new confirmation. Each check uses
+an opaque request key derived from the fixed item UUID/check ID. Calls occur outside
+database locks; access, current approval and evidence are rechecked before each
+check and before retaining output. Sent data cannot be recalled.
+
+Calibration samples require separate consent for each fixed attempt. The native
+`CalibrationJudgeRunJob` claims once and creates one immutable prediction; duplicate
+delivery/refresh never calls again or overwrites labels. A crash, revocation or stale
+evidence interrupts the attempt. Experts may interrupt queued or over-ten-minute
+running attempts. Use a new calibration set for another attempt, never rewrite
+the fixed prediction. First-label hiding still applies after the judge completes.
+Expiry/purge hide/delete attempts and predictions along with their source-backed
+samples. Fixture/browser captures live under `.amp/in/artifacts/judge/`; they do
+not prove live model behavior, accuracy or cost.
+
 ## Expert calibration
 
 Create a set for one exact grader version. Add up to 100 support-output-v1 samples
 bound to compiled checks using that version. Choose development or held-out before
 review; an identical JSON output on the same check reuses its sample regardless of
 key order and cannot change cohorts. Creation rechecks current scenario approval
-and source evidence. Deterministic predictions run locally; rubric samples have no
-prediction until judge execution exists. Neither upload nor label sends data out.
+and source evidence. Deterministic predictions run locally; rubric samples need an
+explicitly requested judge attempt. Neither upload nor label sends data out.
 
 Experts label pass, fail or uncertain and give their evidence. The first judgment
 view hides machine and other experts' labels to reduce anchoring, not to promise a

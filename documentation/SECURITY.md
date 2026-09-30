@@ -59,7 +59,20 @@ reject updates in Ruby and SQL. Writes lock the membership and corpus; labels us
 stale-write tokens and cannot overwrite another expert. First-label UI hides machine
 and other expert decisions; this is not a security or double-blind boundary. Viewers
 can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
-output and rationale copies, and parameter logs filter both. No external judge runs.
+output and rationale copies, and parameter logs filter both.
+
+Configured judges need exact workspace/URL operator approval and separate human
+disclosure consent. Fixed model/settings/rubric/threshold versions never change
+prior cases or labels. Suite consent binds its displayed case list, rejecting stale
+membership before queueing. Calibration attempts bind exact samples and request
+UUIDs with composite workspace/corpus keys and immutable SQL definitions. Jobs
+claim once, release locks before network waits, then recheck access/evidence before
+retaining predictions. Stopping or deleting cannot recall sent requests. No automatic
+retry occurs. Hidden facts, labels and the full corpus never enter the judge body.
+Quoted evidence must exist in the fixed inputs, but no syntax check proves a sound
+judgment or prevents model injection. Invalid responses are errors, low confidence
+abstains, and usage/cost remain endpoint reports. The shared HTTPS transport uses
+the target controls below. No live model or customer endpoint has run here.
 
 Scripted target definitions cannot execute code or external requests. Managing
 roles version them with stale-write tokens; writers start bounded runs. Composite

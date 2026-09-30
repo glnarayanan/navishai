@@ -81,9 +81,9 @@ class HttpTargetTransportTest < ActiveSupport::TestCase
       end
       store = OpenSSL::X509::Store.new
       store.add_cert(certificate)
-      original_connection = HttpTarget.method(:connection)
+      original_connection = EvaluationHttp.method(:connection)
       with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
-        with_test_method(HttpTarget, :connection, ->(uri, address) {
+        with_test_method(EvaluationHttp, :connection, ->(uri, address) {
           assert_equal "93.184.216.34", address
           local_uri = uri.dup
           local_uri.port = tcp.addr[1]

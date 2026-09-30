@@ -23,7 +23,8 @@ class Grader < ApplicationRecord
       return current_version if current_version && current_version.kind == kind && current_version.definition == definition
 
       version = grader_versions.create!(workspace:, corpus:, created_by: membership.user, number: (current_version&.number || 0) + 1, kind:,
-        definition:, processing_version: kind == "deterministic" ? DeterministicGrader::VERSION : "rubric-judge-v1", created_at: Time.current)
+        definition:, processing_version: kind == "deterministic" ? DeterministicGrader::VERSION : JudgeGrader::VERSION, created_at: Time.current)
+      JudgeGrader.authorize!(version) if kind == "rubric_judge" && definition.key?("execution")
       update!(current_version: version)
       AuditEvent.record!(action: "grader.version_created", source: :web, workspace:, actor: membership.user, subject: version, metadata: { version: version.number })
       version

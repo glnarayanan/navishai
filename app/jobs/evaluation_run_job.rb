@@ -22,10 +22,14 @@ class EvaluationRunJob < ApplicationJob
         output = target.call(input: item.target_input, request_key: item.request_key)
         SupportOutput.validate!(output)
         decisions = item.eval_case.eval_case_checks.order(:id).map do |check|
+          return unless run.corpus.with_lock { authorize_item!(run, item) }
           result = if check.grader_version.kind == "deterministic"
             DeterministicGrader.call(definition: check.grader_version.definition, output:, knowledge: item.target_input.fetch("knowledge"))
+          elsif run.judge_disclosure
+            key = Digest::SHA256.hexdigest("#{item.request_key}/judge/#{check.id}")
+            JudgeGrader.call(check:, output:, request_key: key).merge("request_key" => key)
           else
-            { "decision" => "abstain", "reason" => "No judge configured. A rubric alone is not an executed judgment.", "confidence" => nil }
+            { "decision" => "abstain", "reason" => "No judge configured or disclosure not approved. A rubric alone is not an executed judgment.", "confidence" => nil }
           end
           result.merge("check_id" => check.id, "grader_version_id" => check.grader_version_id)
         end

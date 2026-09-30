@@ -10,6 +10,11 @@
     <div class="field"><%= form.label :rubric, "Company rubric" %><%= form.text_area :rubric, value: @values["rubric"], rows: 5, maxlength: 10000 %></div>
     <div class="field"><%= form.label :confidence_threshold, "Judge abstention threshold" %><%= form.number_field :confidence_threshold, value: @values["confidence_threshold"], min: 0, max: 1, step: 0.01 %></div>
     <p class="field-hint">Self-reported judge confidence is not a calibrated probability. Low-confidence decisions must remain uncertain. No model call occurs when you save.</p>
+    <details><summary>Optional model execution</summary>
+      <p>Leave blank for an offline rubric. The operator must approve the exact HTTPS endpoint for this workspace. Credentials stay in the private endpoint registry.</p>
+      <div class="field"><%= form.label :judge_configuration, "Judge configuration JSON" %><%= form.text_area :judge_configuration, value: @values["judge_configuration"], rows: 8, maxlength: 8192, spellcheck: false %></div>
+      <p class="field-hint">Use endpoint, a fixed model identifier, and settings with temperature: 0, max_output_tokens: 256–4096, and seed: a non-negative integer or null. The endpoint must implement support-judge-v1 and honor these settings.</p>
+    </details>
   </fieldset>
   <%= form.submit @grader ? "Save grader version" : "Create grader", class: "button button-primary" %>
 <% end %>

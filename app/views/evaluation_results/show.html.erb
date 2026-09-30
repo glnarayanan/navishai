@@ -5,7 +5,19 @@
   <% if @result.error %><p class="inline-error" role="alert"><%= @result.error %></p><% end %>
   <% if @result.execution.present? %><p><%= @result.execution['adapter'] %> · <%= @result.execution['processing_version'] %> · <%= @result.execution['elapsed_ms'] %> ms including checks · cost unknown. This fixed case attempt never retries automatically.</p><% end %>
   <div class="review-layout">
-    <section><h2>Individual checks</h2><% @result.decisions.each do |decision| %><% check = @checks.fetch(decision.fetch("check_id")) %><article class="source-record"><h3><%= decision['decision'].humanize %> · <%= check.requirement_kind.humanize %></h3><p><%= check.requirement %></p><p><%= decision['reason'] %></p><p><%= link_to "#{check.grader_version.grader.name} v#{check.grader_version.number}", workspace_corpus_grader_path(Current.workspace, @corpus, check.grader_version.grader, version: check.grader_version.number) %> · confidence: <%= decision['confidence'].nil? ? "not a probability / not supplied" : decision['confidence'] %>.</p><%= link_to "Supporting source snapshot", source_evidence_path(check.scenario_evidence.corpus_item) %><pre class="evidence-text"><%= check.scenario_evidence.excerpt %></pre></article><% end %>
+    <section><h2>Individual checks</h2>
+      <% @result.decisions.each do |decision| %><% check = @checks.fetch(decision.fetch("check_id")) %>
+        <article class="source-record">
+          <h3><%= decision['decision'].humanize %> · <%= check.requirement_kind.humanize %></h3>
+          <p><%= check.requirement %></p><p><%= decision['reason'] %></p>
+          <p><%= link_to "#{check.grader_version.grader.name} v#{check.grader_version.number}", workspace_corpus_grader_path(Current.workspace, @corpus, check.grader_version.grader, version: check.grader_version.number) %> · confidence: <%= decision['confidence'].nil? ? "not a probability / not supplied" : decision['confidence'] %>.</p>
+          <% if decision['processing_version'] == JudgeGrader::VERSION %>
+            <p>Judge confidence and usage/cost are endpoint reports, not calibrated probabilities or verified charges. Low confidence abstains.</p>
+            <details><summary>Judge evidence and execution record</summary><pre class="evidence-text"><%= JSON.pretty_generate(decision) %></pre></details>
+          <% end %>
+          <%= link_to "Supporting source snapshot", source_evidence_path(check.scenario_evidence.corpus_item) %><pre class="evidence-text"><%= check.scenario_evidence.excerpt %></pre>
+        </article>
+      <% end %>
       <h3>Calibration evidence</h3><p>An authored rubric or self-reported confidence does not establish accuracy. <%= link_to "Review calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus) %>.</p><% @sets.each do |set| %><p><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %> · grader version #<%= set.grader_version_id %></p><% end %>
     </section>
     <section><h2>Recorded target output</h2><% if @result.output %><pre class="evidence-text"><%= JSON.pretty_generate(@result.output) %></pre><% else %><p>No valid output retained. An execution error is not a support-quality label.</p><% end %><details><summary>Exact target-visible input</summary><pre class="evidence-text"><%= JSON.pretty_generate(@item.target_input) %></pre></details></section>

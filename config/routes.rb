@@ -16,6 +16,8 @@ Rails.application.routes.draw do
       resources :calibration_sets, only: %i[index create show] do
         resources :calibration_samples, only: %i[new create show] do
           post :label, on: :member
+          post :judge, on: :member
+          post :interrupt_judge, on: :member
         end
       end
       resources :scenarios, only: %i[index create show update] do

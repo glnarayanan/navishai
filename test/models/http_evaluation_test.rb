@@ -48,7 +48,7 @@ class HttpEvaluationTest < ActiveSupport::TestCase
       target = define_http_target
       run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
       ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
-      with_test_method(HttpTarget, :perform, ->(*) { flunk "Revoked endpoint cannot connect" }) { EvaluationRunJob.perform_now(run.id) }
+      with_test_method(EvaluationHttp, :perform, ->(*) { flunk "Revoked endpoint cannot connect" }) { EvaluationRunJob.perform_now(run.id) }
       result = run.evaluation_results.sole
       assert_equal "error", result.status
       assert_includes result.error, "not approved"
@@ -63,7 +63,7 @@ class HttpEvaluationTest < ActiveSupport::TestCase
       run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
       calls = 0
       with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
-        with_test_method(HttpTarget, :perform, ->(*) { calls += 1; raise Net::ReadTimeout, "private-token-response" }) do
+        with_test_method(EvaluationHttp, :perform, ->(*) { calls += 1; raise Net::ReadTimeout, "private-token-response" }) do
           2.times { EvaluationRunJob.perform_now(run.id) }
         end
       end

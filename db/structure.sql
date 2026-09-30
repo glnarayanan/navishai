@@ -30,8 +30,8 @@ CREATE FUNCTION public.prevent_evaluation_run_rebind() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF ROW(NEW.workspace_id, NEW.corpus_id, NEW.eval_suite_id, NEW.evaluation_target_version_id, NEW.requested_by_id, NEW.processing_version, NEW.created_at)
-     IS DISTINCT FROM ROW(OLD.workspace_id, OLD.corpus_id, OLD.eval_suite_id, OLD.evaluation_target_version_id, OLD.requested_by_id, OLD.processing_version, OLD.created_at) THEN
+  IF (to_jsonb(NEW) - ARRAY['state', 'error', 'started_at', 'finished_at'])
+     IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['state', 'error', 'started_at', 'finished_at']) THEN
     RAISE EXCEPTION 'evaluation run definition is immutable';
   END IF;
   RETURN NEW;
@@ -107,6 +107,45 @@ CREATE SEQUENCE public.audit_events_id_seq
 --
 
 ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
+
+
+--
+-- Name: calibration_judge_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.calibration_judge_runs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    calibration_sample_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_f2c1efb45c CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+);
+
+
+--
+-- Name: calibration_judge_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.calibration_judge_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: calibration_judge_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.calibration_judge_runs_id_seq OWNED BY public.calibration_judge_runs.id;
 
 
 --
@@ -626,6 +665,7 @@ CREATE TABLE public.evaluation_runs (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
+    judge_disclosure boolean DEFAULT false NOT NULL,
     CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
@@ -664,7 +704,7 @@ CREATE TABLE public.evaluation_target_versions (
     processing_version character varying NOT NULL,
     configuration jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_6e450cf67b CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
+    CONSTRAINT chk_rails_6e450cf67b CHECK (((number > 0) AND ((adapter)::text = ANY (ARRAY[('scripted'::character varying)::text, ('http'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -1458,6 +1498,13 @@ ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: calibration_judge_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_judge_runs ALTER COLUMN id SET DEFAULT nextval('public.calibration_judge_runs_id_seq'::regclass);
+
+
+--
 -- Name: calibration_predictions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1730,6 +1777,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calibration_judge_runs calibration_judge_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_judge_runs
+    ADD CONSTRAINT calibration_judge_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -2212,6 +2267,27 @@ CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_
 
 
 --
+-- Name: index_calibration_judge_runs_on_calibration_sample_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calibration_judge_runs_on_calibration_sample_id ON public.calibration_judge_runs USING btree (calibration_sample_id);
+
+
+--
+-- Name: index_calibration_judge_runs_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_calibration_judge_runs_on_request_key ON public.calibration_judge_runs USING btree (request_key);
+
+
+--
+-- Name: index_calibration_judge_runs_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_calibration_judge_runs_on_requested_by_id ON public.calibration_judge_runs USING btree (requested_by_id);
+
+
+--
 -- Name: index_calibration_predictions_on_calibration_sample_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2688,6 +2764,13 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: calibration_judge_runs calibration_judge_run_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER calibration_judge_run_definition_immutable BEFORE UPDATE ON public.calibration_judge_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_evaluation_run_rebind();
+
+
+--
 -- Name: calibration_predictions calibration_predictions_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3123,6 +3206,14 @@ ALTER TABLE ONLY public.scenario_evidence
 
 
 --
+-- Name: calibration_judge_runs fk_rails_8cddf9f3e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_judge_runs
+    ADD CONSTRAINT fk_rails_8cddf9f3e6 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: calibration_sets fk_rails_93f1ed4933; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3248,6 +3339,14 @@ ALTER TABLE ONLY public.evaluation_run_items
 
 ALTER TABLE ONLY public.human_labels
     ADD CONSTRAINT fk_rails_c25eaef411 FOREIGN KEY (labelled_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: calibration_judge_runs fk_rails_cab07db990; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_judge_runs
+    ADD CONSTRAINT fk_rails_cab07db990 FOREIGN KEY (workspace_id, corpus_id, calibration_sample_id) REFERENCES public.calibration_samples(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -3409,6 +3508,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930080000'),
 ('20260930070000'),
 ('20260930060000'),
 ('20260930050000'),
