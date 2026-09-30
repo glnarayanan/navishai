@@ -86,8 +86,10 @@ derived copies; expiry hides them and suite history before purge. These guarante
 do not prove target quality, calibration accuracy or attested tool execution.
 
 HTTP targets require exact per-workspace operator endpoint approval and deliberate
-expert confirmation on each run. Optional bearer tokens stay in the operator
-environment; target JSON rejects credentials/extra fields and logs filter forms.
+expert confirmation on each run. A case-list digest binds that confirmation to
+the reviewed suite, even without configured judges. Changed membership or a
+missing token blocks queueing and requires fresh review. Optional bearer tokens
+stay in the operator environment; target JSON rejects credentials/extra fields and logs filter forms.
 Only fixed visible context/knowledge enter support-target-v1; hidden expectations
 stay local. HTTPS port 443, peer/hostname verification, all-answer public-IP checks,
 address pinning, no proxy/redirect/retry, a DNS-inclusive 30-second deadline and

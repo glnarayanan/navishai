@@ -39,7 +39,7 @@ class HttpEvaluationAccessTest < ActionDispatch::IntegrationTest
         assert_includes response.body, HTTP_ENDPOINT
       end
       assert_difference "EvaluationRun.count", 1 do
-        post run_path, params: run_params.merge(disclose: "1")
+        post run_path, params: run_params.merge(disclose: "1", suite_digest: Digest::SHA256.hexdigest([ @case.id ].to_json))
         assert_response :see_other
       end
       follow_redirect!

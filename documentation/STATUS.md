@@ -25,8 +25,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   explained failures and human-reviewed regression admissions.
 - [#149](https://github.com/glnarayanan/navishai/pull/149), based on #148: generic HTTPS targets, per-workspace
   operator approval, human disclosure confirmation and bounded non-retrying calls.
-- `rebuild/10-judge-execution`, based on #149: fixed rubric judges, separate
+- [#150](https://github.com/glnarayanan/navishai/pull/150), based on #149: fixed rubric judges, separate
   disclosure consent, once-claimed calibration attempts and quoted result evidence.
+- `rebuild/11-consent-snapshot`, based on #150: prevent stale HTTP-only consent
+  from sending cases added after review.
 
 ## Built and checked
 
@@ -171,6 +173,19 @@ direct risk review and native audits replace unavailable Ponytail Audit and CE C
 Review. Early failures came from foreign-key/last-Owner test setup and a browser
 selector; fixes did not weaken those controls. Orb YAML and `git diff --check` pass.
 No live judge or target ran. The operator endpoint registry remains empty.
+
+HTTP-only consent review found and reproduced a missing case-list check: without
+configured judges, a stale form could queue an added Entra case. The same digest
+check now covers every external run. Missing/stale tokens queue nothing; the
+refreshed form clears approval and shows the current cases and endpoint. Browser
+re-confirmation sends exactly the two reviewed inputs once each. The final
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 2m3.96s: 209 Rails tests / 1720
+assertions and 11 browser tests / 370 assertions, no failures/errors/skips. Ruby
+style, gem/importmap audits, Brakeman and eager loading pass. Full CI first exposed
+an old integration request that omitted the new required token; the test now sends
+the form token. Desktop/mobile stale-consent captures were inspected, with readable
+recovery controls and no overflow/CSP violations. Direct risk review/native audits
+used; no external request ran. No dependency or schema changed.
 
 ## Next and limits
 

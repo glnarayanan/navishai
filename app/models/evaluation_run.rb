@@ -25,8 +25,10 @@ class EvaluationRun < ApplicationRecord
       judges = items.flat_map { |item| item.eval_case_checks.includes(:grader_version).map(&:grader_version) }.select { |version| version.kind == "rubric_judge" && version.definition.key?("execution") }.uniq(&:id)
       if judges.any?
         raise EvalCase::Invalid, "Run not started. Separately confirm disclosure of outputs, rubrics, context and company evidence to the fixed judges." unless judge_disclose == true
-        raise EvalCase::Invalid, "Run not started. Suite membership changed or its consent token is missing. Reload and review the fixed judges before confirming again." unless suite_digest == Digest::SHA256.hexdigest(items.map(&:id).to_json)
         judges.each { |version| JudgeGrader.authorize!(version) }
+      end
+      if target.adapter == "http" || judges.any?
+        raise EvalCase::Invalid, "Run not started. Suite membership changed or its consent token is missing. Reload and review the cases and endpoints before confirming again." unless suite_digest == Digest::SHA256.hexdigest(items.map(&:id).to_json)
       end
       run = corpus.evaluation_runs.create!(workspace: corpus.workspace, eval_suite: suite, evaluation_target_version: target, requested_by: membership.user, processing_version: VERSION, judge_disclosure: judge_disclose == true, created_at: Time.current)
       items.each { |item| run.evaluation_run_items.create!(workspace: corpus.workspace, corpus:, eval_case: item, target_input: item.scenario_version.target_input) }

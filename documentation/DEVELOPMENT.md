@@ -200,7 +200,10 @@ The registry must be consistent across web/jobs; removal blocks future dispatch.
 
 A Manager/Admin/Owner chooses HTTP and saves `{"endpoint":"https://…"}`. Saving
 does not connect. A writer reviews the fixed visible inputs and exact endpoint,
-checks disclosure confirmation and starts a run. Each POST sends:
+checks disclosure confirmation and starts a run. The form's case-list digest must
+match current suite membership, including HTTP runs without configured judges.
+A changed suite requires a reload, review and fresh confirmation before queueing.
+Each target POST sends:
 
 ```json
 {"schema":"support-target-v1","input":{"situation":"…","known_facts":{},"knowledge":[]}}

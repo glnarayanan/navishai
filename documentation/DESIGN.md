@@ -52,7 +52,9 @@ HTTP setup retains the target adapter and invalid endpoint on errors. Target vie
 show the exact versioned endpoint and warn that local deletion cannot recall sent
 data. Suite setup asks for explicit disclosure through a labelled native checkbox;
 the notice says when a prior request did not start. The endpoint and confirmation
-wrap on mobile. Execution-error views show unknown remote outcome/cost, no retained
+wrap on mobile. A stale case list blocks HTTP-only runs too; the refreshed form
+shows the new cases and clears consent for a fresh review.
+Execution-error views show unknown remote outcome/cost, no retained
 output and no regression action. No credentials enter these pages.
 
 Judge configuration sits in a native disclosure under the rubric; invalid JSON
