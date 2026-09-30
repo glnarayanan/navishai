@@ -35,7 +35,8 @@ class SupportTrace
   end
 
   def self.payload(item)
-    raise CorpusIntake::Invalid, "Choose an unexpired production trace." unless item.source_snapshot.source.kind == "traces" && item.source_snapshot.source.expires_at > Time.current
+    source = item.source_snapshot.source.reload
+    raise CorpusIntake::Invalid, "Choose an unexpired production trace." unless source.kind == "traces" && source.expires_at > Time.current
     validate!(item.context.fetch("support_trace"))
   end
 

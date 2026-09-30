@@ -37,7 +37,7 @@ class EvaluationRunJob < ApplicationJob
         attributes = { output:, decisions:, status: }
       rescue SupportOutput::Invalid
         attributes = { status: "error", error: "Target/check output did not match the versioned schema. This is an execution error, not a support failure." }
-      rescue HttpTarget::Error => error
+      rescue HttpTarget::Error, RecordedTarget::Error => error
         attributes = { status: "error", error: error.message }
       end
       execution = { "adapter" => target.adapter, "processing_version" => target.processing_version,

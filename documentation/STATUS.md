@@ -31,8 +31,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   from sending cases added after review.
 - [#152](https://github.com/glnarayanan/navishai/pull/152), based on #151: fresh technical-Support fixture
   through the whole engineering loop, including held-out calibration and replay.
-- `rebuild/13-production-traces`, based on #152: bounded production-trace intake,
+- [#153](https://github.com/glnarayanan/navishai/pull/153), based on #152: bounded production-trace intake,
   immutable reports and source-backed proposals that require expert expectations.
+- `rebuild/14-recorded-replay`, based on #153: exact-input-compatible recorded
+  targets, fixed replay results and human failure-to-regression admission.
 
 ## Built and checked
 
@@ -223,11 +225,30 @@ the test database and deadlocked on fixtures; sequential checks and full native 
 pass. Direct risk review/native audits replace unavailable Ponytail Audit and CE
 Code Review. No provider call or customer data was used.
 
+Recorded replay `bin/ci`: passed in 2m15.53s; 221 Ruby files clean, gem/importmap
+audits clean, Brakeman zero warnings/errors and eager loading passes. 226 Rails
+tests / 2011 assertions and 13 browser tests / 456 assertions, no failures/errors/
+skips. A fresh trace proposal receives fixture expert expectations and approval,
+compiles source-backed checks, fails recorded replay, enters a reviewed regression,
+then passes the same fixed case against a corrected scripted target. Input changes
+refuse to queue; false, zero, missing facts and changed knowledge references differ.
+Old traces/runs stay fixed after new snapshots. Foreign trace IDs, SQL rebinds,
+wrong sources, expiry and purge fail safely. Configured judges still need separate
+consent and a current case-list token. Imported failure text cannot override a pass.
+Checks found a cached source expiry; replay now reloads current retention state.
+One test read a stale association after purge; fresh database checks confirm removal.
+The browser proves exact-input case inspection, retained target errors, fixed
+definition/provenance, replay failures and expert admission. Seven desktop/390px
+captures were inspected with no page overflow or CSP violations. Impeccable found
+no new issues. Direct risk review/native audits used; Ponytail Audit and CE Code
+Review unavailable. No live agent, judge or customer data was used.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E engineering continues with
-recorded-output replay, exact-case matching, source-change impact and target-version
-comparison. Customer acceptance still needs a
+source-change impact and target-version comparison. Trace matching currently means
+exact input compatibility among 100 cases, not semantic failure matching. Recorded
+replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge endpoints.
 The endpoint registry has no configured entries. Analysis remains bounded to

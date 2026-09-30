@@ -4,6 +4,7 @@
   <div class="page-heading"><div><h1><%= @result.eval_case.scenario_version.title %></h1><p><%= @result.status.humanize %> · <%= @result.eval_case.scenario_version.importance.humanize %> importance · result #<%= @result.id %> · <%= link_to "Fixed contract", workspace_corpus_eval_case_path(Current.workspace, @corpus, @result.eval_case) %></p></div></div>
   <% if @result.error %><p class="inline-error" role="alert"><%= @result.error %></p><% end %>
   <% if @result.execution.present? %><p><%= @result.execution['adapter'] %> · <%= @result.execution['processing_version'] %> · <%= @result.execution['elapsed_ms'] %> ms including checks · cost unknown. This fixed case attempt never retries automatically.</p><% end %>
+  <% if @item.evaluation_run.evaluation_target_version.adapter == "recorded" %><p role="status">Local replay of <%= link_to "the fixed production trace", source_evidence_path(@item.evaluation_run.evaluation_target_version.trace_item) %>, not a new agent execution. Reports are not authoritative labels; the reviewed contract and fixed graders determine this result.</p><% end %>
   <div class="review-layout">
     <section><h2>Individual checks</h2>
       <% @result.decisions.each do |decision| %><% check = @checks.fetch(decision.fetch("check_id")) %>

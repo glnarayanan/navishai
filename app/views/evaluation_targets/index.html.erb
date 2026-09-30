@@ -1,11 +1,11 @@
 <% content_for :title, "Evaluation targets — NavishAI" %>
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
-  <div class="page-heading"><div><h1>Evaluation targets</h1><p>Systems under test, not support teammates. Choose a local scripted fixture or an operator-approved HTTPS endpoint.</p></div></div>
+  <div class="page-heading"><div><h1>Evaluation targets</h1><p>Systems under test, not support teammates. Choose a scripted fixture, recorded production output or an operator-approved HTTPS endpoint.</p></div></div>
   <%= render "shared/corpus_navigation", active: "targets" %>
   <% if @targets.empty? %><p class="empty-state">No targets yet. A Manager, Admin or Owner can define one below. Saving a definition does not execute it.</p><% end %>
-  <ul class="workspace-list" role="list"><% @targets.each do |target| %><li class="workspace-card"><%= link_to target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %><span><%= target.current_version.adapter == "http" ? "HTTP endpoint" : "Scripted fixture" %> · v<%= target.current_version.number %></span></li><% end %></ul>
-  <% if Current.require_membership!.can_manage_work? %><section class="section-block config-panel"><h2>Create target</h2><p>A scripted rule checks one visible fact and returns a fixture. HTTP sends each case's visible context and permitted knowledge to the endpoint you approve when starting a run.</p>
+  <ul class="workspace-list" role="list"><% @targets.each do |target| %><li class="workspace-card"><%= link_to target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %><span><%= {"http" => "HTTP endpoint", "scripted" => "Scripted fixture", "recorded" => "Recorded production output"}.fetch(target.current_version.adapter) %> · v<%= target.current_version.number %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_manage_work? %><section class="section-block config-panel"><h2>Create target</h2><p>A scripted rule checks one visible fact and returns a fixture. Recorded replays an uploaded output only for identical input. HTTP sends visible context and permitted knowledge to the endpoint you approve when starting a run.</p>
     <details><summary>Scripted schema</summary><pre class="evidence-text">{
   "rules": [{"fact": "plan", "equals": "enterprise", "output": {…support-output-v1…}}],
   "default_output": {…support-output-v1…}

@@ -704,7 +704,9 @@ CREATE TABLE public.evaluation_target_versions (
     processing_version character varying NOT NULL,
     configuration jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_6e450cf67b CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
+    trace_item_id bigint,
+    CONSTRAINT chk_rails_d846093cc8 CHECK (((((adapter)::text = 'recorded'::text) = (trace_item_id IS NOT NULL)) AND (((adapter)::text <> 'recorded'::text) OR (configuration = '{}'::jsonb)))),
+    CONSTRAINT chk_rails_e676976417 CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying, 'recorded'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -2456,6 +2458,13 @@ CREATE INDEX index_evaluation_target_versions_on_created_by_id ON public.evaluat
 
 
 --
+-- Name: index_evaluation_target_versions_on_trace_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_evaluation_target_versions_on_trace_item_id ON public.evaluation_target_versions USING btree (trace_item_id);
+
+
+--
 -- Name: index_evaluation_targets_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2955,6 +2964,14 @@ ALTER TABLE ONLY public.taxonomy_versions
 
 ALTER TABLE ONLY public.calibration_samples
     ADD CONSTRAINT fk_rails_0ec147bff8 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: evaluation_target_versions fk_rails_1a3b9e6b69; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_target_versions
+    ADD CONSTRAINT fk_rails_1a3b9e6b69 FOREIGN KEY (workspace_id, corpus_id, trace_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -3508,6 +3525,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930100000'),
 ('20260930090000'),
 ('20260930080000'),
 ('20260930070000'),

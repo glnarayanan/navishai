@@ -3,7 +3,7 @@ class EvaluationTargetsController < ApplicationController
   before_action :require_workspace
   before_action -> { require_role(:owner, :admin, :manager) }, except: %i[index show]
   before_action :load_corpus
-  rescue_from EvalCase::Invalid, HttpTarget::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
+  rescue_from EvalCase::Invalid, HttpTarget::Error, RecordedTarget::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
 
   def index
     @targets = @corpus.evaluation_targets.includes(:current_version).order(:id).limit(100)
@@ -16,15 +16,16 @@ class EvaluationTargetsController < ApplicationController
   end
 
   def create
-    read_configuration
-    target = EvaluationTarget.define!(corpus: @corpus, membership: Current.require_membership!, name: params[:name], configuration: @configuration, adapter: params[:adapter] || "scripted")
+    adapter = params[:adapter] || "scripted"
+    read_configuration(adapter:)
+    target = EvaluationTarget.define!(corpus: @corpus, membership: Current.require_membership!, name: params[:name], configuration: @configuration, adapter:, trace_item_id: params[:trace_item_id])
     redirect_to workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target), notice: "Target saved. Saving a definition does not send data or execute it.", status: :see_other
   end
 
   def update
-    read_configuration
     target = @corpus.evaluation_targets.find(params[:id])
-    target.revise!(membership: Current.require_membership!, version_id: params[:version_id], configuration: @configuration)
+    read_configuration(adapter: target.current_version.adapter)
+    target.revise!(membership: Current.require_membership!, version_id: params[:version_id], configuration: @configuration, trace_item_id: params[:trace_item_id])
     redirect_to workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target), notice: "Target version saved. Prior runs keep their original version.", status: :see_other
   end
 
@@ -34,7 +35,11 @@ class EvaluationTargetsController < ApplicationController
       raise ActiveRecord::RecordNotFound if @corpus.eval_definitions_expired?
     end
 
-    def read_configuration
+    def read_configuration(adapter:)
+      if adapter == "recorded"
+        @configuration = {}
+        return
+      end
       raise SupportOutput::Invalid, "Target configuration must be at most 1 MiB." if params[:configuration].to_s.bytesize > ScriptedTarget::MAX_BYTES
       @configuration = JSON.parse(params[:configuration].to_s)
     end
