@@ -45,9 +45,9 @@ class WorkspaceInvitationTest < ActiveSupport::TestCase
     end
   end
 
-  test "rejects acceptance after workspace deletion is requested" do
+  test "rejects acceptance after invitation expiry" do
     invitation = workspace_invitations(:pending_member)
-    invitation.workspace.update!(deletion_requested_at: Time.current)
+    invitation.update!(expires_at: 1.minute.ago)
 
     assert_no_difference [ "User.count", "Membership.count" ] do
       assert_raises(WorkspaceInvitation::AcceptanceError) do

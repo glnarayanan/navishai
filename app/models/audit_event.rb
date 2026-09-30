@@ -1,266 +1,28 @@
 class AuditEvent < ApplicationRecord
   ACTOR_KINDS = %w[user break_glass system anonymous].freeze
-  SOURCES = %w[web job task runner integration system].freeze
+  SOURCES = %w[web job task integration system].freeze
   SENSITIVE_KEY = /passw|email|secret|token|(?:\A|_)key(?:\z|_)|crypt|salt|certificate|otp|ssn|cvv|cvc/i
   MAX_METADATA_BYTES = 8.kilobytes
   EVENT_METADATA = {
-    "runtime.personal_account_started" => {},
-    "runtime.personal_account_disconnected" => {},
-    "workspace.search_provider_updated" => { "previous_provider" => String, "provider" => String },
-    "product.created" => {},
-    "product.updated" => { "previous_name" => String, "name" => String },
-    "knowledge.applicability_updated" => { "previous_mapping" => String, "mapping" => String },
-    "knowledge.applicability_reset" => { "previous_mapping" => String, "mapping" => String },
-    "case.products_updated" => { "previous_products" => String, "products" => String },
-    "knowledge.source_stale" => {},
-    "knowledge.source_retired" => {},
-    "knowledge.source_restored" => {},
-    "knowledge.sync_completed" => {},
-    "intercom.help_center_configured" => {},
-    "intercom.help_center_requested" => {},
-    "connector.configured" => {},
-    "connector.connected" => {},
-    "connector.disconnected" => {},
     "authentication.failed" => { "method" => %w[local oidc break_glass] },
     "authentication.signed_out" => {},
     "authentication.succeeded" => { "method" => %w[local oidc break_glass] },
-    "account.created" => {},
-    "account.data_imported" => { "source_kind" => AccountHealthInput::SOURCE_KINDS, "record_count" => Integer },
-    "account.health_recalculated" => {
-      "trigger_kind" => AccountHealthAssessment::TRIGGER_KINDS,
-      "risk_level" => AccountHealthAssessment::RISK_LEVELS
-    },
-    "account.merged" => {},
-    "account.risk_detected" => { "trigger_kind" => AccountRiskInvestigation::TRIGGER_KINDS },
-    "account.risk_resolved" => {},
-    "account.risk_started" => {},
-    "account.intervention_proposed" => {
-      "from_state" => [ "none" ], "to_state" => CustomerSuccessIntervention::STATUSES
-    },
-    "account.intervention_approved" => {
-      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
-    },
-    "account.intervention_completed" => {
-      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
-    },
-    "account.intervention_abandoned" => {
-      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
-    },
-    "account.intervention_reviewed" => {
-      "from_state" => CustomerSuccessIntervention::STATUSES, "to_state" => CustomerSuccessIntervention::STATUSES
-    },
-    "account.intervention_reassigned" => {
-      "previous_accountable_membership_id" => Integer, "accountable_membership_id" => Integer, "reason" => String
-    },
-    "account.intervention_rescheduled" => {
-      "previous_target_on" => String, "target_on" => String, "reason" => String
-    },
-    "account.intervention_due" => {
-      "due_state" => CustomerSuccessInterventionDueNotice::DUE_STATES,
-      "recipient_membership_id" => Integer,
-      "target_on" => String
-    },
-    "account.unmerged" => {},
-    "agent.profile_updated" => {},
-    "crew.artifact_published" => {
-      "artifact_kind" => CrewArtifact::KINDS,
-      "version" => Integer,
-      "schema_version" => Integer,
-      "contract_version" => Integer,
-      "contract_result" => CrewArtifact::CONTRACT_RESULTS
-    },
-    "crew.task_created" => {},
-    "crew.task_event_recorded" => { "event_kind" => CrewTaskEvent::KINDS },
-    "resolution_contract.published" => {
-      "family" => ResolutionContractFamily::FAMILIES.keys,
-      "from_version" => Integer,
-      "to_version" => Integer
-    },
-    "governed_policy.proposed" => {
-      "scope_kind" => GovernedPolicyProposal::SCOPE_KINDS, "subject_count" => Integer
-    },
-    "governed_policy.canary_published" => {
-      "preview_digest" => String, "scope_kind" => GovernedPolicyProposal::SCOPE_KINDS
-    },
-    "governed_policy.rolled_back" => { "superseded_publication_id" => Integer },
-    "execution.run_reconciled" => {},
-    "execution.run_requested" => {},
-    "attachment.downloaded" => {},
-    "attachment.removed" => { "attachment_id" => Integer },
-    "attachment.uploaded" => { "scan_status" => StoredAttachment::SCAN_STATUSES },
     "break_glass.configured" => {},
-    "contact.created" => {},
-    "contact.merged" => {},
-    "contact.unmerged" => {},
-    "conversation.created" => {},
-    "conversation.message_added" => { "direction" => %w[inbound outbound], "author_kind" => %w[contact user external] },
-    "case.assigned" => { "assignee_id" => Integer },
-    "case.created" => {},
-    "case.note_added" => {},
-    "case.priority_changed" => { "from_priority" => %w[low normal high urgent], "to_priority" => %w[low normal high urgent] },
-    "case.status_changed" => {
-      "from_status" => %w[new triaged investigating waiting_customer waiting_internal draft_ready awaiting_human_review resolved closed],
-      "to_status" => %w[new triaged investigating waiting_customer waiting_internal draft_ready awaiting_human_review resolved closed]
-    },
-    "case.tag_added" => { "tag_id" => Integer },
-    "case.tag_removed" => { "tag_id" => Integer },
-    "case.unassigned" => {},
-    "case.sla_started" => { "policy_id" => Integer },
     "email_verification.completed" => {},
-    "email.intake_failed" => { "failure_code" => InboundEmailDelivery::FAILURE_CODES },
-    "email.intake_received" => {},
-    "email.intake_retried" => { "failure_code" => InboundEmailDelivery::FAILURE_CODES },
-    "email.draft_saved" => {},
-    "email.inbox_created" => {},
-    "email.inbox_updated" => { "active" => %w[true false] },
-    "email.send_failed" => { "failure_code" => OutboundEmailDelivery::FAILURE_CODES },
-    "email.send_reviewed" => { "outcome" => %w[accepted rejected] },
-    "email.send_started" => {},
-    "email.send_succeeded" => {},
     "installation.bootstrapped" => {},
-    "intercom.connection_created" => {},
-    "intercom.connection_updated" => { "active" => %w[true false] },
-    "intercom.backfill_previewed" => { "conversation_count" => Integer },
-    "intercom.backfill_confirmed" => { "conversation_count" => Integer },
-    "intercom.backfill_blocked" => { "failure_code" => String },
-    "intercom.backfill_resumed" => { "cursor_position" => Integer },
-    "intercom.backfill_completed" => { "conversation_count" => Integer },
-    "intercom.backfill_enqueue_failed" => { "cursor_position" => Integer },
-    "intercom.conversation_synced" => {},
-    "intercom.identity_retired" => { "entity_kind" => %w[account contact] },
-    "intercom.sync_completed" => { "operation_kind" => IntercomSyncOperation::OPERATION_KINDS },
-    "intercom.sync_enqueued" => { "operation_kind" => IntercomSyncOperation::OPERATION_KINDS },
-    "intercom.sync_failed" => {
-      "operation_kind" => IntercomSyncOperation::OPERATION_KINDS,
-      "failure_code" => %w[configuration_error remote_rejected outcome_unknown]
-    },
-    "intercom.draft_saved" => {},
-    "intercom.send_failed" => { "failure_code" => IntercomOutboundDelivery::FAILURE_CODES },
-    "intercom.send_reviewed" => { "outcome" => %w[accepted rejected] },
-    "intercom.send_started" => {},
-    "intercom.send_succeeded" => {},
-    "intercom.webhook_failed" => { "failure_code" => IntercomWebhookDelivery::FAILURE_CODES },
-    "intercom.webhook_processed" => {},
-    "intercom.webhook_retried" => { "failure_code" => IntercomWebhookDelivery::FAILURE_CODES },
-    "knowledge.source_created" => {},
-    "knowledge.source_deleted" => {},
-    "knowledge.version_created" => {},
-    "knowledge.improvement_created" => {
-      "from_state" => [ "none" ],
-      "to_state" => KnowledgeImprovementCandidate::STATUSES,
-      "reason_code" => KnowledgeImprovementCandidate::REASON_CODES
-    },
-    "knowledge.improvement_triaged" => {
-      "from_state" => KnowledgeImprovementCandidate::STATUSES,
-      "to_state" => KnowledgeImprovementCandidate::STATUSES
-    },
-    "knowledge.improvement_assigned" => {
-      "from_state" => KnowledgeImprovementCandidate::STATUSES,
-      "to_state" => KnowledgeImprovementCandidate::STATUSES,
-      "assignee_membership_id" => Integer,
-      "previous_assignee_membership_id" => Integer
-    },
-    "knowledge.improvement_resolved" => {
-      "from_state" => KnowledgeImprovementCandidate::STATUSES,
-      "to_state" => KnowledgeImprovementCandidate::STATUSES,
-      "knowledge_source_version_id" => Integer
-    },
-    "knowledge.improvement_dismissed" => {
-      "from_state" => KnowledgeImprovementCandidate::STATUSES,
-      "to_state" => KnowledgeImprovementCandidate::STATUSES
-    },
-    "memory.procedure_published" => {},
-    "memory.proposal_created" => { "memory_type" => MemoryProposal::MEMORY_TYPES },
-    "memory.proposal_reviewed" => { "outcome" => %w[accepted rejected] },
-    "memory.record_captured" => { "memory_type" => MemoryRecord::MEMORY_TYPES },
-    "memory.record_inspected" => {},
-    "memory.library_inspected" => { "access_scope" => %w[all used], "record_count" => Integer },
-    "memory.correction_proposed" => {},
-    "memory.correction_reviewed" => { "outcome" => %w[accepted rejected] },
-    "memory.record_deleted" => {},
-    "memory.index_removal_retried" => {},
-    "memory.exported" => { "record_count" => Integer },
-    "memory.imported" => { "record_count" => Integer },
-    "memory.index_reconstructed" => { "queued_count" => Integer },
-    "operations.check_recorded" => {
-      "check_kind" => OperationalCheck::CHECK_KINDS,
-      "result" => OperationalCheck::RESULTS
-    },
-    "runtime.installation_approved" => {},
-    "runtime.installation_revoked" => {},
-    "runtime.installation_tested" => { "status" => %w[passed failed] },
-    "runtime.installations_checked" => { "detected_count" => Integer },
-    "runtime.provider_configured" => {},
-    "runtime.provider_removed" => {},
-    "usage_rate.published" => { "from_version" => Integer, "to_version" => Integer },
-    "usage_rate.rolled_back" => { "from_version" => Integer, "to_version" => Integer },
-    "scorecard.backtested" => { "version" => Integer, "sample_count" => Integer },
-    "scorecard.proposal_generated" => { "validation_status" => String, "adapter" => String, "parent_id" => Integer },
-    "scorecard.proposed" => { "version" => Integer, "proposal_id" => Integer },
-    "scorecard.published" => { "from_version" => Integer, "to_version" => Integer, "backtest_id" => Integer },
-    "scorecard.rolled_back" => { "from_version" => Integer, "to_version" => Integer, "backtest_id" => Integer },
     "password_reset.completed" => {},
     "password_reset.requested" => {},
-    "public_web.search_completed" => { "provider" => String, "result_count" => Integer, "cost_units" => Integer },
-    "public_web.search_failed" => { "failure_code" => String },
-    "public_web.search_requested" => { "policy_decision" => %w[allowed redacted] },
-    "public_web.search_retried" => {},
-    "public_web.extraction_completed" => {},
-    "public_web.extraction_failed" => { "failure_code" => String },
-    "public_web.extraction_requested" => {},
-    "public_web.extraction_retried" => {},
-    "source_identity.ambiguous" => { "entity_kind" => %w[account contact], "candidate_count" => Integer },
-    "source_identity.matched" => { "entity_kind" => %w[account contact], "resolution_method" => %w[created deterministic] },
-    "source_identity.reviewed" => { "entity_kind" => %w[account contact], "resolution_method" => %w[reviewed] },
-    "sla.escalation_created" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
-    "sla.escalation_reactivated" => { "objective" => %w[first_response resolution], "kind" => %w[warning breach] },
-    "tag.created" => {},
     "workspace.created" => { "organization_id" => Integer },
     "workspace.updated" => {
-      "previous_name" => String,
-      "previous_slug" => String,
-      "name" => String,
-      "slug" => String
+      "previous_name" => String, "previous_slug" => String, "name" => String, "slug" => String
     },
     "workspace_invitation.accepted" => { "role" => Membership::ROLES },
     "workspace_invitation.created" => { "role" => Membership::ROLES },
-    "workspace_invitation.revoked" => { "role" => Membership::ROLES },
-    "workspace.data_policy_updated" => {
-      "content_retention_days" => Integer,
-      "audit_retention_days" => Integer
-    },
-    "workspace.content_expiry_requested" => {},
-    "workspace.content_expiry_completed" => { "record_count" => Integer },
-    "workspace.content_expiry_failed" => { "failure_code" => String },
-    "workspace.audit_expiry_requested" => {},
-    "workspace.audit_expiry_completed" => { "event_count" => Integer },
-    "workspace.audit_expiry_failed" => { "failure_code" => String },
-    "workspace.exported" => {
-      "table_count" => Integer,
-      "record_count" => Integer,
-      "attachment_count" => Integer
-    },
-    "workspace.imported" => {
-      "table_count" => Integer,
-      "record_count" => Integer,
-      "attachment_count" => Integer
-    },
-    "workspace.deletion_requested" => {},
-    "workspace.deletion_failed" => { "failure_code" => String },
-    "workspace.deleted" => {
-      "record_count" => Integer,
-      "attachment_count" => Integer,
-      "memory_count" => Integer
-    },
-    "webhook.endpoint_configured" => { "active" => %w[true false] }
+    "workspace_invitation.revoked" => { "role" => Membership::ROLES }
   }.freeze
 
   belongs_to :workspace, optional: true
   belongs_to :actor, class_name: "User", optional: true
-  has_many :notifications, foreign_key: :source_audit_event_id, dependent: :restrict_with_exception
-
-  after_create_commit -> { NotificationFanoutJob.enqueue_after_commit(self) },
-    if: -> { workspace_id && NotificationFanout.notifiable_action?(action) }
 
   enum :actor_kind, ACTOR_KINDS.index_by(&:itself), validate: true
   enum :source, SOURCES.index_by(&:itself), prefix: true, validate: true
@@ -275,20 +37,10 @@ class AuditEvent < ApplicationRecord
 
   def self.record!(action:, source:, workspace: nil, actor: nil, actor_kind: nil, subject: nil, metadata: {}, request_id: nil, ip_address: nil, occurred_at: Time.current)
     ensure_subject_workspace!(subject, workspace)
-
-    create!(
-      action: action,
-      source: source,
-      workspace: workspace,
-      actor: actor,
+    create!(action:, source:, workspace:, actor:,
       actor_kind: actor ? actor_kind_for(actor) : actor_kind || "anonymous",
-      subject_type: subject&.class&.base_class&.name,
-      subject_id: subject&.id,
-      metadata: metadata,
-      request_id: request_id,
-      ip_address: ip_address,
-      occurred_at: occurred_at
-    )
+      subject_type: subject&.class&.base_class&.name, subject_id: subject&.id,
+      metadata:, request_id:, ip_address:, occurred_at:)
   end
 
   def readonly?
@@ -329,20 +81,15 @@ class AuditEvent < ApplicationRecord
     end
 
     def unsupported_metadata_key?
-      allowed_keys = EVENT_METADATA.fetch(action, {}).keys
-      (metadata.keys.map(&:to_s) - allowed_keys).any?
+      (metadata.keys.map(&:to_s) - EVENT_METADATA.fetch(action, {}).keys).any?
     end
 
     def unsupported_metadata_value?
       allowed_metadata = EVENT_METADATA.fetch(action, {})
       metadata.any? do |key, value|
         rule = allowed_metadata[key.to_s]
-        rule && !metadata_value_matches?(value, rule)
+        rule && !(rule.is_a?(Array) ? rule.include?(value.to_s) : value.is_a?(rule))
       end
-    end
-
-    def metadata_value_matches?(value, rule)
-      rule.is_a?(Array) ? rule.include?(value.to_s) : value.is_a?(rule)
     end
 
     def sensitive_key?(value)

@@ -1,330 +1,37 @@
 #!/usr/bin/env bash
-# Prepare a fresh Linux environment for NavishAI development.
-# Idempotent: safe to re-run on a warm snapshot.
+# Fresh orb setup: Rails and PostgreSQL only. Never reset an existing database.
 set -euo pipefail
-
-RUBY_VERSION="${RUBY_VERSION:-4.0.6}"
-GO_VERSION="${GO_VERSION:-1.27.1}"
-PGVECTOR_REF="${PGVECTOR_REF:-8ee86c96f0fd72390f890aa8a336fda6d3ab4c6c}"
-PGVECTOR_VERSION="0.8.6"
-PG_MAJOR="${PG_MAJOR:-16}"
-APP_ROLE="${APP_ROLE:-user}"
-DEV_DB="${DEV_DB:-navishai_development}"
-TEST_DB="${TEST_DB:-navishai_test}"
-
-log() {
-  printf '[setup] %s\n' "$*"
-}
-
-run_timed() {
-  local name="$1"
-  shift
-  local started
-  started="$(date +%s)"
-  log "start: ${name}"
-  "$@"
-  log "done: ${name} ($(($(date +%s) - started))s)"
-}
-
-have_pkg() {
-  dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
-}
-
-ensure_postgresql_apt_source() {
-  local keyring="/usr/share/keyrings/postgresql-apt.gpg"
-  local source="/etc/apt/sources.list.d/pgdg.list"
-  local expected_fingerprint="B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
-  local downloaded fingerprint
-
-  if [[ -f "$source" ]] && grep -Fqx "deb [signed-by=${keyring}] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" "$source" && [[ -f "$keyring" ]]; then
-    return
-  fi
-
-  downloaded="$(mktemp)"
-  curl --fail --silent --show-error --proto '=https' https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$downloaded"
-  fingerprint="$(gpg --show-keys --with-colons "$downloaded" | awk -F: '$1 == "fpr" { print $10; exit }')"
-  [[ "$fingerprint" == "$expected_fingerprint" ]] || {
-    rm -f "$downloaded"
-    log "PostgreSQL apt signing key fingerprint did not match"
-    return 1
-  }
-  gpg --dearmor <"$downloaded" | sudo tee "$keyring" >/dev/null
-  rm -f "$downloaded"
-  printf 'deb [signed-by=%s] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main\n' "$keyring" | sudo tee "$source" >/dev/null
-}
-
-ensure_apt_packages() {
-  local packages=(
-    build-essential
-    ca-certificates
-    curl
-    git
-    libffi-dev
-    libgmp-dev
-    libreoffice-writer
-    libreofficekit-dev
-    libpq-dev
-    libreadline-dev
-    libssl-dev
-    libvips42
-    libxml2-dev
-    libxslt1-dev
-    libyaml-dev
-    pkg-config
-    "postgresql-${PG_MAJOR}"
-    "postgresql-server-dev-${PG_MAJOR}"
-    shared-mime-info
-    zlib1g-dev
-  )
-  local missing=()
-  local pkg
-  for pkg in "${packages[@]}"; do
-    if ! have_pkg "$pkg"; then
-      missing+=("$pkg")
-    fi
-  done
-  if ((${#missing[@]} == 0)); then
-    log "apt packages already installed"
-    return 0
-  fi
-  ensure_postgresql_apt_source
-  log "installing apt packages: ${missing[*]}"
-  sudo apt-get update
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
-}
-
-ensure_mise() {
-  export PATH="${HOME}/.local/bin:${PATH}"
-  if [[ -x "${HOME}/.local/bin/mise" ]]; then
-    log "mise already installed"
-  else
-    curl -fsSL https://mise.run | MISE_QUIET=1 sh
-  fi
-  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
-}
-
-ensure_mise_profile() {
-  local profile="${HOME}/.bash_profile"
-  local marker="# navishai mise toolchain"
-  touch "$profile"
-  if grep -Fqx "$marker" "$profile"; then
-    log "mise login-shell hook already present"
-    return 0
-  fi
-  cat >>"$profile" <<'EOF'
-
-# navishai mise toolchain
-if [[ -z "${NAVISHA_MISE_ACTIVATED:-}" && -x "${HOME}/.local/bin/mise" ]]; then
-  export NAVISHA_MISE_ACTIVATED=1
-  export PATH="${HOME}/.local/bin:${PATH}"
-  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
+root="$(git rev-parse --show-toplevel)"
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v mise >/dev/null; then
+  curl --fail --silent --show-error https://mise.run | MISE_QUIET=1 sh
 fi
-EOF
-  log "added mise login-shell hook"
-}
-
-install_toolchains() {
-  export MISE_RUBY_COMPILE=false
-  export PATH="${HOME}/.local/bin:${PATH}"
-  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
-
-  if [[ -f .ruby-version ]]; then
-    RUBY_VERSION="$(tr -d '[:space:]' < .ruby-version)"
+missing=()
+for package in build-essential libpq-dev libyaml-dev postgresql-16; do
+  dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
+done
+if ((${#missing[@]})); then
+  if [[ ! -f /etc/apt/sources.list.d/pgdg.list ]]; then
+    key="$(mktemp)"
+    trap 'rm -f "$key"' EXIT
+    curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$key"
+    fingerprint="$(gpg --show-keys --with-colons "$key" | awk -F: '$1 == "fpr" {print $10; exit}')"
+    [[ "$fingerprint" == B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8 ]] || exit 1
+    gpg --dearmor < "$key" | sudo tee /usr/share/keyrings/postgresql-apt.gpg >/dev/null
+    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/postgresql-apt.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
   fi
-  if [[ -f .go-version ]]; then
-    GO_VERSION="$(tr -d '[:space:]' < .go-version)"
-  fi
-
-  if [[ -f mise.toml || -f .mise.toml ]]; then
-    "${HOME}/.local/bin/mise" trust --yes >/dev/null
-    "${HOME}/.local/bin/mise" install
-  else
-    "${HOME}/.local/bin/mise" use --global "ruby@${RUBY_VERSION}" "go@${GO_VERSION}"
-  fi
-
-  hash -r
-  ruby -v
-  go version
-  if ! bundler -v >/dev/null 2>&1; then
-    gem install bundler --no-document
-  fi
-}
-
-install_app_dependencies() {
-  export PATH="${HOME}/.local/bin:${PATH}"
-  eval "$("${HOME}/.local/bin/mise" activate bash --shims)"
-
-  if [[ -f Gemfile ]]; then
-    if [[ -f Gemfile.lock ]]; then
-      BUNDLE_FROZEN=true bundle install
-    else
-      bundle install
-    fi
-  else
-    log "no Gemfile yet; skipping bundle install"
-  fi
-
-  if [[ -f go.mod ]]; then
-    go mod download
-  else
-    log "no go.mod yet; skipping go mod download"
-  fi
-}
-
-ensure_postgres() {
-  if ! command -v pg_lsclusters >/dev/null 2>&1; then
-    log "postgresql client tools missing after install"
-    return 1
-  fi
-
-  if ! pg_lsclusters --no-header | awk '{ print $1, $2 }' | grep -qx "${PG_MAJOR} main"; then
-    sudo pg_createcluster "$PG_MAJOR" main --start
-  fi
-
-  local ver name port status
-  while read -r ver name port status _; do
-    [[ -n "${ver:-}" ]] || continue
-    if [[ "$status" != "online" ]]; then
-      sudo pg_ctlcluster "$ver" "$name" start
-    fi
-  done < <(pg_lsclusters --no-header)
-
-  export PGHOST=/var/run/postgresql
-  export PGPORT="$(pg_lsclusters --no-header | awk -v version="$PG_MAJOR" '$1 == version && $2 == "main" { print $3; exit }')"
-  [[ -n "$PGPORT" ]] || {
-    log "PostgreSQL ${PG_MAJOR} main has no port"
-    return 1
-  }
-
-  sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 <<SQL
-ALTER SYSTEM SET fsync = off;
-ALTER SYSTEM SET synchronous_commit = off;
-ALTER SYSTEM SET full_page_writes = off;
-ALTER SYSTEM SET autovacuum = off;
-SQL
-  sudo pg_ctlcluster "${PG_MAJOR}" main reload || sudo pg_ctlcluster "${PG_MAJOR}" main restart
-
-  local ready=0
-  local i
-  for i in $(seq 1 20); do
-    if pg_isready -q; then
-      ready=1
-      break
-    fi
-    sleep 0.25
-  done
-  if ((ready != 1)); then
-    log "postgres did not become ready"
-    return 1
-  fi
-}
-
-persist_postgres_endpoint() {
-  local endpoint_file=".env.local" temporary
-  temporary="$(mktemp .env.local.XXXXXX)"
-  [[ -f "$endpoint_file" ]] && grep -Ev '^(PGHOST|PGPORT)=' "$endpoint_file" >"$temporary" || true
-  {
-    printf 'export PGHOST=%q\n' "$PGHOST"
-    printf 'export PGPORT=%q\n' "$PGPORT"
-  } | sed 's/^export //' >>"$temporary"
-  chmod 0600 "$temporary"
-  mv -f "$temporary" "$endpoint_file"
-  log "wrote PostgreSQL endpoint to ${endpoint_file}"
-}
-
-ensure_pgvector() {
-  local control="/usr/share/postgresql/${PG_MAJOR}/extension/vector.control"
-  if [[ -f "$control" ]] && grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
-    log "pgvector ${PGVECTOR_VERSION} already installed"
-    return 0
-  fi
-
-  local tmp
-  tmp="$(mktemp -d)"
-  git init -q "${tmp}/pgvector"
-  git -C "${tmp}/pgvector" fetch -q --depth 1 https://github.com/pgvector/pgvector.git "$PGVECTOR_REF"
-  git -C "${tmp}/pgvector" checkout -q --detach FETCH_HEAD
-  make -C "${tmp}/pgvector" PG_CONFIG="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" OPTFLAGS=""
-  sudo make -C "${tmp}/pgvector" PG_CONFIG="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" install
-  rm -rf "$tmp"
-
-  if ! grep -Fqx "default_version = '${PGVECTOR_VERSION}'" "$control"; then
-    log "pgvector ${PGVECTOR_VERSION} was not installed"
-    return 1
-  fi
-}
-
-ensure_databases() {
-  sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 <<SQL
-DO \$\$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${APP_ROLE}') THEN
-    CREATE ROLE "${APP_ROLE}" SUPERUSER LOGIN;
-  ELSE
-    ALTER ROLE "${APP_ROLE}" WITH SUPERUSER LOGIN;
-  END IF;
-END
-\$\$;
-SQL
-
-  local db
-  for db in "$DEV_DB" "$TEST_DB"; do
-    if ! sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -tAc "SELECT 1 FROM pg_database WHERE datname = '${db}'" | grep -qx 1; then
-      sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" createdb -O "$APP_ROLE" "$db"
-    fi
-    sudo -u postgres env PGHOST="$PGHOST" PGPORT="$PGPORT" psql -v ON_ERROR_STOP=1 -d "$db" <<SQL
-CREATE EXTENSION IF NOT EXISTS vector;
-ALTER EXTENSION vector UPDATE TO '${PGVECTOR_VERSION}';
-SQL
-  done
-}
-
-prepare_application() {
-  if [[ -x bin/setup ]]; then
-    bin/setup --skip-server
-  else
-    log "no application setup script yet; skipping application preparation"
-  fi
-}
-
-write_orb_guidance() {
-  local amp_config_dir="${HOME}/.config/amp"
-  local dest="${amp_config_dir}/AGENTS.md"
-  local marker="# NavishAI orb toolchain"
-  mkdir -p "$amp_config_dir"
-  touch "$dest"
-  if grep -Fqx "$marker" "$dest"; then
-    log "orb toolchain notes already present"
-    return 0
-  fi
-  cat >>"$dest" <<EOF
-
-${marker}
-
-- Ruby ${RUBY_VERSION} and Go ${GO_VERSION} are installed with mise. Login shells load shims from ~/.bash_profile.
-- PostgreSQL ${PG_MAJOR} listens locally. Peer auth works as the unix user \`${APP_ROLE}\`.
-- Databases: ${DEV_DB}, ${TEST_DB}. The vector extension is enabled.
-- Use \`bin/setup --skip-server\`, \`bin/ci\`, and \`go test ./...\` for repository-native setup and checks.
-- Do not start long-lived servers from setup. Declare them in .amp/services.yaml or start them with amp orb service.
-EOF
-}
-
-main() {
-  local started
-  started="$(date +%s)"
-  log "NavishAI orb setup"
-  run_timed "apt packages" ensure_apt_packages
-  run_timed "mise" ensure_mise
-  run_timed "mise profile" ensure_mise_profile
-  run_timed "ruby and go" install_toolchains
-  run_timed "app dependencies" install_app_dependencies
-  run_timed "postgres" ensure_postgres
-  run_timed "postgres endpoint" persist_postgres_endpoint
-  run_timed "pgvector" ensure_pgvector
-  run_timed "databases" ensure_databases
-  run_timed "application" prepare_application
-  run_timed "orb guidance" write_orb_guidance
-  log "complete ($(($(date +%s) - started))s)"
-}
-
-main "$@"
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends "${missing[@]}"
+fi
+mise trust --yes
+mise install
+if ! grep -Fq '# navishai mise toolchain' "$HOME/.bash_profile"; then
+  printf '\n# navishai mise toolchain\nexport PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"\n' >> "$HOME/.bash_profile"
+fi
+sudo pg_ctlcluster 16 main start || pg_isready -q
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'user'" | grep -qx 1; then
+  sudo -u postgres createuser --createdb user
+fi
+"$root/.agents/resume"
+mise exec -- bundle install
+mise exec -- bin/setup --skip-server

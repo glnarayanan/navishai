@@ -19,7 +19,7 @@ class WorkspacesControllerTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "an Owner creates a sibling workspace with defaults and an audit trail" do
+  test "an Owner creates a sibling lab with membership and an audit trail" do
     sign_in_as users(:owner)
 
     assert_difference [ "Workspace.count", "Membership.count", "AuditEvent.count" ], 1 do
@@ -35,10 +35,6 @@ class WorkspacesControllerTest < ActionDispatch::IntegrationTest
     assert_equal organizations(:acme), workspace.organization
     assert_equal users(:owner), workspace.memberships.sole.user
     assert workspace.memberships.sole.owner?
-    assert workspace.crew_templates.exists?
-    assert workspace.resolution_contract_families.exists?
-    assert workspace.health_scorecard
-    assert workspace.workspace_data_policy
     assert AuditEvent.where(action: "workspace.created", workspace:, actor: users(:owner), subject_id: workspace.id).exists?
   end
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast wake-up repair for an existing NavishAI orb.
+# Fast wake-up repair for the evaluation lab; no runtime or memory services.
 # Do not install packages or toolchains here.
 set -euo pipefail
 

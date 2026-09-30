@@ -1,211 +1,26 @@
 name: CI
-
 on:
+  pull_request:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  go:
+  rails:
     runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-
-      - name: Check formatting
-        run: test -z "$(gofmt -l runner)"
-
-      - name: Vet runner
-        run: go vet ./...
-
-      - name: Test runner
+    services:
+      postgres:
+        image: postgres:16
         env:
-          NAVISHAI_REQUIRE_ISOLATION_TESTS: "1"
-        run: go test ./...
-
-      - name: Build runner
-        run: |
-          go build -o /tmp/navishai-runner ./runner/cmd/navishai-runner
-          go build -o /tmp/navishai-exec ./runner/cmd/navishai-exec
-          cc -std=c11 -O2 -Wall -Wextra -Werror -o /tmp/navishai-netns-launch runner/cmd/navishai-netns-launch/main.c
-
-      - name: Test bundled document converter
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install --no-install-recommends -y libreoffice-writer libreofficekit-dev
-          mkdir -p /tmp/navishai-document-bin
-          cp /tmp/navishai-exec /tmp/navishai-document-bin/
-          cc -O2 -Wall -Wextra -Werror -o /tmp/navishai-document-bin/navishai-document runner/cmd/navishai-document/main.c -ldl
-          NAVISHAI_TEST_DOC_FIXTURE="$PWD/test/fixtures/files/knowledge-legacy.doc" NAVISHAI_TEST_EXEC_HELPER=/tmp/navishai-document-bin/navishai-exec go test ./runner/internal/documents -run TestInstalledLibreOffice -count=1
-
-      - name: Build bundled runner image
-        run: docker build -f ops/docker/runner.Dockerfile -t navishai-runner:check .
-
-      - name: Smoke test legacy DOC conversion in runner image
-        run: |
-          docker run --rm --entrypoint /bin/sh \
-            --volume "$PWD/test/fixtures/files/knowledge-legacy.doc:/tmp/knowledge-legacy.doc:ro" \
-            navishai-runner:check -ec '
-              test -x /usr/local/bin/navishai-document
-              test -x /usr/local/bin/navishai-exec
-              test -x /usr/local/bin/navishai-netns-launch
-              grep -q "libreoffice-writer" /usr/share/navishai/runner-packages.txt
-              work=$(mktemp -d)
-              trap "rm -rf $work" EXIT
-              cp /tmp/knowledge-legacy.doc "$work/input.doc"
-              cd "$work"
-              /usr/local/bin/navishai-document
-              grep -q "NavishAI document conversion" input.txt
-            '
-
-  scan_ruby:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
-        with:
-          bundler-cache: true
-
-      - name: Scan for common Rails security vulnerabilities using static analysis
-        run: bin/brakeman --no-pager
-
-      - name: Scan for known security vulnerabilities in gems used
-        run: bin/bundler-audit
-
-  scan_js:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
-        with:
-          bundler-cache: true
-
-      - name: Scan for security vulnerabilities in JavaScript dependencies
-        run: bin/importmap audit
-
-  lint:
-    runs-on: ubuntu-latest
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd=pg_isready --health-interval=10s --health-timeout=5s --health-retries=5
     env:
-      RUBOCOP_CACHE_ROOT: tmp/rubocop
+      RAILS_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/navishai_lab_test
     steps:
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           bundler-cache: true
-
-      - name: Prepare RuboCop cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        env:
-          DEPENDENCIES_HASH: ${{ hashFiles('.ruby-version', '**/.rubocop.yml', '**/.rubocop_todo.yml', 'Gemfile.lock') }}
-        with:
-          path: ${{ env.RUBOCOP_CACHE_ROOT }}
-          key: rubocop-${{ runner.os }}-${{ env.DEPENDENCIES_HASH }}-${{ github.ref_name == github.event.repository.default_branch && github.run_id || 'default' }}
-          restore-keys: |
-            rubocop-${{ runner.os }}-${{ env.DEPENDENCIES_HASH }}-
-
-      - name: Lint code for consistent style
-        run: bin/rubocop -f github
-
-  test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
-
-      # redis:
-      #   image: valkey/valkey:8
-      #   ports:
-      #     - 6379:6379
-      #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
-
-    steps:
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libvips
-
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
-        with:
-          bundler-cache: true
-
-      - name: Run tests
-        env:
-          RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
-          # RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
-          # REDIS_URL: redis://localhost:6379/0
-        run: bin/rails db:test:prepare test
-
-  system-test:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
-
-      # redis:
-      #   image: valkey/valkey:8
-      #   ports:
-      #     - 6379:6379
-      #   options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
-
-    steps:
-      - name: Install packages
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libpq-dev libvips
-
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
-        with:
-          bundler-cache: true
-
-      - name: Run System Tests
-        env:
-          RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
-          # RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
-          # REDIS_URL: redis://localhost:6379/0
-        run: bin/rails db:test:prepare test:system
-
-      - name: Keep screenshots from failed system tests
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
-        with:
-          name: screenshots
-          path: ${{ github.workspace }}/tmp/screenshots
-          if-no-files-found: ignore
+      - run: bin/ci

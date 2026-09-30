@@ -27,7 +27,6 @@ class MembershipTest < ActiveSupport::TestCase
 
     assert_not membership.can_write?
     assert_not membership.can_manage_work?
-    assert_not membership.can_configure_agents?
   end
 
   test "does not destroy the last owner" do
@@ -41,5 +40,11 @@ class MembershipTest < ActiveSupport::TestCase
     Membership.create!(workspace: workspaces(:acme_support), user: users(:teammate), role: :owner)
 
     assert memberships(:owner_support).destroy
+  end
+
+  test "does not demote the last Owner" do
+    membership = memberships(:owner_support)
+    assert_not membership.update(role: :viewer)
+    assert membership.reload.owner?
   end
 end

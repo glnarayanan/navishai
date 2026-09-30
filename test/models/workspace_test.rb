@@ -1,16 +1,10 @@
 require "test_helper"
 
 class WorkspaceTest < ActiveSupport::TestCase
-  test "runner key is unique and cannot change after creation" do
+  test "workspace has no old domain configuration or runner key" do
     workspace = workspaces(:acme_support)
-
-    assert_match RunnerProtocol::UUID_PATTERN, workspace.runner_key
-    duplicate = workspaces(:acme_success)
-    duplicate.runner_key = workspace.runner_key
-    assert_not duplicate.valid?
-    assert_raises(ActiveRecord::StatementInvalid) do
-      Workspace.transaction(requires_new: true) { Workspace.where(id: workspace.id).update_all(runner_key: SecureRandom.uuid) }
-    end
+    assert_not workspace.has_attribute?(:runner_key)
+    assert_equal %i[organization memberships users workspace_invitations audit_events], Workspace.reflect_on_all_associations.map(&:name)
   end
 
   test "allows the same slug in different organizations" do

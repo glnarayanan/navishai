@@ -29,10 +29,6 @@ gem "solid_cable"
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
-# Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 2.0"
-gem "ruby-vips", "~> 2.3"
-
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
@@ -58,12 +54,6 @@ group :test do
   gem "selenium-webdriver"
 end
 
-gem "pdf-reader", "~> 2.16"
-
-# Keep BigDecimal on its maintained 4.x line. ttfunk 1.8.0 (via pdf-reader) caps it
-# at 3.x, so Bundler holds ttfunk at 1.7.0 until a ttfunk release accepts 4.x.
-gem "bigdecimal", ">= 4.0", require: false
-
-# Rails 8.1.3.1 passes JSON.parse options positionally, which json 3.0 rejects on
-# every jsonb read. Remove this cap once a Rails release supports json 3.
-gem "json", "< 4", require: false
+# Rails 8.1.3.1 passes JSON.parse options positionally, which JSON 3 rejects.
+# Retain JSON 2 until Rails supports the new keyword-only API.
+gem "json", "< 3", require: false

@@ -4,7 +4,7 @@ FROM ruby:${RUBY_VERSION}-slim@sha256:901e9c09db7b5e7e19af81799a7dd743c89f9c5fc9
 
 WORKDIR /rails
 ENV RAILS_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_PATH=/usr/local/bundle BUNDLE_WITHOUT=development:test
-RUN apt-get update -qq && apt-get install --no-install-recommends -y curl libpq5 libvips postgresql-client \
+RUN apt-get update -qq && apt-get install --no-install-recommends -y curl libpq5 postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build
