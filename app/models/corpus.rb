@@ -4,6 +4,7 @@ class Corpus < ApplicationRecord
   has_many :source_snapshots
   has_many :corpus_items
   has_many :corpus_analyses
+  has_many :scenarios
   normalizes :name, with: ->(name) { name.strip }
   validates :name, presence: true, length: { maximum: 100 }
 

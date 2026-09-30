@@ -70,7 +70,32 @@ issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
 
 Deleting any source clears corpus analyses and taxonomy revisions because they
-describe the full input collection. Source records from other sources remain.
+describe the full input collection. It also deletes their scenarios, variants,
+versions, evidence and reviews. Source records from other sources remain.
+
+## Scenario review
+
+Create candidates from a completed analysis; repeating this action reuses the
+same candidate identities. Mining uses source titles, context facts, keyword
+diagnostic sentences and the analysis selection reasons, not a model. It leaves
+outcomes empty: historical answers are not approved expectations. Experts must
+write a reusable starting situation and source-backed outcomes before approval.
+
+Edit the issue label, importance, known/hidden JSON facts and five requirement
+lists. Save creates a fixed version; an unchanged save keeps the version and
+approval. Stale edits/reviews cannot overwrite a later revision. Attach exact
+document excerpts as expectation evidence or knowledge available to the target.
+The form lists up to 100 current documents. Adding a newer snapshot of the same
+document/use replaces that evidence only in the new version. Changed documents
+mark prior evidence stale; changed conversation exports do not invalidate history.
+
+Approve, reject or merge into another approved scenario by ID. Every decision
+records the expert and version. Create a variant from an approved version by
+changing one existing fact with exact before/after values, reason and expected
+difference. The child keeps parent evidence, requires an expert revision and gets
+its own approval. No external processing occurs. Expired evidence hides scenario
+reads and blocks writes before purge. Full-page review/variant/error captures live
+under `.amp/in/artifacts/scenarios/` when `CAPTURE_LAB_SCREENSHOTS=1`.
 
 For first-Owner setup configure a random 32+ byte `NAVISHAI_BOOTSTRAP_TOKEN` and a
 future ISO 8601 `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT`; use `/setup`. Remove them after

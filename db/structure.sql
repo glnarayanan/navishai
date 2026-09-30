@@ -174,7 +174,7 @@ CREATE TABLE public.corpus_analyses (
     summary jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_eb878e98a6 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100))))
+    CONSTRAINT chk_rails_eb878e98a6 CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('complete'::character varying)::text, ('failed'::character varying)::text])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100))))
 );
 
 
@@ -430,6 +430,160 @@ CREATE SEQUENCE public.organizations_id_seq
 --
 
 ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
+
+
+--
+-- Name: scenario_evidence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenario_evidence (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    kind character varying NOT NULL,
+    excerpt text NOT NULL,
+    CONSTRAINT chk_rails_6cd9bf465e CHECK ((((kind)::text = ANY ((ARRAY['expectation'::character varying, 'knowledge'::character varying])::text[])) AND ((length(excerpt) >= 1) AND (length(excerpt) <= 4000))))
+);
+
+
+--
+-- Name: scenario_evidence_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenario_evidence_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenario_evidence_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenario_evidence_id_seq OWNED BY public.scenario_evidence.id;
+
+
+--
+-- Name: scenario_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenario_reviews (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL,
+    reviewed_by_id bigint NOT NULL,
+    decision character varying NOT NULL,
+    note text NOT NULL,
+    merged_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_b908de4663 CHECK ((((decision)::text = ANY ((ARRAY['approve'::character varying, 'reject'::character varying, 'merge'::character varying])::text[])) AND (((decision)::text = 'merge'::text) = (merged_version_id IS NOT NULL))))
+);
+
+
+--
+-- Name: scenario_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenario_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenario_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenario_reviews_id_seq OWNED BY public.scenario_reviews.id;
+
+
+--
+-- Name: scenario_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenario_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    scenario_id bigint NOT NULL,
+    created_by_id bigint NOT NULL,
+    number integer NOT NULL,
+    origin character varying NOT NULL,
+    title character varying NOT NULL,
+    situation text NOT NULL,
+    taxonomy_label character varying NOT NULL,
+    importance character varying NOT NULL,
+    known_facts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    hidden_facts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    requirements jsonb DEFAULT '{}'::jsonb NOT NULL,
+    mutation jsonb DEFAULT '{}'::jsonb NOT NULL,
+    selection_reason text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY ((ARRAY['mined'::character varying, 'expert'::character varying, 'variant'::character varying])::text[])) AND ((importance)::text = ANY ((ARRAY['normal'::character varying, 'high'::character varying, 'critical'::character varying])::text[])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text)))
+);
+
+
+--
+-- Name: scenario_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenario_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenario_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenario_versions_id_seq OWNED BY public.scenario_versions.id;
+
+
+--
+-- Name: scenarios; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenarios (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    cluster_member_id bigint,
+    parent_version_id bigint,
+    current_version_id bigint,
+    merged_into_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: scenarios_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenarios_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenarios_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenarios_id_seq OWNED BY public.scenarios.id;
 
 
 --
@@ -774,6 +928,34 @@ ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: scenario_evidence id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_evidence ALTER COLUMN id SET DEFAULT nextval('public.scenario_evidence_id_seq'::regclass);
+
+
+--
+-- Name: scenario_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_reviews ALTER COLUMN id SET DEFAULT nextval('public.scenario_reviews_id_seq'::regclass);
+
+
+--
+-- Name: scenario_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_versions ALTER COLUMN id SET DEFAULT nextval('public.scenario_versions_id_seq'::regclass);
+
+
+--
+-- Name: scenarios id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios ALTER COLUMN id SET DEFAULT nextval('public.scenarios_id_seq'::regclass);
+
+
+--
 -- Name: sessions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -919,6 +1101,38 @@ ALTER TABLE ONLY public.organizations
 
 
 --
+-- Name: scenario_evidence scenario_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_evidence
+    ADD CONSTRAINT scenario_evidence_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scenario_reviews scenario_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_reviews
+    ADD CONSTRAINT scenario_reviews_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scenario_versions scenario_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_versions
+    ADD CONSTRAINT scenario_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scenarios scenarios_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT scenarios_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -990,6 +1204,20 @@ CREATE UNIQUE INDEX idx_on_corpus_analysis_id_corpus_item_id_454c89de9d ON publi
 
 
 --
+-- Name: idx_on_scenario_version_id_corpus_item_id_kind_455675656f; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_scenario_version_id_corpus_item_id_kind_455675656f ON public.scenario_evidence USING btree (scenario_version_id, corpus_item_id, kind);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_scenario_id_id_3bbb59a428; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_scenario_id_id_3bbb59a428 ON public.scenario_versions USING btree (workspace_id, corpus_id, scenario_id, id);
+
+
+--
 -- Name: index_audit_events_on_action_and_occurred_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1036,6 +1264,13 @@ CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_
 --
 
 CREATE UNIQUE INDEX index_cluster_members_on_issue_cluster_id_and_corpus_item_id ON public.cluster_members USING btree (issue_cluster_id, corpus_item_id);
+
+
+--
+-- Name: index_cluster_members_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cluster_members_on_workspace_id_and_corpus_id_and_id ON public.cluster_members USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -1148,6 +1383,55 @@ CREATE UNIQUE INDEX index_organizations_on_slug ON public.organizations USING bt
 --
 
 CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.workspace_invitations USING btree (workspace_id, lower((email_address)::text)) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: index_scenario_reviews_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_scenario_reviews_on_reviewed_by_id ON public.scenario_reviews USING btree (reviewed_by_id);
+
+
+--
+-- Name: index_scenario_reviews_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_reviews_on_workspace_id_and_corpus_id_and_id ON public.scenario_reviews USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_scenario_versions_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_scenario_versions_on_created_by_id ON public.scenario_versions USING btree (created_by_id);
+
+
+--
+-- Name: index_scenario_versions_on_scenario_id_and_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_versions_on_scenario_id_and_number ON public.scenario_versions USING btree (scenario_id, number);
+
+
+--
+-- Name: index_scenario_versions_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_versions_on_workspace_id_and_corpus_id_and_id ON public.scenario_versions USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_scenarios_on_cluster_member_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenarios_on_cluster_member_id ON public.scenarios USING btree (cluster_member_id);
+
+
+--
+-- Name: index_scenarios_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenarios_on_workspace_id_and_corpus_id_and_id ON public.scenarios USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -1319,6 +1603,27 @@ CREATE TRIGGER issue_clusters_immutable BEFORE UPDATE ON public.issue_clusters F
 
 
 --
+-- Name: scenario_evidence scenario_evidence_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_evidence_immutable BEFORE UPDATE ON public.scenario_evidence FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: scenario_reviews scenario_reviews_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_reviews_immutable BEFORE UPDATE ON public.scenario_reviews FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: scenario_versions scenario_versions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_versions_immutable BEFORE UPDATE ON public.scenario_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: source_snapshots source_snapshots_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1365,11 +1670,35 @@ ALTER TABLE ONLY public.source_snapshots
 
 
 --
+-- Name: scenario_reviews fk_rails_3401605e5c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_reviews
+    ADD CONSTRAINT fk_rails_3401605e5c FOREIGN KEY (reviewed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: workspaces fk_rails_3e6d59991e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT fk_rails_3e6d59991e FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: scenario_reviews fk_rails_4c0ea7fdf9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_reviews
+    ADD CONSTRAINT fk_rails_4c0ea7fdf9 FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenario_evidence fk_rails_4d2df96de0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_evidence
+    ADD CONSTRAINT fk_rails_4d2df96de0 FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1386,6 +1715,14 @@ ALTER TABLE ONLY public.corpus_analysis_inputs
 
 ALTER TABLE ONLY public.corpus_analyses
     ADD CONSTRAINT fk_rails_5ea0a55698 FOREIGN KEY (workspace_id, corpus_id) REFERENCES public.corpora(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenario_versions fk_rails_5ea6b98ad3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_versions
+    ADD CONSTRAINT fk_rails_5ea6b98ad3 FOREIGN KEY (workspace_id, corpus_id, scenario_id) REFERENCES public.scenarios(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1429,11 +1766,43 @@ ALTER TABLE ONLY public.source_snapshots
 
 
 --
+-- Name: scenarios fk_rails_7e753102d7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT fk_rails_7e753102d7 FOREIGN KEY (workspace_id, corpus_id, parent_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: issue_clusters fk_rails_8102c9b2a4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.issue_clusters
     ADD CONSTRAINT fk_rails_8102c9b2a4 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenarios fk_rails_8690adf9aa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT fk_rails_8690adf9aa FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenario_evidence fk_rails_892abb13cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_evidence
+    ADD CONSTRAINT fk_rails_892abb13cb FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenarios fk_rails_954ce30522; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT fk_rails_954ce30522 FOREIGN KEY (workspace_id, corpus_id, merged_into_id) REFERENCES public.scenarios(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1458,6 +1827,14 @@ ALTER TABLE ONLY public.corpus_items
 
 ALTER TABLE ONLY public.cluster_members
     ADD CONSTRAINT fk_rails_a10aa346f5 FOREIGN KEY (workspace_id, corpus_id, issue_cluster_id) REFERENCES public.issue_clusters(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenarios fk_rails_a36063d5b6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT fk_rails_a36063d5b6 FOREIGN KEY (workspace_id, corpus_id, id, current_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, scenario_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1493,6 +1870,22 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: scenario_versions fk_rails_d833017fc5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_versions
+    ADD CONSTRAINT fk_rails_d833017fc5 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: scenarios fk_rails_db9ebf41f5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenarios
+    ADD CONSTRAINT fk_rails_db9ebf41f5 FOREIGN KEY (workspace_id, corpus_id, cluster_member_id) REFERENCES public.cluster_members(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: audit_events fk_rails_dd1f3a471a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1514,6 +1907,14 @@ ALTER TABLE ONLY public.memberships
 
 ALTER TABLE ONLY public.corpus_analyses
     ADD CONSTRAINT fk_rails_ed547a04e8 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: scenario_reviews fk_rails_ee35479abf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_reviews
+    ADD CONSTRAINT fk_rails_ee35479abf FOREIGN KEY (workspace_id, corpus_id, merged_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1539,6 +1940,7 @@ ALTER TABLE ONLY public.corpus_analysis_inputs
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930030000'),
 ('20260930020000'),
 ('20260930010000'),
 ('20260824230700'),

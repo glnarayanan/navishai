@@ -13,8 +13,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   installers and docs. Kept auth, workspace access, audit and relevant security.
 - [#143](https://github.com/glnarayanan/navishai/pull/143), based on #142: first Phase B slice. Corpus intake,
   snapshots, source evidence, pagination, email masking, retention and deletion.
-- `rebuild/04-corpus-discovery`, based on #143: frozen local analysis, term clusters,
+- [#144](https://github.com/glnarayanan/navishai/pull/144), based on #143: frozen local analysis, term clusters,
   risk-prioritised candidate selection and immutable expert taxonomy revisions.
+- `rebuild/05-scenario-review`, based on #144: scenario mining, source-backed expert
+  edits/review/merge, fixed versions, document knowledge and controlled variants.
 
 ## Built and checked
 
@@ -27,8 +29,8 @@ locking, CSP, headers, log filters and append-only audit remain. No PostgreSQL R
 Bounded JSON conversation exports and text/Markdown intake retain input digest,
 processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
-links. Local term analysis and expert label revisions are built; scenarios and
-evaluation execution are not built yet.
+links. Local term analysis, expert labels, versioned scenarios and controlled
+variants are built; evaluation execution is not built yet.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -54,12 +56,27 @@ content. Email masking is not complete PII removal; original files are not kept.
   duplicate jobs, expired input and revoked access. A Rails association deletion
   default initially tried to null a required corpus ID; the purge now uses explicit
   SQL deletion. Desktop/mobile taxonomy captures inspected.
+- Scenario `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 58.98s; 143 Ruby files
+  clean, audits clean, Brakeman zero warnings/errors and eager load passes. 142 Rails
+  tests / 883 assertions and 5 browser tests / 111 assertions, no failures/errors/skips.
+  Checks cover stale edits/reviews, unchanged saves, approval gates, merge rules,
+  exact-source/foreign evidence, variant provenance, immutable updates, document
+  refresh, expiry and deletion. Browser journey covers review, knowledge attachment,
+  variant creation, blocked approval and prior versions, with no overflow/CSP issues.
+  Full desktop/mobile review and blocked/variant captures inspected. Earlier tests
+  exposed an expired test session and an asynchronous stale-form click; neither
+  required weakening the product guards. Impeccable found only the established
+  Geist/Geist Mono font warnings; retained the pinned local design rather than
+  changing the product identity. Direct risk review and native audits used.
 
 ## Next and limits
 
-Next: convert selected candidates into source-backed scenarios with expert
-review/versioning and controlled variants. Compiler/calibration,
-generic target execution, failure inspection and regressions follow those checks.
+Next: compiler/calibration, then generic target execution, failure inspection and
+regressions. Scenario mining is a title/context/sentence baseline, not model-based
+semantic extraction. Experts supply source-backed outcomes. Controlled variants
+need an expert revision before approval. Changed documents flag stale evidence;
+new snapshots replace evidence only in new versions. Source purge deletes scenarios
+and descendants because their analysis depends on the full corpus.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 

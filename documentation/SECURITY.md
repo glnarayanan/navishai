@@ -33,7 +33,15 @@ and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
 There is no source export, evaluation execution, external disclosure or calibration
-yet. Analysis inputs and cluster members have workspace/corpus foreign keys and
+yet. Scenario versions, exact-source evidence and expert decisions are immutable
+in Ruby and SQL, with composite workspace/corpus relationships. Current-version
+pointers cannot refer to another scenario. All writes recheck a locked membership;
+version tokens block stale edits/reviews. Variants retain fixed parent versions and
+cannot inherit approval. Source expiry hides their content at read time, and purge
+also deletes all corpus scenarios through analysis relationships. Request logs
+filter scenario text, decisions, excerpts and mutations. No target receives any data.
+
+Analysis inputs and cluster members have workspace/corpus foreign keys and
 immutable updates. Jobs recheck the requester's membership. Source deletion also
 clears corpus-wide analyses/taxonomy revisions; expired inputs block analysis reads
 and edits before the hourly purge. Later derivatives must join this policy. OIDC provider and

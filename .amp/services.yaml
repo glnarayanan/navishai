@@ -6,4 +6,4 @@ services:
     portal:
       url: /
       title: NavishAI evaluation lab
-      description: Phase A workspace and authentication shell. Evaluation features are not yet built.
+      description: Support corpus, local discovery and expert scenario review. Evaluation execution is not yet built.

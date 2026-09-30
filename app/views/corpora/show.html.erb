@@ -2,6 +2,7 @@
 <main class="page-shell">
   <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
   <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. No external model calls.</p></div></div>
+  <nav class="workspace-tabs" aria-label="Corpus sections"><%= link_to "Source records", workspace_corpus_path(Current.workspace, @corpus), aria: { current: "page" } %><%= link_to "Scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus) %></nav>
   <section aria-labelledby="sources-title"><h2 id="sources-title">Sources</h2>
     <ul class="workspace-list" role="list">
       <% @sources.each do |source| %>
