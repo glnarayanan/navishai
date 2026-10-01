@@ -377,6 +377,12 @@ synthetic inputs across overlapping technical term families, Unicode/HTML and
 zero-term records. It checks complete membership, typed source reports, late risk
 signals, ties, document presence/gaps and historical unapproved mining. Its known
 partitions test this method, not taxonomy quality or real-company coverage.
+The same command also exercises 100,000 fixed inputs: 99,998 real JSONL-intake
+conversations across twenty uneven synthetic families plus two documents. It
+checks all historical members and 22 exact selections after replacement intake,
+including two late risks beyond the term window. Mining retains source quotes,
+needs expert review and remains idempotent. The fixture has author-known term
+partitions; it does not prove semantic clustering or arbitrary-corpus throughput.
 
 ## Model-assisted corpus discovery
 

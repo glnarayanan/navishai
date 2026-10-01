@@ -1452,8 +1452,38 @@ Focused matching/retrieval/scenario checks pass 31 tests / 444 assertions and th
 new browser journey passes 1 test / 18 assertions. Desktop/390px conflict captures
 were inspected. Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 9m13.67s:
 449 Rails tests / 6310 assertions, 47 browser tests / 2136 assertions, no failures,
-errors or skips. Native style, audits and eager loading pass. Slices 57–58 remain
-local pending stacked-PR delivery; no merge/release/deployment occurred.
+errors or skips. Native style, audits and eager loading pass. Slices 57–58 are
+committed/pushed as open stacked
+[#197](https://github.com/glnarayanan/navishai/pull/197) and
+[#198](https://github.com/glnarayanan/navishai/pull/198).
+No merge/release/deployment occurred.
+
+## Varied large-input proof (slice 59)
+
+Real bounded JSONL intake now has a 99,998-conversation proof across twenty uneven
+author-known term families, plus two documents: exactly 100,000 fixed inputs.
+Four surface variants, shared integration words and Unicode/HTML supplement the
+earlier repetitive scale test. Replacing current intake cannot change any of the
+fixed historical members, exact partitions or 22 selected records. Two late risk
+records retain signals beyond the 4000-character term window. Document gaps,
+historical source-backed unapproved mining and repeat-job/mining idempotence pass.
+The actual discovery job materializes no complete CorpusItem objects.
+
+`bin/rails test test/services/varied_corpus_discovery_test.rb` passes both proofs:
+2 tests / 426 assertions, no failures/errors/skips; 3m30.78s and 406792 KiB peak
+RSS for that whole command in this orb. Native style and diff checks pass.
+This is synthetic method/resource evidence, not semantic taxonomy, customer
+coverage or arbitrary-corpus throughput. No production code, bounds, source
+rights, labels, provider calls or dependencies changed.
+Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 12m1.99s: 450 Rails tests /
+6596 assertions and 47 browser tests / 2136 assertions, no failures/errors/skips.
+Native style, audits and eager loading pass; whole-command peak RSS is 513640 KiB.
+
+At 17:15 UTC on 1 October, exact-head remote CI for #190 and #195 is green.
+#187–189, #191–194 and #196–198 remain in progress without a conclusion.
+The #196 run reports `bin/ci` in progress and does not yet expose its logs;
+no cause is established. Earlier #155/#158 failures remain failures. Nothing was
+cancelled, rerun, merged, released or deployed.
 
 ## Next and limits
 
@@ -1502,7 +1532,8 @@ processing version and explicit rule fingerprints in snapshot reuse identity.
 Exact-text masking and larger local processing work within their stated limits.
 Normalized conversation JSONL accepts 100,000 records / 60 MiB per file; other
 formats stay at 2000 / 10 MiB. Varied-workload and larger-file checks now supplement
-the repetitive scale proof. Broader workload evidence and retrieval quality still
+the repetitive scale proof, including a heterogeneous 100,000-input journey.
+Broader workload evidence and retrieval quality still
 need engineering work; these checks do not finish the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
