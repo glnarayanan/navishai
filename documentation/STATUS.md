@@ -1993,6 +1993,33 @@ integration assertions; a fresh full CI follows the remaining relationship slice
 No full green CI result is claimed yet. See
 [OPERATIONS_ACCEPTANCE](./OPERATIONS_ACCEPTANCE.md).
 
+### Slice 81 — source-quoted relationships across discovery batches
+
+Explicit `model_batch_relationships` fixes a v3 plan but retains v2 discovery,
+all original observations and the same call ceiling. The existing final reducer
+may propose 0–100 relationships with required uncertainty and 2–8 exact anchors
+from at least two discovery receipts and two distinct source records. Local
+composition resolves original quotes and retains their observation/evidence
+indexes. A single batch has no reducer or relationships; v1/v2 stay unchanged.
+
+Native focused/adjacent checks passed 48 tests / 1083 assertions; v2/v3 browser
+journeys passed 4 / 193 with no failures, errors or skips. They exercise an
+asymmetric relationship between records no discovery saw together, all-original
+retention, every anchor/wire bound, versioned consent/repair, no extra calls,
+revocation/expiry/document changes, historical viewer access, SQL immutability,
+tenant lineage, purge and real DEBUG result filtering. Preview, repair, originals,
+new relationships and empty/stopped results were inspected at 1280/390px, with
+320px relationship wrapping; keyboard source links, CSP and overflow passed.
+
+Four-database recovery and real checkpoint upgrade/backup rollback pass/CLEAN
+again with exact v3 receipts, actual runtime grants/SQL guards, no resend and
+purge. Ruby style passes 375 files; eager loading, gem/importmap audits and
+Brakeman pass with zero warnings/errors. No migration, dependency, disclosure
+purpose, authority, live call or training was added. Fresh full CI and stacked
+handoff remain. See [CROSS_BATCH_RELATIONSHIPS](./CROSS_BATCH_RELATIONSHIPS.md).
+Relationships use only retained observation anchors, not unseen evidence or
+exhaustive company understanding. Fixtures do not establish semantic quality.
+
 ## Next and limits
 
 The source → expert → compiler → calibrated checks → target failure → corrected
@@ -2015,10 +2042,11 @@ Model discovery stays 100 complete records / 256 KiB per discovery, or at most
 2000 / 10 MiB and 31 calls across a fixed batch plan. Explicit v2 observations
 retain every summary, uncertainty and exact source anchor independent of candidate
 selection. The reducer preserves/orders existing observations, not new relationships
-between split records. General cross-batch relationship discovery remains missing
-engineering, reserved in this integration thread after active combined checks;
-no duplicate worker is assigned. V1/v2 stay frozen and any new mode must use the
-existing call plan and already-disclosed anchors, not more calls or authority.
+between split records in v2. Explicit v3 can propose new relationships from exact
+retained observation anchors in separate batches and distinct source records,
+keeping all originals and the existing call plan. V1/v2 stay frozen. Missing
+anchors, scope, chronology, causal meaning and exhaustive coverage remain limits;
+source-quoted proposals are not expert truth or live-quality acceptance.
 
 Local scenario mining now offers bounded opening/cue-rich source review questions,
 not copied raw account facts or action-derived expectations. Experts write starting
@@ -2036,12 +2064,12 @@ in 434.17 seconds before exact cleanup: separate native jobs refuse unapproved
 matching/impact/discovery before/after restart, local analyses finish, and IPv4/IPv6
 kernel deny, hook priority, simulated TLS/control/loopback and host-state checks pass.
 Combined browser checks and the corrected scale assertions pass; fresh full
-application CI follows the remaining relationship slice.
+application CI follows the focused relationship checks.
 
 The landing page now describes built Support-eval capabilities, real next actions
 and limits in inspected desktop/mobile/light/dark states. The complete
 [original acceptance map](./REBUILD_ACCEPTANCE.md) distinguishes engineering,
-missing cross-batch relationships, live-quality gates and conditional P2. No real
+remaining full CI/handoff, live-quality gates and conditional P2. No real
 customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. All registries remain empty. Public-host ingress/useful-egress,
 public TLS/proxy and live recovery still need an authorized host; private proofs

@@ -24,10 +24,11 @@ class CorpusAnalysis < ApplicationRecord
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       model = !configuration.nil?
-      batch = processing_method.in?(%w[model_batch model_batch_observations])
-      observations = processing_method.in?(%w[model_observations model_batch_observations])
+      batch = processing_method.in?(%w[model_batch model_batch_observations model_batch_relationships])
+      observations = processing_method.in?(%w[model_observations model_batch_observations model_batch_relationships])
       model_method = observations ? ModelCorpusDiscovery::OBSERVATIONS_VERSION : ModelCorpusDiscovery::VERSION
       batch_method = observations ? BatchCorpusDiscovery::OBSERVATIONS_VERSION : BatchCorpusDiscovery::VERSION
+      batch_method = BatchCorpusDiscovery::RELATIONSHIPS_VERSION if processing_method == "model_batch_relationships"
       streaming = processing_method == "local_stream"
       full_text = processing_method == "local_full_text"
       large_full_text = processing_method == "local_large_full_text"
@@ -138,15 +139,19 @@ class CorpusAnalysis < ApplicationRecord
 
   def model?
     processing_method.in?([ ModelCorpusDiscovery::VERSION, ModelCorpusDiscovery::OBSERVATIONS_VERSION,
-      BatchCorpusDiscovery::VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION ])
+      BatchCorpusDiscovery::VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::RELATIONSHIPS_VERSION ])
   end
 
   def batch?
-    processing_method.in?([ BatchCorpusDiscovery::VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION ])
+    processing_method.in?([ BatchCorpusDiscovery::VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::RELATIONSHIPS_VERSION ])
   end
 
   def observations?
-    processing_method.in?([ ModelCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION ])
+    processing_method.in?([ ModelCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::RELATIONSHIPS_VERSION ])
+  end
+
+  def relationships?
+    processing_method == BatchCorpusDiscovery::RELATIONSHIPS_VERSION
   end
 
   # The job and each batch use this under a short corpus lock, never over transport.

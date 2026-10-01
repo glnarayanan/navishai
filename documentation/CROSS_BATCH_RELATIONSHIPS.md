@@ -66,3 +66,34 @@ revocation, once-only execution, historical sources, expiry/purge and SQL
 immutability. Native request tests must bind the v3 plan and preserve repair.
 Render and inspect preview/result/empty/stopped states at desktop/mobile widths,
 including keyboard disclosure, source links, no overflow and no CSP violation.
+
+## Executed evidence
+
+```sh
+DATABASE_URL=postgresql:///navishai_lab_scale80_test PARALLEL_WORKERS=1 \
+  bin/rails test test/services/cross_batch_relationships_test.rb \
+  test/services/model_corpus_discovery_test.rb test/services/batch_corpus_discovery_test.rb \
+  test/integration/support_observations_access_test.rb \
+  test/integration/cross_batch_relationships_access_test.rb \
+  test/integration/private_logging_test.rb --seed 64405
+DATABASE_URL=postgresql:///navishai_lab_browser72_test CHROME_ARGS=--no-sandbox \
+  CAPTURE_LAB_SCREENSHOTS=1 PARALLEL_WORKERS=1 bin/rails test \
+  test/system/cross_batch_relationships_journey_test.rb \
+  test/system/support_observations_journey_test.rb --seed 64405
+bin/prove-backup-restore
+bin/prove-upgrade
+bin/rubocop
+bin/rails zeitwerk:check
+bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
+bin/bundler-audit check
+bin/importmap audit
+```
+
+Focused checks pass 48 tests / 1083 assertions; browser checks pass 4 / 193, with
+no failures, errors or skips. Both operations proofs pass/CLEAN with retained v3
+history, actual runtime SQL denials, no resend and expiry/purge. Style passes
+375 files; eager loading and audits pass; Brakeman reports zero errors/warnings.
+Inspected captures include preview, repair, every original, new relationships,
+empty and stopped results at 1280/390px plus 320px relationship wrapping.
+Named Ponytail/CE tools were unavailable; direct risk review and native checks
+found no remaining blocker. Full combined CI remains separate and pending.
