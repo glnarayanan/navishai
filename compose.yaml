@@ -33,13 +33,16 @@ services:
   postgres:
     image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
     environment:
-      POSTGRES_USER: navishai
-      POSTGRES_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
+      POSTGRES_USER: navishai_setup
+      POSTGRES_PASSWORD: ${NAVISHAI_POSTGRES_PASSWORD:?set a distinct NAVISHAI_POSTGRES_PASSWORD}
       POSTGRES_DB: navishai_lab_production
-    volumes: [lab_postgres_data:/var/lib/postgresql/data]
+      NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
+    volumes:
+      - lab_postgres_data:/var/lib/postgresql/data
+      - ./db/initialize_runtime_role.sh:/docker-entrypoint-initdb.d/10-navishai-runtime.sh:ro
     networks: [control]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U navishai -d navishai_lab_production"]
+      test: [CMD-SHELL, "pg_isready -U navishai_setup -d navishai_lab_production"]
       interval: 5s
       timeout: 5s
       retries: 20

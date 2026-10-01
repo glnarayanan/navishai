@@ -5,14 +5,48 @@ It is a small baseline, not deployment acceptance. Old installers, Helm/native
 topologies, runtime payloads, release scripts, archive tools and their proof have
 been removed. Git history retains them. No release/deploy workflow was run.
 
-Copy `.env.example` into a private environment file and supply app host, database
-password, and SECRET_KEY_BASE. Compose uses a new project/volume and lab database
+Copy `.env.example` into a private environment file and supply app host, distinct
+runtime/preparation database passwords, and SECRET_KEY_BASE. Compose uses a new project/volume and lab database
 names: do not map an old helpdesk volume into it. Run database preparation once
 before starting web/jobs; Rails maintains separate primary/cache/queue/cable
 databases in production. The first-Owner bootstrap is protected by a deployment
 token and expiry, not public registration. SMTP is required for production reset,
 verification and invitation email; missing SMTP fails closed. Optional OIDC needs
 issuer/client configuration and registered callback URLs.
+
+### Preparation and runtime roles
+
+These commands describe an approved deployment; no deployment ran in this work.
+Use a new volume. PostgreSQL's init script creates restricted `navishai`; the
+bootstrap administrator is `navishai_setup`. `NAVISHAI_POSTGRES_PASSWORD` must
+differ from `NAVISHAI_DATABASE_PASSWORD`. Only PostgreSQL and the one-off preparation
+container receive the former. Supply it in the private shell environment through
+your secret manager; a Compose `.env` file alone does not export shell variables.
+Never print either value or put it in tracked files.
+
+```sh
+docker compose build
+docker compose up -d postgres
+NAVISHAI_PREPARE_PASSWORD="$NAVISHAI_POSTGRES_PASSWORD" docker compose run --rm --no-deps \
+  -e NAVISHAI_PREPARE_PASSWORD web sh -ec '
+    export NAVISHAI_DATABASE_USERNAME=navishai_setup
+    export NAVISHAI_DATABASE_PASSWORD="$NAVISHAI_PREPARE_PASSWORD"
+    unset NAVISHAI_PREPARE_PASSWORD
+    exec bin/rails db:prepare db:grant_runtime
+  '
+docker compose up -d web jobs
+```
+
+Wait for PostgreSQL's health check before preparation. `db:grant_runtime` requires
+production and a separate owner; it rejects elevated runtime-role flags. It grants
+CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE and sequence USAGE/SELECT
+for primary/cache/queue/cable, including future owner-created tables/sequences.
+It revokes public database access and schema creation. Runtime cannot create or
+alter schemas, become the owner or disable triggers. Admins still can bypass them.
+Web/jobs no longer prepare databases on startup, so concurrent starts cannot race
+migrations. Starting before preparation fails; do not solve it by elevating runtime.
+Upgrades require stopping web/jobs, approved owner-run preparation and grants, then
+restart. This is not an automatic migration or old-volume conversion path.
 
 Web binds only to the host loopback. Supply an HTTPS reverse proxy with trusted
 forwarded headers; production enforces SSL and secure cookies. PostgreSQL is not
@@ -46,8 +80,8 @@ database URL. `bin/rails assets:precompile` and `bin/rails zeitwerk:check` passe
 all 30 asset manifest entries resolved to files, including local CSS/fonts.
 These commands did not create a database, start services or contact a provider.
 They do not prove a Docker build, image permissions or clean-host acceptance.
-The orb has no local Docker daemon, Compose or Buildx; image execution remains
-unchecked. Keep the native proof separate from deployment acceptance.
+Later isolated Docker builds and runtime checks passed; see the proof below.
+Compose and Buildx plugins remain absent. Keep each proof separate from deployment acceptance.
 
 Before claiming deployment readiness, independently verify a clean host, image
 build, pinned image execution, non-superuser database roles, HTTPS/proxy
@@ -55,6 +89,44 @@ configuration, mail/OIDC delivery, backup and restore, retention/deletion policy
 network boundaries and upgrades. A pinned manifest is not a certified release.
 Database owners and superusers can bypass triggers; application roles must not be
 superusers or have privileges to disable audit protections.
+
+## Disposable image/runtime proof
+
+`bin/prove-container-runtime` is an orb-only operations check, not part of `bin/ci`
+or a deployment command. It accepts no arguments and only uses the private local
+Docker socket `tmp/navishai-image-proof/docker.sock`, not the global daemon.
+Build the reviewed tree as `navishai-runtime-proof:local` first. The 1 October proof
+used the installed legacy builder; it adds no Buildx/Compose plugin or app dependency.
+
+The private daemon uses separate data/exec/pid roots, vfs, no bridge, iptables,
+IP masquerading or userland proxy. Its supervised orb service publishes no port.
+The proof supervises three uniquely named private containers, with network `none`,
+all capabilities dropped and no-new-privileges. PostgreSQL uses the configured
+immutable index, UID 999 and a fresh data directory. Rails uses UID 1000 and only
+a shared password-authenticated Unix socket. Generated test secrets live in mode
+0600 files in a private directory; they are not customer credentials.
+
+The proof runs real `db:prepare db:grant_runtime` over all four databases, then
+boots separate web/jobs without the preparation secret. Raw SQL must reject trigger
+disablement, table/role/database creation and assuming the owner role. Synthetic
+intake queues an analysis; the native jobs process must complete it. Cache
+write/read, cable access and audit rewrite rejection must work under runtime grants.
+A finite private TLS proxy verifies a generated trusted chain/hostname, production
+sign-in, HSTS, CSP, secure cookies, compiled CSS with at least a year's public cache
+and rejection of a foreign Host. It does not request a public certificate.
+
+`PASS` and `CLEAN` record this executed proof. Normal completion or exceptions stop
+only its named services and remove only its generated databases/secrets/directory.
+Host loss can leave those exact disposable resources; inspect them before cleanup.
+Existing lab/legacy databases and global Docker state remain untouched. The caller
+stops the private daemon and removes its private build/cache directory after use.
+
+This passed locally on 1 October 2026. It does not test Compose orchestration,
+control/edge network egress policy, a clean external host, public TLS, SMTP/OIDC,
+production backups/ACL restore, upgrades or customer quality. Earlier proof errors
+came from service-name length, the upstream initializer clearing PGHOST, container
+readiness timing and Rails using a 365.2425-day cache year; corrected the proof,
+not the security controls. No live provider or customer data ran.
 
 ## Disposable backup/restore fixture proof
 

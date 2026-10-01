@@ -21,6 +21,5 @@ COPY --from=build /rails /rails
 RUN groupadd --system --gid 1000 navishai && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash navishai \
   && chown -R navishai:navishai log storage tmp
 USER 1000:1000
-ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 EXPOSE 3000
 CMD ["bin/rails", "server", "-b", "0.0.0.0"]
