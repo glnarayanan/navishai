@@ -228,45 +228,20 @@ secrets before cleanup; diagnostics do not turn a failed check into a pass.
 Run `bin/prove-backup-restore` from the repository with the installed Ruby/bundle
 and PostgreSQL tools (`psql`, `pg_dump`, `pg_restore`). It requires a local
 PostgreSQL socket at `/var/run/postgresql` with peer authentication for the current
-Unix user and permission to create/drop databases. This is an operations test,
+Unix user and permission to create/drop disposable databases and roles. This is an operations test,
 not `bin/ci`, a deployment command or a production role recommendation.
 
 The script accepts no database names or arguments, ignores inherited libpq
 settings and overrides `DATABASE_URL`/Rails environment inside its own process.
-It creates two unique `navishai_lab_restore_<pid>_<random>` databases from
-`template0`, loads the checked-in structure and synthetic authentication and
-recorded-evaluation/batch-discovery fixtures only into its source database, then creates a custom
-format archive and restores it transactionally to the fresh destination. It never
-dumps development, test, production or legacy data and changes no shared service.
-Recorded/scripted evaluations run locally. A source-reviewed two-turn conversation
-and batch discovery use test-only approval and stubbed transport; neither sends a
-request to a real endpoint. Both approvals return to empty before backup. All other
-purpose registries stay empty.
+It creates four unique `navishai_ops_<pid>_<random>` databases and two restricted
+roles, loads the actual primary/cache/queue/cable schemas and synthetic fixtures,
+and restores owner/ACL-preserving archives after deleting only those exact assets.
+Real restored runtime logins test existing and future grants, lineage, immutable
+receipts, tenant SQL guards, no resend, source expiry and purge. It never dumps
+development, test, production or legacy data or calls a live endpoint.
 
-After restore it compares canonical SHA-256 fingerprints of every public table's
-complete rows, checks recorded failure and corrected success on the same fixed
-case, exact trace/approval provenance and held-out expert label/correction history.
-Trace association/correction history retains its exact trace, scenario version and
-author without changing approval or labels.
-It retains complete batch membership, fixed UUIDs and terminal receipts; duplicate
-delivery after restore must not send. It also retains the approved conversation
-plan, actual released transcript and fixed turn keys/receipts. Completed conversation
-delivery after restore must not call the target again. Raw SQL rejects updates to 16
-immutable definition/result/label tables, batch definition/terminal-state rewrites,
-run/item rebinding, foreign-workspace and same-workspace foreign-corpus
-evidence/association inserts, and audit update/delete/truncate. A new audit append checks the
-restored sequence. Unexpected SQL errors fail rather than masquerade as protection.
-
-Success prints `PASS` and `CLEAN`; failure exits nonzero. The private temporary
-directory/archive and only successfully created database names are cleaned on
-normal completion or Ruby exception. Uncatchable termination (such as SIGKILL or
-host loss) can leave disposable resources; inspect that invocation's exact names
-before manual removal, never drop databases using a broad prefix wildcard.
-
-Local orb execution on 1 October 2026 passed this fixture proof. This covers the
-primary lab schema, not separate production queue/cache/cable databases, backup
-encryption/retention, PITR, role/ACL restoration (owner and ACL data are omitted),
-RLS, all possible composite relationships, live targets or model quality. Owners
-and superusers still can bypass triggers. Clean-host, end-to-end Compose ingress/
-egress, public HTTPS/proxy and production network/role acceptance remain unverified;
-this local socket proof supplies none of those claims.
+The old primary-only/no-ACL proof is superseded. See
+[operations acceptance](./OPERATIONS_ACCEPTANCE.md) for commands, exact evidence,
+secret/backup lifecycle, cleanup and limits. This local proof does not establish
+clean-host or production recovery acceptance, public ingress/egress/TLS, PITR,
+backup encryption/retention, storage-volume recovery, RLS or customer quality.

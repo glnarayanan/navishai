@@ -1,11 +1,8 @@
 #!/usr/bin/env ruby
 # Operations-only synthetic proof. Never accepts an existing database name/URL.
 require_relative "../config/boot"
-require "pg"
-require "etc"
-require "securerandom"
+require_relative "../ops/database_recovery"
 require "tmpdir"
-require "digest"
 
 abort "Usage: bin/prove-backup-restore (no arguments)" unless ARGV.empty?
 ENV.keys.grep(/\APG/).each { |key| ENV.delete(key) }
@@ -13,25 +10,11 @@ ENV["RAILS_ENV"] = "test"
 ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
 ENV["NAVISHAI_SCENARIO_ENDPOINTS"] = "[]"
 ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]"
-socket = "/var/run/postgresql"
-user = Etc.getpwuid.name
-prefix = "navishai_lab_restore_#{Process.pid}_#{SecureRandom.hex(6)}"
-source = "#{prefix}_source"
-restored = "#{prefix}_restored"
-ENV["DATABASE_URL"] = "postgresql:///#{source}?host=#{socket}&user=#{user}"
-created = []
-admin = PG.connect(host: socket, user: user, dbname: "postgres")
+recovery = Operations::DatabaseRecovery.new
+ENV["DATABASE_URL"] = recovery.url
 
 def assert_proof(condition, message)
   raise "Proof failed: #{message}" unless condition
-end
-
-def fingerprint(database)
-  database.exec("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename").to_a.to_h do |row|
-    table = PG::Connection.quote_ident(row.fetch("tablename"))
-    data = database.exec("SELECT COALESCE(jsonb_agg(row ORDER BY row::text), '[]'::jsonb)::text FROM (SELECT to_jsonb(t) AS row FROM #{table} t) records").getvalue(0, 0)
-    [ table, Digest::SHA256.hexdigest(data) ]
-  end
 end
 
 def rejects_sql(sql, error_class, message = nil)
@@ -52,17 +35,9 @@ end
 begin
   Dir.mktmpdir("navishai-restore-proof-") do |directory|
     File.chmod(0o700, directory)
-    [ source, restored ].each do |name|
-      admin.exec("CREATE DATABASE #{PG::Connection.quote_ident(name)} TEMPLATE template0")
-      created << name
-    end
-    # Explicit local peer connection; ignore inherited libpq credentials/services.
-    command_env = { "PATH" => ENV.fetch("PATH"), "HOME" => directory }
-    run = lambda do |*arguments|
-      assert_proof(system(command_env, *arguments, unsetenv_others: true), "PostgreSQL tool failed")
-    end
-    run.call("psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-h", socket, "-U", user, "-d", source,
-      "-f", File.expand_path("../db/structure.sql", __dir__))
+    recovery.create!
+    puts "SOURCE: disposable databases #{recovery.databases.values.join(', ')}; roles #{recovery.owner}, #{recovery.runtime}."
+    recovery.load_structure!(File.expand_path("../db/structure.sql", __dir__))
     require_relative "../config/environment"
     require "active_record/fixtures"
     require_relative "../test/test_helpers/recorded_evaluation_test_helper"
@@ -134,17 +109,10 @@ begin
       redaction: "exact", redaction_values: "Fixture Private Contact")
     masking_current = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
       redaction: "exact", redaction_values: "Fixture Private Contact\nmetadata")
-    source_db = PG.connect(host: socket, user: user, dbname: source)
-    expected = fingerprint(source_db)
-    source_db.close
+    recovery.prepare_auxiliary!(Rails.root, analysis:)
     ActiveRecord::Base.connection_pool.disconnect!
-    archive = File.join(directory, "synthetic.dump")
-    run.call("pg_dump", "-h", socket, "-U", user, "-d", source, "--format=custom", "--no-owner", "--no-acl", "--file", archive)
-    run.call("pg_restore", "-h", socket, "-U", user, "-d", restored, "--exit-on-error", "--single-transaction", "--no-owner", "--no-acl", archive)
-    restore_db = PG.connect(host: socket, user: user, dbname: restored)
-    assert_proof(fingerprint(restore_db) == expected, "all public table content must survive exactly")
-    restore_db.close
-    ActiveRecord::Base.establish_connection(adapter: "postgresql", host: socket, username: user, database: restored)
+    recovery.restore!(directory)
+    recovery.verify_runtime!
     assert_proof(masking_old.reload.mask_count == 1 && masking_current.reload.mask_count == 2 && masking_old.mask_digest == Digest::SHA256.hexdigest('["Fixture Private Contact"]') && masking_old.mask_digest != masking_current.mask_digest, "exact fixed masking rules fingerprint/count and historical identity")
     assert_proof(masking_old.corpus_items.sole.content == "[text redacted] needs metadata." && masking_current.corpus_items.sole.content == "[text redacted] needs [text redacted]." && !masking_old.attributes.to_json.include?("Fixture Private Contact"), "masked content survives without raw rule values")
     assert_proof(CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
@@ -182,10 +150,15 @@ begin
     rejects_sql("UPDATE corpus_discovery_batches SET state = 'running', result = NULL, finished_at = NULL", PG::RaiseException, "batch definition, claim and terminal receipt are immutable")
     rejects_sql("UPDATE evaluation_runs SET corpus_id = corpus_id + 1", PG::RaiseException, "evaluation run definition is immutable")
     rejects_sql("UPDATE evaluation_run_items SET corpus_id = corpus_id + 1", PG::RaiseException, "lab versions are immutable")
-    %w[UPDATE DELETE TRUNCATE].each do |operation|
-      sql = { "UPDATE" => "UPDATE audit_events SET action = action", "DELETE" => "DELETE FROM audit_events", "TRUNCATE" => "TRUNCATE audit_events" }.fetch(operation)
+    %w[UPDATE DELETE].each do |operation|
+      sql = { "UPDATE" => "UPDATE audit_events SET action = action", "DELETE" => "DELETE FROM audit_events" }.fetch(operation)
       rejects_sql(sql, PG::RaiseException, "audit events are append-only")
     end
+    rejects_sql("TRUNCATE audit_events", PG::InsufficientPrivilege)
+    ActiveRecord::Base.establish_connection(recovery.configuration)
+    ActiveRecord::Base.connection.execute("SET ROLE #{PG::Connection.quote_ident(recovery.owner)}")
+    rejects_sql("TRUNCATE audit_events", PG::RaiseException, "audit events are append-only")
+    ActiveRecord::Base.establish_connection(recovery.configuration(as_runtime: true))
     foreign_workspace = Workspace.where.not(id: corpus.workspace_id).first!
     foreign_corpus = foreign_workspace.corpora.create!(name: "Foreign restore fixture")
     sibling = corpus.workspace.corpora.create!(name: "Sibling restore fixture")
@@ -196,13 +169,16 @@ begin
     last_audit_id = AuditEvent.maximum(:id)
     event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
     assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
+    source = trace.source_snapshot.source
+    source.update!(expires_at: 1.minute.ago)
+    assert_proof(corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?, "restored source expiry hides dependent definitions")
+    SourcePurge.call(source:)
+    assert_proof(!Source.exists?(source.id) && !CorpusItem.exists?(trace.id) && !ScenarioVersion.exists?(fixed_case.scenario_version_id) && !HumanLabel.exists?(label.id) && !EvaluationResult.exists?(saved_result.id) && !TraceScenarioDecision.exists?(association.id), "runtime purge clears restored source and dependent results, labels and associations")
+    assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_id: source.id.to_s).exists?, "minimal purge audit survives without source content")
     puts "PASS: exact table content/provenance, exact-text masking fingerprints/history/reuse, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: restored expiry and runtime purge remove source-backed definitions/results/labels/associations while keeping the content-free audit."
   end
 ensure
-  ActiveRecord::Base.connection_pool.disconnect! if defined?(ActiveRecord::Base)
-  created.reverse_each do |name|
-    admin.exec("DROP DATABASE #{PG::Connection.quote_ident(name)}")
-  end
-  admin.close
+  recovery.close
 end
-puts "CLEAN: only this invocation's disposable databases and temporary archive removed."
+puts "CLEAN: only this invocation's four disposable databases, two roles and private archives removed."
