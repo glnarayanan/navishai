@@ -508,6 +508,17 @@ dependencies. A changed document makes its old evidence stale; a changed export
 does not invalidate history. Do not infer semantic impact or rewrite expectations.
 Expired corpus sources hide these derived records under the existing lifetime gate.
 
+Optional assumption-impact proposals compare two complete same-source documents
+with 1–50 explicit current immutable versions, including unlinked assumptions.
+Keep this separate from exact dependency/staleness rules. Preview the actual
+canonical body, bind consent to its endpoint/digest, and require the distinct
+empty `NAVISHAI_IMPACT_ENDPOINTS` registry. Local provenance stays local; private
+assumptions, including hidden facts, need this explicit disclosure. One bounded
+once-claimed job rechecks source/version/access/approval before retention.
+Exact quotes, reasons and uncertainty make proposals reviewable, not authoritative.
+Only a separate expert revision/review changes definitions. Purge all corpus-wide
+copies before scenario deletion. See [ASSUMPTION_IMPACT.md](./ASSUMPTION_IMPACT.md).
+
 Keep comparisons on `EvaluationRun`: join only the same fixed case and identical
 frozen visible input within one corpus. Changed definitions or inputs stay
 unmatched. Pass → fail is a reported regression; fail → pass is recovery. Missing,

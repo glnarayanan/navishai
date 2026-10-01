@@ -1922,6 +1922,28 @@ audit actions and SQL lifecycle guards. Combined runtime/CI checks follow.
 See [MODEL_FAILURE_MATCHING.md](./MODEL_FAILURE_MATCHING.md). Fixtures do not
 prove semantic matching quality, live provider behaviour or deployment readiness.
 
+## Source-assumption change proposals (slice 78)
+
+Optional v2 compares two complete same-source snapshots with 1–50 explicit current
+immutable versions, including unlinked assumptions. Consent binds the exact
+canonical wire and endpoint under the impact-only empty registry. Local provenance
+stays local; hidden assumptions need explicit disclosure. One call may propose
+affected requirements with exact before/after/assumption quotes and uncertainty,
+never new staleness, definitions, approvals or labels. Legacy v1 cannot dispatch.
+
+Parent focused/adjacent checks passed 58 tests / 723 assertions; browser checks
+passed 5 / 239. After connecting corpus navigation, the two final journeys passed
+2 / 132; no failures, errors or skips. Native request/SQL logs filter exact copies;
+preview, stored receipt and actual transport bytes match. Desktop proposal and
+mobile canonical-wire/unchecked-consent states were inspected. Keyboard repair,
+historical/error/interruption, separate expert revision, viewport/CSP/overflow
+checks passed. Ruby style passed 347 files, eager loading passed and Brakeman
+reported zero warnings/errors. SQL lineage/lifecycle and restricted-role checks
+remain in the native tests; combined grants/CI follow. Schema, nav, empty config,
+privacy checks and separate security/architecture guidance are integrated.
+See [ASSUMPTION_IMPACT.md](./ASSUMPTION_IMPACT.md). Selected-set fixture proposals
+do not establish company-wide impact coverage or live model quality.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

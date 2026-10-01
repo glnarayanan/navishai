@@ -8,6 +8,30 @@ class AssumptionImpactAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "native impact request and SQL logs hide fixed assumptions and results without changing them" do
+    previous_logger = ActiveRecord::Base.logger
+    previous_controller_logger = ActionController::Base.logger
+    buffer = StringIO.new
+    ActiveRecord::Base.logger = ActionController::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    with_impact_response do
+      post workspace_corpus_assumption_impacts_path(@workspace, @corpus), params: impact_request_params
+      assert_response :see_other
+      assert_equal "[FILTERED]", request.filtered_parameters.fetch("configuration")
+      attempt = AssumptionImpact.where(corpus: @corpus).sole
+      AssumptionImpactJob.perform_now(attempt.id)
+      assert_equal "Only Enterprise plans support SAML. Business customers use password login.", attempt.reload.input.dig("before", "content")
+      assert_equal "Business and Enterprise plans support SAML.", attempt.assumption_impact_result.result.fetch("affected").sole.fetch("after_quote")
+      assert_includes buffer.string, '["input", "[FILTERED]"]'
+      assert_includes buffer.string, '["result", "[FILTERED]"]'
+      assert_not_includes buffer.string, "Business customers use password login"
+      assert_not_includes buffer.string, "Synthetic fixture:"
+      assert_includes buffer.string, "assumption_impact.completed"
+    end
+  ensure
+    ActiveRecord::Base.logger = previous_logger
+    ActionController::Base.logger = previous_controller_logger
+  end
+
   test "local preview shows complete documents and fixed assumptions but queues nothing" do
     assert_no_difference([ "AssumptionImpact.count", "AuditEvent.count" ]) do
       get new_workspace_corpus_assumption_impact_path(@workspace, @corpus), params: impact_selection_params

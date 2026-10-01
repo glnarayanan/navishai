@@ -7,7 +7,9 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
   test "expert previews unlinked assumptions confirms one request inspects quotes and separately revises" do
     build_change_impact
     sign_in users(:owner)
-    visit workspace_corpus_assumption_impacts_path(@workspace, @corpus)
+    visit workspace_corpus_path(@workspace, @corpus)
+    click_link "Source changes"
+    assert_selector "nav[aria-label='Corpus sections'] a[aria-current=page]", text: "Source changes"
     assert_text "No attempts on this page"
     click_link "Preview a document change"
     click_link "Product entitlement · source ##{@source.id}"
