@@ -19,8 +19,14 @@ class CalibrationSetsController < ApplicationController
   def show
     @set = @corpus.calibration_sets.find(params[:id])
     @cohort = %w[development held_out].include?(params[:cohort]) ? params[:cohort] : "held_out"
-    @report = CalibrationReport.call(set: @set, cohort: @cohort)
-    @samples = @set.calibration_samples.where(cohort: @cohort).order(:id)
+    @report = CalibrationReport.call(set: @set, cohort: @cohort, reviewer: Current.user)
+    @reviews = @report.fetch(:reviews)
+    if Current.require_membership!.can_write?
+      @review_state = params[:review_state] if CalibrationReport::REVIEW_STATES.key?(params[:review_state])
+      @reviews = @reviews.select { |entry| entry[:state] == @review_state } if @review_state
+      @reviews = @reviews.sort_by { |entry| [ CalibrationReport::REVIEW_STATES.keys.index(entry[:state]), entry[:sample].id ] }
+      @next_unlabelled = @reviews.find { |entry| entry[:state] == "unlabelled" }&.fetch(:sample)
+    end
   end
 
   private

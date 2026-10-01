@@ -87,6 +87,54 @@ class CalibrationTest < ActiveSupport::TestCase
     assert_nil report[:recall]
   end
 
+  test "personal review states use latest labels without revealing other judgments before a first label" do
+    other = Membership.create!(workspace: @workspace, user: users(:teammate), role: :member)
+    aligned = add_sample(output: support_output(text: "Aligned failure"))
+    label(aligned, "fail")
+    disagreement = add_sample(output: support_output(text: "Machine missed failure", tools: [ "collect_expiry" ]))
+    label(disagreement, "fail")
+    uncertain = add_sample(output: support_output(text: "Expert needs evidence"))
+    label(uncertain, "uncertain")
+    disputed = add_sample(output: support_output(text: "Experts differ"))
+    label(disputed, "fail")
+    disputed.label!(membership: other, previous_id: nil, decision: "pass", rationale: "A competing expert interpretation.")
+    blind = add_sample(output: support_output(text: "No personal label"))
+    blind.label!(membership: other, previous_id: nil, decision: "uncertain", rationale: "Hidden until the reviewer decides.")
+    development = add_sample(cohort: "development", output: support_output(text: "Development only"))
+    report = CalibrationReport.call(set: @set, reviewer: @membership.user)
+    states = report.fetch(:reviews).to_h { |entry| [ entry.fetch(:sample).id, entry.fetch(:state) ] }
+    assert_equal({ aligned.id => "aligned", disagreement.id => "disagreement", uncertain.id => "uncertain", disputed.id => "disputed", blind.id => "unlabelled" }, states)
+    assert_not states.key?(development.id)
+    assert_equal [ 5, 2, 1, 2 ], report.values_at(:samples, :compared, :disputed, :uncertain)
+    assert_equal 2, report.fetch(:reviews).find { |entry| entry[:sample] == disputed }.fetch(:label_count)
+
+    # Corrections append history; old labels must not keep resolved samples in the queue.
+    label(disagreement, "pass")
+    correction = disputed.latest_labels.find_by!(labelled_by: other.user)
+    disputed.label!(membership: other, previous_id: correction.id, decision: "fail", rationale: "Resolved using the company evidence.")
+    latest = CalibrationReport.call(set: @set, reviewer: @membership.user).fetch(:reviews).to_h { |entry| [ entry[:sample].id, entry[:state] ] }
+    assert_equal "aligned", latest.fetch(disagreement.id)
+    assert_equal "aligned", latest.fetch(disputed.id)
+    assert_equal "unlabelled", latest.fetch(blind.id)
+    assert_equal "disputed", states.fetch(disputed.id)
+    other_states = CalibrationReport.call(set: @set, reviewer: other.user).fetch(:reviews).to_h { |entry| [ entry[:sample].id, entry[:state] ] }
+    assert_equal "unlabelled", other_states.fetch(aligned.id)
+    assert_equal "uncertain", other_states.fetch(blind.id)
+  end
+
+  test "missing and abstaining predictions remain review work rather than machine agreement" do
+    set = CalibrationSet.define!(corpus: @corpus, membership: @membership, name: "Offline rubric review", grader_version_id: @outcome_grader.current_version_id)
+    check = @case.eval_case_checks.find_by!(requirement_kind: "outcomes")
+    missing = set.add_sample!(membership: @membership, check_id: check.id, cohort: "held_out", output: support_output(text: "Missing prediction"))
+    abstaining = set.add_sample!(membership: @membership, check_id: check.id, cohort: "held_out", output: support_output(text: "Abstaining prediction"))
+    [ missing, abstaining ].each { |sample| label(sample, "fail") }
+    abstaining.create_calibration_prediction!(workspace: @workspace, corpus: @corpus, result: { "decision" => "abstain", "reason" => "Insufficient evidence" }, processing_version: "test-judge-v1", created_at: Time.current)
+    report = CalibrationReport.call(set:, reviewer: @membership.user)
+    assert_equal [ "uncompared", "uncompared" ], report.fetch(:reviews).map { |entry| entry[:state] }
+    assert_equal [ 2, 0, 1, 1 ], report.values_at(:samples, :compared, :unpredicted, :abstained)
+    assert_nil report[:precision]
+  end
+
   test "database rejects foreign or wrong grader links and expiry blocks writes before purge" do
     foreign = workspaces(:beta_support).corpora.create!(name: "Other company")
     grader = Grader.define!(corpus: foreign, membership: memberships(:outsider_beta), name: "Private", kind: "deterministic", definition: { "type" => "text_absent", "value" => "private" })

@@ -67,6 +67,12 @@ and other expert decisions; this is not a security or double-blind boundary. Vie
 can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
 output and rationale copies, and parameter logs filter both.
 
+Calibration review filters are allowlisted read-only states within the selected
+cohort. They change no labels, predictions, audit records or jobs, and leave report
+counts unchanged. Before a writer's first label, row state/order does not reveal
+another expert's decision or the prediction. This reduces anchoring, not access to
+aggregate reports. Viewers have no review controls; existing source/access gates apply.
+
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
 prior cases or labels. Suite consent binds its displayed case list, rejecting stale

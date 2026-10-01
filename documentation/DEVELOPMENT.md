@@ -415,6 +415,19 @@ denominators show no evidence, not 0% or 100%. Pairwise agreement uses only cert
 expert-label pairs and is not chance-corrected. Small selected sets do not establish
 population accuracy. Do not tune on held-out samples.
 
+Use **Review focus** on the set page to find missing personal labels, expert disputes,
+uncertainty, machine/expert disagreement or missing usable predictions. The list
+puts missing personal labels first. Until you label a sample, its row cannot reveal
+other judgments through its state/order. **Start next unlabelled review** opens one
+fixed sample; it does not submit a label or call a judge. Labels still need your
+decision and rationale. A correction changes the next report, not the label history.
+
+Filters retain the chosen cohort but never narrow report counts. Clear the focus to
+inspect every sample; changing cohort clears the focus. Missing/abstaining
+predictions cannot count as agreement. Viewers retain the read-only sample list
+without these review controls. Desktop/mobile queues, a dispute filter and an empty
+focus are captured under `.amp/in/artifacts/calibration-review/`.
+
 Calibration sets, samples, predictions and labels reject Ruby/SQL updates and use
 composite same-corpus/grader relationships. Expiry hides them before purge; source
 purge removes them through case and grader relationships. Audit keeps no outputs

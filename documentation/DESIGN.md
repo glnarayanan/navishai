@@ -46,6 +46,14 @@ matrix and explicit unknown rates. It shows sample counts and exclusions, not a
 universal support score. Upload errors retain the output; compact case-check options
 link to full requirements in a native disclosure. Mobile stacks review sections.
 
+The calibration review list puts missing personal labels before disputes,
+uncertainty and machine disagreement. A labelled focus picker shows counts and
+filters only that list; the full-cohort report remains above it. Clear/empty states
+offer recovery. A next-unlabelled link opens one fixed sample without sending or
+labelling anything. Pre-label rows never reveal another decision or prediction;
+after a saved label, the queue reflects its latest state. Viewers keep the read-only
+sample list without review controls. Evidence links reach the exact snapshot/record.
+
 Suite runs ask for a target version through a labelled picker with a clear prompt.
 Queued/running views offer refresh, not silent resubmission. Results pair individual
 decisions and source evidence with recorded output; mobile stacks these sections.

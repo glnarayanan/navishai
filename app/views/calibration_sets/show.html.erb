@@ -11,9 +11,20 @@
     <p class="muted-copy">Pairwise agreement uses <%= @report[:pairs] %> pairs of certain expert labels; it is not chance-corrected. A small or selected sample does not prove accuracy across the company corpus. Do not tune on held-out samples.</p>
     <% if @set.grader_version.kind == "rubric_judge" %><p role="status">Each sample needs a separately approved judge attempt. Reports compare only usable fixed predictions with certain expert labels; rubric text and self-reported confidence do not prove accuracy.</p><% end %>
   </section>
-  <section class="section-block"><h2>Review samples</h2>
-    <% if @samples.empty? %><p>No samples in this cohort. Add a recorded output, choosing its cohort before review.</p><% end %>
-    <ul class="workspace-list" role="list"><% @samples.each do |sample| %><li class="workspace-card"><%= link_to "Sample #{sample.id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample) %><span>Check #<%= sample.eval_case_check_id %> · <%= sample.latest_labels.count %> expert labels</span></li><% end %></ul>
+  <section class="section-block" id="review-samples"><h2>Review samples</h2>
+    <% if Current.require_membership!.can_write? %>
+      <p>Missing personal labels come first, then disputes, uncertainty and machine disagreement. Until your first label, each sample says only that it needs your judgment. These states guide review, not support quality or error cost.</p>
+      <%= form_with url: workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, anchor: "review-samples"), method: :get, class: "form-stack config-panel" do |form| %>
+        <%= form.hidden_field :cohort, value: @cohort %>
+        <div class="field"><%= form.label :review_state, "Review focus" %><%= form.select :review_state, CalibrationReport::REVIEW_STATES.map { |state, name| ["#{name} (#{@report[:reviews].count { |entry| entry[:state] == state }})", state] }, { include_blank: "All samples", selected: @review_state } %></div>
+        <%= form.submit "Filter review samples", class: "button" %>
+      <% end %>
+      <p><%= link_to "Clear review focus", workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: @cohort, anchor: "review-samples") %>. The report above always uses the whole selected cohort.</p>
+      <% if @next_unlabelled %><p><%= link_to "Start next unlabelled review", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @next_unlabelled), class: "button button-primary" %></p><% end %>
+    <% end %>
+    <p role="status"><%= @reviews.size %> of <%= @report[:samples] %> cohort samples shown.</p>
+    <% if @report[:samples].zero? %><p>No samples in this cohort. Add a recorded output, choosing its cohort before review.</p><% elsif @reviews.empty? %><p>No samples need this review focus. Clear the filter to inspect the rest of this cohort.</p><% end %>
+    <ul class="workspace-list" role="list"><% @reviews.each do |entry| %><% sample = entry[:sample] %><li class="workspace-card" data-review-state="<%= entry[:state] if Current.require_membership!.can_write? %>"><%= link_to "Sample #{sample.id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample) %><span>Check #<%= sample.eval_case_check_id %> · <%= entry[:label_count] %> expert labels</span><% if Current.require_membership!.can_write? %><strong><%= CalibrationReport::REVIEW_STATES.fetch(entry[:state]) %></strong><% end %></li><% end %></ul>
   </section>
   <% if Current.require_membership!.can_write? %><p class="section-block"><%= link_to "Add output sample", new_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set), class: "button button-primary" %></p><% end %>
 </main>
