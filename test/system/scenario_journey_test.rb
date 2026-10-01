@@ -14,10 +14,10 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     fill_in "Customer starting situation", with: "Customer cannot sign in after rotating their SAML certificate."
     fill_in "Outcomes — one requirement per line", with: "Identify certificate expiry as a possible cause."
     fill_in "Actions — one requirement per line", with: "Request the certificate expiry date."
-    find("summary", text: "Attach company documentation").click
-    select "SSO playbook", from: "Company document"
+    find("summary", text: "Attach source evidence").click
+    select "SSO playbook", from: "Source record"
     select "Knowledge available to target", from: "Evidence use"
-    fill_in "Exact document excerpt", with: "Request the certificate expiry date."
+    fill_in "Exact source excerpt", with: "Request the certificate expiry date."
     click_button "Save new version"
     assert_text "Version 2 · expert · needs review"
     click_button "Save expert decision"
