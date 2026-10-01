@@ -63,6 +63,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
 - [#168](https://github.com/glnarayanan/navishai/pull/168), based on #167,
   `rebuild/28-calibration-trials` at [`9768637`](https://github.com/glnarayanan/navishai/commit/9768637): local revised-grader development
   previews, separate matrices and held-out/first-label guards.
+- [#169](https://github.com/glnarayanan/navishai/pull/169), based on #168: partial
+  Compose evidence, actual CI state and clean-host proof limits.
+- `rebuild/30-conversation-turns`, based on #169: bounded incremental HTTP
+  conversations, expert plans, conditional disclosure and fixed turn receipts.
 
 ## Built and checked
 
@@ -631,8 +635,41 @@ GitHub inspection on 1 October found #167 and #168 open and unmerged.
 04:56:32 UTC). The local full CI counts above remain separate evidence.
 The actual failed #155/#158 runs remain failed. No PR was merged, released or deployed.
 
-The next interactive conversation-execution slice is in progress; app-worker proof
-is pending. No completion or test evidence is claimed for that work here.
+Bounded conversations now use immutable expert-authored follow-up plans and the
+generic `support-conversation-v1` target protocol. The first call excludes future
+messages; only the latest assistant reply can release the next one. An unmet
+literal stops later disclosure. All calls recheck access, source/approval lifetime
+and exact endpoint authority. Single-shot adapters refuse plans. The maximum is
+eleven calls per case; consent names each fixed plan and transcript forwarding.
+Assistant-only outputs form the actual transcript with ordered tool/citation
+reports, latest field values and terminal escalation/policy. Aggregate bounds stop
+further disclosure immediately, without truncation. Content-free receipts retain
+turn keys/digests/timing and unknown/error outcomes where authority permits;
+crashes before retention cannot preserve them. Neither receipts nor reported tools
+prove remote execution. Hidden facts/expectations/labels stay outside target fields.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 4m52.14s: 285 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+349 Rails tests / 3825 assertions and 29 browser tests / 1216 assertions,
+no failures/errors/skips. Tests distinguish later release from sending the full
+plan, latest from earlier/user-only conditions, ten/eleven and byte boundaries,
+invalid user injection, revoked access/expiry/approval/endpoint and interruption,
+unknown outcomes/no resend, and fixed failure → reviewed regression → corrected pass.
+Omitting a plan preserves it; explicit [] removes it only in a new version.
+
+Direct review found two bugs and proved each with a failing test: overflow allowed
+later calls, and an omitted edit field erased the plan. Both fixes pass the full
+suite. The worker's initial browser command ran all journeys and exposed a frozen
+proposal-schema coupling and a new-test selector error; focused affected journeys
+and the final full suite pass after fixes. Old model proposal schemas stay fixed.
+Desktop/390px error, case, disclosure and result captures were inspected without
+overflow/CSP failures. Backup/restore of the changed schema passes with PASS/CLEAN;
+the private Docker proof daemon and only its own directory are now removed.
+Direct risk review/native audits used; named reviewers remain unavailable.
+No provider, customer data, dependency, training, merge, release or deployment.
+
+GitHub CI for #169 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36818942440)).
 
 ## Next and limits
 
@@ -664,8 +701,8 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering includes interactive multi-turn execution,
-fresh revised-judge calibration and end-to-end clean-host/Compose ingress/egress proof.
+Independent engineering includes connected fresh revised-judge calibration proof
+and end-to-end clean-host/Compose ingress/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;

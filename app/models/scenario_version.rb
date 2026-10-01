@@ -1,5 +1,5 @@
 class ScenarioVersion < ImmutableRecord
-  EDITABLE = %w[title situation taxonomy_label importance known_facts hidden_facts requirements].freeze
+  EDITABLE = %w[title situation taxonomy_label importance known_facts hidden_facts requirements follow_ups].freeze
   REQUIREMENT_TYPES = %w[outcomes actions forbidden escalation grounding].freeze
   belongs_to :workspace
   belongs_to :corpus
@@ -41,6 +41,11 @@ class ScenarioVersion < ImmutableRecord
 
   private
     def structured_definition
+      valid_plan = follow_ups.is_a?(Array) && follow_ups.size <= 10 && follow_ups.to_json.bytesize <= 10.kilobytes && follow_ups.all? do |entry|
+        entry.is_a?(Hash) && entry.keys.sort == %w[after_assistant_contains message] &&
+          { "after_assistant_contains" => 500, "message" => 2000 }.all? { |key, limit| entry[key].is_a?(String) && entry[key].strip.present? && entry[key].length <= limit && !entry[key].include?("\0") }
+      end
+      errors.add(:follow_ups, "must be at most 10 entries / 10 KiB, with exactly after_assistant_contains (1–500 characters) and message (1–2000 characters), without null bytes") unless valid_plan
       [ known_facts, hidden_facts, mutation ].each do |value|
         errors.add(:base, "Facts and mutation must be JSON objects of at most 10 KiB.") unless value.is_a?(Hash) && value.to_json.bytesize <= 10.kilobytes && !value.to_json.include?("\\u0000")
       end

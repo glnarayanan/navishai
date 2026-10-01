@@ -126,6 +126,11 @@ even across pages. No-match states offer a separate scenario proposal, not a fal
 match. Viewers inspect without decision controls. Mobile stacks the same evidence;
 copy keeps association separate from approval, replay, labels and regressions.
 
+Conversation editors use retained labelled JSON textareas and specific repair
+errors. Fixed case and suite previews name conditional messages and maximum calls
+before consent; transcript forwarding is explicit. These are expert-authored plans,
+not generated authoritative dialogues or semantic-correctness promises.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,

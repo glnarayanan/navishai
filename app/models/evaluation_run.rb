@@ -36,20 +36,21 @@ class EvaluationRun < ApplicationRecord
       corpus = suite.corpus
       corpus.authorize_writer!(membership)
       target = EvaluationTargetVersion.where(corpus:).find(target_version_id)
-      if target.adapter == "http"
+      if %w[http http_conversation].include?(target.adapter)
         raise EvalCase::Invalid, "Run not started. Confirm disclosure of visible case context and permitted knowledge before starting an HTTP run." unless disclose == true
         HttpTarget.validate!(target.configuration, workspace_id: corpus.workspace_id)
       end
       items = suite.eval_cases.order(:id).to_a
       raise EvalCase::Invalid, "Run a suite with 1–50 cases and at most 100 checks." unless items.size.between?(1, 50) && items.sum { |item| item.eval_case_checks.count } <= 100
       items.each(&:eligible!)
+      raise EvalCase::Invalid, "Planned follow-ups require the HTTP conversation adapter." if target.adapter != "http_conversation" && items.any? { |item| item.scenario_version.follow_ups.any? }
       items.each { |item| RecordedTarget.validate_input!(trace_item: target.trace_item, input: item.scenario_version.target_input) } if target.adapter == "recorded"
       judges = items.flat_map { |item| item.eval_case_checks.includes(:grader_version).map(&:grader_version) }.select { |version| version.kind == "rubric_judge" && version.definition.key?("execution") }.uniq(&:id)
       if judges.any?
         raise EvalCase::Invalid, "Run not started. Separately confirm disclosure of outputs, rubrics, context and company evidence to the fixed judges." unless judge_disclose == true
         judges.each { |version| JudgeGrader.authorize!(version) }
       end
-      if target.adapter == "http" || judges.any?
+      if %w[http http_conversation].include?(target.adapter) || judges.any?
         raise EvalCase::Invalid, "Run not started. Suite membership changed or its consent token is missing. Reload and review the cases and endpoints before confirming again." unless suite_digest == Digest::SHA256.hexdigest(items.map(&:id).to_json)
       end
       run = corpus.evaluation_runs.create!(workspace: corpus.workspace, eval_suite: suite, evaluation_target_version: target, requested_by: membership.user, processing_version: VERSION, judge_disclosure: judge_disclose == true, created_at: Time.current)

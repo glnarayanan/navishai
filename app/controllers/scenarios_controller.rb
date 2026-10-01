@@ -58,10 +58,11 @@ class ScenariosController < ApplicationController
 
   def update
     scenario = @corpus.scenarios.find(params[:id])
-    values = params.expect(scenario: [ :title, :situation, :taxonomy_label, :importance, :known_facts, :hidden_facts, *ScenarioVersion::REQUIREMENT_TYPES.map(&:to_sym) ]).to_h
+    values = params.expect(scenario: [ :title, :situation, :taxonomy_label, :importance, :known_facts, :hidden_facts, :follow_ups, *ScenarioVersion::REQUIREMENT_TYPES.map(&:to_sym) ]).to_h
     @form_values = values.dup
     values["known_facts"] = JSON.parse(values["known_facts"].to_s)
     values["hidden_facts"] = JSON.parse(values["hidden_facts"].to_s)
+    values["follow_ups"] = JSON.parse(values["follow_ups"].to_s) if values.key?("follow_ups")
     values["requirements"] = ScenarioVersion::REQUIREMENT_TYPES.to_h { |kind| [ kind, values.delete(kind).to_s.lines.map(&:strip).reject(&:empty?) ] }
     previous_id = scenario.current_version_id
     version = scenario.revise!(membership: Current.require_membership!, base_version_id: params[:version_id], attributes: values,
@@ -89,7 +90,7 @@ class ScenariosController < ApplicationController
 
     def invalid_input(error)
       message = if error.is_a?(JSON::ParserError)
-        action_name == "propose" ? "Model configuration must be valid JSON. Correct it and request again." : "Facts and variant values must be valid JSON. Correct the value and save again."
+        action_name == "propose" ? "Model configuration must be valid JSON. Correct it and request again." : "Facts, follow-ups and variant values must be valid JSON. Correct the value and save again."
       else
         error.message
       end

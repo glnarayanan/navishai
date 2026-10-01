@@ -47,4 +47,28 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
       assert_response :not_found
     end
   end
+
+  test "malformed follow up shape retains the expert JSON and repair details" do
+    plan = '[{"after_assistant_contains":"expiry","message":"date","unexpected":true}]'
+    patch workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { version_id: @scenario.current_version_id,
+      scenario: { known_facts: "{}", hidden_facts: "{}", follow_ups: plan } }
+    assert_response :unprocessable_content
+    assert_select "textarea[name='scenario[follow_ups]']", text: plan
+    assert_select "[role=alert]", text: /Follow ups.*exactly after_assistant_contains/
+  end
+
+  test "an omitted plan preserves existing follow-ups while an explicit empty array removes them" do
+    plan = [ { "after_assistant_contains" => "expiry", "message" => "It expired yesterday." } ]
+    version = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { follow_ups: plan })
+    values = { title: "Changed starting title", known_facts: version.known_facts.to_json, hidden_facts: version.hidden_facts.to_json }
+      .merge(version.requirements.transform_values { |statements| statements.join("\n") })
+    patch workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { version_id: version.id, scenario: values }
+    assert_response :see_other
+    assert_equal plan, @scenario.reload.current_version.follow_ups
+    assert_equal plan, version.reload.follow_ups
+    patch workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { version_id: @scenario.current_version_id, scenario: values.merge(follow_ups: "[]") }
+    assert_response :see_other
+    assert_empty @scenario.reload.current_version.follow_ups
+    assert_equal plan, version.reload.follow_ups
+  end
 end
