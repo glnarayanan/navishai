@@ -203,6 +203,17 @@ are refused without partial counts. GETs create no records, jobs or provider cal
 Desktop/mobile expanded, empty and invalid captures live under
 `.amp/in/artifacts/family-evidence/`.
 
+On a complete analysis, **Review family selection** shows all fixed families, those
+with selected candidates or those with none. Counts use actual member selection,
+not proposed importance or existing scenarios. The list paginates ten families;
+refresh and pagination retain the focus. Empty, invalid and out-of-range pages have
+recovery links. Full-analysis selection/totals and **Create selected scenarios**
+do not change with the filter. A newer export cannot replace fixed family evidence.
+Viewers can filter and inspect without write controls. No GET labels, mines or sends
+anything. This does not measure which issues have tests elsewhere or verified
+company coverage. Desktop/mobile captures live under
+`.amp/in/artifacts/model-discovery/family-*.png`.
+
 ## Local discovery
 
 Request analysis with a 1–100 candidate limit. The job freezes current source-backed

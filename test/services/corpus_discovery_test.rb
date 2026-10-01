@@ -33,6 +33,23 @@ class CorpusDiscoveryTest < ActiveSupport::TestCase
     end
   end
 
+  test "selection groups partition actual fixed family members independently of another analysis or newer export" do
+    analysis = request(1)
+    CorpusAnalysisJob.perform_now(analysis.id)
+    other = request(4)
+    CorpusAnalysisJob.perform_now(other.id)
+    intake([ { id: "new", title: "Later family", content: "New evidence" } ].to_json)
+    groups = analysis.selection_groups
+    assert_equal 3, groups.fetch("All families").count
+    assert_equal 1, groups.fetch("With selected candidates").count
+    assert_equal 2, groups.fetch("No selected candidates").count
+    selected = groups.fetch("With selected candidates").sole
+    assert_equal [ "rare" ], selected.cluster_members.joins(:corpus_item).pluck("corpus_items.external_id")
+    assert_equal %w[a b c], ClusterMember.where(issue_cluster: groups.fetch("No selected candidates")).joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+    assert_empty other.selection_groups.fetch("No selected candidates")
+    assert_equal groups.fetch("All families").ids.sort, (groups.fetch("With selected candidates").ids + groups.fetch("No selected candidates").ids).sort
+  end
+
   test "input versions stay frozen when current source changes before processing" do
     analysis = request(10)
     intake([ { id: "new", title: "New issue", content: "Unrelated product incident" } ].to_json)

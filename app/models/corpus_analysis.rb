@@ -118,6 +118,12 @@ class CorpusAnalysis < ApplicationRecord
     taxonomy_versions.order(number: :desc).first
   end
 
+  def selection_groups
+    selected_ids = ClusterMember.selected.where(issue_cluster: issue_clusters).select(:issue_cluster_id)
+    { "All families" => issue_clusters, "With selected candidates" => issue_clusters.where(id: selected_ids),
+      "No selected candidates" => issue_clusters.where.not(id: selected_ids) }
+  end
+
   def expired?
     corpus_items.joins(source_snapshot: :source).where("sources.expires_at <= ?", Time.current).exists?
   end

@@ -36,8 +36,13 @@ class CorpusAnalysesController < ApplicationController
     @analysis = @corpus.corpus_analyses.find(params[:id])
     raise ActiveRecord::RecordNotFound if @analysis.expired?
     @fixed_items = @analysis.fixed_inputs.index_by(&:id)
+    groups = @analysis.selection_groups
+    @family_counts = groups.transform_values(&:count)
+    @family_focus = params[:family_focus].to_s.presence || "All families"
+    @invalid_family_focus = !groups.key?(@family_focus)
+    clusters = @invalid_family_focus ? @analysis.issue_clusters.none : groups.fetch(@family_focus)
     @page = params[:page].to_i.clamp(1, 10000)
-    @clusters = @analysis.issue_clusters.includes(:cluster_members).order(:id).offset((@page - 1) * 10).limit(11).to_a
+    @clusters = clusters.includes(:cluster_members).order(:id).offset((@page - 1) * 10).limit(11).to_a
     @more = @clusters.size > 10
     @clusters = @clusters.first(10)
     @taxonomy = @analysis.latest_taxonomy

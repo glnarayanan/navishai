@@ -79,8 +79,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   exact observed totals and unchanged calibration history.
 - [#176](https://github.com/glnarayanan/navishai/pull/176), based on #175: report-local fixed judge
   abstention rules without tuning or changing predictions/labels.
-- `rebuild/37-analysis-record-bounds`, based on #176: pre-load complete-record
+- [#177](https://github.com/glnarayanan/navishai/pull/177), based on #176: pre-load complete-record
   bounds for current and fixed analysis, with read-only blocked-state recovery.
+- `rebuild/38-family-selection-review`, based on #177: fixed-family selection
+  review, whole-analysis counts and read-only focus/pagination.
 
 ## Built and checked
 
@@ -888,6 +890,37 @@ history now returns a normal page; POST validation remains 422. Final browser
 checks show no CSP violations, without changing nonces or security policy.
 Direct risk review/native audits used; named review tools remain unavailable.
 No schema, dependency, provider, customer data or existing database changed.
+
+GitHub CI for #177 passed at exact head
+[`e70b62d`](https://github.com/glnarayanan/navishai/commit/e70b62de118c9bf9b31521f710634577d62a750b)
+([run](https://github.com/glnarayanan/navishai/actions/runs/36843580014), completed
+09:38:31 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+Family selection review now shows all fixed families, those with selected
+candidates or those with none, from actual member selection. Counts remain
+whole-analysis counts; ten-family pages retain focus on refresh and link exact
+historical evidence after a newer export. Invalid/empty/out-of-range views offer
+recovery. Viewers can filter, not mine or revise. GETs write/queue nothing and never
+bypass complete-record bounds. Neither source importance nor existing scenarios
+can turn these counts into verified test coverage.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m13.34s: 295 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors, eager loading passed;
+381 Rails tests / 4407 assertions and 36 browser tests / 1580 assertions, no failures,
+errors or skips. Focused checks pass with 14 model/access tests / 317 assertions
+and eight browser journeys / 283 assertions. The asymmetric fixture has twelve
+distinct families, one selected critical record and eleven unselected families;
+later intake cannot change that partition or full-analysis totals. Native tests
+also reject route-option injection and cross-workspace access.
+
+Desktop/390px focused, invalid and empty captures were inspected. The first
+viewport captures cut off intact lower controls; full-height recaptures now show
+complete alerts, links and controls. Those two focused journeys pass again with
+54 assertions and no overflow/CSP failures. Earlier permission assertions counted
+the layout's legitimate sign-out form; they now check analysis controls separately.
+Direct risk review/native audits used; named reviews remain unavailable. No schema,
+provider, customer data, dependency, label, merge, release or deployment changed.
 
 ## Next and limits
 

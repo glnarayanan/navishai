@@ -65,6 +65,13 @@ impact. Apply the same source rules to local/model families without changing fix
 discovery results. A source report or keyword is not a verified support outcome,
 risk or label. Filters narrow records, never family denominators or expert authority.
 
+Analysis review can focus all families, those with selected candidates or those
+with none. Derive groups from actual fixed member selection reasons, not model
+importance or existing scenarios. Count the whole analysis before paginating ten
+families. Filtering and refresh change no definitions, selection, totals or jobs;
+new exports do not replace fixed membership. These groups describe this method's
+selection, not test coverage across the company or other analyses.
+
 Calibration sets may fix optional human-supplied false-positive/false-negative
 costs, common units and rationale with the existing creator/version attribution.
 No defaults, inferred values, currency choices or live-spend authority. Store exact

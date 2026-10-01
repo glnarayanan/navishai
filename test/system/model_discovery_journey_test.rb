@@ -88,6 +88,59 @@ class ModelDiscoveryJourneyTest < ApplicationSystemTestCase
     assert_equal 0, Scenario.where(corpus: @corpus).count
   end
 
+  test "expert focuses families without selected candidates and keeps fixed totals and historical evidence" do
+    build_discovery_corpus
+    analysis = build_selection_analysis
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations", bytes: [ { id: "new", title: "New export", content: "Different issue" } ].to_json)
+    sign_in users(:owner)
+    visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+    assert_text "1 candidate selected from 12 conversations"
+    assert_field "Family focus", with: "All families"
+    select "No selected candidates (11)", from: "Family focus"
+    find("input[value='Filter families']").send_keys(:enter)
+    assert_field "Family focus", with: "No selected candidates"
+    assert_selector "section[aria-labelledby^=cluster-]", count: 10
+    assert_no_text "Certificate expiry — selected candidate"
+    [ 1280, 390 ].each { |width| capture("family-unselected-#{width}", width) }
+    click_link "Next records"
+    assert_selector "section[aria-labelledby^=cluster-]", count: 1
+    click_link "Refresh result"
+    assert_field "Family focus", with: "No selected candidates"
+    assert_selector "section[aria-labelledby^=cluster-]", count: 1
+    assert_text "1 of 12 term clusters represented"
+    first("a", text: "Explore all family records and source counts").click
+    assert_selector "h1", text: "Family source evidence"
+    first("details.source-record summary").click
+    first("a", text: /History · snapshot 2 · record family-/).click
+    assert_selector "h1", text: "History"
+    assert_text "Snapshot 2"
+    assert_equal "2", URI(page.current_url).then { |url| Rack::Utils.parse_query(url.query)["snapshot"] }
+    visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis, family_focus: "invalid")
+    assert_selector "#family-focus-error[role=alert]", text: "Choose a family focus"
+    [ 1280, 390 ].each { |width| capture("family-invalid-#{width}", width) }
+    click_link "All families", exact: true
+    assert_field "Family focus", with: "All families"
+    assert_equal 0, Scenario.where(corpus: @corpus).count
+    assert_equal 0, TaxonomyVersion.where(corpus_analysis: analysis).count
+  end
+
+  test "empty family focus is honest and clears without changing model selection" do
+    build_discovery_corpus
+    with_discovery_response do
+      analysis = request_model_analysis
+      CorpusAnalysisJob.perform_now(analysis.id)
+      sign_in users(:owner)
+      visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis, family_focus: "No selected candidates")
+      assert_selector "[role=status]", text: "No families in this view"
+      assert_text "2 candidates selected from 3 conversations"
+      assert_no_selector "section[aria-labelledby^=cluster-]"
+      [ 1280, 390 ].each { |width| capture("family-empty-#{width}", width) }
+      click_link "All families", exact: true
+      assert_selector "section[aria-labelledby^=cluster-]", count: 2
+      assert_equal 0, Scenario.where(corpus: @corpus).count
+    end
+  end
+
   test "oversized context blocks previews and fixed history without a partial form and keeps a recovery path" do
     build_discovery_corpus
     add_large_context_sources

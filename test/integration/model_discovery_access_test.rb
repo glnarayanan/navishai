@@ -86,6 +86,72 @@ class ModelDiscoveryAccessTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "family focus counts fixed selection and paginates without narrowing analysis totals or writing" do
+    analysis = build_selection_analysis
+    path = workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+    selected_id = analysis.issue_clusters.joins(:cluster_members).where(cluster_members: { corpus_item_id: @snapshot.corpus_items.find_by!(external_id: "family-12").id }).sole.id
+    unselected_ids = analysis.issue_clusters.order(:id).ids - [ selected_id ]
+    definitions = [ analysis.attributes, analysis.corpus_analysis_inputs.order(:id).pluck(:corpus_item_id), analysis.issue_clusters.order(:id).map(&:attributes) ]
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations", bytes: [ { id: "new", title: "New export", content: "Different issue" } ].to_json)
+    assert_no_difference([ "Scenario.count", "TaxonomyVersion.count", "AuditEvent.count", "CorpusAnalysis.count" ]) do
+      assert_no_enqueued_jobs do
+        get path, params: { family_focus: "No selected candidates" }
+        assert_response :success
+        assert_select "p", text: /1 candidate selected from 12 conversations.*1 of 12 term clusters represented/
+        assert_select "option", text: "All families (12)"
+        assert_select "option", text: "With selected candidates (1)"
+        assert_select "option[selected]", text: "No selected candidates (11)"
+        assert_select "section[aria-labelledby^=cluster-]", count: 10
+        unselected_ids.first(10).each { |id| assert_select "h2#cluster-#{id}" }
+        assert_select "h2#cluster-#{selected_id}", count: 0
+        assert_select "a[href='#{workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, unselected_ids.first)}']"
+        next_link = css_select("a").find { |link| link.text == "Next records" }["href"]
+        assert_equal "No selected candidates", Rack::Utils.parse_query(URI(next_link).query)["family_focus"]
+        get next_link
+        assert_response :success
+        assert_select "section[aria-labelledby^=cluster-]", count: 1
+        assert_select "h2#cluster-#{unselected_ids.last}"
+        assert_select "a", text: "Next records", count: 0
+        refresh_link = css_select("a").find { |link| link.text == "Refresh result" }["href"]
+        assert_equal "No selected candidates", Rack::Utils.parse_query(URI(refresh_link).query)["family_focus"]
+        get path, params: { family_focus: "With selected candidates" }
+        assert_response :success
+        assert_select "section[aria-labelledby^=cluster-]", count: 1
+        assert_select "h2#cluster-#{selected_id}"
+        assert_select "summary", text: /Certificate expiry — selected candidate/
+      end
+    end
+    assert_equal definitions, [ analysis.reload.attributes, analysis.corpus_analysis_inputs.order(:id).pluck(:corpus_item_id), analysis.issue_clusters.order(:id).map(&:attributes) ]
+  end
+
+  test "empty and invalid family focus are repairable read-only pages and cannot supply a URL scheme" do
+    with_discovery_response do
+      analysis = request_model_analysis
+      CorpusAnalysisJob.perform_now(analysis.id)
+      path = workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+      assert_no_difference([ "Scenario.count", "TaxonomyVersion.count", "AuditEvent.count" ]) do
+        assert_no_enqueued_jobs do
+          get path, params: { family_focus: "No selected candidates" }
+          assert_response :success
+          assert_select "option[selected]", text: "No selected candidates (0)"
+          assert_select "[role=status]", text: /No families in this view/
+          assert_select "section[aria-labelledby^=cluster-]", count: 0
+          get path, params: { family_focus: "<script>invalid</script>", host: "javascript:alert(1)//", protocol: "javascript" }
+          assert_response :success
+          assert_select "[role=alert]", text: /Choose a family focus/
+          assert_select "select[aria-invalid=true][aria-describedby=family-focus-error]"
+          assert_select "script", text: /invalid/, count: 0
+          assert_select "section[aria-labelledby^=cluster-]", count: 0
+          assert_select "a", text: "All families", count: 1
+          assert_select "a[href^='javascript:']", count: 0
+          get path, params: { family_focus: "All families", page: 10000 }
+          assert_response :success
+          assert_select "[role=status]", text: /No families on this page/
+        end
+      end
+    end
+  end
+
   test "viewers inspect escaped model evidence but cannot request interrupt or cross a workspace" do
     response = discovery_response.merge("reason" => "<script>untrusted proposal</script>")
     with_discovery_response(response:) do
@@ -99,7 +165,11 @@ class ModelDiscoveryAccessTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select "script", text: /untrusted proposal/, count: 0
       assert_select "h3", text: "Membership quote", count: 3
-      assert_select "input[type=submit]", count: 0
+      assert_select "form[method=get] input[type=submit]", count: 1
+      assert_select "main form[method=post]", count: 0
+      get workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis), params: { family_focus: "With selected candidates" }
+      assert_response :success
+      assert_select "option[selected]", text: "With selected candidates (2)"
       get new_workspace_corpus_corpus_analysis_path(@workspace, @corpus)
       assert_response :forbidden
       post workspace_corpus_corpus_analyses_path(@workspace, @corpus), params: {}
