@@ -56,6 +56,46 @@ class CorpusExplorationJourneyTest < ApplicationSystemTestCase
     end
   end
 
+  test "a fresh corpus navigation cannot replace a phrase typed into its cached preview" do
+    membership = memberships(:owner_support)
+    workspace = membership.workspace
+    corpus = workspace.corpora.create!(name: "Cached navigation fixture")
+    CorpusIntake.call(corpus:, membership:, name: "Policy", kind: "document", bytes: "SAML requires metadata.")
+    sign_in users(:owner)
+    visit workspace_corpus_path(workspace, corpus)
+    click_link "Policy", exact: true
+    assert_selector "h1", text: "Policy"
+    entered, release = Queue.new, Queue.new
+    calls = 0
+    delay = ->(event) do
+      if event.payload[:controller] == "CorporaController" && event.payload[:action] == "show"
+        calls += 1
+        if calls == 1
+          entered << true
+          release.pop
+        end
+      end
+    end
+    ActiveSupport::Notifications.subscribed(delay, "start_processing.action_controller") do
+      click_link corpus.name
+      Timeout.timeout(5) { entered.pop }
+      if page.has_selector?("html[data-turbo-preview]", wait: 0.5)
+        fill_in "Search phrase", with: "no matching diagnostics"
+        release << true
+        assert_selector "html:not([data-turbo-preview]):not([aria-busy=true])"
+      else
+        assert_no_selector "input[name=corpus_query]"
+        release << true
+        fill_in "Search phrase", with: "no matching diagnostics"
+      end
+      click_button "Search retained records"
+      assert_selector "#corpus-records [role=status]", text: "0 matching records"
+      assert_field "Search phrase", with: "no matching diagnostics"
+    end
+  ensure
+    release << true if release
+  end
+
   private
     def capture(name, width)
       page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width:, height: 1000, deviceScaleFactor: 2, mobile: false)
