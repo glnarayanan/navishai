@@ -1223,6 +1223,23 @@ intake/exploration tests; later combined evidence must cover its final state.
 Named reviews remain unavailable; direct risk review and native audits used.
 No new dependency, customer data, provider, expert label, merge or deployment.
 
+## Retained download preflight (slice 49)
+
+A red test reproduced one source object loading roughly 15 MiB of masked context
+before export refusal. SQL now counts encoded record strings and quoted context
+fragments first, under the existing corpus lock. The regression loads zero source
+objects and writes no audit. This is a lower bound, not an exact encoded-size
+calculation; the complete JSON limit still runs. Scientific-number expansion,
+JSON spacing, escaped quotes/backslashes, Unicode and exact byte edges prove
+valid exports remain valid. No download limit or permission changed.
+
+Thirteen focused export tests pass with 408 assertions. The combined CI above
+includes the guard and the real browser historical download: fixed snapshot,
+masked Unicode output and one content-free preparation audit. Its temporary file
+is removed. Fresh historical desktop/mobile captures were inspected for complete
+warnings, confirmation and action. Native style/eager loading and direct risk
+review pass; named reviews remain unavailable. No remote CI yet for this branch.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

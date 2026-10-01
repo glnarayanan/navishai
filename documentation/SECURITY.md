@@ -80,7 +80,12 @@ Hashes are not anonymity guarantees. New masks cannot approve or recall disclosu
 Managers/Admins/Owners may download one exact retained snapshot by POST with typed
 source-name confirmation. Membership, source expiry and snapshot scope are checked
 under the corpus lock. Complete normalized JSON is bounded to 2000 records / 10 MiB;
-oversized snapshots are refused, never sampled. Attachments use ID-only filenames,
+oversized snapshots are refused, never sampled. A SQL byte lower bound counts
+encoded record strings and quoted context fragments before source objects load.
+It catches oversized masked strings without mistaking PostgreSQL's JSON spacing
+or number formatting for exported bytes. The final complete JSON check still
+enforces the exact limit; this preflight is not an exact encoded-size calculation.
+Attachments use ID-only filenames,
 JSON/nosniff and no-store headers. A content-free snapshot audit records preparation,
 not client receipt. Copies retain the snapshot's masking limits and fall outside
 local purge; the recipient owns their storage/deletion. No raw files are restored
