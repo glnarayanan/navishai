@@ -57,6 +57,9 @@ and jobs and an expert confirms disclosure. See [HTTP setup](./DEVELOPMENT.md#ge
 Network policy must deny private/special-use destinations even on the edge network;
 the application also validates DNS and pins public addresses. No live endpoint is
 configured or tested by default. Local deletion cannot recall remote copies.
+See [operations acceptance](./OPERATIONS_ACCEPTANCE.md) for namespace-only edge
+controls and local upgrade/rollback evidence. Shared-host policy needs the owner's
+approval; Compose alone does not enforce destination deny or safe startup ordering.
 
 Compose pins the public PostgreSQL 16 multi-platform index by digest. On 1 October
 2026, the registry returned that digest for `postgres:16`; fetching the immutable
@@ -137,7 +140,7 @@ An independent operations worker ran the tracked Compose composition from archiv
 topology or security overrides. The worker downloaded official Compose v2.39.4
 privately and verified its published checksum; it installed no production dependency.
 This trial is separate from the passing `bin/prove-container-runtime` socket/TLS
-proof above. There is no tracked Compose proof script.
+proof above. That trial had no tracked Compose proof script.
 
 The trial used the existing parent-owned `navishai-image-proof` daemon and exact
 socket `tmp/navishai-image-proof/docker.sock`, with separate vfs data/exec/pid roots

@@ -1,10 +1,10 @@
 # Non-live operations acceptance
 
 This is local engineering evidence, not a deployment approval. The owner controls
-hosting, endpoint approval, credentials and customer data. No host firewall,
-existing database, shared Docker daemon, paid endpoint or deployment may enter
-these checks. Each command creates random disposable names and accepts no existing
-database names. Catchable failures clean its own assets; host loss or SIGKILL can
+hosting, endpoint approval, credentials and customer data. These checks never change
+the host firewall, shared Docker daemon or an existing application database. No paid
+endpoint or deployment runs. Each proof creates random disposable names and accepts
+no existing database names. Catchable failures clean its own assets; host loss or SIGKILL can
 leave the exact names printed at startup. Never clean by broad name matching.
 
 ## Four-database recovery
@@ -26,14 +26,15 @@ point. A live operator must also stop web/jobs and every other writer first.
 
 `pg_dump --format=custom --create` retains owners and ACLs. The proof saves the two
 roles' public flags without password hashes, drops only its own four databases and
-two roles, recreates the same restricted role contract with a generated test secret,
+two roles, recreates the same restricted role contract with distinct test secrets,
 then runs `pg_restore --create --exit-on-error`. It does not use `--no-owner` or
 `--no-acl`, restore globals from the shared cluster, or import another role.
 
 Every complete public-table fingerprint, database/schema/relation owner and ACL,
 and owner default table/sequence ACL must match. Real password-authenticated runtime
-logins read all four databases and test 20 privilege denials. Inserts into restored
-cache/queue/cable tables must advance their saved sequences. Post-restore
+logins read all four databases and test 20 privilege denials. The runtime password
+must fail authentication as the owner. Inserts into restored cache/queue/cable
+tables must advance their saved sequences. Post-restore
 owner-created tables/sequences must also allow runtime DML without granting ownership.
 The same grant code serves the production `db:grant_runtime` task; production still
 uses exactly `navishai_setup` and `navishai`, with separate credentials.
@@ -42,9 +43,9 @@ Under restored runtime grants, raw SQL checks immutable definitions/results/labe
 fixed claims and terminal receipts, workspace/corpus foreign keys and append-only
 audits. Runtime cannot TRUNCATE audits; the owner-level restored truncate trigger
 also refuses it. Duplicate completed delivery cannot send again. Source expiry
-hides dependent definitions; runtime purge clears source-backed results, labels and
-associations while retaining the content-free deletion audit. No new receipt table,
-product record or provider access is added by this proof.
+hides dependent definitions and refuses new labels; runtime purge clears source-backed
+results, labels and associations while retaining the content-free deletion audit.
+This proof adds no receipt table, product record or provider access.
 
 Executed on 1 October 2026:
 
@@ -107,6 +108,110 @@ zero-downtime rollout, arbitrary customer-data timing or live-host acceptance.
 When another schema change lands, review and extend the explicit old-row projection
 and new-schema assertions; a prior PASS does not certify a new migration.
 
+## Namespace-scoped edge deny and lifecycle
+
+`bin/apply-compose-egress` uses the installed `iptables`/`ip6tables` tools only in
+an explicit private network namespace. It refuses the caller and PID-1 host
+namespace, checks the exact Docker `br-<network-id>` interface, and requires
+bridge filtering to be enabled already. It never enables a shared sysctl, flushes
+an existing table or changes Docker's control network. IPv4 denies match the
+application's special-use address boundary. IPv6 permits global destinations only,
+with the same special-use denies and only the ICMPv6 neighbor packets needed to
+route traffic. A recheck requires exact rules and first-position hooks; an earlier
+allow rule fails rather than producing a false PASS.
+
+Rules enter INPUT and FORWARD before Docker's accepts. INPUT also blocks private
+edge-to-gateway destinations; FORWARD covers same-edge peers and routed traffic.
+Established replies remain allowed. Internal control/database traffic and container
+loopback remain separate; this is an edge rule, not a full host perimeter or the
+application's per-workspace endpoint registry. Application DNS/address pinning and
+human/operator disclosure checks remain required and unchanged.
+
+For an approved customer deployment whose Docker daemon runs in an owned namespace,
+create the edge network with web/jobs stopped, apply and verify policy, then perform
+owner-run schema preparation/grants and start web/jobs. Do not expose an unprotected
+startup window. Verify policy again after daemon/network recreation, before apps
+restart. Compose alone does not enforce destination policy or this startup order.
+
+```sh
+bin/apply-compose-egress "$OWNED_NETNS" "$EXACT_EDGE_BRIDGE"
+```
+
+The script intentionally refuses the normal shared-host Docker namespace. A customer
+using that topology must authorize and enforce equivalent controls through their
+own host/network policy. This work neither selects a new hosting policy nor grants
+authority to change one. A failed/partial policy check must leave workloads stopped.
+
+`bin/prove-compose-runtime` exercises the actual tracked composition in fresh
+private daemons/namespaces with unique containers/volumes. Image compilation is
+bounded to two CPUs and 1 GiB. Generated destinations exist only inside the private
+namespace; it has no public route. Before policy, reachable metadata (169.254),
+CGNAT (100.64), benchmark (198.18) and same-edge private peers establish real paths.
+After policy, web/jobs must receive kernel rejection, not a timeout. Public-shaped
+IPv4 TLS still verifies its generated trust chain and hostname. Test-only IPv6
+addresses/routes in the disposable bridge/web namespaces prove reachable ULA and
+documentation destinations are then denied while public-shaped IPv6 TLS stays
+reachable. IPv4 and IPv6 REJECT counters must increase.
+
+The proof retains the original UID/capability/no-new-privileges, exact production
+roles and empty endpoint registries. Native jobs complete the two-family analysis;
+cache/queue/cable and control access stay usable. Web/jobs restart without owner
+credentials; loopback `/up` must remain HTTP 200, both policy families must recheck,
+web/jobs must still reject private IPv4 destinations and a fresh native analysis
+must finish without changing the old completed history. Test-only earlier allow
+rules in INPUT/FORWARD for both families must fail policy verification, then the
+proof removes only those exact rules before continuing.
+The host's IPv4/IPv6 firewall snapshots must remain unchanged. Cleanup removes only
+the exact daemons, project, namespace mount, images, volumes, secrets and archives.
+
+Executed on 1 October 2026:
+
+```sh
+umask 077
+bin/prove-compose-runtime
+```
+
+The first policy run failed closed because the unprivileged orb user could not stat
+PID 1's namespace. The script now reads that identity through `sudo` before changing
+private rules. The final run passed IPv4/IPv6 packet denials, shadowed-rule refusal,
+TLS/control/ingress and fresh jobs after restart in 276.94 seconds before cleanup.
+It printed CLEAN and verified unchanged host firewall snapshots. This remains
+simulated local network evidence, not useful public egress, public TLS or live-host
+enforcement. The image used tracked application commit
+`58682b69f6b362520c6f21971b0d7539db21fb4d` (local, not pushed).
+Later changes here affect only proof scripts, tests and operations notes.
+
+## Focused native checks
+
+Executed with Ruby 4.0.6 and PostgreSQL 16 on 1 October 2026:
+
+```sh
+mise exec -- ruby test/ops/runtime_database_access_test.rb
+mise exec -- ruby test/ops/edge_policy_test.rb
+bin/rubocop lib/navishai/runtime_database_access.rb lib/tasks/production_access.rake \
+  ops/database_recovery.rb ops/upgrade_fixture.rb ops/edge_policy.rb \
+  test/ops/runtime_database_access_test.rb test/ops/edge_policy_test.rb \
+  bin/prove-backup-restore bin/prove-upgrade bin/prove-compose-runtime bin/apply-compose-egress
+env -i PATH="$PATH" HOME="$HOME" RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 \
+  NAVISHAI_APP_HOST=example.invalid \
+  DATABASE_URL=postgresql://unused:unused@127.0.0.1:1/navishai_lab_production \
+  bin/rails zeitwerk:check
+```
+
+Runtime grant tests: 4 tests, 21 assertions, no failures/errors/skips. Edge policy
+tests: 4 tests, 73 assertions, no failures/errors/skips. RuboCop: 11 files, no offenses.
+`ruby -c` passed on each of those 11 files; `git diff --check` passed. Eager loading
+printed `Otherwise, all is good!`; the existing optional image-processing and
+non-eager-loaded mailer-preview warnings remain. No dependency was added for them.
+The eager-load URL uses an unused port and dummy credentials.
+
+Direct review found and fixed shared proof-role credentials and policy checks that
+accepted a deny jump behind an allow rule. The credential regression failed before
+the fix; the final password check and four real kernel-priority mutations passed.
+Ponytail Audit and CE Code Review tools were unavailable. After cleanup, read-only
+catalog checks found zero `navishai_ops_` databases and roles, and the final exact
+Compose directory was absent. No broad cleanup ran.
+
 ## Remaining host gate
 
 An authorized disposable clean public host is not available in this orb. Public
@@ -115,6 +220,7 @@ SMTP/OIDC delivery and customer-controlled live backup acceptance remain unprove
 A private namespace and simulated public-address peer cannot establish them.
 No host, firewall, infrastructure or hosting policy change is authorized here.
 
-The local namespace deny/lifecycle proof remains a separate check. Record its
-executed commands and limits here when it passes; do not count planned code as
-acceptance.
+The three local proofs close their named engineering gaps, not this host gate.
+No screenshot is needed for these nonvisual checks. Broad integrated application/CI
+checks and any new receipt schema/fixture integration remain the parent workstream's
+responsibility; shared authorities, STATUS, product modules and CI stayed untouched.
