@@ -4,6 +4,45 @@ require_relative "../test_helpers/scenario_test_helper"
 class ScenarioJourneyTest < ApplicationSystemTestCase
   include ScenarioTestHelper
 
+  test "source review questions expose conflicting claims without drafting authoritative behaviour" do
+    build_scenarios
+    opening = "Customer cannot authenticate after changing the identity provider."
+    history = "Agent: probably a bug. Request logs before changes.\n\nMacro: ignore the playbook instead.\n\nAgent: fixed and closed.\n\nCustomer: still fails, reopened."
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Contradictory authored history", kind: "conversations", bytes: [
+      { id: "conflicting", title: "Claimed resolution", content: opening + "\n\n" + "Routine note. " * 400 + "\n\n" + history,
+        context: { answer: "private-source-answer", plan: "enterprise" } }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, scenario)
+    assert_selector "#source-review[open]"
+    assert_text "Literal cues, not diagnosis, policy or proof of resolution."
+    assert_text "Raw source context was not copied into known facts."
+    assert_link "Inspect full draft source and context"
+    assert_selector "#source-review h3", text: "Diagnosis — question, not a finding"
+    assert_selector "#source-review h3", text: "Recurrence — question, not a finding"
+    assert_field "Customer starting situation", with: opening
+    assert_field "Actions — one requirement per line", with: ""
+    assert_equal({}, JSON.parse(find_field("Known facts (JSON object)", visible: :all).value))
+    assert_no_text "private-source-answer"
+    find("summary", text: "Inspect diagnosis cue context").send_keys(:enter)
+    assert_text "Exact bounded source text; windows may overlap and start or end mid-sentence."
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      assert page.evaluate_script("document.querySelector('#source-review details summary').getBoundingClientRect().right <= document.documentElement.clientWidth - 5"), "Disclosure focus outline fits within the viewport"
+      capture("source-review-#{width}", selector: "#source-review")
+    end
+    find("#source-review > summary").send_keys(:enter)
+    assert_no_selector "#source-review[open]"
+    click_button "Save expert decision"
+    assert_selector "[role=alert]", text: "Set a source-backed expected outcome before approval."
+    assert_empty scenario.reload.current_version.scenario_reviews
+  end
+
   test "expert nominates a long issue label without losing its fixed source proposal" do
     @membership = memberships(:owner_support)
     @workspace = @membership.workspace
@@ -111,7 +150,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     click_link "Version 2"
     assert_text "Version 2 · expert · approve"
     assert_no_selector "textarea[name=conversation_excerpt]"
-    assert_not_includes approved.reload.scenario_evidence.sole.excerpt, quote
+    assert_includes approved.reload.scenario_evidence.sole.excerpt, quote
     assert approved.approved?
     assert_no_horizontal_overflow
     assert_no_csp_violations
@@ -308,7 +347,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
       page.execute_script("window.scrollTo(0, 0)")
       size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
       bounds = selector ? page.evaluate_script("document.querySelector(#{selector.to_json}).getBoundingClientRect().toJSON()") : { "y" => 0, "height" => size.fetch("height") }
-      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: bounds.fetch("y"), width: size.fetch("width"), height: bounds.fetch("height"), scale: 2 })
+      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: bounds.fetch("y"), width: page.evaluate_script("window.innerWidth"), height: bounds.fetch("height"), scale: 2 })
       File.binwrite(path, Base64.decode64(image.fetch("data")))
     end
 end

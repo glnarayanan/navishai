@@ -1374,8 +1374,10 @@ CREATE TABLE public.scenario_versions (
     selection_reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     follow_ups jsonb DEFAULT '[]'::jsonb NOT NULL,
+    draft_notes jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY (ARRAY[('mined'::character varying)::text, ('expert'::character varying)::text, ('variant'::character varying)::text])) AND ((importance)::text = ANY (ARRAY[('normal'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text))),
-    CONSTRAINT chk_rails_995910e18a CHECK (((jsonb_typeof(follow_ups) = 'array'::text) AND (jsonb_array_length(follow_ups) <= 10)))
+    CONSTRAINT chk_rails_995910e18a CHECK (((jsonb_typeof(follow_ups) = 'array'::text) AND (jsonb_array_length(follow_ups) <= 10))),
+    CONSTRAINT scenario_draft_notes_bounded CHECK (((jsonb_typeof(draft_notes) = 'object'::text) AND (octet_length((draft_notes)::text) <= 10240)))
 );
 
 
@@ -4053,6 +4055,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001210000'),
 ('20261001150000'),
 ('20261001140000'),
 ('20261001130000'),
@@ -4084,4 +4087,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195259'),
 ('20260823195258'),
 ('20260823195257');
-

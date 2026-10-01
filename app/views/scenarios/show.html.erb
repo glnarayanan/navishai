@@ -12,6 +12,24 @@
   <% if @scenario.parent_version %><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre><% end %>
   <% if Current.require_membership!.can_write? && @version.approved? && !@version.stale? && @scenario.current_version_id == @version.id %><p><%= link_to "Compile eval", new_workspace_corpus_eval_case_path(Current.workspace, @corpus, scenario_id: @scenario.id), class: "button button-primary" %></p><% end %>
   <% @version.eval_cases.order(number: :desc).limit(10).each do |item| %><p><%= link_to "Eval case #{item.id} · definition #{item.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %></p><% end %>
+  <% if @version.draft_notes["method"] == ScenarioMining::DRAFT_METHOD %>
+    <% notes = @version.draft_notes %>
+    <details class="section-block config-panel" id="source-review" <%= "open" if @version.origin == "mined" %>>
+      <summary>Source review questions</summary>
+      <p>Literal cues, not diagnosis, policy or proof of resolution. The opening text is only a starting-situation proposal; remove answers and private data before approval. Facts and expectations need your own source-backed edits.</p>
+      <p><%= notes.fetch("method") %> · scanned <%= notes.fetch("source_length") %> characters · original evidence window starts at character <%= notes.fetch("evidence").first + 1 %>, for <%= notes.fetch("evidence").last %> characters. At most the first and last cue per kind appear below; this is not a complete semantic review.</p>
+      <% if notes["context_omitted"] %><p>Raw source context was not copied into known facts. It may contain answers, reported outcomes or private account data.</p><% end %>
+      <p><%= link_to "Inspect full draft source and context", source_evidence_path(@scenario.corpus_item) %>. Notes keep the original mining offsets even after an expert replaces the evidence quote.</p>
+      <% if notes.fetch("review_spans").empty? %><p>No listed literal cue found. This does not establish a simple or resolved issue; inspect the full source.</p><% end %>
+      <% notes.fetch("review_spans").group_by { |span| span.fetch("kind") }.each do |kind, spans| %>
+        <article class="source-record"><h3><%= kind.humanize %> — question, not a finding</h3><p><%= ScenarioMining::REVIEW_CUES.fetch(kind).last %></p>
+          <details><summary>Inspect <%= kind %> cue context</summary><p>Exact bounded source text; windows may overlap and start or end mid-sentence. These quotes stay hidden from targets.</p>
+            <% spans.each do |span| %><p>Source characters <%= span.fetch("start") + 1 %>–<%= span.fetch("start") + span.fetch("length") %></p><pre class="evidence-text"><%= "…" if span.fetch("start") > 0 %><%= @scenario.corpus_item.content[span.fetch("start"), span.fetch("length")] %><%= "…" if span.fetch("start") + span.fetch("length") < notes.fetch("source_length") %></pre><% end %>
+          </details>
+        </article>
+      <% end %>
+    </details>
+  <% end %>
   <details class="section-block config-panel" id="model-proposal" <%= "open" if @proposal || action_name == "propose" %>>
     <summary>Model scenario proposal</summary>
     <p>A suggestion, not an expert decision. Exact source quotes show where a requirement came from, not whether it is correct. Nothing here changes this scenario or its approval.</p>
@@ -45,7 +63,7 @@
       <% end %>
     <% elsif @proposal_input_error %><p role="status"><%= @proposal_input_error %></p>
     <% elsif Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
-      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. Local deletion cannot recall sent data.</p>
+      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. It cannot invent starting facts or hidden truth; quotes do not prove correct expectations. Local deletion cannot recall sent data.</p>
       <details><summary>Preview exact starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal_input) %></pre></details>
       <%= form_with url: propose_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
         <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>

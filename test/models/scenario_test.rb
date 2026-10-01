@@ -13,7 +13,9 @@ class ScenarioTest < ActiveSupport::TestCase
     version = @scenario.current_version
     assert_equal "mined", version.origin
     assert_empty version.requirements["outcomes"]
-    assert_includes version.requirements["actions"], "Request the expiry date before changing configuration."
+    assert_empty version.requirements["actions"]
+    assert_empty version.known_facts
+    assert_equal "Customer cannot sign in after certificate rotation.", version.situation
     assert_equal @scenario.cluster_member.selection_reason, version.selection_reason
     assert_equal @scenario.corpus_item, version.scenario_evidence.sole.corpus_item
     assert_equal "critical", @scenarios.find { |scenario| scenario.corpus_item.external_id == "api" }.current_version.importance
@@ -204,7 +206,7 @@ class ScenarioTest < ActiveSupport::TestCase
     assert_empty revision.scenario_reviews
     assert approved.reload.approved?
     assert_equal original_quote, approved.scenario_evidence.find_by!(kind: "expectation").excerpt
-    assert_not_includes original_quote, quote
+    assert_includes original_quote, quote
     assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
       assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: quote)
       assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: "")

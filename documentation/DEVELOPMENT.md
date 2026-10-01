@@ -398,9 +398,9 @@ Historical v1/v2 inputs, windows and results remain fixed.
 checks complete-text late diagnostics, independently known budget edges, fixed
 historical inputs, unapproved mining, local-only requests and viewer restrictions.
 Full-text selection can separate terms the older window misses; it does not prove
-semantic diagnosis or company taxonomy quality. Mining still produces title/context/
-action drafts with a bounded source excerpt; experts inspect the full source and
-correct them before approval. Desktop/390px picker, queued, complete and failed
+semantic diagnosis or company taxonomy quality. Local mining proposes opening text
+and bounded source-review cues; experts write facts and expectations before approval.
+See [construction limits](./SCENARIO_QUALITY.md). Desktop/390px picker, queued, complete and failed
 captures live under `.amp/in/artifacts/streaming-discovery/full-text-*`.
 
 Choose **Streaming local** explicitly to use `tfidf-stream-seed-centroid-selection-v2`.
@@ -565,8 +565,12 @@ and unmatched inputs. Observed grader decisions do not establish agent quality.
 ## Scenario review
 
 Create candidates from a completed analysis; repeating this action reuses the
-same candidate identities. Local mining uses source titles, context facts, keyword
-diagnostic sentences and selection reasons. It leaves outcomes empty. Model
+same candidate identities. Local mining proposes the opening sentence, leaves facts
+and requirements empty, and selects one exact evidence window using disclosed
+literal review cues across the full source. Inspect **Source review questions**
+and the full retained context before writing expectations. Bounded immutable notes
+stay local; cues cannot establish diagnosis, contradiction, resolution or policy.
+See [the exact method and limits](./SCENARIO_QUALITY.md). Model
 discovery copies structured proposals and exact quotes, never expert approval.
 Historical answers are not approved expectations. Experts must check the starting
 situation and source-backed outcomes before approval.
@@ -904,6 +908,9 @@ abstain, and reason is 1–2000 characters. A proposal's scenario has exactly ti
 situation, taxonomy_label, importance, known_facts, hidden_facts and requirements,
 under the existing scenario text/JSON/statement bounds. Requirements have outcomes,
 actions, forbidden, escalation and grounding arrays, with at least one outcome.
+Keep the fixed starting situation unchanged; known facts may only retain a typed
+subset of the supplied facts. Hidden facts must be empty. Quotes cannot grant
+authority to invent a diagnosis or make source guidance true.
 Each statement needs exactly one evidence link with kind, zero-based index,
 reference and quote (1–2000 characters). References must identify a disclosed
 `scenario-evidence-<id>` excerpt and quotes must occur exactly within it. Duplicate,

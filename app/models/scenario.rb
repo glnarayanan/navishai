@@ -28,7 +28,7 @@ class Scenario < ApplicationRecord
 
       version = scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
-        mutation: previous.mutation, created_at: Time.current))
+        mutation: previous.mutation, draft_notes: previous.draft_notes, created_at: Time.current))
       previous.scenario_evidence.each do |evidence|
         next if conversation_changed && evidence.id == conversation.id
         next if item && item.source_snapshot.source.kind == "document" && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
