@@ -83,7 +83,8 @@ begin
     after = fixture.instance_variable_get(:@after)
     trace = fixture.instance_variable_get(:@trace_item)
     check = fixed_case.eval_case_checks.find_by!(grader_version_id: fixture.instance_variable_get(:@action_grader).current_version_id)
-    set = CalibrationSet.define!(corpus:, membership:, name: "Restore held-out fixture", grader_version_id: check.grader_version_id)
+    set = CalibrationSet.define!(corpus:, membership:, name: "Restore held-out fixture", grader_version_id: check.grader_version_id,
+      false_positive_cost: "1.250001", false_negative_cost: "7.500002", error_cost_unit: "fixture units", error_cost_rationale: "Synthetic assumptions only.")
     sample = set.add_sample!(membership:, check_id: check.id, cohort: "held_out", output: trace.context.fetch("support_trace").fetch("output"))
     label = sample.label!(membership:, previous_id: nil, decision: "fail", rationale: "Synthetic expert: expiry was not collected.")
     correction = sample.label!(membership:, previous_id: label.id, decision: "uncertain", rationale: "Synthetic correction: retain the first decision too.")
@@ -144,6 +145,8 @@ begin
     assert_proof(before.evaluation_target_version.trace_item_id == trace.id, "trace target provenance")
     assert_proof(fixed_case.reload.scenario_review.decision == "approve", "exact expert approval")
     assert_proof(sample.reload.evaluation_result_id.nil? && sample.eval_case_id == fixed_case.id && sample.cohort == "held_out" && sample.human_labels.order(:id).pluck(:id) == [ label.id, correction.id ], "manual provenance, case and label history/cohort")
+    assert_proof(set.reload.false_positive_cost.to_s("F") == "1.250001" && set.false_negative_cost.to_s("F") == "7.500002" && set.error_cost_unit == "fixture units" && set.error_cost_rationale == "Synthetic assumptions only." && set.created_by_id == membership.user_id && set.grader_version_id == check.grader_version_id, "exact fixed cost assumptions and author/version")
+    assert_proof(CalibrationReport.call(set:)[:assumed_cost].nil? && !saved_set.reload.error_costs_supplied?, "uncertain evidence cannot supply cost; unknown assumptions cannot inherit values")
     assert_proof(saved_sample.reload.evaluation_result_id == saved_result.id && saved_sample.eval_case_id == fixed_case.id && saved_sample.output == saved_result.reload.output && saved_sample.cohort == "development" && saved_sample.human_labels.empty?, "exact saved-result/case/output provenance, separate explicit cohort and no fabricated label")
     history = TraceScenarioDecision.where(corpus_item: trace, scenario_version: fixed_case.scenario_version, reviewed_by: membership.user).order(:id)
     assert_proof(history.pluck(:id, :decision) == [ [ association.id, "match" ], [ association_correction.id, "uncertain" ] ] && history.last.reason == "Synthetic correction: need diagnostic logs.", "exact trace/version/author association history, separate from approval and labels")
@@ -183,7 +186,7 @@ begin
     last_audit_id = AuditEvent.maximum(:id)
     event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
     assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
-    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out labels, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
   end
 ensure
   ActiveRecord::Base.connection_pool.disconnect! if defined?(ActiveRecord::Base)

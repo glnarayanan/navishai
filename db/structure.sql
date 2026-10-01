@@ -123,9 +123,9 @@ CREATE TABLE public.audit_events (
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT audit_events_action_format CHECK (((action)::text ~ '^[a-z0-9]+([._][a-z0-9]+)*$'::text)),
-    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying, 'system'::character varying, 'anonymous'::character varying])::text[]))),
-    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying])::text[])) = (actor_id IS NOT NULL))),
-    CONSTRAINT audit_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'integration'::character varying, 'system'::character varying])::text[])))
+    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text, ('system'::character varying)::text, ('anonymous'::character varying)::text]))),
+    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text])) = (actor_id IS NOT NULL))),
+    CONSTRAINT audit_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('job'::character varying)::text, ('task'::character varying)::text, ('integration'::character varying)::text, ('system'::character varying)::text])))
 );
 
 
@@ -164,7 +164,7 @@ CREATE TABLE public.calibration_judge_runs (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_f2c1efb45c CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+    CONSTRAINT chk_rails_f2c1efb45c CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
 
@@ -240,7 +240,7 @@ CREATE TABLE public.calibration_samples (
     created_at timestamp(6) without time zone NOT NULL,
     eval_case_id bigint NOT NULL,
     evaluation_result_id bigint,
-    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY ((ARRAY['development'::character varying, 'held_out'::character varying])::text[])) AND (jsonb_typeof(output) = 'object'::text)))
+    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY (ARRAY[('development'::character varying)::text, ('held_out'::character varying)::text])) AND (jsonb_typeof(output) = 'object'::text)))
 );
 
 
@@ -274,7 +274,12 @@ CREATE TABLE public.calibration_sets (
     grader_version_id bigint NOT NULL,
     created_by_id bigint NOT NULL,
     name character varying NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL
+    created_at timestamp(6) without time zone NOT NULL,
+    false_positive_cost numeric,
+    false_negative_cost numeric,
+    error_cost_unit text,
+    error_cost_rationale text,
+    CONSTRAINT calibration_error_cost_group CHECK ((((false_positive_cost IS NULL) AND (false_negative_cost IS NULL) AND (error_cost_unit IS NULL) AND (error_cost_rationale IS NULL)) OR ((false_positive_cost IS NOT NULL) AND (false_negative_cost IS NOT NULL) AND (error_cost_unit IS NOT NULL) AND (error_cost_rationale IS NOT NULL) AND (false_positive_cost >= (0)::numeric) AND (false_positive_cost < ('1000000000000'::bigint)::numeric) AND (false_negative_cost >= (0)::numeric) AND (false_negative_cost < ('1000000000000'::bigint)::numeric) AND (scale(false_positive_cost) <= 6) AND (scale(false_negative_cost) <= 6) AND ((char_length(error_cost_unit) >= 1) AND (char_length(error_cost_unit) <= 120)) AND (error_cost_unit ~ '[^[:space:]]'::text) AND ((char_length(error_cost_rationale) >= 1) AND (char_length(error_cost_rationale) <= 2000)) AND (error_cost_rationale ~ '[^[:space:]]'::text))))
 );
 
 
@@ -385,7 +390,7 @@ CREATE TABLE public.corpus_analyses (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     call_plan jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT chk_rails_6685537a78 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100)) AND (jsonb_typeof(configuration) = 'object'::text)))
+    CONSTRAINT chk_rails_6685537a78 CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('failed'::character varying)::text])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100)) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -493,8 +498,8 @@ CREATE TABLE public.corpus_discovery_batches (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_80999236e2 CHECK ((((phase)::text = ANY ((ARRAY['discovery'::character varying, 'reducer'::character varying])::text[])) AND (("position" >= 1) AND ("position" <= 31)) AND (jsonb_typeof(input_refs) = 'array'::text) AND ((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND ((result IS NULL) OR (jsonb_typeof(result) = 'object'::text)))),
-    CONSTRAINT corpus_batch_receipt_matches_claim CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = ANY ((ARRAY['proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (result IS NOT NULL) AND (result ? 'decision'::text) AND COALESCE(((result ->> 'decision'::text) = (state)::text), false))))
+    CONSTRAINT chk_rails_80999236e2 CHECK ((((phase)::text = ANY (ARRAY[('discovery'::character varying)::text, ('reducer'::character varying)::text])) AND (("position" >= 1) AND ("position" <= 31)) AND (jsonb_typeof(input_refs) = 'array'::text) AND ((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('proposal'::character varying)::text, ('abstain'::character varying)::text, ('error'::character varying)::text])) AND ((result IS NULL) OR (jsonb_typeof(result) = 'object'::text)))),
+    CONSTRAINT corpus_batch_receipt_matches_claim CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = ANY (ARRAY[('proposal'::character varying)::text, ('abstain'::character varying)::text, ('error'::character varying)::text])) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (result IS NOT NULL) AND (result ? 'decision'::text) AND COALESCE(((result ->> 'decision'::text) = (state)::text), false))))
 );
 
 
@@ -568,7 +573,7 @@ CREATE TABLE public.eval_case_checks (
     grader_version_id bigint NOT NULL,
     requirement_kind character varying NOT NULL,
     requirement_index integer NOT NULL,
-    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY ((ARRAY['outcomes'::character varying, 'actions'::character varying, 'forbidden'::character varying, 'escalation'::character varying, 'grounding'::character varying])::text[])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
+    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY (ARRAY[('outcomes'::character varying)::text, ('actions'::character varying)::text, ('forbidden'::character varying)::text, ('escalation'::character varying)::text, ('grounding'::character varying)::text])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
 );
 
 
@@ -674,7 +679,7 @@ CREATE TABLE public.eval_suites (
     kind character varying DEFAULT 'evaluation'::character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY ((ARRAY['evaluation'::character varying, 'regression'::character varying])::text[])))
+    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY (ARRAY[('evaluation'::character varying)::text, ('regression'::character varying)::text])))
 );
 
 
@@ -714,7 +719,7 @@ CREATE TABLE public.evaluation_results (
     created_at timestamp(6) without time zone NOT NULL,
     execution jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT chk_rails_5576047e12 CHECK ((jsonb_typeof(execution) = 'object'::text)),
-    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'incomplete'::character varying, 'error'::character varying])::text[])) AND (jsonb_typeof(decisions) = 'array'::text)))
+    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('incomplete'::character varying)::text, ('error'::character varying)::text])) AND (jsonb_typeof(decisions) = 'array'::text)))
 );
 
 
@@ -790,7 +795,7 @@ CREATE TABLE public.evaluation_runs (
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     judge_disclosure boolean DEFAULT false NOT NULL,
-    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
 
@@ -830,7 +835,7 @@ CREATE TABLE public.evaluation_target_versions (
     created_at timestamp(6) without time zone NOT NULL,
     trace_item_id bigint,
     CONSTRAINT chk_rails_d846093cc8 CHECK (((((adapter)::text = 'recorded'::text) = (trace_item_id IS NOT NULL)) AND (((adapter)::text <> 'recorded'::text) OR (configuration = '{}'::jsonb)))),
-    CONSTRAINT chk_rails_f7cc6dafa8 CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying, 'recorded'::character varying, 'http_conversation'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
+    CONSTRAINT chk_rails_f7cc6dafa8 CHECK (((number > 0) AND ((adapter)::text = ANY (ARRAY[('scripted'::character varying)::text, ('http'::character varying)::text, ('recorded'::character varying)::text, ('http_conversation'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -902,7 +907,7 @@ CREATE TABLE public.grader_versions (
     processing_version character varying NOT NULL,
     definition jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY ((ARRAY['deterministic'::character varying, 'rubric_judge'::character varying])::text[])) AND (jsonb_typeof(definition) = 'object'::text)))
+    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY (ARRAY[('deterministic'::character varying)::text, ('rubric_judge'::character varying)::text])) AND (jsonb_typeof(definition) = 'object'::text)))
 );
 
 
@@ -972,7 +977,7 @@ CREATE TABLE public.human_labels (
     decision character varying NOT NULL,
     rationale text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'uncertain'::character varying])::text[])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
+    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('uncertain'::character varying)::text])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
 );
 
 
@@ -1072,7 +1077,7 @@ CREATE TABLE public.memberships (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     role character varying NOT NULL,
-    CONSTRAINT memberships_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[])))
+    CONSTRAINT memberships_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text])))
 );
 
 
@@ -1106,7 +1111,7 @@ CREATE TABLE public.oidc_identities (
     subject character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT oidc_identities_lengths CHECK ((((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048)) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
+    CONSTRAINT oidc_identities_lengths CHECK (((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
 );
 
 
@@ -1210,7 +1215,7 @@ CREATE TABLE public.scenario_evidence (
     corpus_item_id bigint NOT NULL,
     kind character varying NOT NULL,
     excerpt text NOT NULL,
-    CONSTRAINT chk_rails_6cd9bf465e CHECK ((((kind)::text = ANY ((ARRAY['expectation'::character varying, 'knowledge'::character varying])::text[])) AND ((length(excerpt) >= 1) AND (length(excerpt) <= 4000))))
+    CONSTRAINT chk_rails_6cd9bf465e CHECK ((((kind)::text = ANY (ARRAY[('expectation'::character varying)::text, ('knowledge'::character varying)::text])) AND ((length(excerpt) >= 1) AND (length(excerpt) <= 4000))))
 );
 
 
@@ -1286,7 +1291,7 @@ CREATE TABLE public.scenario_proposals (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_fccaa58882 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text)))
+    CONSTRAINT chk_rails_fccaa58882 CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text)))
 );
 
 
@@ -1323,7 +1328,7 @@ CREATE TABLE public.scenario_reviews (
     note text NOT NULL,
     merged_version_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_b908de4663 CHECK ((((decision)::text = ANY ((ARRAY['approve'::character varying, 'reject'::character varying, 'merge'::character varying])::text[])) AND (((decision)::text = 'merge'::text) = (merged_version_id IS NOT NULL))))
+    CONSTRAINT chk_rails_b908de4663 CHECK ((((decision)::text = ANY (ARRAY[('approve'::character varying)::text, ('reject'::character varying)::text, ('merge'::character varying)::text])) AND (((decision)::text = 'merge'::text) = (merged_version_id IS NOT NULL))))
 );
 
 
@@ -1369,7 +1374,7 @@ CREATE TABLE public.scenario_versions (
     selection_reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     follow_ups jsonb DEFAULT '[]'::jsonb NOT NULL,
-    CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY ((ARRAY['mined'::character varying, 'expert'::character varying, 'variant'::character varying])::text[])) AND ((importance)::text = ANY ((ARRAY['normal'::character varying, 'high'::character varying, 'critical'::character varying])::text[])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text))),
+    CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY (ARRAY[('mined'::character varying)::text, ('expert'::character varying)::text, ('variant'::character varying)::text])) AND ((importance)::text = ANY (ARRAY[('normal'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text))),
     CONSTRAINT chk_rails_995910e18a CHECK (((jsonb_typeof(follow_ups) = 'array'::text) AND (jsonb_array_length(follow_ups) <= 10)))
 );
 
@@ -1453,7 +1458,7 @@ CREATE TABLE public.sessions (
     updated_at timestamp(6) without time zone NOT NULL,
     authentication_method character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY ((ARRAY['local'::character varying, 'oidc'::character varying, 'break_glass'::character varying])::text[])))
+    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('oidc'::character varying)::text, ('break_glass'::character varying)::text])))
 );
 
 
@@ -1491,7 +1496,7 @@ CREATE TABLE public.source_snapshots (
     processing_version character varying NOT NULL,
     imported_by_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[]))))
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text]))))
 );
 
 
@@ -1528,7 +1533,7 @@ CREATE TABLE public.sources (
     expires_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_23967a9de0 CHECK (((kind)::text = ANY ((ARRAY['conversations'::character varying, 'document'::character varying, 'traces'::character varying])::text[])))
+    CONSTRAINT chk_rails_23967a9de0 CHECK (((kind)::text = ANY (ARRAY[('conversations'::character varying)::text, ('document'::character varying)::text, ('traces'::character varying)::text])))
 );
 
 
@@ -1600,7 +1605,7 @@ CREATE TABLE public.trace_scenario_decisions (
     decision character varying NOT NULL,
     reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_a0c71cf02f CHECK ((((decision)::text = ANY ((ARRAY['match'::character varying, 'different'::character varying, 'uncertain'::character varying])::text[])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
+    CONSTRAINT chk_rails_a0c71cf02f CHECK ((((decision)::text = ANY (ARRAY[('match'::character varying)::text, ('different'::character varying)::text, ('uncertain'::character varying)::text])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
 );
 
 
@@ -1674,8 +1679,8 @@ CREATE TABLE public.workspace_invitations (
     accepted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[]))),
-    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[])))
+    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text]))),
+    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('accepted'::character varying)::text, ('revoked'::character varying)::text, ('expired'::character varying)::text])))
 );
 
 
@@ -4045,6 +4050,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001130000'),
 ('20261001120000'),
 ('20261001040000'),
 ('20261001030000'),

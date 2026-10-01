@@ -672,6 +672,23 @@ current scenario approval and source evidence. Deterministic predictions run loc
 rubric samples need an explicitly requested judge attempt. Neither upload nor label
 sends data out.
 
+Expand **Optional error-cost assumptions** when creating a set only if an expert
+can supply both costs, a common unit and rationale. Leave all four blank to keep
+costs unknown. Plain decimals need 1–12 whole digits and at most 6 fractional
+digits; zero is valid, negative/nonfinite/scientific values and excess precision
+are refused, never rounded. Units accept up to 120 characters; rationale up to
+2000. Assumptions keep their creator, fixed grader and set creation time. Changing
+them requires a new set; existing sets remain unknown and new sets inherit nothing.
+
+Reports show false positives × supplied false-positive cost + false negatives ×
+supplied false-negative cost, using exact decimals. Only compared samples with
+certain, agreeing latest expert labels contribute. With no comparisons the cost
+remains unknown, not zero. A measured zero is distinct. Held-out, development and
+candidate previews remain separate. These assumptions do not prove business cost,
+population accuracy, provider spend or deployment readiness. Labels, predictions
+and past definitions never change. Desktop/mobile error, empty, blind and labelled
+captures live under `.amp/in/artifacts/calibration-costs/`.
+
 On a retained result, **Add this saved output to calibration** offers sets for
 the case's exact grader versions. Select a set, case check and cohort; the server
 copies only that result's fixed output and case identity, ignoring supplied output.

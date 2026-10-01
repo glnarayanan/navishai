@@ -11,7 +11,7 @@ class CalibrationSetsController < ApplicationController
   end
 
   def create
-    values = params.expect(calibration_set: [ :name, :grader_version_id ]).to_h
+    values = params.expect(calibration_set: [ :name, :grader_version_id, :false_positive_cost, :false_negative_cost, :error_cost_unit, :error_cost_rationale ]).to_h
     set = CalibrationSet.define!(corpus: @corpus, membership: Current.require_membership!, **values.symbolize_keys)
     redirect_to workspace_corpus_calibration_set_path(Current.workspace, @corpus, set), notice: "Calibration set created for this fixed grader version.", status: :see_other
   end
@@ -43,6 +43,7 @@ class CalibrationSetsController < ApplicationController
 
     def invalid_input(error)
       flash.now[:alert] = error.message
+      @cost_errors = error.record.errors.full_messages_for(:false_positive_cost) + error.record.errors.full_messages_for(:false_negative_cost) + error.record.errors.full_messages_for(:error_cost_unit) + error.record.errors.full_messages_for(:error_cost_rationale) if error.is_a?(ActiveRecord::RecordInvalid)
       if action_name == "show"
         @preview_error = true
         show

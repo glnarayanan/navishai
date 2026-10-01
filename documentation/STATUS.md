@@ -73,8 +73,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   Compose preparation/runtime, published ingress and control/edge proof.
 - [#173](https://github.com/glnarayanan/navishai/pull/173), based on #172: matched-trace evidence
   revision, fresh expert review/compilation and fixed-case regression proof.
-- `rebuild/34-family-evidence`, based on #173: complete fixed-family source counts,
+- [#174](https://github.com/glnarayanan/navishai/pull/174), based on #173: complete fixed-family source counts,
   filtered exploration and historical provenance without new judgments.
+- `rebuild/35-calibration-costs`, based on #174: optional fixed human error costs,
+  exact observed totals and unchanged calibration history.
 
 ## Built and checked
 
@@ -812,6 +814,25 @@ errors or skips. These totals also include the separate pending calibration-cost
 slice; they are not a remote-CI claim. Direct risk review used; named review tools
 remain unavailable. No provider, customer data or dependency was introduced.
 
+Calibration sets now retain optional human-supplied false-positive/false-negative
+costs, common units, rationale and creator/version. All fields or none; existing
+sets stay unknown and no values carry over. Raw validation and database checks
+reject excess precision instead of rounding. Untyped numeric plus a scale check
+avoids PostgreSQL's typmod rounding before CHECK. Exact asymmetric tests distinguish
+25 from 23.75 after an appended correction, separate candidate/cohort counts and
+unknown evidence from observed zero. Disputes, uncertainty and unusable predictions
+cannot supply a cost. Immutable triggers and scoped access remain intact.
+
+The browser repairs retained raw inputs, sees unknown empty costs, labels blindly
+and then sees one false positive costing 1.25 fixture units. Desktop/390px captures
+were inspected with readable assumptions, full repair controls and no overflow/CSP
+failures. The combined CI above covers this slice. `bin/prove-backup-restore` passed
+with PASS/CLEAN, exact six-place cost assumptions and author/version, unknowns,
+unchanged labels/associations/conversation/batch receipts, 16 immutable tables and
+no resend. Only its disposable databases/archive were removed. Direct risk review
+and native audits used; named review tools unavailable. No customer cost policy,
+spend, provider, data, dependency, training, merge, release or deployment was chosen.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -845,8 +866,8 @@ and economics. Fixture checks do not establish discovery quality or judge accura
 Connected fresh revised-judge calibration, matched-trace → existing-scenario
 evidence revision, family-level source-signal counts/drill-down and private Compose
 ingress/control/edge proof now pass. Optional expert-supplied calibration error-cost
-assumptions and report-local judge-threshold disclosure remain independent
-engineering, not pilot-data gates.
+assumptions also pass. Report-local judge-threshold disclosure remains independent
+engineering, not a pilot-data gate.
 Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
 authorised host; private namespace probes cannot establish them.
 Reviewable failure matching, bounded multi-request discovery, image execution and

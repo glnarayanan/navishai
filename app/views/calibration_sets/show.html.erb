@@ -3,6 +3,12 @@
   <%= link_to "Calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1><%= @set.name %></h1><p><%= link_to @set.grader_version.grader.name, workspace_corpus_grader_path(Current.workspace, @corpus, @set.grader_version.grader, version: @set.grader_version.number) %> · fixed version <%= @set.grader_version.number %></p></div></div>
   <nav class="workspace-tabs" aria-label="Calibration cohorts"><% %w[held_out development].each do |cohort| %><%= link_to cohort.humanize, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort:), aria: { current: cohort == @cohort ? "page" : nil } %><% end %></nav>
+  <section class="section-block" id="error-cost-assumptions"><h2>Fixed human-supplied error-cost assumptions</h2>
+    <% if @set.error_costs_supplied? %>
+      <dl class="source-metadata"><dt>False-positive cost</dt><dd><%= @set.false_positive_cost.to_s("F") %> <%= @set.error_cost_unit %></dd><dt>False-negative cost</dt><dd><%= @set.false_negative_cost.to_s("F") %> <%= @set.error_cost_unit %></dd><dt>Rationale</dt><dd><%= @set.error_cost_rationale %></dd></dl>
+    <% else %><p>Not supplied. Error costs are unknown; no values are inferred or inherited.</p><% end %>
+    <p>Set created by expert #<%= @set.created_by_id %> at <%= @set.created_at.iso8601 %>, for fixed grader v<%= @set.grader_version.number %>. Changing assumptions requires a new set.</p>
+  </section>
   <section class="section-block" id="fixed-report"><h2><%= @cohort.humanize %> evidence · fixed v<%= @set.grader_version.number %></h2>
     <%= render "report", report: @report %>
     <% if @set.grader_version.kind == "rubric_judge" %><p role="status">Each sample needs a separately approved judge attempt. Reports compare only usable fixed predictions with certain expert labels; rubric text and self-reported confidence do not prove accuracy.</p><% end %>

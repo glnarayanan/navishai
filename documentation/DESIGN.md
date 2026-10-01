@@ -83,6 +83,13 @@ matrix and explicit unknown rates. It shows sample counts and exclusions, not a
 universal support score. Upload errors retain the output; compact case-check options
 link to full requirements in a native disclosure. Mobile stacks review sections.
 
+Error-cost assumptions stay in an optional native disclosure. Blank forms choose
+no values; invalid or supplied fields keep the section open with retained raw input
+and an adjacent accessible repair alert. Fixed assumptions show units, rationale,
+expert ID and creation time. Reports distinguish unknown evidence from measured
+zero, keep cohorts/previews separate and warn that assumptions are not business
+costs or deployment advice. Use native controls; no new tokens or assets.
+
 The calibration review list puts missing personal labels before disputes,
 uncertainty and machine disagreement. A labelled focus picker shows counts and
 filters only that list; the full-cohort report remains above it. Clear/empty states
