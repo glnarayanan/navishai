@@ -12,18 +12,18 @@ module BatchDiscoveryTestHelper
     @items = @snapshot.corpus_items.index_by(&:external_id)
   end
 
-  def batch_plan
-    BatchCorpusDiscovery.plan(CorpusAnalysis.current_inputs(corpus: @corpus, model: true, batch: true))
+  def batch_plan(version: BatchCorpusDiscovery::VERSION)
+    BatchCorpusDiscovery.plan(CorpusAnalysis.current_inputs(corpus: @corpus, model: true, batch: true), version:)
   end
 
   def request_batch_analysis(**options)
-    plan = batch_plan
+    plan = batch_plan(version: options[:processing_method] == "model_batch_observations" ? BatchCorpusDiscovery::OBSERVATIONS_VERSION : BatchCorpusDiscovery::VERSION)
     CorpusAnalysis.request!(**{ corpus: @corpus, membership: @membership, scenario_limit: 2, configuration: discovery_configuration,
       processing_method: "model_batch", disclose: true, input_digest: plan.fetch("source_digest"), call_plan_digest: ModelCorpusDiscovery.digest(plan) }.merge(options))
   end
 
   def batch_response(payload)
-    return merge_response(payload) if payload.fetch("schema") == BatchCorpusDiscovery::MERGE_VERSION
+    return merge_response(payload) if payload.fetch("schema").in?([ BatchCorpusDiscovery::MERGE_VERSION, BatchCorpusDiscovery::MERGE_OBSERVATIONS_VERSION ])
     conversations = payload.fetch("records").select { |record| record.fetch("kind") == "conversations" }
     rare, common = conversations.partition { |record| record.fetch("content").include?("data loss") }
     label = common.size > 20 ? "Certificate turnover" : "Trust material refresh"
@@ -42,7 +42,16 @@ module BatchDiscoveryTestHelper
         "evidence_links" => [ { "kind" => "outcomes", "index" => 0, "reference" => document,
           "quote" => dangerous ? "Escalate repeated deletes with data loss to Engineering." : "Request the signing certificate expiry before changing SSO configuration." } ] }
     end
-    { "schema" => ModelCorpusDiscovery::VERSION, "model" => discovery_configuration.fetch("model"), "decision" => "proposal", "reason" => "Synthetic batch.", "clusters" => clusters, "candidates" => candidates, "usage" => nil, "cost" => nil }
+    response = { "schema" => payload.fetch("schema"), "model" => discovery_configuration.fetch("model"), "decision" => "proposal", "reason" => "Synthetic batch.", "clusters" => clusters, "candidates" => candidates, "usage" => nil, "cost" => nil }
+    if payload["schema"] == ModelCorpusDiscovery::OBSERVATIONS_VERSION
+      record = conversations.last
+      response["observations"] = [ { "kind" => "evidence_sufficiency", "status" => "proposed",
+        "summary" => "Review this reported symptom against the shared playbook; candidate selection must not drop its evidence.",
+        "uncertainty" => "These source reports do not prove a cause, correct escalation or resolution.",
+        "evidence" => [ record.slice("reference").merge("quote" => record.fetch("content")),
+          { "reference" => document, "quote" => "Escalate repeated deletes with data loss to Engineering." } ] } ]
+    end
+    response
   end
 
   def merge_response(payload)
@@ -54,8 +63,12 @@ module BatchDiscoveryTestHelper
     candidates = payload.fetch("candidates")
     rare = candidates.find { |candidate| candidate.dig("definition", "scenario", "importance") == "critical" }
     representative = candidates.find { |candidate| candidate.dig("definition", "scenario", "importance") != "critical" }
-    { "schema" => BatchCorpusDiscovery::MERGE_VERSION, "model" => discovery_configuration.fetch("model"), "decision" => "proposal", "reason" => "Synthetic exact merge preserving minority risk.",
+    response = { "schema" => BatchCorpusDiscovery::MERGE_VERSION, "model" => discovery_configuration.fetch("model"), "decision" => "proposal", "reason" => "Synthetic exact merge preserving minority risk.",
       "families" => families, "candidate_refs" => [ rare, representative ].compact.pluck("reference"), "usage" => nil, "cost" => nil }
+    if payload["schema"] == BatchCorpusDiscovery::MERGE_OBSERVATIONS_VERSION
+      response.merge!("schema" => BatchCorpusDiscovery::MERGE_OBSERVATIONS_VERSION, "observation_refs" => payload.fetch("observations").pluck("reference").reverse)
+    end
+    response
   end
 
   def with_batch_responses(calls: [], change: nil, after_call: nil)

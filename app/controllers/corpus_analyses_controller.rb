@@ -9,7 +9,7 @@ class CorpusAnalysesController < ApplicationController
   end
 
   def create
-    model = params[:processing_method].in?(%w[model model_batch])
+    model = params[:processing_method].in?(%w[model model_batch model_observations model_batch_observations])
     if model
       raise CorpusIntake::Invalid, "Model configuration must be JSON of at most 10 KiB." if params[:configuration].to_s.bytesize > 10.kilobytes
       configuration = JSON.parse(params[:configuration].to_s)
@@ -23,7 +23,7 @@ class CorpusAnalysesController < ApplicationController
     redirect_to workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis), notice: "#{model ? 'Model' : 'Local'} analysis queued. Refresh never sends another request.", status: :see_other
   rescue CorpusIntake::Invalid, EvaluationHttp::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError => error
     message = error.is_a?(JSON::ParserError) ? "Model configuration must be valid JSON. Correct it and request again." : error.message
-    if params[:processing_method].in?(%w[model model_batch])
+    if model
       prepare_preview
       flash.now[:alert] = message
       render :new, status: :unprocessable_content
@@ -82,9 +82,10 @@ class CorpusAnalysesController < ApplicationController
     end
 
     def prepare_preview
-      @batch = params[:processing_method] == "model_batch"
+      @batch = params[:processing_method].in?(%w[model_batch model_batch_observations])
+      @observations = params[:processing_method].in?(%w[model_observations model_batch_observations])
       @model_items = CorpusAnalysis.current_inputs(corpus: @corpus, model: true, batch: @batch)
-      @call_plan = BatchCorpusDiscovery.plan(@model_items) if @batch
+      @call_plan = BatchCorpusDiscovery.plan(@model_items, version: @observations ? BatchCorpusDiscovery::OBSERVATIONS_VERSION : BatchCorpusDiscovery::VERSION) if @batch
       @model_input = ModelCorpusDiscovery.input(@model_items, bounded: !@batch)
     rescue CorpusIntake::Invalid => error
       @model_input_error = error.message

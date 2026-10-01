@@ -107,23 +107,22 @@ instead of dropping content. The transport still limits responses to 100 KiB.
 An endpoint must fit all findings within both limits or abstain; the service does
 not make a second call to repair output.
 
-## Required shared integration
+## Shared request and review contract
 
-1. Add the v2 methods to `CorpusAnalysis#model?` and `#batch?`. Keep old methods
-   registered; do not update constants or rewrite historic methods to select v2.
-2. Add explicit v2 request/preview selection. Freeze the selected method with the
-   exact source preview, existing endpoint/model/settings and consent. Use the
-   matching `plan(..., version:)` in preview, request and `authorize_processing!`.
-   V1 plan rechecks must keep their old shape. Preserve candidate limits, source
-   access/lifetime checks, document freshness and purpose-specific approval.
-3. Route v2 through the existing once-claimed job and corpus-lock publication
-   transaction. `call` and `execute` already select the correct wire versions.
-   Do not add retries, repair calls, extra discovery requests or extra reducers.
-4. Read observations from `corpus_analysis_result.result["observations"]` only for
+1. `CorpusAnalysis#model?`, `#batch?` and `#observations?` register the fixed v2
+   methods beside v1. Defaults and historic method meanings remain unchanged.
+2. Explicit `model_observations` and `model_batch_observations` previews/requests
+   freeze the selected method, exact source preview, endpoint/model/settings and
+   consent. Matching `plan(..., version:)` runs at preview, request and processing
+   recheck. V1 plans retain their old shape. Candidate limits, source lifetime,
+   document freshness and corpus-purpose approval remain required.
+3. The existing once-claimed job and corpus-lock publication transaction handle
+   v2. No retries, repair calls, extra discoveries or extra reducers were added.
+4. The result view reads `corpus_analysis_result.result["observations"]` only for
    the v2 discovery schema. A reducer abstention has the merge schema and no
    global observations. Legacy rows lack this field; do not call that an empty
    v2 discovery or evidence that no support issue exists.
-5. Show status, summary, uncertainty and every source anchor together, with the
+5. Native disclosures show status, summary, uncertainty and every anchor, with the
    fixed receipt/result and source snapshot identity. Scope references through
    the analysis's fixed inputs, not arbitrary IDs or current replacement records.
    Hide expired content and use existing source deletion/retention gates. Show
@@ -150,9 +149,12 @@ The authored fixtures exercise contract behavior: exact cross-source anchors,
 both sides of bounds, invalid first/middle/last members, retained uncertainty,
 asymmetric batch order, observations beyond candidate selection, repeated shared
 evidence, aggregate bounds, v1/v2 separation, abstention and no partial publication.
-Batch service tests supply only the lead-owned model/batch registration and plan
-selection on their test instance; real authority, receipt and transport guards run.
-These tests do not prove the future request/UI integration or customer usefulness.
+Batch service tests now use native registration and plan selection, without the
+worker's temporary substitutes. Integrated request/job/access checks cover single
+and batch v2, wrong-version consent, once-only execution, revocation, retained
+historical anchors, expiry/purge and v1 results. Browser journeys cover explicit
+selection, repair, keyboard consent, all quotes, empty and stopped global results
+at desktop/mobile widths. These checks do not establish customer usefulness.
 
 Only sources disclosed together can ground a new observation. The reducer retains
 and orders existing findings; it does not establish new relationships between

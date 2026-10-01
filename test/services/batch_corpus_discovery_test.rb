@@ -476,17 +476,12 @@ class BatchCorpusDiscoveryTest < ActiveSupport::TestCase
     analysis
   end
 
-  # Shared version registration belongs to the lead. Supply only that selection
-  # here; the real processing, authority, allocation and receipt guards still run.
+  # Exercise native version registration and plan rechecks, not test substitutes.
   def with_observation_batch_analysis(analysis)
-    plan = BatchCorpusDiscovery.method(:plan)
-    with_test_method(analysis, :model?, -> { true }) do
-      with_test_method(analysis, :batch?, -> { true }) do
-        with_test_method(BatchCorpusDiscovery, :plan, ->(items, version: BatchCorpusDiscovery::OBSERVATIONS_VERSION) { plan.call(items, version:) }) do
-          with_corpus_approval { yield }
-        end
-      end
-    end
+    assert analysis.model?
+    assert analysis.batch?
+    assert analysis.observations?
+    with_corpus_approval { yield }
   end
 
   def with_observation_batch_responses(calls: [], change: nil)

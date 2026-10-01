@@ -394,6 +394,15 @@ Reject more than 200 intermediate clusters or a reducer payload over the shared
 are untrusted data from the same endpoint, not expert labels. Final selection is
 bounded by the requested candidate limit and still needs expert review.
 
+Explicit single/batch v2 methods also retain typed support observations, required
+uncertainty and every exact source anchor independently of candidate selection.
+Versioned plans bind the same call quotas; v1 defaults and history stay unchanged.
+The reducer must return every observation reference exactly once; local composition
+copies the originals, not invented cross-batch relationships. Result disclosures
+distinguish published observations, intermediate receipts, empty v2 and legacy v1.
+No expert label, approval or training follows. See
+[MODEL_CORPUS_OBSERVATIONS.md](./MODEL_CORPUS_OBSERVATIONS.md).
+
 ## Production failures
 
 Treat uploaded production traces as source records, not a tracing service. The
