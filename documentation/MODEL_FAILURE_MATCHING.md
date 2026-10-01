@@ -114,26 +114,12 @@ new grant task is needed. Run native preparation, then
 `RAILS_ENV=production bin/rails db:grant_runtime` as the separate preparation owner,
 never as runtime.
 
-The parent must apply these small deployment additions when joining this slice;
-these files sit outside this worker's ownership. Leave the values empty:
-
-```diff
---- .env.example
-+++ .env.example
-@@
- NAVISHAI_CORPUS_ENDPOINTS=[]
-+NAVISHAI_MATCHING_ENDPOINTS=[]
---- compose.yaml
-+++ compose.yaml
-@@
-     NAVISHAI_CORPUS_ENDPOINTS: ${NAVISHAI_CORPUS_ENDPOINTS:-[]}
-+    NAVISHAI_MATCHING_ENDPOINTS: ${NAVISHAI_MATCHING_ENDPOINTS:-[]}
-```
-
-Parent privacy slice68 supplies shared request/SQL filtering for input, result and
-requirements. This slice adds model-local input/result filter attributes but does
-not edit that initializer. Keep the parent filters in the integrated build. Merge
-the three empty audit entries and routes once, then regenerate the combined schema.
+`.env.example` and Compose now forward `NAVISHAI_MATCHING_ENDPOINTS` with an empty
+`[]` default, separate from every other purpose. Shared request/SQL filters cover
+input, result and requirements; model-local filters also hide input/result in
+inspection. Routes, three content-free audit actions, purge hooks and the combined
+native schema are joined. See [REBUILD_ACCEPTANCE.md](./REBUILD_ACCEPTANCE.md) for
+combined checks, distinct from the worker evidence below.
 
 ## Proof and limits
 
@@ -143,7 +129,7 @@ separate-purpose approval, once-only delivery, revocation, deletion and unknown
 outcomes. Inspect native disclosure, error, queued and result states on desktop
 and mobile. Run native focused tests, Ruby style, eager loading and security checks.
 No live calls, customer data, provider spend, training or new dependencies follow.
-The parent owns integration, broader checks and stacked PR delivery.
+Implementation and delivery evidence live in [STATUS.md](./STATUS.md).
 
 The opt-in runtime proof is `test/support/model_failure_matching_runtime_proof.rb`.
 Run it only against a disposable, fixture-only database: native Rails tests load

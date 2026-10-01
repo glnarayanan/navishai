@@ -2,8 +2,8 @@
 
 This adds review proposals to model corpus discovery. It does not define a
 universal company taxonomy or turn historical answers into expert truth.
-The service contracts are built here; shared request selection, model/job
-registration and result UI belong to the lead's integration slice.
+The joined services, request selection, fixed plans, job registration and result
+views retain the same versioned contract.
 
 ## Versions
 

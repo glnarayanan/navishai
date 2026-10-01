@@ -203,16 +203,13 @@ workflow. Discovery never performs those steps.
 
 ## Integration and evidence
 
-The parent must add the corpus/navigation link to
-`workspace_corpus_trace_failure_discoveries_path`, link this guide from the central
-authorities and update STATUS. This slice does not edit shared navigation, sources
-controller/show, corpus-discovery internals, landing, global CSS or log initializer.
-Its additive routes, four audit entries, `SourcePurge` deletion and optional
-`SupportTrace.propose!` argument must remain when combining worker bundles.
+Corpus navigation now links to `workspace_corpus_trace_failure_discoveries_path`.
+The central authorities describe the workflow; routes, four content-free audit
+entries, corpus-wide `SourcePurge` deletion and the optional `SupportTrace.propose!`
+handoff are joined. Shared privacy checks cover request/result/review copies.
 
-The parent owns central configuration and must forward
-`NAVISHAI_TRACE_DISCOVERY_ENDPOINTS` with an empty `[]` default in the operator
-environment/Compose entries and document its separate scope. The shared gateway
+Operator environment/Compose entries now forward `NAVISHAI_TRACE_DISCOVERY_ENDPOINTS`
+with an empty `[]` default and its own disclosure scope. The shared gateway
 map adds only `:trace_discovery`; it grants no other purpose and has no live entry.
 Revoking this approval blocks queued sends and discards in-flight responses even
 when every other purpose remains approved. Tests prove both boundaries through
@@ -220,8 +217,8 @@ the native gateway, including its distinct credential and no retry.
 
 Migration `20261001230000` creates six operation-specific tables, SQL foreign keys,
 immutability guards and deletion hooks. Its timestamp leaves `210000` and `220000`
-to the scenario-quality slice. Regenerate `db/structure.sql` after integration;
-this fix does not edit the parent-owned shared schema. Production preparation must run
+to the scenario-quality slice. The combined native `db/structure.sql` includes all
+joined migrations. Production preparation must run
 the existing owner-only `db:grant_runtime` after schema preparation for all four
 databases. It already grants all tables/sequences and future defaults to the
 restricted `navishai` role; there is no per-table list or new privilege here.

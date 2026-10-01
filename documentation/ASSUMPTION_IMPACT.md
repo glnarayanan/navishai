@@ -204,30 +204,25 @@ and empty metadata, never input, quotes, model output or credentials.
 
 ## Integration and limits
 
-The bundle adds the routes, three content-free audit actions and one corpus-wide
-`SourcePurge` deletion hook. Keep that deletion before scenario removal when
-combining lifecycle hooks. Shared navigation must link to
-`workspace_corpus_assumption_impacts_path`; no sources controller/show or shared
-navigation changed in this slice. Integrate STATUS and a combined native SQL dump
-after all worker migrations. Migration ID: `20261002010100`.
+Routes, three content-free audit actions and corpus-wide `SourcePurge` deletion
+now join the other lifecycle hooks; deletion precedes scenario removal. Corpus
+navigation links to `workspace_corpus_assumption_impacts_path`. The combined native
+SQL dump includes migration `20261002010100`; STATUS and the security authority
+describe this separate workflow.
 
-The security follow-up adds only `impact: "NAVISHAI_IMPACT_ENDPOINTS"` to the
-shared transport registry map. Join matching's separate additive key, not its
-purpose or grant. Parent owns shared env/Compose entries (default `[]`), security
-authority text, navigation and STATUS. No existing corpus approval expands.
-
-The parent privacy work must filter request/body and SQL bind fields `input`,
-`result`, `requirements` and `mutation` (alongside existing private facts and
-configuration fields). This slice does not edit the shared private-log
-initializer. Do not enable a live endpoint before those filters and integrated
-privacy checks land.
+The shared transport maps `impact` to `NAVISHAI_IMPACT_ENDPOINTS`, separate from
+matching and every other purpose. Environment/Compose entries default to `[]`.
+No existing corpus approval expands. Native request/SQL log tests verify filtering
+for input, result, requirements and mutation, alongside private facts and settings.
+They retain exact database values and prove preview/receipt/transport wire equality.
 
 The existing `db:grant_runtime` grants all runtime tables/sequences in each
 production database after schema preparation. No new privilege is needed.
 Focused tests use a temporary non-superuser SQL role, transactional native DML
 and sequence grants, request/claim/result/purge, refused rewrites and refused
-trigger disabling. They do not change deployed grants or prove production
-queue/deployment readiness; combined restricted-runtime checks remain required.
+trigger disabling. They do not change deployed grants. Combined runtime/recovery
+evidence lives in [OPERATIONS_ACCEPTANCE.md](./OPERATIONS_ACCEPTANCE.md), not a
+deployment-readiness claim.
 
 This is an optional selected-set proposal, not discovery of every affected
 scenario, a policy diff engine, coverage, a tested live-model claim or a new
@@ -290,5 +285,6 @@ scenario version, never applies the proposal itself.
 `bin/bundler-audit` and `bin/importmap audit`: no known vulnerabilities.
 `bin/rails zeitwerk:check` and `git diff --check`: pass. Native migration
 `db:migrate:redo VERSION=20261002010100` passes down/up in development and test.
-These are local fixture checks, not integrated CI, live-model quality or deployed
-runtime proof. Parent integration still owns broad combined verification.
+These worker fixture counts are not integrated CI, live-model quality or deployed
+runtime proof. [REBUILD_ACCEPTANCE.md](./REBUILD_ACCEPTANCE.md) records combined
+verification separately.

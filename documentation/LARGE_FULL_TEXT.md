@@ -62,8 +62,8 @@ cascades through analyses, members and mined drafts while retaining audit events
 
 The existing `db:grant_runtime` task grants the restricted runtime role table DML
 and sequence usage. V4 needs no new grant or database privilege. Native tests use
-the development/test role, not a production runtime role; the source thread owns
-the integrated runtime-role and container proof.
+the development/test role; [OPERATIONS_ACCEPTANCE.md](./OPERATIONS_ACCEPTANCE.md)
+records separate combined runtime, recovery and container checks.
 
 ## Evidence plan
 
@@ -126,6 +126,6 @@ changes are outside this slice. The focused manual review checked method dispatc
 scalar/global weighting, atomic commit, fixed lineage and bounded evidence reads.
 Ponytail Audit and CE Code Review tools were unavailable in this thread.
 
-The source thread still owns full integrated CI, restricted production-role proof,
-shared documentation and release decisions. No customer data or provider call was
-used; these fixtures do not show semantic or customer quality.
+[REBUILD_ACCEPTANCE.md](./REBUILD_ACCEPTANCE.md) records combined CI and delivery,
+separate from the worker counts above. No customer data or provider call was used;
+these fixtures do not show semantic or customer quality.

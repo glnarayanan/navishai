@@ -286,8 +286,24 @@ bin/rails zeitwerk:check
 
 Both database proofs printed PASS and CLEAN. The mixed native tests passed
 12 tests / 107 assertions with no failures, errors or skips. Ruby style passed
-371 files; eager loading passed. The Compose/native-job proof now checks all six
-empty disclosure registries and queues synthetic matching/impact/discovery attempts
-for the separate native worker. It must interrupt each without a result, before
-and after web/jobs restart. Its combined-image execution and full CI follow these
-database checks; earlier image evidence does not certify the joined head.
+371 files; eager loading passed. Brakeman reported zero errors/warnings and the
+gem/importmap audits passed. Initial static checks flagged the argument-prefix
+expansion and PostgreSQL-specific quoting in proof-only helpers. The fixed
+executable now precedes argv expansion and native Rails quoting handles SQL
+identifiers/values. No shell command, guard, scope or warning exclusion changed.
+Both database proofs and the mixed tests passed again after those changes.
+
+```sh
+umask 077
+bin/prove-compose-runtime
+```
+
+The combined tracked-image run passed in 434.17 seconds before cleanup, using
+[`56b3644`](https://github.com/glnarayanan/navishai/commit/56b3644c89ca4243b377fa09ca227722931a39f9).
+It checked all six empty disclosure registries and queued synthetic
+matching/impact/discovery attempts for the separate native worker. Each interrupted
+without a result, before and after web/jobs restart; local two-family analyses
+completed. The IPv4/IPv6 kernel denials, four hook-priority mutation refusals,
+trusted simulated TLS/control/loopback checks and unchanged host firewall passed.
+CLEAN removed the exact private daemons/project/namespace/images/volumes/secrets
+and archive. Full combined application CI remains separate from this proof.

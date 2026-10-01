@@ -139,8 +139,9 @@ no warnings/errors. `bin/rails zeitwerk:check`: passed. `git diff --check`: pass
 All native commands used `mise exec --`. Ponytail Audit and CE Code Review were
 unavailable; a direct risk review covered the changed contracts and SQL lifecycle.
 
-Parent integration must retain its shared private-field filters, including
-`mutation`, and combine the additive SQL changes with other workers. The parent
-owns broad integrated CI and updates to the stale architecture/STATUS mining
-description. No real company data, model quality, measured coverage, provider
-execution, deployment or live acceptance follows these engineering checks.
+Shared request/SQL filters now cover `mutation`, draft notes, definitions and
+results. The combined schema includes both additive migrations; ARCHITECTURE and
+STATUS describe source-review drafts rather than copied facts/actions.
+[REBUILD_ACCEPTANCE.md](./REBUILD_ACCEPTANCE.md) records combined checks separately
+from the worker counts above. No real company data, model quality, measured coverage,
+provider execution, deployment or live acceptance follows these engineering checks.
