@@ -2,7 +2,7 @@
 <% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
 <main class="page-shell">
   <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
-  <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. No external model calls.</p></div></div>
+  <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. Local processing unless you approve a model request.</p></div></div>
   <%= render "shared/corpus_navigation", active: "sources" %>
   <section aria-labelledby="sources-title"><h2 id="sources-title">Sources</h2>
     <ul class="workspace-list" role="list">
@@ -21,6 +21,7 @@
         <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
         <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
       <% end %>
+      <p><%= link_to "Model-assisted corpus discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus) %>. Preview exact records and approve their separate disclosure before any model request.</p>
     <% end %>
     <ul class="workspace-list" role="list"><% @analyses.each do |analysis| %><li class="workspace-card"><%= link_to "Analysis #{analysis.id} · #{analysis.state}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></li><% end %></ul>
   </section>

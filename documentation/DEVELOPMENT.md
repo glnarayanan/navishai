@@ -110,6 +110,60 @@ Keyword signals, term clusters and document-term gaps are hypotheses, not measur
 issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
 
+## Model-assisted corpus discovery
+
+Follow **Model-assisted corpus discovery** from a corpus. Review the exact source
+preview, fixed model/settings and candidate limit, then confirm disclosure. The
+operator must approve the exact workspace/HTTPS endpoint in the private
+`NAVISHAI_CORPUS_ENDPOINTS` registry in both web and jobs. It has the same entry
+shape as the target registry, but target/judge and single-scenario approval cannot
+grant corpus disclosure. Never enter credentials in a form or tracked file.
+
+`support-corpus-v1` accepts 1–100 complete conversation/document records within
+256 KiB and 1–20 candidates. Nothing is silently sampled or truncated. Existing
+scenarios, labels, traces and other corpora stay local. Larger batch discovery is
+not built yet. Email masking does not remove every kind of PII; approval must
+cover the displayed titles, text and retained context.
+
+The request contains exactly `schema`, `instructions`, `model`, `settings`,
+`candidate_limit` and `records`. Each record has `reference` (`corpus-item-ID`),
+`kind`, `title`, `content` and `context`. Fixed input IDs/digest, configuration,
+protocol and attempt UUID survive later conversation imports. Changed documentation
+blocks the attempt rather than silently replacing its evidence.
+
+Responses contain exactly `schema`, `model`, `decision`, `reason`, `clusters`,
+`candidates`, `usage` and `cost`. Decision is `proposal` or `abstain`; abstention
+has empty clusters/candidates. Each cluster has `label`, `reason`, `members`,
+`possible_documentation_gap` and `evidence`. Members partition every disclosed
+conversation exactly once; evidence pairs each member's `reference` with an exact
+`quote`. Each candidate has `reference`, `reason`, `scenario` and `evidence_links`.
+The scenario uses the seven editable scenario fields. Every requirement has a
+`kind`, zero-based `index`, disclosed source `reference` and exact `quote` link.
+Missing/duplicate/foreign references, invented quotes and extra coverage claims
+fail the whole response. The shared transport caps responses at 100 KiB; reported
+usage/cost have the judge report shape and are not verified charges.
+
+Quotes prove provenance, not sound judgments. Counts derive from retained members,
+not claimed coverage. Experts review taxonomy and mine unapproved versions through
+the existing flow; mining copies exact expectation evidence and grants no
+target-visible knowledge. Several quotes from one source use a single exact
+window of at most 4000 characters; a wider window fails rather than dropping a
+requirement's evidence. Action-only candidates still need expert outcomes before
+approval. No model result creates approval or authoritative human labels.
+
+Jobs claim once, release locks during transport and recheck membership, retention,
+document freshness, digest and purpose before saving. Unknown outcomes never
+retry. Writers may interrupt queued work or an attempt running over ten minutes,
+then deliberately request another. Refresh only reads; source purge removes local
+requests/results and descendants, not remote copies. Model/configuration errors
+retain entered text, refresh the preview and clear consent.
+
+`bin/rails test test/services/support_lab_acceptance_test.rb` includes the model
+discovery → expert correction → mixed checks → held-out calibration → failed
+HTTP fixture → same-case regression loop. Fixture calls and labels do not prove
+live discovery or judge quality. Desktop/mobile states are captured under
+`.amp/in/artifacts/model-discovery/`.
+
 Deleting any source clears corpus analyses and taxonomy revisions because they
 describe the full input collection. It also deletes all scenarios, including trace
 proposals with no analysis parent, and their variants,
@@ -145,10 +199,11 @@ and unmatched inputs. Observed grader decisions do not establish agent quality.
 ## Scenario review
 
 Create candidates from a completed analysis; repeating this action reuses the
-same candidate identities. Mining uses source titles, context facts, keyword
-diagnostic sentences and the analysis selection reasons, not a model. It leaves
-outcomes empty: historical answers are not approved expectations. Experts must
-write a reusable starting situation and source-backed outcomes before approval.
+same candidate identities. Local mining uses source titles, context facts, keyword
+diagnostic sentences and selection reasons. It leaves outcomes empty. Model
+discovery copies structured proposals and exact quotes, never expert approval.
+Historical answers are not approved expectations. Experts must check the starting
+situation and source-backed outcomes before approval.
 
 Edit the issue label, importance, known/hidden JSON facts and five requirement
 lists. Save creates a fixed version; an unchanged save keeps the version and

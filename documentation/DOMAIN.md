@@ -10,6 +10,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Source snapshot | Fixed source content at one intake time, with digest, origin, redaction policy, and processing version. |
 | Corpus | A named collection of source-backed records to analyse together. |
 | Corpus item | One historical conversation, document or recorded production trace, not a live ticket. |
+| Corpus analysis | One fixed-input discovery method proposing company-specific families and scenario candidates. Model output has no expert authority. |
 | Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
 | Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
 | Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
@@ -64,3 +65,4 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Source impact follows exact evidence through all retained snapshots into current and historical versions, fixed cases and current suite membership. It cannot find unlinked assumptions or decide that changed prose has the same meaning.
 - Run comparisons require the same fixed case and identical frozen visible input. Pass → fail is a reported regression; fail → pass is recovery. Unknown results stay unresolved and changed definitions or inputs stay unmatched.
 - A model proposal quotes only the fixed excerpts disclosed for its version. Quotes do not prove correct expectations. Existing target/judge approval cannot authorise source processing; proposals never inherit expert approval or change human labels.
+- Model corpus discovery needs consent for its exact complete source preview and its own operator purpose. Proposed families must account for every disclosed conversation once. Mining may copy source-backed definitions but grants neither approval nor target-visible knowledge. Abstention and execution error cannot become discovered families or authoritative labels.

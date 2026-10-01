@@ -23,6 +23,24 @@ $$;
 
 
 --
+-- Name: prevent_corpus_analysis_rewrite(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_corpus_analysis_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - ARRAY['state', 'summary', 'error', 'started_at', 'finished_at', 'updated_at'])
+     IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['state', 'summary', 'error', 'started_at', 'finished_at', 'updated_at'])
+     OR (OLD.state IN ('complete', 'failed') AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD)) THEN
+    RAISE EXCEPTION 'corpus analysis definition and terminal result are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_evaluation_run_rebind(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -338,7 +356,12 @@ CREATE TABLE public.corpus_analyses (
     summary jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_eb878e98a6 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100))))
+    configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    input_digest character varying,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    CONSTRAINT chk_rails_6685537a78 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100)) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -391,6 +414,40 @@ CREATE SEQUENCE public.corpus_analysis_inputs_id_seq
 --
 
 ALTER SEQUENCE public.corpus_analysis_inputs_id_seq OWNED BY public.corpus_analysis_inputs.id;
+
+
+--
+-- Name: corpus_analysis_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpus_analysis_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_analysis_id bigint NOT NULL,
+    result jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_79fb7728b2 CHECK (((jsonb_typeof(result) = 'object'::text) AND (result ? 'decision'::text) AND ((result ->> 'decision'::text) = ANY (ARRAY['proposal'::text, 'abstain'::text, 'error'::text]))))
+);
+
+
+--
+-- Name: corpus_analysis_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpus_analysis_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpus_analysis_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpus_analysis_results_id_seq OWNED BY public.corpus_analysis_results.id;
 
 
 --
@@ -1632,6 +1689,13 @@ ALTER TABLE ONLY public.corpus_analysis_inputs ALTER COLUMN id SET DEFAULT nextv
 
 
 --
+-- Name: corpus_analysis_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_results ALTER COLUMN id SET DEFAULT nextval('public.corpus_analysis_results_id_seq'::regclass);
+
+
+--
 -- Name: corpus_items id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1933,6 +1997,14 @@ ALTER TABLE ONLY public.corpus_analyses
 
 ALTER TABLE ONLY public.corpus_analysis_inputs
     ADD CONSTRAINT corpus_analysis_inputs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: corpus_analysis_results corpus_analysis_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_results
+    ADD CONSTRAINT corpus_analysis_results_pkey PRIMARY KEY (id);
 
 
 --
@@ -2452,6 +2524,13 @@ CREATE UNIQUE INDEX index_corpora_on_workspace_id_and_id ON public.corpora USING
 
 
 --
+-- Name: index_corpus_analyses_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_analyses_on_request_key ON public.corpus_analyses USING btree (request_key);
+
+
+--
 -- Name: index_corpus_analyses_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2463,6 +2542,13 @@ CREATE INDEX index_corpus_analyses_on_requested_by_id ON public.corpus_analyses 
 --
 
 CREATE UNIQUE INDEX index_corpus_analyses_on_workspace_id_and_corpus_id_and_id ON public.corpus_analyses USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_corpus_analysis_results_on_corpus_analysis_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_analysis_results_on_corpus_analysis_id ON public.corpus_analysis_results USING btree (corpus_analysis_id);
 
 
 --
@@ -2949,10 +3035,24 @@ CREATE TRIGGER cluster_members_immutable BEFORE UPDATE ON public.cluster_members
 
 
 --
+-- Name: corpus_analyses corpus_analysis_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_analysis_definition_immutable BEFORE UPDATE ON public.corpus_analyses FOR EACH ROW EXECUTE FUNCTION public.prevent_corpus_analysis_rewrite();
+
+
+--
 -- Name: corpus_analysis_inputs corpus_analysis_inputs_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER corpus_analysis_inputs_immutable BEFORE UPDATE ON public.corpus_analysis_inputs FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: corpus_analysis_results corpus_analysis_result_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_analysis_result_immutable BEFORE UPDATE ON public.corpus_analysis_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
 
 
 --
@@ -3514,6 +3614,14 @@ ALTER TABLE ONLY public.evaluation_run_items
 
 
 --
+-- Name: corpus_analysis_results fk_rails_b83ebff142; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_results
+    ADD CONSTRAINT fk_rails_b83ebff142 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: human_labels fk_rails_c25eaef411; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3704,6 +3812,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001010000'),
 ('20261001000000'),
 ('20260930100000'),
 ('20260930090000'),
