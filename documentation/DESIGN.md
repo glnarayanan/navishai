@@ -44,6 +44,14 @@ corpus-return link and keep refresh read-only. No partial examples, taxonomy for
 or mining action appears. The accessible analysis still renders as a page; POST
 validation remains an error response. No CSP relaxation or nonce changes.
 
+Local analysis has a labelled native method picker. Original local stays the
+default; larger processing requires an explicit choice and states its resource
+and quality limits. Complete streaming analyses keep read-only family links if
+their requested evidence preview is too large. Corpus/source/family byte refusals
+retain full counts, filters and page recovery, never partial source text. Source
+recovery warns that current search excludes historical snapshots. Existing focus,
+alert and responsive styles serve these states; no new design system is introduced.
+
 Family selection review uses a labelled native GET picker with whole-analysis
 counts. It makes families with no selected candidate easy to find without changing
 the selection or claiming coverage. The global scenario-creation action stays above

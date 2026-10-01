@@ -23,7 +23,11 @@
       <nav class="workspace-tabs" aria-label="Dependent case pages"><% if @case_page > 1 %><%= link_to "Previous dependent cases", url_for(only_path: true, params: request.query_parameters.merge("case_page" => @case_page - 1), anchor: "source-impact") %><% end %><% if @more_cases %><%= link_to "Next dependent cases", url_for(only_path: true, params: request.query_parameters.merge("case_page" => @case_page + 1), anchor: "source-impact") %><% end %></nav>
     <% end %>
   </section>
-  <section class="section-block" id="source-evidence"><h2>Source evidence</h2><p>Page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
+  <section class="section-block" id="source-evidence"><h2>Source evidence</h2><p role="status"><%= pluralize(@matching_count, "snapshot record") %> · page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
+    <% if @evidence_read_error %>
+      <p class="inline-error" role="alert"><%= @evidence_read_error %></p>
+      <p><%= link_to "Search current records from this source", workspace_corpus_path(Current.workspace, @corpus, source_id: @source.id, anchor: "corpus-records") %></p>
+    <% end %>
     <% if @source.kind == "traces" %><p role="status">Reported failures and corrections are not expert labels. Review company evidence before approving a scenario. Trace intake stays local and does not execute an agent or judge.</p><% end %>
     <% @items.each do |item| %>
       <article id="record-<%= item.id %>" class="source-record">

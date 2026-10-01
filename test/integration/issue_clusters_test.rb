@@ -8,6 +8,43 @@ class IssueClustersTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "streaming oversized previews retain read-only fixed family navigation and filtered complete evidence" do
+    2.times do |index|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Large source #{index}", kind: "conversations",
+        bytes: [ { id: "large-#{index}", title: "Quasar replay", content: "Quasar replay", context: { diagnostic: "é" * 3.megabytes } } ].to_json)
+    end
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 1, processing_method: "local_stream")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    cluster = analysis.issue_clusters.find_by!(proposed_label: "quasar / replay")
+    path = workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, cluster)
+    assert_no_difference [ "AuditEvent.count", "Scenario.count", "CorpusAnalysis.count" ] do
+      assert_no_enqueued_jobs do
+        assert_source_rows_loaded(0) do
+          get workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+          assert_response :success
+          assert_select "[role=alert]", text: /complete evidence read exceeds 10 MiB/
+          assert_select "details.source-record", count: 0
+          assert_select "main form[method=post]", count: 0
+          assert_select "#bounded-family-links a[href='#{path}']"
+        end
+        assert_source_rows_loaded(0) do
+          get path
+          assert_response :success
+          assert_select "#family-records [role=status]", text: /2 matching records of 2/
+          assert_select "#family-records [role=alert]", text: /no page records were loaded/
+          assert_select "#family-records > details", count: 0
+          assert_select "#source-counts dd", text: "2 / 2 records"
+        end
+        assert_source_rows_loaded(0) do
+          get path, params: { signal: "risk mention" }
+          assert_response :success
+          assert_select "#family-records [role=status]", text: /0 matching records of 2/
+          assert_select "#family-records [role=alert]", count: 0
+        end
+      end
+    end
+  end
+
   test "local overview and family pages load only their displayed fixed records" do
     refresh_family_export
     assert_source_rows_loaded(10) do

@@ -6,12 +6,17 @@ class CorpusDiscovery
     "risk mention" => /\b(data loss|security|outage|duplicate (?:writes|invoices)|suspended)\b/i,
     "diagnostic evidence mention" => /\b(logs?|metadata|reproduc\w*|certificate|trace)\b/i
   }.freeze
+  MAX_TERM_ENTRIES = 2_000_000
+  MAX_DISTINCT_TERMS = 250_000
+  MAX_SEED_COMPARISONS = 2_000_000
 
   def self.call(analysis)
     analysis.fixed_inputs(item_ids: [])
     conversations = []
     doc_terms = {}
     documents = 0
+    term_entries = 0
+    frequencies = Hash.new(0)
     inputs = analysis.corpus_items.joins(source_snapshot: :source).reorder(:external_id, :id)
     inputs.in_batches(of: 100, cursor: [ :external_id, :id ]) do |batch|
       batch.pluck(:id, :external_id, :title, :content, "sources.kind",
@@ -23,24 +28,35 @@ class CorpusDiscovery
         else
           conversations << { id:, external_id:, title:, counts: terms(title + " " + content.first(4000)).tally,
             signals: signals(content:, critical:, reopened:) }
+          term_entries += conversations.last[:counts].size
+          conversations.last[:counts].each_key { |word| frequencies[word] += 1 }
         end
+        raise CorpusIntake::Invalid, "Streaming local discovery exceeded its term-entry or vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && (term_entries > MAX_TERM_ENTRIES || doc_terms.size > MAX_DISTINCT_TERMS || frequencies.size > MAX_DISTINCT_TERMS)
       end
     end
     raise CorpusIntake::Invalid, "Add historical conversations before analysis." if conversations.empty?
-    frequencies = Hash.new(0)
-    conversations.each { |record| record[:counts].each_key { |word| frequencies[word] += 1 } }
+    raise CorpusIntake::Invalid, "Streaming local discovery exceeded its vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && (frequencies.keys | doc_terms.keys).size > MAX_DISTINCT_TERMS
     vectors = conversations.to_h { |record| [ record[:id], record[:counts].transform_values(&:to_f) ] }
     vectors.each_value do |vector|
       vector.each { |word, count| vector[word] = count * Math.log(1.0 + conversations.size.to_f / frequencies.fetch(word)) }
     end
+    squared_lengths = vectors.transform_values { |vector| vector.values.sum { |value| value * value } }
     groups = []
     seeds = Hash.new { |index, word| index[word] = [] }
+    comparisons = 0
     conversations.each do |record|
       vector = vectors.fetch(record[:id])
       # A seed without a shared term has cosine zero and cannot meet 0.3.
       candidates = vector.keys.flat_map { |word| seeds[word] }.uniq.sort
-      index = candidates.max_by { |position| similarity(vector, vectors.fetch(groups[position].first[:id])) }
-      if index && similarity(vector, vectors.fetch(groups[index].first[:id])) >= 0.3
+      comparisons += candidates.size
+      raise CorpusIntake::Invalid, "Streaming local discovery exceeded its seed-comparison budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && comparisons > MAX_SEED_COMPARISONS
+      index, best_score = nil, -1
+      candidates.each do |position|
+        seed_id = groups[position].first[:id]
+        score = similarity(vector, vectors.fetch(seed_id), a_squared: squared_lengths.fetch(record[:id]), b_squared: squared_lengths.fetch(seed_id))
+        index, best_score = position, score if score > best_score
+      end
+      if index && best_score >= 0.3
         groups[index] << record
       else
         vector.each_key { |word| seeds[word] << groups.size }
@@ -62,7 +78,8 @@ class CorpusDiscovery
     representatives = ordered.map do |proposal|
       centroid = Hash.new(0)
       proposal[:members].each { |member| vectors.fetch(member[:id]).each { |word, value| centroid[word] += value } }
-      representative = proposal[:members].max_by { |member| similarity(vectors.fetch(member[:id]), centroid) }
+      centroid_squared = centroid.values.sum { |value| value * value }
+      representative = proposal[:members].max_by { |member| similarity(vectors.fetch(member[:id]), centroid, a_squared: squared_lengths.fetch(member[:id]), b_squared: centroid_squared) }
       [ proposal, representative, "Nearest to this cluster's term centroid" ]
     end
     additional = ordered.flat_map { |proposal| proposal[:members].map { |member| [ proposal, member, "Additional issue-family example" ] } }
@@ -98,8 +115,8 @@ class CorpusDiscovery
   end
   private_class_method :signals
 
-  def self.similarity(a, b)
-    denominator = Math.sqrt(a.values.sum { |value| value * value } * b.values.sum { |value| value * value })
+  def self.similarity(a, b, a_squared: a.values.sum { |value| value * value }, b_squared: b.values.sum { |value| value * value })
+    denominator = Math.sqrt(a_squared * b_squared)
     return 0 if denominator.zero?
 
     a.sum { |word, value| value * b.fetch(word, 0) } / denominator

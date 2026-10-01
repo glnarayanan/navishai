@@ -15,7 +15,8 @@ class IssueCluster < ImmutableRecord
     corpus.with_lock do
       raise ActiveRecord::RecordNotFound if analysis.workspace_id != workspace_id || analysis.corpus_id != corpus_id || analysis.expired?
       members = cluster_members.joins(:corpus_item).order(:corpus_item_id, :id)
-      raise ActiveRecord::RecordNotFound if members.count > CorpusAnalysis::MAX_ITEMS || members.sum(CorpusAnalysis::RECORD_BYTES_SQL) > CorpusAnalysis::MAX_RECORD_BYTES
+      limit, byte_limit = analysis.input_limits
+      raise ActiveRecord::RecordNotFound if members.count > limit || members.sum(CorpusAnalysis::RECORD_BYTES_SQL) > byte_limit
       raise ActiveRecord::RecordNotFound if members.where.not(workspace_id:, corpus_id:).exists? || members.where.not(corpus_item_id: analysis.corpus_items.select(:id)).exists?
 
       groups = { "All records" => members }

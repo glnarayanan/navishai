@@ -23,9 +23,18 @@ class SourcesController < ApplicationController
     @snapshots = @source.source_snapshots.order(number: :desc)
     @snapshot = params[:snapshot] ? @snapshots.find_by!(number: params[:snapshot]) : @source.current_snapshot
     @page = [ params[:page].to_i, 1 ].max
-    @items = @snapshot.corpus_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
-    @more = @items.size > 50
-    @items = @items.first(50)
+    @corpus.with_lock do
+      @matching_count = @snapshot.corpus_items.count
+      @more = @matching_count > @page * 50
+      page_items = @snapshot.corpus_items.order(:id).offset((@page - 1) * 50).limit(50)
+      bytes = @snapshot.corpus_items.where(id: page_items.select(:id)).sum(CorpusAnalysis::RECORD_BYTES_SQL)
+      if bytes > CorpusAnalysis::MAX_RECORD_BYTES
+        @evidence_read_error = "This complete evidence page exceeds 10 MiB. Search current records with a narrower phrase or source, or try the next page if available; no page records were loaded. Current-record search does not include historical snapshots."
+        @items = []
+      else
+        @items = page_items.to_a
+      end
+    end
     @dependency_page = params[:dependency_page].to_i.clamp(1, 10000)
     dependencies = @source.dependent_versions
     @dependencies = dependencies.includes(:scenario).order(id: :desc).offset((@dependency_page - 1) * 50).limit(51).to_a

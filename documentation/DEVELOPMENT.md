@@ -207,6 +207,12 @@ Rails request logs but remain in the browser URL/history; never paste secrets.
 Viewer searches queue no work and change no records. Desktop/mobile matches,
 empty and invalid states are captured under `.amp/in/artifacts/corpus-exploration/`.
 
+Corpus and source pages preflight complete retained fields before loading their
+fifty records, under the corpus lock. A page above 10 MiB retains full counts and
+next/previous navigation but loads no source rows. Narrow current-record search
+or source filters, or try another page; current search excludes historical snapshots.
+Next-page counts never require loading a fifty-first complete record.
+
 From an analysis family, follow **Explore all family records and source counts**.
 This reads complete fixed members, not just the overview's ten examples or the
 current export. Exact `context.escalated`, `context.reopened` and `context.failed`
@@ -218,9 +224,10 @@ outcome, risk or expert label. Local/model families use the same source rules.
 Filters keep full-family denominators and paginate 50 complete records. Refresh
 retains the filter/page; empty and invalid filters offer recovery. Exact historical
 source links still work after a newer export. Any expired fixed analysis input
-blocks inspection. Families above 2000 records or 10 MiB of retained IDs, titles,
-text and JSON context
-are refused without partial counts. GETs create no records, jobs or provider calls.
+blocks inspection. Families keep their analysis method's record/byte bounds;
+streaming local families may use the larger limits below. Complete filtered pages
+still refuse above 10 MiB, without partial records or changing full-family counts.
+GETs create no records, jobs or provider calls.
 Desktop/mobile expanded, empty and invalid captures live under
 `.amp/in/artifacts/family-evidence/`.
 
@@ -230,8 +237,9 @@ family as source objects; only the filtered page loads up to fifty complete rows
 Local analysis review loads ten examples per displayed family, selected first,
 and mining loads chosen records plus linked expectation evidence. Whole fixed
 input bounds/lifetime still apply before a partial read. Complete model disclosure
-previews stay unchanged. This is bounded reading, not larger analysis acceptance
-or proof of semantic quality.
+previews stay unchanged. A blocked streaming overview keeps read-only family links
+so experts can inspect smaller groups without reprocessing or disclosure.
+These reads do not prove semantic quality.
 
 Writers can expand a fixed record and **Create scenario draft** with a reason
 (1–2000 characters, no null bytes). This works for records the method did not
@@ -260,7 +268,7 @@ company coverage. Desktop/mobile captures live under
 
 Request analysis with a 1–100 candidate limit. The job freezes current source-backed
 inputs, rechecks workspace access and commits cluster proposals atomically. A
-duplicate job does not recreate them. Limits: 2000 complete records and 10 MiB of
+duplicate job does not recreate them. Original local limits: 2000 complete records and 10 MiB of
 retained IDs, titles, text and PostgreSQL context JSON bytes. SQL counts and byte
 sums run before complete rows load, under the same short corpus lock as the load.
 Current previews/requests, fixed jobs, mining and the analysis overview use this
@@ -277,10 +285,27 @@ It never clusters each batch independently. Full-text signals stay separate from
 the 4000-character term window; only exact JSON critical/reopen values qualify.
 Cluster membership writes use bounded bulk inserts under the checked job
 transaction. No complete source objects or whole context payloads load during
-processing. Limits, selection rules and the existing method version stay fixed.
+processing. Vector lengths and each centroid's length are computed once, not
+rescanned for every candidate. Selection rules and the original method stay fixed.
 Keyword signals, term clusters and document-term gaps are hypotheses, not measured
 issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
+
+Choose **Streaming local** explicitly to use `tfidf-stream-seed-centroid-selection-v2`.
+It accepts up to 100,000 complete conversation/document records and 1 GiB of the
+same retained fields. Request reads freeze IDs only; processing still uses global
+frequencies across complete fixed membership, not separate batch clusters. Resource
+caps: 2 million conversation-term entries, 250,000 distinct terms across conversations
+and documents, and 2 million seed comparisons. A cap failure saves no proposals,
+samples nothing and never retries. Source lifetime/access is checked again after
+computation, before commit. Complete evidence reads and mining remain at most
+10 MiB, even when membership is larger. Model limits/consent and per-upload intake
+limits are unchanged. No data leaves this deployment through local analysis.
+
+`bin/rails test test/services/streaming_corpus_discovery_test.rb` proves 100,000
+fixed records, a late rare risk case, snapshot-preserving mining, no complete source
+objects during processing, unchanged original/model refusal and exact budget edges.
+This synthetic workload is not semantic or production-throughput evidence.
 
 ## Model-assisted corpus discovery
 
