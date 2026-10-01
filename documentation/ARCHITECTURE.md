@@ -431,6 +431,16 @@ no analysis parent, before deleting their evidence. No semantic failure matching
 automatic authoritative correction, provider call or classifier training follows
 from importing a trace.
 
+Optional trace discovery freezes every current trace, document, active definition
+and compiled case within explicit count/byte bounds. A separate empty
+`NAVISHAI_TRACE_DISCOVERY_ENDPOINTS` approval and trace-discovery consent permit
+one call proposing failures without uploader reports, emerging families and gaps
+against that fixed comparison set. Account for every trace, validate exact quotes
+and retain immutable lineage; no finding is not pass and a gap is not coverage.
+Once-only access/lifetime/approval rechecks and corpus-wide purge apply. Expert
+acceptance can open an empty-expectation source-backed draft, never a label,
+scenario approval or regression. See [TRACE_FAILURE_DISCOVERY.md](./TRACE_FAILURE_DISCOVERY.md).
+
 ### Reviewable failure matching
 
 Add local candidate retrieval across current, unmerged, fresh scenario versions in

@@ -87,6 +87,7 @@ class PrivateLoggingTest < ActionDispatch::IntegrationTest
       [ CorpusAnalysisResult, "result" ], [ CorpusDiscoveryBatch, "result" ], [ CalibrationPrediction, "result" ],
       [ ModelFailureMatching, "input" ], [ ModelFailureMatchingResult, "result" ],
       [ AssumptionImpact, "input" ], [ AssumptionImpactResult, "result" ],
+      [ TraceFailureDiscovery, "input_content" ], [ TraceFailureDiscoveryResult, "result_content" ], [ ScenarioVersion, "draft_notes" ],
       [ EvaluationRunItem, "target_input" ], [ EvaluationResult, "decisions" ] ]
     request_values = {}
     fields.each_with_index do |(model, field), index|

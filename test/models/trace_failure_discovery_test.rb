@@ -42,10 +42,10 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
     end
   end
 
-  test "corpus target judge scenario and matching approvals cannot authorize trace discovery" do
-    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS]
+  test "corpus target judge scenario matching and impact approvals cannot authorize trace discovery" do
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS]
     originals = ENV.to_h.slice(*registries)
-    approvals = { "corpus" => registries[0], "target" => registries[1], "judge" => registries[1], "scenario" => registries[2], "matching" => registries[3] }
+    approvals = { "corpus" => registries[0], "target" => registries[1], "judge" => registries[1], "scenario" => registries[2], "matching" => registries[3], "impact" => registries[4] }
     approvals.each do |purpose, registry|
       registries.each { |key| ENV[key] = "[]" }
       ENV[registry] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "test-only-#{purpose}-token" } ].to_json
@@ -58,7 +58,7 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
   end
 
   test "revoking only trace discovery blocks queued sends and discards native responses despite all other approvals" do
-    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS]
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS]
     originals = ENV.to_h.slice(*registries)
     registries.each { |key| ENV[key] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "test-only-other-purpose-token" } ].to_json }
     %w[queued response].each do |boundary|

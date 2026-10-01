@@ -7,7 +7,11 @@ class TraceFailureDiscoveryJourneyTest < ApplicationSystemTestCase
   test "expert explicitly discovers unreported failures inspects gaps and opens only an unapproved source backed draft" do
     build_trace_discovery
     sign_in users(:owner)
-    visit new_workspace_corpus_trace_failure_discovery_path(@workspace, @corpus)
+    visit workspace_corpus_path(@workspace, @corpus)
+    click_link "Trace discovery"
+    assert_selector "nav[aria-label='Corpus sections'] a[aria-current=page]", text: "Trace discovery"
+    [ 1280, 390 ].each { |width| capture("index-#{width}", width) }
+    click_link "Preview discovery contents"
     assert_text "Default remains no model transmission"
     assert_text "4 complete traces"
     fill_in "Model configuration (JSON)", with: "{incomplete"

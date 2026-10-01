@@ -65,7 +65,7 @@ module AssumptionImpactTestHelper
   end
 
   def with_old_purpose_approvals
-    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS]
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS]
     originals = registries.index_with { |key| ENV[key] }
     registries.each { |key| ENV[key] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "old-purpose-token" } ].to_json }
     ENV.delete("NAVISHAI_IMPACT_ENDPOINTS")
