@@ -171,6 +171,16 @@ corrections and trace excerpts. At least two distinct terms must overlap after
 excluding known-fact keys/values. Candidates sort by shared terms, equal facts,
 then version ID. This is literal retrieval, not semantic accuracy or probability.
 
+`bin/rails test test/services/trace_scenario_retrieval_test.rb` checks an authored
+technical-support matrix through real intake and scenario APIs. A signing-key
+diagnosis ranks below its verbose login symptom; negated certificate expiry ties
+its opposite; five lexical distractors can displace an eligible cursor diagnosis.
+Facts-only overlap and a zero-overlap rate-limit paraphrase return no candidate.
+Document expectation text can introduce an unrelated billing candidate. Trace
+expectations, knowledge quotes, outputs and imported corrections stay excluded.
+These exact ranks disclose known method limits. Intended identities are synthetic
+author assumptions, not expert labels or evidence of customer retrieval quality.
+
 Bounds are 2000 current versions and 10 MiB of complete candidate text. Exceeding
 either bound searches nothing rather than truncating. Candidate inputs load once
 per source page, not once per trace. A bounded SQL count now refuses version
