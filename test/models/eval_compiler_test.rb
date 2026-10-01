@@ -71,6 +71,33 @@ class EvalCompilerTest < ActiveSupport::TestCase
     assert_not_includes input.to_json, "Engineering escalation if valid metadata returns 500."
   end
 
+  test "replacement conversation evidence needs fresh approval and bindings while compiled history stays fixed" do
+    item = compile_case
+    approved = @scenario.current_version
+    evidence = approved.scenario_evidence.find_by!(kind: "expectation")
+    visible = approved.target_input
+    revision = @scenario.revise!(membership: @membership, base_version_id: approved.id, attributes: {},
+      conversation_excerpt: "Engineering escalation if valid metadata returns 500.")
+    assert_no_difference "EvalCase.count" do
+      assert_raises(EvalCase::Invalid) { compile_case }
+    end
+    assert_equal approved, item.reload.scenario_version
+    assert item.eval_case_checks.all? { |check| check.scenario_evidence_id == evidence.id }
+    assert_equal @scenario.corpus_item.content, evidence.reload.excerpt
+    assert_equal visible, revision.target_input
+    @scenario.review!(membership: @membership, version_id: revision.id, decision: "approve")
+    assert_no_difference "EvalCase.count" do
+      assert_raises(ActiveRecord::RecordNotFound) { compile_case }
+    end
+    fresh_evidence = revision.scenario_evidence.find_by!(kind: "expectation")
+    fresh = compile_case(checks: @checks.map { |check| check.merge("scenario_evidence_id" => fresh_evidence.id) })
+    assert_equal revision, fresh.scenario_version
+    assert fresh.eval_case_checks.all? { |check| check.scenario_evidence_id == fresh_evidence.id }
+    assert_not_equal item.id, fresh.id
+    assert_equal 1, fresh.number
+    assert_equal visible, fresh.scenario_version.target_input
+  end
+
   test "approval revisions stale documents incomplete checks and expiry block suite admission" do
     item = compile_case
     suite = @corpus.eval_suites.create!(workspace: @workspace, name: "SSO baseline")

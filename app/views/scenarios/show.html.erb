@@ -82,6 +82,16 @@
           </details>
           <% ScenarioVersion::REQUIREMENT_TYPES.each do |kind| %><div class="field"><%= form.label kind, "#{kind.humanize} — one requirement per line" %><%= form.text_area kind, value: @form_values.fetch(kind, @version.requirements.fetch(kind).join("\n")), rows: 3 %></div><% end %>
           <div class="field"><%= form.label :follow_ups, "Expert follow-ups (JSON array)" %><%= form.text_area :follow_ups, value: @form_values.fetch("follow_ups", JSON.pretty_generate(@version.follow_ups)), rows: 8 %><small>At most 10 entries / 10 KiB. Each has exactly after_assistant_contains (nonblank literal, ≤500 characters) and message (user text, ≤2000 characters). No null bytes. Example: [{"after_assistant_contains":"expiry date", "message":"It expired yesterday."}]. Only the latest assistant reply can release the next message. Literals do not prove meaning. Saving creates an unapproved version requiring source-backed expert review.</small></div>
+          <% if @conversation_evidence %>
+            <details id="conversation-evidence" <%= "open" if params[:conversation_excerpt].present? %>>
+              <summary>Replace conversation evidence</summary>
+              <p id="conversation-excerpt-help">Paste 1–4000 exact characters from anywhere in this fixed historical conversation, including later diagnostics. Leave blank to keep the current quote. This evidence stays hidden from the target. A changed quote needs fresh expert review; it does not change expectations for you.</p>
+              <p>Record <%= @conversation_evidence.corpus_item.external_id %> · snapshot <%= @conversation_evidence.corpus_item.source_snapshot.number %>. <%= link_to "Inspect full historical conversation", source_evidence_path(@conversation_evidence.corpus_item) %></p>
+              <div class="field"><%= label_tag :conversation_excerpt, "Historical conversation excerpt" %><%= text_area_tag :conversation_excerpt, params[:conversation_excerpt], rows: 4, maxlength: 4000, aria: { invalid: @conversation_excerpt_error.present?, describedby: @conversation_excerpt_error ? "conversation-excerpt-help conversation-excerpt-error" : "conversation-excerpt-help" } %>
+                <% if @conversation_excerpt_error %><p id="conversation-excerpt-error" class="inline-error" role="alert"><%= @conversation_excerpt_error %>. No version saved. Inspect this fixed conversation, paste a matching quote and save again.</p><% end %>
+              </div>
+            </details>
+          <% end %>
           <details id="scenario-evidence" <%= "open" if @trace_item || params[:evidence_item_id].present? || @document_query.present? %>><summary>Attach source evidence</summary><p>Choose a current document or the selected retained trace and paste its exact excerpt. A document replaces its prior evidence of the same use; distinct trace records add evidence. Old versions stay fixed. Up to 100 matching current documents are listed; use Find company evidence above to narrow them.</p>
             <% if @trace_item %>
               <%= hidden_field_tag :trace_item_id, @trace_item.id %>

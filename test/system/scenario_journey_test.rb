@@ -4,6 +4,68 @@ require_relative "../test_helpers/scenario_test_helper"
 class ScenarioJourneyTest < ApplicationSystemTestCase
   include ScenarioTestHelper
 
+  test "expert replaces a late conversation quote repairs an error and retains hidden fixed history" do
+    build_scenarios
+    quote = "Inspect the signing certificate expiry date before any configuration change."
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Long history", kind: "conversations", bytes: [
+      { id: "late", title: "SSO diagnostic history", content: "Shared preamble. " + " " * 4100 + quote }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    @scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    approve_scenario
+    approved = @scenario.current_version
+    visible = approved.target_input
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#conversation-evidence summary").send_keys(:enter)
+    assert_selector "#conversation-evidence[open]"
+    assert_text "This evidence stays hidden from the target."
+    assert_link "Inspect full historical conversation"
+    fill_in "Historical conversation excerpt", with: quote
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-#{width}", selector: "#conversation-evidence")
+    end
+    fill_in "Historical conversation excerpt", with: "Wrong late diagnosis."
+    click_button "Save new version"
+    assert_selector "#conversation-excerpt-error[role=alert]", text: "Inspect this fixed conversation"
+    assert_field "Historical conversation excerpt", with: "Wrong late diagnosis."
+    assert_equal "true", find_field("Historical conversation excerpt")["aria-invalid"]
+    assert_equal approved.id, @scenario.reload.current_version_id
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-error-#{width}", selector: "#conversation-evidence")
+    end
+    fill_in "Historical conversation excerpt", with: quote
+    click_button "Save new version"
+    assert_text "Version 3 · expert · needs review"
+    within "section[aria-labelledby=evidence-title]" do
+      assert_text quote
+      assert_text "Expected behaviour evidence — hidden from target"
+    end
+    assert_equal visible, @scenario.reload.current_version.target_input
+    assert_not @scenario.current_version.approved?
+    assert_empty @scenario.current_version.scenario_reviews
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-saved-#{width}", selector: "section[aria-labelledby=evidence-title]")
+    end
+    click_link "Version 2"
+    assert_text "Version 2 · expert · approve"
+    assert_no_selector "textarea[name=conversation_excerpt]"
+    assert_not_includes approved.reload.scenario_evidence.sole.excerpt, quote
+    assert approved.approved?
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+  end
+
   test "expert searches company evidence beyond the initial picker and saves an unapproved revision" do
     build_scenarios
     100.times do |index|

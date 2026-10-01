@@ -9,6 +9,66 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "expert repairs a private conversation quote while history and viewers stay read only" do
+    approve_scenario
+    approved = @scenario.current_version
+    path = workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    quote = "Engineering escalation if valid metadata returns 500."
+    values = { title: approved.title, known_facts: approved.known_facts.to_json, hidden_facts: approved.hidden_facts.to_json }
+      .merge(approved.requirements.transform_values { |statements| statements.join("\n") })
+    visible = approved.target_input
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count", "HumanLabel.count" ] do
+      get path
+      assert_response :success
+      assert_select "#conversation-evidence textarea[name=conversation_excerpt][maxlength='4000']", text: ""
+      assert_select "#conversation-excerpt-help", text: /evidence stays hidden from the target/
+      source_path = workspace_corpus_source_path(@workspace, @corpus, @snapshot.source, snapshot: 1, page: 1, anchor: "record-#{@scenario.corpus_item_id}")
+      assert_select "#conversation-evidence a[href='#{source_path}']", text: "Inspect full historical conversation"
+      patch path, params: { version_id: approved.id, conversation_excerpt: "<script>Invented late answer</script>", scenario: values.merge(title: "Keep my edit") }
+      assert_response :unprocessable_content
+      assert_select "#conversation-evidence[open]"
+      assert_select "#conversation-excerpt-error[role=alert]", text: /No version saved.*Inspect this fixed conversation/
+      assert_select "textarea[name=conversation_excerpt][aria-invalid=true][aria-describedby='conversation-excerpt-help conversation-excerpt-error']", text: "<script>Invented late answer</script>"
+      assert_select "input[name='scenario[title]'][value='Keep my edit']"
+      assert_select "#conversation-evidence script", count: 0
+      assert_select "#evidence-error", count: 0
+      patch path, params: { version_id: approved.id, conversation_excerpt: quote, scenario: values.merge(known_facts: "broken") }
+      assert_response :unprocessable_content
+      assert_select "textarea[name=conversation_excerpt]", text: quote
+    end
+    assert_equal "[FILTERED]", ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+      .filter("conversation_excerpt" => quote).fetch("conversation_excerpt")
+    assert_no_difference [ "HumanLabel.count", "ScenarioProposal.count", "ScenarioReview.count" ] do
+      assert_no_enqueued_jobs do
+        assert_difference "ScenarioVersion.count", 1 do
+          patch path, params: { version_id: approved.id, conversation_excerpt: quote, evidence_kind: "knowledge", scenario: values }
+          assert_response :see_other
+        end
+      end
+    end
+    revision = @scenario.reload.current_version
+    assert_equal quote, revision.scenario_evidence.sole.excerpt
+    assert_equal "expectation", revision.scenario_evidence.sole.kind
+    assert_equal visible, revision.target_input
+    assert_not revision.approved?
+    get path, params: { version: approved.number }
+    assert_response :success
+    assert_select "textarea[name=conversation_excerpt]", count: 0
+    assert_select ".source-record pre", text: @scenario.corpus_item.content
+    assert approved.reload.approved?
+    get workspace_corpus_scenario_path(workspaces(:beta_support), @corpus, @scenario)
+    assert_response :not_found
+    Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
+    sign_in_as users(:teammate)
+    get path
+    assert_response :success
+    assert_select "textarea[name=conversation_excerpt]", count: 0
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      patch path, params: { version_id: revision.id, conversation_excerpt: "Customer", scenario: values }
+      assert_response :forbidden
+    end
+  end
+
   test "document lookup finds later current evidence and retains it through a failed revision" do
     100.times do |index|
       CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Earlier document #{index}", kind: "document", bytes: "Earlier company guidance #{index}.")

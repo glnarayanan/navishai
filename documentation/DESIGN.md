@@ -108,6 +108,14 @@ Unedited variants cannot inherit approval. Source changes flag affected evidence
 replacing a document excerpt creates a new version. Merge uses an approved scenario
 ID shown in the paginated scenario list, retaining the source identity and decisions.
 
+Conversation quote replacement has its own native disclosure, fixed record/snapshot
+link and labelled textarea. Copy states exact-character limits, blank/no-op behaviour,
+hidden-from-target use and fresh review, without offering a knowledge switch. Invalid
+quotes keep the panel open and the text intact, with a field-linked repair alert;
+document attachment errors stay separate. Saved evidence shows the new hidden quote;
+historical/viewer pages remain read-only. Desktop and mobile use existing form,
+focus, evidence and error styles, not new tokens or a new layout.
+
 The scenario list has a labelled native literal-search form and exact match count,
 not semantic ranking or coverage. Current title, situation and taxonomy are the
 only searched fields. ID/version/review/source-change labels stay beside each link.

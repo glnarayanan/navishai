@@ -118,8 +118,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   selection beyond the initial picker window, with private repair and expert review.
 - [#204](https://github.com/glnarayanan/navishai/pull/204), based on #203: corpus-relative literal
   ranking with inspectable term contributions, unchanged limits and human authority.
-- `rebuild/65-full-text-local-discovery`, based on #204: explicit complete-text
+- [#205](https://github.com/glnarayanan/navishai/pull/205), based on #204: explicit complete-text
   local discovery within existing bounds, with fixed older methods and human review.
+- `rebuild/66-conversation-evidence-revision`, based on #205: expert replacement of
+  fixed historical conversation quotes, hidden from targets and needing fresh review.
 
 ## Built and checked
 
@@ -1673,6 +1675,37 @@ Native security audits and eager loading pass; whole-command peak RSS is
 455456 KiB. Direct risk review used; named review tools remain unavailable.
 No schema, dependency, model/provider, customer data or expert label changed.
 
+## Expert conversation evidence repair (slice 66)
+
+Mining retained the first 4000 source characters, and the revision path could not
+replace them with later evidence from the same conversation. Experts now have a
+separate expectation-only exact-quote field tied to that fixed record/snapshot.
+Changing it creates an unapproved version without changing target input, facts or
+requirements. Blank/identical saves remain no-ops; other evidence, past approvals
+and compiled cases stay fixed. No broader source picker or automatic extraction.
+
+Focused model/access/compiler checks pass 41 tests / 836 assertions. They distinguish
+late retained diagnostics from a newer export, preserve knowledge and visible input,
+check 1/4000/4001 Unicode-character bounds, reject invented/other-record quotes and
+non-text, and prove atomic attachment rollback, scope, viewer, stale and expiry
+guards. Fresh approval and fresh check bindings precede compilation; old cases keep
+their original quotes. The existing private-field filter also covers the new field.
+
+Rendered journeys pass 4 tests / 204 assertions. Keyboard disclosure, invalid-quote
+repair and saved hidden evidence pass at desktop/390px, with actual viewport-width,
+overflow and CSP checks. All six edit/error/saved crops were inspected. Native
+style passes 302 Ruby files. Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in
+9m17.28s: 473 Rails tests / 7246 assertions and 52 browser tests / 2416 assertions,
+no failures/errors/skips. Native security audits and eager loading pass; whole-command
+peak RSS is 563108 KiB. Direct risk review used; named review tools remain unavailable.
+No schema, dependency, provider, customer data or authoritative expert label changed.
+
+At 19:55–19:56 UTC on 1 October, all nineteen CI runs for #187–205 match their PR
+heads: #190/#195/#199 are green and sixteen remain inside `bin/ci`. Each active
+job passed runner/container/checkout/Ruby setup, but all active log requests return
+BlobNotFound and all artifact lists are empty. No exact-head failed run or current
+cause is available. No remote job changed; historical #155/#158 remain separate.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1729,7 +1762,11 @@ the repetitive scale proof, including a heterogeneous 100,000-input journey.
 Broader workload evidence and retrieval quality still
 need engineering work; these checks do not finish the owner's full acceptance demo.
 Local scenario context extraction remains title/context/action based, with bounded
-first-source excerpts; complete-text clustering does not fix that draft-quality gap.
+first-source excerpts. Experts can now replace their own fixed conversation quote
+with later diagnostics, but this does not fix automatic draft-quality gaps.
+Very long single terms can also exceed the mined taxonomy-label limit; an authored
+Unicode edge test exposed the validation failure. No partial drafts commit. This
+needs separate bounded label handling, not an unrelated change to this repair path.
 Larger complete-text workloads also need bounded engineering work and evidence,
 not a silent increase of existing limits or a semantic-quality claim.
 

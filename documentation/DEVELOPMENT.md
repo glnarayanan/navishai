@@ -593,6 +593,23 @@ Adding a newer snapshot of the same document/use replaces that evidence only in
 the new version. Changed documents mark prior evidence stale; changed conversation
 exports do not invalidate history.
 
+**Replace conversation evidence** accepts a new expectation quote from anywhere
+in the scenario's own fixed historical conversation, including diagnostics after
+the mining window. The separate field links that exact record/snapshot and accepts
+1–4000 characters. Leave it blank to keep the current quote. Identical quote and
+definition saves keep the version and approval; a changed quote creates a new
+unapproved version. Other evidence, prior approvals and compiled bindings stay
+fixed. This path never turns the quote into target-visible knowledge or changes
+requirements, facts, labels or provider consent for you. Newer conversation exports
+cannot substitute their content. Invalid quotes roll back the whole revision,
+including other attachments, and retain text with a field-linked repair alert.
+Viewer/history pages have no replacement field; expiry blocks reads and writes.
+`bin/rails test test/models/scenario_test.rb test/integration/scenario_access_test.rb test/models/eval_compiler_test.rb`
+checks source identity, exact Unicode length edges, atomic repair, unchanged visible
+input, fresh approval/bindings and private-field filtering. Rendered desktop/390px
+edit/error/saved crops use `scenarios/conversation-quote-*` below. These authored
+records prove engineering, not expert judgment or scenario quality.
+
 Approve, reject or merge into another approved scenario by ID. Every decision
 records the expert and version. Create a variant from an approved version by
 changing one existing fact with exact before/after values, reason and expected
