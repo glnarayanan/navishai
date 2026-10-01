@@ -60,6 +60,13 @@ name stays visible outside the native single-line picker. Record disclosures sho
 complete escaped text/context and historical source links. Refresh keeps the page;
 empty/invalid states offer recovery. Viewers have the same read-only evidence.
 
+Writers can nominate a fixed record within its disclosure with a labelled reason
+and secondary draft action. Copy keeps this local draft separate from analysis
+selection, expert labels and approval. An adjacent repair alert links to the retained
+field; the record stays open with its filter/page. Recovery links remain read-only.
+An existing scenario replaces the form with its link, not another draft. Mobile
+wraps the source identity and explanation; no new tokens or controls are introduced.
+
 Scenario review places the starting situation and behavioural requirements beside
 exact company evidence on desktop; mobile stacks them. Facts, document attachment
 and controlled variants use native disclosures. Evidence marks what stays hidden

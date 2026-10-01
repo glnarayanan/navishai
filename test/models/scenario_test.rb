@@ -1,8 +1,10 @@
 require "test_helper"
 require_relative "../test_helpers/scenario_test_helper"
+require_relative "../test_helpers/family_evidence_fixture"
 
 class ScenarioTest < ActiveSupport::TestCase
   include ScenarioTestHelper
+  include FamilyEvidenceFixture
 
   setup { build_scenarios }
 
@@ -18,6 +20,67 @@ class ScenarioTest < ActiveSupport::TestCase
     assert_raises(Scenario::Invalid) { @scenario.review!(membership: @membership, version_id: version.id, decision: "approve") }
     assert_no_difference "Scenario.count" do
       assert_equal @scenarios.map(&:id).sort, ScenarioMining.call(analysis: @analysis, membership: @membership).map(&:id).sort
+    end
+  end
+
+  test "expert nomination creates one unapproved source-backed draft without rewriting fixed selection" do
+    build_family_evidence_fixture
+    refresh_family_export
+    member = @cluster.cluster_members.find_by!(corpus_item: @items[50])
+    definition = @analysis.attributes
+    reason = "Reported failure beyond the first page merits expert review."
+    scenario = nil
+    assert_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ], 1) do
+      scenario = ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason:).sole
+    end
+    version = scenario.current_version
+    assert_equal member.id, scenario.cluster_member_id
+    assert_equal @items[50], scenario.corpus_item
+    assert_equal @items[50], version.scenario_evidence.sole.corpus_item
+    assert_equal @membership.user, version.created_by
+    assert_equal "Expert nominated this fixed record for review: #{reason}", version.selection_reason
+    assert_empty version.requirements["outcomes"]
+    assert_empty version.scenario_reviews
+    assert_not version.approved?
+    assert_raises(Scenario::Invalid) { scenario.review!(membership: @membership, version_id: version.id, decision: "approve") }
+    assert_equal definition, @analysis.reload.attributes
+    assert_nil member.reload.selection_reason
+    assert_empty ClusterMember.selected.where(issue_cluster: @analysis.issue_clusters)
+    assert_empty ScenarioMining.call(analysis: @analysis, membership: @membership)
+    assert_equal 0, HumanLabel.where(corpus: @corpus).count
+    saved = version.attributes
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_equal scenario.id, ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason: "A second nomination must not revise history.").sole.id
+    end
+    assert_equal saved, version.reload.attributes
+  end
+
+  test "a maximum length nomination cannot revise an existing approved scenario or its review" do
+    approve_scenario
+    version = @scenario.current_version
+    definition = version.attributes
+    review = version.latest_review.attributes
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioReview.count", "ScenarioEvidence.count", "HumanLabel.count", "AuditEvent.count" ] do
+      result = ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: @scenario.cluster_member_id, reason: "é" * 2000).sole
+      assert_equal @scenario.id, result.id
+    end
+    assert_equal definition, version.reload.attributes
+    assert_equal review, version.latest_review.attributes
+    assert version.approved?
+  end
+
+  test "nomination rejects absent malformed excessive or null-byte reasons and foreign or expired members atomically" do
+    foreign_member_id = @scenario.cluster_member_id
+    build_family_evidence_fixture
+    member = @cluster.cluster_members.first
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      [ nil, "", "  ", "x" * 2001, "bad\0reason", { "reason" => "not a string" } ].each do |reason|
+        assert_raises(Scenario::Invalid) { ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason:) }
+      end
+      assert_raises(ActiveRecord::RecordNotFound) { ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: foreign_member_id, reason: "Different corpus") }
+      assert_raises(Current::RoleAccessDenied) { ScenarioMining.call(analysis: @analysis, membership: memberships(:outsider_beta), member_id: member.id, reason: "Foreign workspace") }
+      @snapshot.source.update!(expires_at: 1.minute.ago)
+      assert_raises(Scenario::Invalid) { ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason: "Expired source") }
     end
   end
 

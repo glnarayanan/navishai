@@ -83,8 +83,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   bounds for current and fixed analysis, with read-only blocked-state recovery.
 - [#178](https://github.com/glnarayanan/navishai/pull/178), based on #177: fixed-family selection
   review, whole-analysis counts and read-only focus/pagination.
-- `rebuild/39-local-evidence-pagination`, based on #178: local corpus/source-impact
+- [#179](https://github.com/glnarayanan/navishai/pull/179), based on #178: local corpus/source-impact
   pagination that cannot interpret query data as routing authority.
+- `rebuild/40-expert-scenario-nomination`, based on #179: expert nomination of one
+  fixed record into a local unapproved draft, without changing analysis selection.
 
 ## Built and checked
 
@@ -946,6 +948,34 @@ assertions. The crafted-query browser journey uses Enter for next and returns to
 page one at the same origin with retained filters, no writes and no overflow/CSP
 violations. Appearance is unchanged. Direct risk review/native audits used; named
 reviews remain unavailable. No schema, provider, customer data or dependency changed.
+
+GitHub CI for #179 passed at exact head
+[`abfe8eb`](https://github.com/glnarayanan/navishai/commit/abfe8eb8806d720ff3e9c4fe75c37c28b70fbce6)
+([run](https://github.com/glnarayanan/navishai/actions/runs/36847213277), completed
+10:12:27 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+Expert nomination now turns one fixed record into a local unapproved draft with
+source evidence, author and reason. The method's selection/totals, model result,
+prior versions and labels stay unchanged. Repeats open the existing scenario,
+including an approved one. Foreign, viewer, expired and malformed requests fail
+without partial writes or jobs. Maximum-length Unicode reasons remain valid.
+POST repairs retain the record/reason/filter/page; GET recovery uses fixed local
+routes. Six desktop/390px form, repair and existing-scenario crops were inspected;
+the browser checks keyboard submission, retained spaces, ARIA, no overflow/CSP,
+historical record 51 and unchanged selection after a newer export.
+
+Final `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m16.24s: 295 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+387 Rails tests / 4553 assertions and 38 browser tests / 1673 assertions,
+no failures/errors/skips. Focused checks passed with 27 native tests / 396 assertions
+and seven affected browser journeys / 305 assertions. The first full run hit an
+existing same-page refresh stale element. A held response proves the old counts
+satisfy the prior assertions while refresh remains busy; the journey now waits for
+settled navigation. The second run found a hidden nomination field during return
+navigation; explicit page/disclosure waits now pass without changing product code.
+Direct risk review/native audits used; named review tools remain unavailable.
+No schema, dependency, provider, customer data, training, merge, release or deployment.
 
 ## Next and limits
 

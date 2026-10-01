@@ -1,8 +1,10 @@
 <% content_for :title, "Family source evidence — NavishAI" %>
+<% evidence_path = workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster) %>
+<% can_nominate = Current.require_membership!.can_write? %>
 <main class="page-shell">
   <%= link_to "Corpus analysis", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "back-link" %>
   <div class="page-heading"><div><h1>Family source evidence</h1><p><%= @cluster.label %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh evidence", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @filter, page: @page), class: "button" %></div>
-  <p>Read-only inspection of <%= pluralize(@total, "fixed family record") %>. Uploaded reports and literal mentions are not verified outcomes, risk or expert labels. Model importance does not supply these counts.</p>
+  <p>Inspect <%= pluralize(@total, "fixed family record") %>. Uploaded reports and literal mentions are not verified outcomes, risk or expert labels. Model importance does not supply these counts.</p>
   <section class="section-block" aria-labelledby="source-counts-heading" id="source-counts">
     <h2 id="source-counts-heading">Full-family source counts</h2>
     <p>Exact context booleans stay separate from missing, null, strings and numbers. Critical impact requires exactly <code>context.impact == "critical"</code>. Mentions use the local discovery literal patterns on complete retained text, not titles or context. Groups can overlap; filtering never changes the denominator.</p>
@@ -14,23 +16,37 @@
   </section>
   <section class="section-block" aria-labelledby="family-records-heading" id="family-records">
     <h2 id="family-records-heading">Complete source records</h2>
-    <%= form_with url: request.path, method: :get, class: "form-stack config-panel" do |form| %>
+    <%= form_with url: evidence_path, method: :get, class: "form-stack config-panel" do |form| %>
       <div class="field"><%= form.label :signal, "Source signal filter" %><%= form.select :signal, @groups.map { |name, members| [ "#{name} (#{members.size} / #{@total})", name ] }, { selected: @filter }, { aria: { invalid: @invalid_filter, describedby: @invalid_filter ? "signal-error" : nil } } %></div>
       <%= form.submit "Filter source records", class: "button" %>
     <% end %>
     <% if @invalid_filter %><p role="alert" class="inline-error" id="signal-error">Unknown source signal filter. Choose a listed group or clear the filter.</p><% end %>
     <p>Current filter: <strong><%= @filter %></strong>.</p>
     <p role="status"><%= pluralize(@matching.size, "matching record") %> of <%= @total %> fixed family records · page <%= @page %> · at most 50 complete records per page.</p>
-    <%= link_to "Clear filter", request.path %>
-    <% if @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", url_for(signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
+    <%= link_to "Clear filter", evidence_path %>
+    <% if @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
     <% @members.each do |member| %>
       <% item = member.corpus_item %>
-      <details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary>
+      <% nomination_error = @nomination_member&.id == member.id ? @nomination_error : nil %>
+      <details class="source-record" id="member-<%= member.id %>" <%= "open" if nomination_error %>><summary><%= item.external_id %> · <%= item.title %></summary>
         <%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %>
+        <% if (scenario = @member_scenarios[member.id]) %>
+          <p><%= link_to "Open existing scenario", workspace_corpus_scenario_path(Current.workspace, @corpus, scenario) %>. Nomination does not revise its versions or decisions.</p>
+        <% elsif can_nominate %>
+          <h3>Nominate for scenario review</h3>
+          <p>Create one unapproved draft from this fixed record. Review its situation and source-backed expectations before approval. This does not change the method's selection, call a model or create an expert label.</p>
+          <%= form_with url: nominate_workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster), class: "form-stack config-panel" do |form| %>
+            <%= form.hidden_field :member_id, value: member.id, id: nil %>
+            <%= form.hidden_field :signal, value: @filter, id: nil %>
+            <%= form.hidden_field :page, value: @page, id: nil %>
+            <div class="field"><%= form.label :selection_reason, "Why this record needs a scenario", for: "reason-#{member.id}" %><%= form.text_area :selection_reason, id: "reason-#{member.id}", value: @nomination_member&.id == member.id ? @nomination_reason : nil, rows: 4, required: true, maxlength: 2000, aria: { invalid: nomination_error ? true : nil, describedby: nomination_error ? "nomination-error-#{member.id}" : nil } %><% if nomination_error %><p role="alert" class="inline-error" id="nomination-error-<%= member.id %>"><%= nomination_error %></p><% end %></div>
+            <%= form.submit "Create scenario draft", class: "button", data: { turbo_submits_with: "Creating…" } %>
+          <% end %>
+        <% end %>
         <h3>Retained text</h3><pre class="evidence-text"><%= item.content %></pre>
         <h3>Retained context</h3><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre>
       </details>
     <% end %>
-    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+    <%= render "shared/record_pagination", more: @more, page_number: @page, path: evidence_path, query: { signal: @filter } %>
   </section>
 </main>
