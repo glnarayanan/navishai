@@ -1810,6 +1810,24 @@ used; named review tools remain unavailable. The owner lockfile stays untouched.
 These filters do not cover SQL literals or database/proxy/operator logs. No UI,
 provider, dependency, live data, expert decision or deployment changed.
 
+## Fixed-input query plan (slice 72)
+
+Committed intake, source purge and a later intake can leave PostgreSQL with empty
+row estimates on retained pages. The frozen-membership join then chooses a
+quadratic nested loop, affecting expiry checks as well as record/byte counts.
+An indexed correlated existence check now serves all frozen-input readers, with
+explicit workspace/corpus scope. Count/byte limits, history, expiry and purge stay
+unchanged. No fixture ANALYZE workaround, timeout increase or removed guard.
+
+The parent checkout passed `PARALLEL_WORKERS=4 bin/rails test --seed 44664`:
+483 tests / 7500 assertions, no failures, errors or skips, in 661.485 seconds.
+The complete browser suite on a separate disposable database passed 56 tests /
+2600 assertions, no failures, errors or skips. Ruby style passed 306 files and
+eager loading passed. The worker's before/after native regression and committed
+20,000-record replay are in [CI_TIMEOUT.md](./CI_TIMEOUT.md). The historical
+remote #187 timeout remains unattributed: its log contains no query or stack
+snapshot. No remote job, infrastructure, provider or dependency changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
