@@ -104,11 +104,27 @@ class ModelDiscoveryJourneyTest < ApplicationSystemTestCase
     [ 1280, 390 ].each { |width| capture("family-unselected-#{width}", width) }
     click_link "Next records"
     assert_selector "section[aria-labelledby^=cluster-]", count: 1
-    click_link "Refresh result"
+    entered, release = Queue.new, Queue.new
+    delay = ->(event) do
+      if event.payload[:controller] == "CorpusAnalysesController" && event.payload[:action] == "show"
+        entered << true
+        release.pop
+      end
+    end
+    ActiveSupport::Notifications.subscribed(delay, "start_processing.action_controller") do
+      click_link "Refresh result"
+      Timeout.timeout(5) { entered.pop }
+      # The old page has these exact values too; they cannot prove refresh settled.
+      assert_field "Family focus", with: "No selected candidates"
+      assert_selector "section[aria-labelledby^=cluster-]", count: 1
+      assert_selector "html[aria-busy=true]"
+      release << true
+      assert_selector "html:not([aria-busy=true]):not([data-turbo-preview])"
+    end
     assert_field "Family focus", with: "No selected candidates"
     assert_selector "section[aria-labelledby^=cluster-]", count: 1
     assert_text "1 of 12 term clusters represented"
-    first("a", text: "Explore all family records and source counts").click
+    click_link "Explore all family records and source counts", match: :first
     assert_selector "h1", text: "Family source evidence"
     first("details.source-record summary").click
     first("a", text: /History · snapshot 2 · record family-/).click
@@ -122,6 +138,8 @@ class ModelDiscoveryJourneyTest < ApplicationSystemTestCase
     assert_field "Family focus", with: "All families"
     assert_equal 0, Scenario.where(corpus: @corpus).count
     assert_equal 0, TaxonomyVersion.where(corpus_analysis: analysis).count
+  ensure
+    release << true if release
   end
 
   test "empty family focus is honest and clears without changing model selection" do
