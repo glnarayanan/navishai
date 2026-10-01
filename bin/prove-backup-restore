@@ -174,7 +174,7 @@ begin
     assert_proof(corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?, "restored source expiry hides dependent definitions")
     SourcePurge.call(source:)
     assert_proof(!Source.exists?(source.id) && !CorpusItem.exists?(trace.id) && !ScenarioVersion.exists?(fixed_case.scenario_version_id) && !HumanLabel.exists?(label.id) && !EvaluationResult.exists?(saved_result.id) && !TraceScenarioDecision.exists?(association.id), "runtime purge clears restored source and dependent results, labels and associations")
-    assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_id: source.id.to_s).exists?, "minimal purge audit survives without source content")
+    assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_type: "Source", subject_id: source.id).sole.metadata == {}, "minimal purge audit survives without source content")
     puts "PASS: exact table content/provenance, exact-text masking fingerprints/history/reuse, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
     puts "PASS: restored expiry and runtime purge remove source-backed definitions/results/labels/associations while keeping the content-free audit."
   end

@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+# A real additive schema upgrade and backup rollback, never an in-place live upgrade.
+require_relative "../config/boot"
+require_relative "../ops/database_recovery"
+require "tmpdir"
+
+abort "Usage: bin/prove-upgrade (no arguments)" unless ARGV.empty?
+ENV.keys.grep(/\APG/).each { |key| ENV.delete(key) }
+ENV["RAILS_ENV"] = "test"
+%w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS].each { |key| ENV[key] = "[]" }
+root = File.expand_path("..", __dir__)
+recovery = Operations::DatabaseRecovery.new
+ENV["DATABASE_URL"] = recovery.url
+checkpoint = "4d2beab97003622396fce8da6d044652f9de72f6"
+begin
+  Dir.mktmpdir("navishai-upgrade-") do |directory|
+    File.chmod(0o700, directory)
+    source = File.join(directory, "old")
+    Dir.mkdir(source)
+    archive = File.join(directory, "old.tar")
+    recovery.tool("git", "-C", root, "merge-base", "--is-ancestor", checkpoint, "HEAD")
+    recovery.tool("git", "-C", root, "archive", "--output=#{archive}", checkpoint)
+    recovery.tool("tar", "-xf", archive, "-C", source)
+    manifest = File.join(directory, "fixture.json")
+    recovery.create!
+    recovery.load_structure!(File.join(source, "db/structure.sql"))
+    environment = { "PATH" => ENV.fetch("PATH"), "HOME" => ENV.fetch("HOME"), "RAILS_ENV" => "test", "DATABASE_URL" => recovery.url,
+      "NAVISHAI_EVALUATION_ENDPOINTS" => "[]", "NAVISHAI_SCENARIO_ENDPOINTS" => "[]", "NAVISHAI_CORPUS_ENDPOINTS" => "[]",
+      "SCHEMA" => File.join(directory, "upgraded-structure.sql") }
+    run = lambda do |checkout, *arguments|
+      output, status = Open3.capture2e(environment, File.join(checkout, "bin/rails"), *arguments, chdir: checkout, unsetenv_others: true)
+      safe_output = output.gsub(recovery.configuration(as_runtime: true).fetch(:password), "<REDACTED>")
+      raise "Upgrade command failed: #{safe_output}" unless status.success?
+      puts safe_output
+    end
+    puts "UPGRADE: #{checkpoint} -> #{recovery.tool('git', '-C', root, 'rev-parse', 'HEAD').strip}; exact disposable databases #{recovery.databases.values.join(', ')}."
+    run.call(source, "runner", File.join(root, "ops/upgrade_fixture.rb"), "seed", manifest)
+    require_relative "../config/environment"
+    analysis = CorpusAnalysis.find(JSON.parse(File.read(manifest)).fetch("analysis"))
+    recovery.prepare_auxiliary!(source, analysis:)
+    ActiveRecord::Base.connection_pool.disconnect!
+    expected = recovery.backup!(directory)
+    # Only this generated owner role applies the real current migrations.
+    environment["PGOPTIONS"] = "-c role=#{recovery.owner}"
+    run.call(root, "db:migrate")
+    environment.delete("PGOPTIONS")
+    after = recovery.snapshot("primary")
+    # The one rehearsed additive migration adds only these source metadata columns.
+    recovery.connect("primary") do |db|
+      data = db.exec("SELECT COALESCE(jsonb_agg(row ORDER BY row::text), '[]'::jsonb)::text FROM (SELECT to_jsonb(t) - ARRAY['mask_digest','mask_count'] AS row FROM source_snapshots t) records").getvalue(0, 0)
+      after.fetch(:rows)['"source_snapshots"'] = Digest::SHA256.hexdigest(data)
+      raise "Missing applied migration" unless db.exec("SELECT 1 FROM schema_migrations WHERE version='20261001150000'").ntuples == 1
+      metadata = db.exec("SELECT key, value FROM ar_internal_metadata").values.to_h
+      raise "Wrong migration environment metadata" unless metadata.fetch("environment") == "test" && (metadata.keys - %w[environment schema_sha1]).empty?
+      if metadata.key?("schema_sha1")
+        raise "Wrong migration schema digest" unless metadata.fetch("schema_sha1") == Digest::SHA1.file(environment.fetch("SCHEMA")).hexdigest
+      end
+    end
+    housekeeping = [ '"schema_migrations"', '"ar_internal_metadata"' ]
+    before_rows = expected.fetch("primary").fetch(:rows).reject { |table, _| housekeeping.include?(table) }
+    after_rows = after.fetch(:rows).reject { |table, _| housekeeping.include?(table) }
+    changed = (before_rows.keys | after_rows.keys).select { |table| before_rows[table] != after_rows[table] }
+    raise "Upgrade changed historical rows in #{changed.join(', ')}" unless changed.empty?
+    %w[cache queue cable].each { |name| raise "Upgrade changed #{name}" unless recovery.snapshot(name) == expected.fetch(name) }
+    recovery.grant!
+    # Verification starts a fresh code process with actual runtime authentication.
+    config = recovery.configuration(as_runtime: true)
+    environment["DATABASE_URL"] = "postgresql://#{config.fetch(:username)}:#{config.fetch(:password)}@127.0.0.1/#{config.fetch(:database)}"
+    recovery.verify_runtime!
+    ActiveRecord::Base.connection_pool.disconnect!
+    run.call(root, "runner", File.join(root, "ops/upgrade_fixture.rb"), "verify", manifest)
+    puts "PASS: genuine migration preserves every old row/auxiliary database, supports new masking and keeps lineage/SQL/lifecycle controls under runtime."
+    # Rollback means restore the pre-upgrade archives, never run destructive down migrations.
+    recovery.restore!(directory, expected:)
+    recovery.verify_runtime!
+    ActiveRecord::Base.connection_pool.disconnect!
+    run.call(source, "runner", File.join(root, "ops/upgrade_fixture.rb"), "verify", manifest)
+    puts "PASS: pre-upgrade four-database owner/ACL backup rollback boots old code, keeps exact history/grants and passes the same lifecycle guards."
+  end
+ensure
+  recovery.close
+end
+puts "CLEAN: only this invocation's four databases/two roles/archive/checkpoint checkout removed."
+puts "LIMIT: one real additive app/schema upgrade on PostgreSQL 16; not every historical path, PostgreSQL major upgrade, live-host or customer acceptance."

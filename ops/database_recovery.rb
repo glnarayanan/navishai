@@ -122,7 +122,7 @@ module Operations
       admin.exec_params("SELECT rolname, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolcanlogin, rolreplication, rolbypassrls, rolconnlimit FROM pg_roles WHERE rolname IN ($1, $2) ORDER BY rolname", [ owner, runtime ]).values
     end
 
-    def restore!(directory)
+    def backup!(directory)
       manifest = File.join(directory, "roles.json")
       File.write(manifest, JSON.generate(role_snapshot), perm: 0o600)
       expected = databases.keys.to_h { |name| [ name, snapshot(name) ] }
@@ -130,10 +130,15 @@ module Operations
         tool("pg_dump", "-h", @socket, "-U", @user, "-d", database, "--format=custom", "--create", "--file", File.join(directory, "#{name}.dump"))
         File.chmod(0o600, File.join(directory, "#{name}.dump"))
       end
+      expected
+    end
+
+    def restore!(directory, expected: nil)
+      expected ||= backup!(directory)
       # Model full local loss, not an in-place overwrite. Drop only our own names.
       drop_assets!
       create_roles!
-      raise "Restored role flags differ" unless role_snapshot == JSON.parse(File.read(manifest))
+      raise "Restored role flags differ" unless role_snapshot == JSON.parse(File.read(File.join(directory, "roles.json")))
       databases.each do |name, database|
         # Record only the exact name that this archive is permitted to create.
         @created << database
@@ -160,6 +165,17 @@ module Operations
           rescue ActiveRecord::StatementInvalid => error
             raise unless error.cause.is_a?(PG::InsufficientPrivilege)
           end
+        end
+        inserts = {
+          "cache" => "INSERT INTO solid_cache_entries (key, value, created_at, key_hash, byte_size) VALUES ('post-restore-cache', 'bytes', CURRENT_TIMESTAMP, 87654, 5) RETURNING id",
+          "queue" => "INSERT INTO solid_queue_jobs (queue_name, class_name, arguments, priority, scheduled_at, created_at, updated_at) SELECT 'default', class_name, arguments, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM solid_queue_jobs ORDER BY id LIMIT 1 RETURNING id",
+          "cable" => "INSERT INTO solid_cable_messages (channel, payload, created_at, channel_hash) VALUES ('post-restore-channel', 'bytes', CURRENT_TIMESTAMP, 87654) RETURNING id"
+        }
+        if inserts.key?(name)
+          maximum = connection.select_value("SELECT max(id) FROM #{table}")
+          inserted = connection.select_value(inserts.fetch(name))
+          raise "Restored #{name} sequence did not advance" unless inserted > maximum
+          connection.execute("DELETE FROM #{table} WHERE id=#{inserted}")
         end
         # Prove default ACLs survive: an owner-created post-restore sequence/table
         # permits runtime inserts, but never gives it schema/table ownership.

@@ -32,8 +32,9 @@ then runs `pg_restore --create --exit-on-error`. It does not use `--no-owner` or
 
 Every complete public-table fingerprint, database/schema/relation owner and ACL,
 and owner default table/sequence ACL must match. Real password-authenticated runtime
-logins read all four databases and test 20 privilege denials. Post-restore
-owner-created tables/sequences must allow runtime DML without granting ownership.
+logins read all four databases and test 20 privilege denials. Inserts into restored
+cache/queue/cable tables must advance their saved sequences. Post-restore
+owner-created tables/sequences must also allow runtime DML without granting ownership.
 The same grant code serves the production `db:grant_runtime` task; production still
 uses exactly `navishai_setup` and `navishai`, with separate credentials.
 
@@ -66,6 +67,46 @@ Credentials need separate secret-manager recovery and rotation; the proof does
 not export them. Four schema dumps also do not back up `rails_storage`; operators
 must capture/restore any customer-owned files under the same stopped-writer policy.
 
+## Application/schema upgrade and rollback
+
+Run `bin/prove-upgrade` with the same local PostgreSQL and Ruby setup. It accepts
+no database or checkpoint arguments. It checks that the fixed pre-mask ancestor
+[`4d2beab`](https://github.com/glnarayanan/navishai/commit/4d2beab97003622396fce8da6d044652f9de72f6)
+belongs to the current history, archives its tracked code, and loads its genuine
+SQL schema only into new disposable databases. Old code creates synthetic recorded
+fail/pass runs on the same fixed case, an expert held-out label and a completed
+local analysis. All four databases and role flags enter the pre-upgrade backup.
+
+With writers stopped, the generated owner role runs current `bin/rails db:migrate`.
+The schema dump goes into the private proof directory, never into tracked files.
+All old business-row fingerprints must stay exact, projecting out only the two
+declared new masking columns. The proof checks the applied migration and Rails'
+environment/schema metadata separately; it does not silently ignore business
+changes. Queue/cache/cable rows and ACLs stay exact. Current code then connects
+through actual runtime authentication, tests old source/case/approval/label/result
+lineage, 13 immutable-table SQL guards, both workspace/corpus FK boundaries, audit
+protection, no duplicate execution, new masking, expiry and purge.
+
+Rollback restores the pre-upgrade four archives and restricted roles, not downward
+data-destructive migrations. Every pre-upgrade fingerprint and owner/ACL must match.
+Fresh old-code runtime execution must pass the same history and lifecycle guards.
+No worker or HTTP/model endpoint runs during either schema transition.
+
+Executed on 1 October 2026:
+
+```sh
+bin/prove-upgrade
+```
+
+The command printed PASS for the real masking migration, unchanged old rows and
+auxiliary databases, fresh runtime controls, then four-database backup rollback
+and old-code controls. CLEAN removed only its four databases, two roles and private
+archive/checkpoint checkout. This rehearses one real additive application migration
+on PostgreSQL 16, not a PostgreSQL major upgrade, every older migration path,
+zero-downtime rollout, arbitrary customer-data timing or live-host acceptance.
+When another schema change lands, review and extend the explicit old-row projection
+and new-schema assertions; a prior PASS does not certify a new migration.
+
 ## Remaining host gate
 
 An authorized disposable clean public host is not available in this orb. Public
@@ -74,6 +115,6 @@ SMTP/OIDC delivery and customer-controlled live backup acceptance remain unprove
 A private namespace and simulated public-address peer cannot establish them.
 No host, firewall, infrastructure or hosting policy change is authorized here.
 
-The local namespace deny/lifecycle proof and schema-upgrade rehearsal are separate
-checks. Record their executed commands and limits here when they pass; do not count
-planned code as acceptance.
+The local namespace deny/lifecycle proof remains a separate check. Record its
+executed commands and limits here when it passes; do not count planned code as
+acceptance.
