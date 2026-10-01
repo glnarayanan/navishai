@@ -13,8 +13,8 @@ class CorpusDiscovery
   def self.call(analysis)
     analysis.fixed_inputs(item_ids: [])
     full_text = analysis.full_text?
-    bounded = analysis.streaming? || full_text
-    method_label = full_text ? "Full-text local" : "Streaming local"
+    bounded = analysis.large? || full_text
+    method_label = analysis.large_full_text? ? "Large full-text local" : (full_text ? "Full-text local" : "Streaming local")
     conversations = []
     doc_terms = {}
     documents = 0
