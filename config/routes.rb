@@ -3,7 +3,9 @@ Rails.application.routes.draw do
   resources :workspaces, only: %i[index show new create edit update] do
     resources :workspace_invitations, only: %i[index create destroy]
     resources :corpora, only: %i[index create show] do
-      resources :sources, only: %i[create show destroy]
+      resources :sources, only: %i[create show destroy] do
+        post :decide_trace, on: :member
+      end
       resources :corpus_analyses, only: %i[new create show update] do
         post :interrupt, on: :member
       end

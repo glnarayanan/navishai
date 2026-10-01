@@ -66,7 +66,6 @@ class CorpusDiscovery
   def self.terms(text)
     ActionView::Base.full_sanitizer.sanitize(text).downcase.scan(/[[:alpha:]][[:alnum:]_-]{2,}/).reject { |word| STOP_WORDS.include?(word) }
   end
-  private_class_method :terms
 
   def self.signals(item)
     result = SIGNALS.filter_map { |label, pattern| label if item.content.match?(pattern) }

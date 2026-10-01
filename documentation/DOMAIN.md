@@ -13,6 +13,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Corpus analysis | One fixed-input discovery method proposing company-specific families and scenario candidates. Model output has no expert authority. |
 | Discovery batch | Fixed source allocation, digest, request UUID and once-only receipt within one consented analysis. The reducer groups existing proposals; it cannot invent definitions or approve them. |
 | Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
+| Trace association | An expert's match, different or uncertain decision on an exact trace and scenario version, with append-only reasons. It is neither scenario approval nor a calibration label. |
 | Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
 | Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
 | Taxonomy version | Fixed expert labels for some or all clusters from one corpus analysis. Unreviewed clusters stay proposals. |
@@ -68,3 +69,4 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A model proposal quotes only the fixed excerpts disclosed for its version. Quotes do not prove correct expectations. Existing target/judge approval cannot authorise source processing; proposals never inherit expert approval or change human labels.
 - Model corpus discovery needs consent for its exact complete source preview and its own operator purpose. Proposed families must account for every disclosed conversation once. Mining may copy source-backed definitions but grants neither approval nor target-visible knowledge. Abstention and execution error cannot become discovered families or authoritative labels.
 - Batch consent fixes source allocation and the maximum call plan. Stopped or unknown attempts cannot resume, retry or publish partial global families. A later conversation import cannot replace already disclosed historical inputs; changed company documents still block processing.
+- Literal failure retrieval suggests current versions for review. Each expert keeps their own association history; a match cannot settle agreement, revise expectations, permit recorded replay with changed input or admit a regression.

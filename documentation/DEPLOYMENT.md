@@ -78,11 +78,13 @@ to empty before backup. All other purpose registries stay empty.
 After restore it compares canonical SHA-256 fingerprints of every public table's
 complete rows, checks recorded failure and corrected success on the same fixed
 case, exact trace/approval provenance and held-out expert label/correction history.
+Trace association/correction history retains its exact trace, scenario version and
+author without changing approval or labels.
 It retains complete batch membership, fixed UUIDs and terminal receipts; duplicate
-delivery after restore must not send. Raw SQL rejects updates to 15 populated
+delivery after restore must not send. Raw SQL rejects updates to 16 populated
 immutable definition/result/label tables, batch definition/terminal-state rewrites,
 run/item rebinding, foreign-workspace and same-workspace foreign-corpus
-evidence inserts, and audit update/delete/truncate. A new audit append checks the
+evidence/association inserts, and audit update/delete/truncate. A new audit append checks the
 restored sequence. Unexpected SQL errors fail rather than masquerade as protection.
 
 Success prints `PASS` and `CLEAN`; failure exits nonzero. The private temporary

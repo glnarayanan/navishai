@@ -1,7 +1,7 @@
 class SourcesController < ApplicationController
   include WorkspaceAuthorization
   before_action :require_workspace
-  before_action -> { require_role(:owner, :admin, :manager, :member) }, only: :create
+  before_action -> { require_role(:owner, :admin, :manager, :member) }, only: %i[create decide_trace]
   before_action -> { require_role(:owner, :admin, :manager) }, only: :destroy
   before_action :load_corpus
 
@@ -43,7 +43,32 @@ class SourcesController < ApplicationController
         recorded_input = SupportTrace.payload(item)["input"]
         [ item.id, inputs.select { |_eval_case, input| input == recorded_input }.keys ]
       end
+      @failure_candidates = TraceScenarioMatching.call_all(items: @items)
+      @decision_page = params[:decision_page].to_i.clamp(1, 10000)
+      @trace_decisions = {}
+      unless @corpus.eval_definitions_expired?
+        decisions = TraceScenarioDecision.where(corpus: @corpus, corpus_item_id: @items.map(&:id))
+        @latest_decision_ids = decisions.group(:corpus_item_id, :scenario_version_id, :reviewed_by_id).maximum(:id).values
+        history = decisions.includes(:reviewed_by, scenario_version: :scenario).order(id: :desc).offset((@decision_page - 1) * 50).limit(51).to_a
+        @more_decisions = history.size > 50
+        @trace_decisions = history.first(50).group_by(&:corpus_item_id)
+      end
     end
+  end
+
+  def decide_trace
+    @source = @corpus.sources.where(kind: "traces").where("expires_at > ?", Time.current).find(params[:id])
+    @item = @corpus.corpus_items.joins(:source_snapshot).where(source_snapshots: { source_id: @source.id }).find(params[:corpus_item_id])
+    version = ScenarioVersion.where(corpus: @corpus).find(params[:scenario_version_id])
+    TraceScenarioDecision.append!(item: @item, version:, membership: Current.require_membership!, decision: params[:decision], reason: params[:reason])
+    redirect_to helpers.source_evidence_path(@item), notice: "Trace decision appended. Scenario approval and replay compatibility are unchanged.", status: :see_other
+  rescue Scenario::Invalid, CorpusIntake::Invalid, ActiveRecord::RecordInvalid => error
+    @decision_error = error.message
+    @decision_form = params.permit(:corpus_item_id, :scenario_version_id, :decision, :reason).to_h
+    params[:snapshot] = @item.source_snapshot.number
+    params[:page] = @item.source_snapshot.corpus_items.where("id < ?", @item.id).count / 50 + 1
+    show
+    render :show, status: :unprocessable_content
   end
 
   def destroy

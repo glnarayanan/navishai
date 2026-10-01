@@ -19,7 +19,7 @@
       <nav class="workspace-tabs" aria-label="Dependent case pages"><% if @case_page > 1 %><%= link_to "Previous dependent cases", url_for(request.query_parameters.merge(case_page: @case_page - 1, anchor: "source-impact")) %><% end %><% if @more_cases %><%= link_to "Next dependent cases", url_for(request.query_parameters.merge(case_page: @case_page + 1, anchor: "source-impact")) %><% end %></nav>
     <% end %>
   </section>
-  <section class="section-block"><h2>Source evidence</h2><p>Page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
+  <section class="section-block" id="source-evidence"><h2>Source evidence</h2><p>Page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
     <% if @source.kind == "traces" %><p role="status">Reported failures and corrections are not expert labels. Review company evidence before approving a scenario. Trace intake stays local and does not execute an agent or judge.</p><% end %>
     <% @items.each do |item| %>
       <article id="record-<%= item.id %>" class="source-record">
@@ -35,6 +35,7 @@
             <%= button_to "Propose scenario from trace", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { trace_item_id: item.id }, class: "button", data: { turbo_submits_with: "Creating…" } %>
           <% end %>
           <p>Proposals keep the situation and known facts, with no approved requirements. Experts choose current documentation and permitted knowledge.</p>
+          <%= render "sources/failure_matching", item: item %>
           <details><summary>Cases with identical visible input (<%= @trace_matches[item.id].size %>)</summary><p>Checks the first 100 fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
             <% if @trace_matches[item.id].empty? %><p>No exact match in this bounded search. Create and review a scenario, or inspect other fixed cases.</p><% end %>
             <ul role="list"><% @trace_matches[item.id].each do |eval_case| %><li><%= link_to "Case #{eval_case.id} · #{eval_case.scenario_version.title}", workspace_corpus_eval_case_path(Current.workspace, @corpus, eval_case) %></li><% end %></ul>
@@ -49,6 +50,12 @@
           <pre class="evidence-text"><%= item.content %></pre><details><summary>Context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
         <% end %>
       </article>
+    <% end %>
+    <% if @source.kind == "traces" && !@corpus.eval_definitions_expired? %>
+      <nav class="workspace-tabs" aria-label="Trace decision history pages">
+        <% if @decision_page > 1 %><%= link_to "Previous decisions", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page - 1, anchor: "source-evidence") %><% end %>
+        <% if @more_decisions %><%= link_to "Next decisions", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page + 1, anchor: "source-evidence") %><% end %>
+      </nav>
     <% end %>
     <%= render "shared/record_pagination", more: @more, page_number: @page %>
   </section>

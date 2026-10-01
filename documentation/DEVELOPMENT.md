@@ -76,6 +76,34 @@ knowledge. Experts choose current documents, write expectations and approve the
 exact version. A trace without a reported failure cannot seed this proposal path.
 Trace payloads do not enter the conversation/document term-discovery baseline.
 
+### Reviewable failure matching
+
+A trace source page suggests at most five current scenario versions from the same
+corpus. Local retrieval searches title, situation, taxonomy and non-trace
+expectation excerpts. It excludes hidden facts, recorded output, imported
+corrections and trace excerpts. At least two distinct terms must overlap after
+excluding known-fact keys/values. Candidates sort by shared terms, equal facts,
+then version ID. This is literal retrieval, not semantic accuracy or probability.
+
+Bounds are 2000 current versions and 10 MiB of complete candidate text. Exceeding
+either bound searches nothing rather than truncating. Candidate inputs load once
+per source page, not once per trace. Expired, merged, rejected or stale-document
+versions cannot appear. Exact links, shared terms and equal/conflicting/missing
+facts help experts compare evidence; null, false, zero and absence differ.
+
+Writers may record match, different or uncertain with a reason on the exact trace
+and current version. Corrections append; the paginated history shows 50 decisions
+and each author's latest state across all pages. Another expert cannot erase it.
+Viewers can inspect candidates/history but cannot decide. Errors retain the chosen
+version and reason; changed evidence or access blocks writes. Purge removes the
+associations through their source-backed records.
+
+Association does not approve or edit a scenario, grant knowledge, label a
+calibration sample, compile, execute or admit a regression. Experts follow the
+existing scenario review or propose a separate scenario. Recorded replay still
+requires identical visible input. No provider call or automatic consensus occurs.
+Synthetic desktop/mobile captures live under `.amp/in/artifacts/failure-matching/`.
+
 Retention is 1–3650 days from the latest import, including a repeat. Expired content
 leaves exploration immediately; `SourceRetentionJob` deletes it hourly through
 Solid Queue in production. Managers/Admins/Owners can delete a source by typing its

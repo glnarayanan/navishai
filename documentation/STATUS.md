@@ -48,8 +48,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   complete source disclosure, source-backed families/scenarios and connected proof.
 - [#161](https://github.com/glnarayanan/navishai/pull/161), based on #160: pinned PostgreSQL index, private/generated
   build-context exclusions and exact runtime-directory markers.
-- `rebuild/22-batch-discovery`, based on #161: frozen multi-request corpus discovery,
+- [#162](https://github.com/glnarayanan/navishai/pull/162), based on #161: frozen multi-request corpus discovery,
   once-only receipts, strict proposal reduction and explicit allocation/call consent.
+- `rebuild/23-failure-matching`, based on #162: bounded local failure candidates,
+  exact fact/evidence comparisons and append-only expert association history.
 
 ## Built and checked
 
@@ -442,14 +444,39 @@ Existing lab/legacy data stays untouched. Direct risk review/native audits used;
 Ponytail Audit and CE Code Review remain unavailable. No real data, live provider
 or new production dependency.
 
+GitHub CI for #162 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36808686665)).
+
+Failure matching's final `bin/ci` passed in 3m58.90s: 265 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+305 Rails tests / 3053 assertions and 24 browser tests / 903 assertions, no
+failures/errors/skips. Asymmetric checks distinguish changed input from replay,
+entitlement conflicts from equal facts, null/false/zero/absence, later versions
+from the first hundred, current from expired/stale/merged/rejected/foreign evidence,
+and page-two history from latest author decisions. Multi-trace retrieval loads the
+candidate corpus once. Ruby/SQL updates and foreign relationships fail; purge
+cascades decisions. GETs queue nothing and write no records. Association does not
+approve, revise, compile, execute, label calibration or admit regression.
+
+The browser appends an expert correction, retains a stale-form reason and checks
+empty/viewer states. Desktop/390px captures were inspected with exact links,
+conflicting facts, labelled controls, latest/earlier history and no overflow/CSP
+failures. The updated `bin/prove-backup-restore` passed with exact association
+history, 16 populated immutable tables and same-/foreign-workspace SQL rejection,
+without changing expert approval, calibration labels or fixed-case identity.
+Its focused RuboCop and `git diff --check` pass. No provider, real data or dependency
+was introduced. Direct risk review/native audits used; named review tools unavailable.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
 regression, exact source-change impact and fixed-case target-version comparison.
 Corpus exploration now has bounded, source-backed literal search.
 Expert calibration now has a personal read-only review queue.
-This does not finish the full rebuild or establish customer value. Trace matching currently means
-exact input compatibility among 100 cases, not semantic failure matching. Recorded
+This does not finish the full rebuild or establish customer value. Trace failure
+matching now suggests five local literal candidates from up to 2000 current
+versions, with explicit expert associations; it is not semantic matching.
+Replay compatibility still checks identical inputs among 100 fixed cases. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge/source-processing endpoints.
@@ -470,9 +497,10 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering still includes completing the parallel source-backed
-failure-matching slice and clean-host/image/TLS proof. Bounded multi-request
-discovery and isolated backup/restore pass; inputs beyond those bounds and retrieval
+Independent engineering includes executable multi-turn cases, source export,
+connected result-to-calibration improvement and clean-host/production/TLS proof.
+Reviewable failure matching, bounded multi-request discovery, image execution and
+isolated backup/restore pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 
