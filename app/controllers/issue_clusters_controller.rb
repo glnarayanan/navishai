@@ -29,14 +29,18 @@ class IssueClustersController < ApplicationController
     end
 
     def prepare_page
-      @groups = @cluster.source_groups
-      @total = @groups.fetch("All records").size
-      @filter = params[:signal].presence || "All records"
-      @invalid_filter = !@groups.key?(@filter)
-      @matching = @invalid_filter ? [] : @groups.fetch(@filter)
-      @page = params[:page].to_i.clamp(1, 10000)
-      @members = @matching.slice((@page - 1) * 50, 50) || []
-      @more = @matching.size > @page * 50
-      @member_scenarios = @corpus.scenarios.where(cluster_member: @members).index_by(&:cluster_member_id)
+      @corpus.with_lock do
+        groups = @cluster.source_groups
+        @group_counts = groups.transform_values(&:count)
+        @total = @group_counts.fetch("All records")
+        @filter = params[:signal].presence || "All records"
+        @invalid_filter = !groups.key?(@filter)
+        matching = @invalid_filter ? @cluster.cluster_members.none : groups.fetch(@filter)
+        @matching_count = @invalid_filter ? 0 : @group_counts.fetch(@filter)
+        @page = params[:page].to_i.clamp(1, 10000)
+        @members = matching.includes(corpus_item: { source_snapshot: :source }).offset((@page - 1) * 50).limit(50).to_a
+        @more = @matching_count > @page * 50
+        @member_scenarios = @corpus.scenarios.where(cluster_member: @members).index_by(&:cluster_member_id)
+      end
     end
 end

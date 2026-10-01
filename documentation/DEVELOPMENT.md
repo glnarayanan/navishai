@@ -218,10 +218,20 @@ outcome, risk or expert label. Local/model families use the same source rules.
 Filters keep full-family denominators and paginate 50 complete records. Refresh
 retains the filter/page; empty and invalid filters offer recovery. Exact historical
 source links still work after a newer export. Any expired fixed analysis input
-blocks inspection. Families above 2000 records or 10 MiB of text plus JSON context
+blocks inspection. Families above 2000 records or 10 MiB of retained IDs, titles,
+text and JSON context
 are refused without partial counts. GETs create no records, jobs or provider calls.
 Desktop/mobile expanded, empty and invalid captures live under
 `.amp/in/artifacts/family-evidence/`.
+
+Counts use typed JSON booleans in PostgreSQL and complete text in 100-record
+scalar batches with the same Ruby mention rules. They do not load the whole
+family as source objects; only the filtered page loads up to fifty complete rows.
+Local analysis review loads ten examples per displayed family, selected first,
+and mining loads chosen records plus linked expectation evidence. Whole fixed
+input bounds/lifetime still apply before a partial read. Complete model disclosure
+previews stay unchanged. This is bounded reading, not larger analysis acceptance
+or proof of semantic quality.
 
 Writers can expand a fixed record and **Create scenario draft** with a reason
 (1–2000 characters, no null bytes). This works for records the method did not

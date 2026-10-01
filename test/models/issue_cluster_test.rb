@@ -5,6 +5,36 @@ class IssueClusterTest < ActiveSupport::TestCase
   include FamilyEvidenceFixture
   setup { build_family_evidence_fixture }
 
+  test "signal scans cross batch boundaries without loading complete source objects" do
+    records = 110.times.map { |index| { id: "extra-#{index}", title: "Outage only in title", content: "No evidence supplied.", context: { escalated: false } } }
+    records.last[:content] = "Trace " + "x" * 4100 + " outage"
+    records.last[:context][:impact] = "critical"
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Additional history", kind: "conversations", bytes: records.to_json)
+    snapshot.corpus_items.each do |item|
+      @analysis.corpus_analysis_inputs.create!(workspace: @workspace, corpus: @corpus, corpus_item: item)
+      @cluster.cluster_members.create!(workspace: @workspace, corpus: @corpus, corpus_item: item)
+    end
+    groups = nil
+    scanned = []
+    observer = ->(event) { scanned << event.payload[:row_count] if event.payload[:sql].start_with?('SELECT "corpus_items"."id", "corpus_items"."content"') }
+    assert_source_rows_loaded(0) do
+      ActiveSupport::Notifications.subscribed(observer, "sql.active_record") { groups = @cluster.source_groups }
+      assert_equal 165, groups.fetch("All records").count
+      assert_equal 111, groups.fetch("context.escalated: false").count
+      assert_equal 52, groups.fetch("context.escalated: missing / nonboolean").count
+      assert_equal 56, groups.fetch("diagnostic evidence mention").count
+      assert_equal 3, groups.fetch("risk mention").count
+      assert_equal 2, groups.fetch("reported critical impact").count
+    end
+    assert_equal [ 100, 65 ], scanned
+  end
+
+  test "same-corpus records outside fixed membership cannot enter a family read" do
+    snapshot = refresh_family_export
+    @cluster.cluster_members.create!(workspace: @workspace, corpus: @corpus, corpus_item: snapshot.corpus_items.sole)
+    assert_source_rows_loaded(0) { assert_raises(ActiveRecord::RecordNotFound) { @cluster.source_groups } }
+  end
+
   test "exact booleans and full family denominators do not coerce source reports" do
     groups = @cluster.source_groups
     assert_equal 55, groups.fetch("All records").size

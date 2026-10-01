@@ -2,6 +2,7 @@ class CorpusAnalysis < ApplicationRecord
   METHOD = "tfidf-seed-centroid-selection-v1"
   MAX_ITEMS = 2_000
   MAX_RECORD_BYTES = 10.megabytes
+  RECORD_BYTES_SQL = "octet_length(corpus_items.external_id) + octet_length(corpus_items.title) + octet_length(corpus_items.content) + octet_length(corpus_items.context::text)"
   belongs_to :workspace
   belongs_to :corpus
   belongs_to :requested_by, class_name: "User"
@@ -58,20 +59,21 @@ class CorpusAnalysis < ApplicationRecord
     end
   end
 
-  def fixed_inputs
+  def fixed_inputs(item_ids: nil)
     corpus.with_lock do
       raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
       inputs = corpus_items.order(model? ? :id : [ :external_id, :id ])
-      self.class.load_inputs(inputs, limit: model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS)
+      self.class.load_inputs(inputs, limit: model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, item_ids:)
     end
   end
 
   # Call under the corpus lock so intake/purge cannot change membership between
   # aggregate checks and loading. Encoded model/per-call bounds still apply later.
-  def self.load_inputs(inputs, limit:)
+  def self.load_inputs(inputs, limit:, item_ids: nil)
     raise CorpusIntake::Invalid, "Analysis needs 1–#{limit} conversation/document records. Production traces use separate review." unless inputs.count.between?(1, limit)
-    bytes = inputs.sum("octet_length(corpus_items.external_id) + octet_length(corpus_items.title) + octet_length(corpus_items.content) + octet_length(corpus_items.context::text)")
+    bytes = inputs.sum(RECORD_BYTES_SQL)
     raise CorpusIntake::Invalid, "Analysis accepts at most 10 MiB of retained IDs, titles, text and context JSON. Use a smaller corpus; nothing is sampled or truncated." if bytes > MAX_RECORD_BYTES
+    inputs = inputs.where(id: item_ids) unless item_ids.nil?
     inputs.includes(source_snapshot: :source).to_a
   end
 

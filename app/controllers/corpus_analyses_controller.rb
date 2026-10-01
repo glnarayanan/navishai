@@ -35,19 +35,24 @@ class CorpusAnalysesController < ApplicationController
   def show
     @analysis = @corpus.corpus_analyses.find(params[:id])
     raise ActiveRecord::RecordNotFound if @analysis.expired?
-    @fixed_items = @analysis.fixed_inputs.index_by(&:id)
-    groups = @analysis.selection_groups
-    @family_counts = groups.transform_values(&:count)
-    @family_focus = params[:family_focus].to_s.presence || "All families"
-    @invalid_family_focus = !groups.key?(@family_focus)
-    clusters = @invalid_family_focus ? @analysis.issue_clusters.none : groups.fetch(@family_focus)
-    @page = params[:page].to_i.clamp(1, 10000)
-    @clusters = clusters.includes(:cluster_members).order(:id).offset((@page - 1) * 10).limit(11).to_a
-    @more = @clusters.size > 10
-    @clusters = @clusters.first(10)
-    @taxonomy = @analysis.latest_taxonomy
-    @model_result = @analysis.corpus_analysis_result&.result
-    @model_input = ModelCorpusDiscovery.input(@fixed_items.values, bounded: !@analysis.batch?) if @analysis.model?
+    @corpus.with_lock do
+      groups = @analysis.selection_groups
+      @family_counts = groups.transform_values(&:count)
+      @family_focus = params[:family_focus].to_s.presence || "All families"
+      @invalid_family_focus = !groups.key?(@family_focus)
+      clusters = @invalid_family_focus ? @analysis.issue_clusters.none : groups.fetch(@family_focus)
+      @page = params[:page].to_i.clamp(1, 10000)
+      @clusters = clusters.order(:id).offset((@page - 1) * 10).limit(11).to_a
+      @more = @clusters.size > 10
+      @clusters = @clusters.first(10)
+      @member_counts = ClusterMember.where(issue_cluster: @clusters).group(:issue_cluster_id).count
+      @examples = @clusters.index_with { |cluster| cluster.cluster_members.order(Arel.sql("selection_reason IS NULL"), :id).limit(10).to_a }
+      item_ids = @examples.values.flatten.map(&:corpus_item_id) unless @analysis.model?
+      @fixed_items = @analysis.fixed_inputs(item_ids:).index_by(&:id)
+      @taxonomy = @analysis.latest_taxonomy
+      @model_result = @analysis.corpus_analysis_result&.result
+      @model_input = ModelCorpusDiscovery.input(@fixed_items.values, bounded: !@analysis.batch?) if @analysis.model?
+    end
   rescue CorpusIntake::Invalid => error
     @analysis_input_error = error.message
     render :show

@@ -8,6 +8,44 @@ class IssueClustersTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "local overview and family pages load only their displayed fixed records" do
+    refresh_family_export
+    assert_source_rows_loaded(10) do
+      get workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
+      assert_response :success
+      assert_select "details.source-record", count: 10
+      assert_select "p", text: /Showing 10 examples/
+      assert_select "summary", text: "Diagnostic 1"
+      assert_select "summary", text: "Diagnostic 11", count: 0
+    end
+    assert_source_rows_loaded(5) do
+      get family_path, params: { signal: "diagnostic evidence mention", page: 2 }
+      assert_response :success
+      assert_select "#family-records > details", count: 5
+      assert_select "#family-records [role=status]", text: /55 matching records of 55/
+      assert_select "pre", text: /data loss/
+    end
+    [ { signal: "unknown signal" }, { signal: "risk mention", page: 2 } ].each do |parameters|
+      assert_source_rows_loaded(0) { get family_path, params: parameters }
+      assert_select "#family-records > details", count: 0
+    end
+  end
+
+  test "overview selects late nominated examples before earlier unselected records" do
+    cluster = @analysis.issue_clusters.create!(workspace: @workspace, corpus: @corpus, proposed_label: "Late selected example", signals: { count: 55 })
+    @items.each_with_index do |item, index|
+      cluster.cluster_members.create!(workspace: @workspace, corpus: @corpus, corpus_item: item,
+        selection_reason: index == 52 ? "Late selected fixture; expert review required." : nil)
+    end
+    get workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
+    assert_response :success
+    assert_select "section[aria-labelledby='cluster-#{cluster.id}']" do |sections|
+      assert_select "details.source-record", count: 10
+      assert_equal "Diagnostic 53 — selected candidate", sections.sole.at_css("details.source-record summary").text
+      assert_select "summary", text: "Diagnostic 10", count: 0
+    end
+  end
+
   test "overview links complete explorer and filtered pages retain full denominators and exact historical provenance" do
     get workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
     assert_response :success

@@ -69,6 +69,17 @@ model and per-call limits still apply after this source-row guard. A blocked GET
 renders the accessible analysis's state with no partial preview or write controls;
 it is not a failed document navigation. POST validation still returns 422.
 
+Partial local reads check the whole fixed input count, bytes and lifetime before
+loading only the requested evidence IDs. They cannot bypass those gates or select
+new/foreign snapshots. Local overview loads ten examples per displayed family,
+selected first with stable ID ties; mining loads chosen records and their linked
+model evidence only. Model disclosure previews still contain complete fixed inputs.
+Family counts use SQL for exact JSON boolean types and the original Ruby patterns
+over complete text in 100-record scalar batches. Keep match IDs, not complete
+source objects; load only the fifty records on the filtered page. Hold the corpus
+lock through checks, counts and page loading. These changes do not raise analysis
+or provider limits, sample membership or change discovery's method.
+
 Corpus exploration uses local, case-insensitive literal substring search over
 current, unexpired item titles, record IDs, normalised text and JSON context.
 Scope source filters to the same corpus before querying. Escape SQL wildcards,

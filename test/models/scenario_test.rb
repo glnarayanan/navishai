@@ -31,7 +31,9 @@ class ScenarioTest < ActiveSupport::TestCase
     reason = "Reported failure beyond the first page merits expert review."
     scenario = nil
     assert_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ], 1) do
-      scenario = ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason:).sole
+      assert_source_rows_loaded(1) do
+        scenario = ScenarioMining.call(analysis: @analysis, membership: @membership, member_id: member.id, reason:).sole
+      end
     end
     version = scenario.current_version
     assert_equal member.id, scenario.cluster_member_id
