@@ -6,8 +6,9 @@ Solid Queue owns bounded evaluation batches; HTTP uses the Ruby standard library
 A separate worker language needs measured workload or isolation evidence.
 
 `bin/rails test test/integration/private_logging_test.rb` exercises real request
-parameter logs, native scenario/variant/taxonomy DEBUG writes and typed PostgreSQL
+parameter logs, native source intake/lookup and scenario/variant/taxonomy DEBUG writes and typed PostgreSQL
 binds for private definition, model receipt, target-input and result fields.
+Source names and external record IDs stay private too; method/count metadata stays visible.
 Stored text/JSON remains exact; the native field filters hide values only in Rails
 logs and inspection. This does not cover interpolated SQL or database/proxy logs.
 
