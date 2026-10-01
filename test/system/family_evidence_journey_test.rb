@@ -10,6 +10,7 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
     refresh_family_export
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
     sign_in users(:teammate)
+    entered, release = Queue.new, Queue.new
     assert_no_difference [ "AuditEvent.count", "CorpusAnalysis.count", "ClusterMember.count", "TaxonomyVersion.count", "Scenario.count" ] do
       assert_no_enqueued_jobs do
         visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
@@ -28,7 +29,31 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
         click_link "Next records"
         assert_selector "#family-records > details", count: 5
         assert_selector "#family-records [role=status]", text: "55 matching records of 55"
-        click_link "Refresh evidence"
+        old_records = find("#family-records").native
+        delay = ->(event) do
+          if event.payload[:controller] == "IssueClustersController" && event.payload[:action] == "show"
+            entered << true
+            release.pop
+          end
+        end
+        ActiveSupport::Notifications.subscribed(delay, "start_processing.action_controller") do
+          click_link "Refresh evidence"
+          Timeout.timeout(5) { entered.pop }
+          assert_selector "html[aria-busy=true]"
+          # Old counts and selected options also pass while refresh is pending.
+          assert_selector "#family-records > details", count: 5
+          assert_selector "select option:checked", text: "diagnostic evidence mention (55 / 55)"
+          release << true
+          Selenium::WebDriver::Wait.new(timeout: Capybara.default_max_wait_time).until do
+            begin
+              old_records.enabled?
+              false
+            rescue Selenium::WebDriver::Error::StaleElementReferenceError
+              true
+            end
+          end
+        end
+        assert_selector "html:not([aria-busy=true]):not([data-turbo-preview])"
         assert_includes page.current_url, "page=2"
         assert_selector "select option:checked", text: "diagnostic evidence mention (55 / 55)"
         find("#family-records summary", text: "family-51 · Diagnostic 51", exact_text: true).click
@@ -56,6 +81,8 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
         assert_selector "#family-records > details", count: 50
       end
     end
+  ensure
+    release << true if release
   end
 
   test "expert repairs nomination then opens one unapproved historical draft without changing selection" do
