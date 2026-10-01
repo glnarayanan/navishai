@@ -163,6 +163,66 @@ acceptance. Finish host ingress and useful-egress/deny-policy checks on a dispos
 clean host with authority over proxy and network testing. No clean-host, public TLS
 or production backup acceptance exists.
 
+## Disposable Compose runtime proof
+
+`bin/prove-compose-runtime` is a local orb operations test, not a deployment command
+or part of `bin/ci`. It requires the installed Ruby, Git, Docker/dockerd, curl,
+OpenSSL, namespace/mount tools and passwordless sudo, as the orb's UID-1000 user.
+It accepts no arguments or shared daemon. It clears inherited application, provider,
+Docker and Compose settings, archives the current tracked commit and prints that
+commit plus its exact disposable project/directory names. Unstaged/private files
+never enter the build. Inspect the tracked checkout before running it.
+
+The script downloads official Compose v2.39.4 into its private directory and checks
+the published SHA-256. It installs no global plugin or production dependency. A
+supervised private build daemon uses separate vfs roots, no bridge, forwarding,
+iptables, masquerading or publication. It pulls the existing pinned PostgreSQL
+image and builds the tracked app with its existing dependencies. Images then move
+to a second supervised daemon in an owned network namespace. Docker manages rules
+only inside that namespace; the orb's routes, firewall, services and databases stay
+unchanged. The namespace has no external default route.
+
+Docker save/load does not preserve an upstream index RepoDigest reference. The
+proof gives the unchanged pinned PostgreSQL image a disposable name and verifies
+the same image ID after transfer. Only test image names and the unique project name
+differ from the tracked composition. Control/edge topology, database initialization,
+roles, capability settings, mounts and loopback publication remain unchanged.
+
+The proof runs real preparation/grants for primary/cache/queue/cable before separate
+web/jobs. Published namespace-loopback `/up` must return exactly HTTP 200. Actual
+runtime checks require UID 1000, no effective capabilities, no-new-privileges, no
+preparation credentials, empty disclosure registries, six SQL privilege denials,
+cache write/read, cable access and audit rewrite rejection. Native jobs must finish
+the synthetic two-family analysis. The shared test-only payload also serves the
+separate socket/TLS proof; its security checks are not static Compose assertions.
+
+PostgreSQL must have no publication or default route and must reach web over control.
+Web must reach an edge-only generated/trusted TLS peer; PostgreSQL must receive
+`ENETUNREACH`. That peer uses test-side curl, not an exception to application target
+policy. It proves local reachability/isolation, not public egress, endpoint allowlist
+enforcement, public TLS, clean-host acceptance, SMTP/OIDC or deployment readiness.
+
+A separate controlled comparison held Docker 29.8.1, vfs, bridge/iptables/masquerade/
+forwarding-disabled flags and the pinned Ruby HTTP helper constant. Disabling
+userland proxy produced HTTP 000 after 5001 ms; enabling it produced HTTP 200 in
+0.001339s. Direct-container requests returned HTTP 200 in both. This reproduces the
+earlier publication symptom and establishes the flag's effect in that comparison;
+it does not establish the removed daemon's exact failure cause. The full composition
+uses userland proxy and namespace-local Docker rules and passes locally.
+
+`PASS`/`CLEAN` cover only the executed checks. Cleanup attempts every exact created
+service/project/container, volume, image, namespace mount, secret and archive.
+Cleanup errors fail the command and print the exact remaining resources. Uncatchable
+termination or host loss can still leave them; never clean by broad prefix matching.
+No customer record, live endpoint, model, training or real credential enters this
+test. The passing private socket/TLS proof remains separate evidence.
+
+An independent rerun exposed caller `umask 077` stripping archive read/execute
+permissions. The proof now owns its file mask while keeping the private directory
+and secrets explicitly 0700/0600. The same restrictive-mask command passes all
+checks and cleanup. On failure, bounded synthetic startup logs redact generated
+secrets before cleanup; diagnostics do not turn a failed check into a pass.
+
 ## Disposable backup/restore fixture proof
 
 Run `bin/prove-backup-restore` from the repository with the installed Ruby/bundle
