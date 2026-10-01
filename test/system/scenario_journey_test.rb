@@ -289,6 +289,8 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Scenarios"
     click_link @scenario.current_version.title
     fill_in "Customer starting situation", with: "Customer cannot sign in after rotating their SAML certificate."
+    find("summary", text: "Known and hidden facts").send_keys(:enter)
+    fill_in "Known facts (JSON object)", with: '{"plan":"enterprise","idp":"Okta"}'
     fill_in "Outcomes — one requirement per line", with: "Identify certificate expiry as a possible cause."
     fill_in "Actions — one requirement per line", with: "Request the certificate expiry date."
     find("summary", text: "Attach source evidence").click
@@ -306,8 +308,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
       capture("review-#{width}")
     end
     find("summary", text: "Create a controlled variant").click
-    select "plan", from: "Fact to change"
-    fill_in "New value (JSON, including quotes for text)", with: '"starter"'
+    fill_in "Named fact changes (JSON object)", with: '{"plan":"starter"}'
     fill_in "Why this change matters", with: "SSO needs enterprise."
     fill_in "Expected behaviour difference", with: "Explain the plan limit."
     click_button "Create variant"
@@ -331,6 +332,90 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_no_csp_violations
   end
 
+  test "expert repairs coupled changes inspects exact receipts and writes fresh variant expectations" do
+    build_scenarios
+    approve_scenario
+    facts = { "plan" => "enterprise", "role" => "admin", "idp" => "Okta", "incident" => false }
+    parent = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: facts,
+      hidden_facts: { "answer" => "parent-only-answer" }, follow_ups: [ { "after_assistant_contains" => "expiry", "message" => "parent-only-follow-up" } ] })
+    @scenario.review!(membership: @membership, version_id: parent.id, decision: "approve")
+    guidance = "Check plan and admin access before SAML changes. If an active incident is confirmed, follow the current incident playbook."
+    policy = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Authored counterfactual policy", kind: "document", bytes: guidance).corpus_items.sole
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#controlled-variant > summary").send_keys(:enter)
+    assert_selector "#controlled-variant[open]"
+    find("summary", text: "Inspect this version's named known facts").send_keys(:enter)
+    within "#controlled-variant" do
+      assert_text '"role": "admin"'
+      fill_in "Named fact changes (JSON object)", with: '{"plan":"starter","role":"new-role","role":"non-admin"}'
+      fill_in "Why this change matters", with: "Coupled access and incident boundary."
+      fill_in "Expected behaviour difference", with: "Check current account access and incident evidence before changing SAML."
+      click_button "Create variant"
+    end
+    assert_selector "#controlled-variant[open]"
+    assert_selector "#variant-error[role=alert]", text: "No variant saved."
+    assert_equal "true", find_field("Named fact changes (JSON object)")["aria-invalid"]
+    assert_field "Named fact changes (JSON object)", with: '{"plan":"starter","role":"new-role","role":"non-admin"}'
+    assert_equal parent.id, @scenario.reload.current_version_id
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-error-#{width}", selector: "#controlled-variant")
+    end
+    changes = { "plan" => "starter", "role" => "non-admin", "idp" => "Entra", "incident" => true }
+    fill_in "Named fact changes (JSON object)", with: JSON.pretty_generate(changes)
+    click_button "Create variant"
+    assert_text "Version 1 · variant · needs review"
+    assert_text "Controlled counterfactual, not observed company truth."
+    assert_field "Outcomes — one requirement per line", with: ""
+    assert_field "Actions — one requirement per line", with: ""
+    assert_field "Expert follow-ups (JSON array)", with: "[]"
+    child = @corpus.scenarios.find_by!(parent_version_id: parent.id)
+    assert_equal changes, child.current_version.known_facts
+    assert_equal "enterprise", child.current_version.mutation.dig("changes", 0, "before")
+    assert_equal "starter", child.current_version.mutation.dig("changes", 0, "after")
+    assert_empty child.current_version.scenario_reviews
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_selector "#variant-receipt a", text: "scenario #{@scenario.id}, version #{parent.number}"
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-receipt-#{width}")
+    end
+    click_button "Save expert decision"
+    assert_selector "[role=alert]", text: /revise the variant/
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      capture("coupled-blocked-#{width}", selector: ".flash-region")
+    end
+    fill_in "Customer starting situation", with: "A non-admin on starter reports Entra login failure during a reported incident."
+    fill_in "Outcomes — one requirement per line", with: "Check plan and admin access before SAML changes."
+    fill_in "Escalation — one requirement per line", with: "If an active incident is confirmed, follow the current incident playbook."
+    find("#scenario-evidence > summary").send_keys(:enter)
+    select policy.title, from: "Source record"
+    select "Expected behaviour evidence", from: "Evidence use"
+    fill_in "Exact source excerpt", with: guidance
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    assert_empty child.reload.current_version.scenario_reviews
+    assert_empty child.current_version.target_input["knowledge"]
+    click_button "Save expert decision"
+    assert_text "Version 2 · expert · approve"
+    assert_link "Compile eval"
+    assert child.reload.current_version.approved?
+    assert_equal guidance, child.current_version.scenario_evidence.find_by!(corpus_item: policy).excerpt
+    assert_empty child.scenario_versions.find_by!(number: 1).scenario_reviews
+    assert parent.reload.approved?
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-reviewed-#{width}", selector: ".page-heading")
+    end
+  end
+
   private
     def resize_viewport(width, height)
       page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
@@ -346,7 +431,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
       FileUtils.mkdir_p(path.dirname)
       page.execute_script("window.scrollTo(0, 0)")
       size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
-      bounds = selector ? page.evaluate_script("document.querySelector(#{selector.to_json}).getBoundingClientRect().toJSON()") : { "y" => 0, "height" => size.fetch("height") }
+      bounds = selector ? page.evaluate_script("(() => { const rect = document.querySelector(#{selector.to_json}).getBoundingClientRect(); return { y: rect.top + window.scrollY, height: rect.height }; })()") : { "y" => 0, "height" => size.fetch("height") }
       image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: bounds.fetch("y"), width: page.evaluate_script("window.innerWidth"), height: bounds.fetch("height"), scale: 2 })
       File.binwrite(path, Base64.decode64(image.fetch("data")))
     end

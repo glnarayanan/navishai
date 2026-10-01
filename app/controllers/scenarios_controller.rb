@@ -117,7 +117,18 @@ class ScenariosController < ApplicationController
 
   def variant
     scenario = @corpus.scenarios.find(params[:id])
-    child = scenario.variant!(membership: Current.require_membership!, version_id: params[:version_id], variable: params[:variable], after: JSON.parse(params[:after].to_s), reason: params[:reason], expected_difference: params[:expected_difference])
+    values = { membership: Current.require_membership!, version_id: params[:version_id], reason: params[:reason], expected_difference: params[:expected_difference] }
+    if params.key?(:mutation)
+      raise Scenario::Invalid, "Use named changes or one fact, not both." if params.key?(:variable) || params.key?(:after)
+      raw = params.expect(:mutation)
+      raise Scenario::Invalid, "Named changes must be JSON of at most 10 KiB." if raw.bytesize > 10.kilobytes
+      values[:changes] = JSON.parse(raw, allow_duplicate_key: false)
+    else
+      raw = params.expect(:after)
+      raise Scenario::Invalid, "Variant value must be JSON of at most 10 KiB." if raw.bytesize > 10.kilobytes
+      values.merge!(variable: params.expect(:variable), after: JSON.parse(raw, allow_duplicate_key: false))
+    end
+    child = scenario.variant!(**values)
     redirect_to workspace_corpus_scenario_path(Current.workspace, @corpus, child), notice: "Controlled variant created. Correct its situation and expectations before approval.", status: :see_other
   end
 
@@ -128,12 +139,17 @@ class ScenariosController < ApplicationController
 
     def invalid_input(error)
       message = if error.is_a?(JSON::ParserError)
-        action_name == "propose" ? "Model configuration must be valid JSON. Correct it and request again." : "Facts, follow-ups and variant values must be valid JSON. Correct the value and save again."
+        if action_name == "variant"
+          "Variant values must be valid JSON with no duplicate keys."
+        else
+          action_name == "propose" ? "Model configuration must be valid JSON. Correct it and request again." : "Facts, follow-ups and variant values must be valid JSON. Correct the value and save again."
+        end
       else
         error.message
       end
       if params[:id]
         show
+        @variant_error = message if action_name == "variant"
         if error.is_a?(ActiveRecord::RecordInvalid) && error.record.is_a?(ScenarioEvidence)
           if params[:conversation_excerpt].present? && error.record.corpus_item_id == @scenario.corpus_item_id
             @conversation_excerpt_error = error.record.errors.full_messages.to_sentence

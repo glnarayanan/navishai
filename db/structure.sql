@@ -3328,6 +3328,13 @@ CREATE TRIGGER scenario_evidence_immutable BEFORE UPDATE ON public.scenario_evid
 
 
 --
+-- Name: scenarios scenario_parent_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_parent_immutable BEFORE UPDATE OF parent_version_id ON public.scenarios FOR EACH ROW WHEN ((old.parent_version_id IS DISTINCT FROM new.parent_version_id)) EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: scenario_proposals scenario_proposal_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4055,6 +4062,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001220000'),
 ('20261001210000'),
 ('20261001150000'),
 ('20261001140000'),

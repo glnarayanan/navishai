@@ -97,7 +97,8 @@ class HttpConversationTargetTest < ActiveSupport::TestCase
     end
     @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "approve")
     variant = @scenario.variant!(membership: @membership, version_id: @scenario.current_version_id, variable: "idp", after: "Entra", reason: "Fixture variant", expected_difference: "Collect alternate IdP evidence")
-    assert_equal @scenario.current_version.follow_ups, variant.current_version.follow_ups
+    assert_empty variant.current_version.follow_ups
+    assert_equal [ step("expiry", "Yesterday") ], @scenario.current_version.reload.follow_ups
     checks = @checks.map { |check| check.merge("scenario_evidence_id" => @scenario.current_version.scenario_evidence.find_by!(kind: "expectation").id) }
     fixed = compile_case(checks:)
     @suite.eval_suite_cases.delete_all(:delete_all)

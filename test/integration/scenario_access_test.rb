@@ -9,6 +9,100 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "named variants are local unapproved coupled drafts with a fixed parent and exact values" do
+    approve_scenario
+    parent = @scenario.current_version
+    assert_no_enqueued_jobs do
+      assert_no_difference [ "ScenarioReview.count", "HumanLabel.count", "ScenarioProposal.count", "EvaluationRun.count" ] do
+        assert_difference "Scenario.count", 1 do
+          post variant_workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { version_id: parent.id,
+            mutation: '{"plan":"starter","idp":"Entra"}', reason: "Coupled access boundary", expected_difference: "Check access before metadata setup" }
+          assert_response :see_other
+        end
+      end
+    end
+    child = @corpus.scenarios.find_by!(parent_version: parent)
+    assert_redirected_to workspace_corpus_scenario_path(@workspace, @corpus, child)
+    assert_equal({ "plan" => "starter", "idp" => "Entra" }, child.current_version.known_facts)
+    assert_equal [ { "variable" => "plan", "before" => "enterprise", "after" => "starter" },
+      { "variable" => "idp", "before" => "Okta", "after" => "Entra" } ], child.current_version.mutation["changes"]
+    assert_empty child.current_version.requirements["outcomes"]
+    assert_empty child.current_version.scenario_reviews
+    follow_redirect!
+    assert_select "#variant-receipt", text: /Controlled counterfactual, not observed company truth/
+    assert_select "a", text: "Compile eval", count: 0
+    assert_select "#controlled-variant", count: 0
+    assert_select "textarea[name='scenario[outcomes]']", text: ""
+  end
+
+  test "variant JSON errors retain private edits and submitted parent without any partial writes" do
+    approve_scenario
+    version = @scenario.current_version
+    path = variant_workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    values = { version_id: version.id, reason: "Keep my authored reason", expected_difference: "Keep my proposed difference" }
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      [ '{"plan":"starter","plan":"enterprise"}', "broken", "[]", "null", "{}",
+        '{"plan":"starter","idp":"Okta"}', '{"unknown":"<script>private invalid fact</script>"}', '{"plan":"bad\\u0000value"}',
+        { plan: "雪" * 4000 }.to_json ].each do |mutation|
+        post path, params: values.merge(mutation:)
+        assert_response :unprocessable_content
+        assert_select "#controlled-variant[open]"
+        assert_select "#variant-error[role=alert]", text: /No variant saved/
+        assert_select "textarea[name=mutation][aria-invalid=true][aria-describedby='variant-help variant-error']", text: mutation
+        assert_select "textarea[name=reason]", text: values[:reason]
+        assert_select "textarea[name=expected_difference]", text: values[:expected_difference]
+        assert_select "#controlled-variant input[name=version_id][value='#{version.id}']"
+        assert_select "#controlled-variant script", count: 0
+      end
+      post path, params: values.merge(mutation: '{"plan":"starter"}', variable: "plan", after: '"starter"')
+      assert_response :unprocessable_content
+      post path, params: values.merge(mutation: [ "not scalar" ])
+      assert_response :bad_request
+    end
+    revised = @scenario.revise!(membership: @membership, base_version_id: version.id, attributes: { title: "Changed parent" })
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      post path, params: values.merge(mutation: '{"plan":"starter"}')
+      assert_response :unprocessable_content
+      assert_select "#controlled-variant input[name=version_id][value='#{version.id}']"
+      assert_select "#variant-error", text: /current approved version.*submitted version/
+    end
+    assert_equal revised.id, @scenario.reload.current_version_id
+  end
+
+  test "existing single-variable endpoint retains the exact receipt shape but clears expectations" do
+    approve_scenario
+    post variant_workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { version_id: @scenario.current_version_id,
+      variable: "plan", after: "false", reason: "Typed change", expected_difference: "Inspect changed entitlement" }
+    assert_response :see_other
+    child = @corpus.scenarios.find_by!(parent_version: @scenario.current_version)
+    assert_equal({ "variable" => "plan", "before" => "enterprise", "after" => false,
+      "reason" => "Typed change", "expected_difference" => "Inspect changed entitlement" }, child.current_version.mutation)
+    assert_empty child.current_version.requirements["outcomes"]
+    assert_not child.current_version.approved?
+  end
+
+  test "variant controls explain absent facts or stale evidence and foreign routes grant no access" do
+    approve_scenario
+    empty = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: {} })
+    @scenario.review!(membership: @membership, version_id: empty.id, decision: "approve")
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    assert_select "#controlled-variant [role=status]", text: "Add and review named known facts before creating a controlled variant."
+    assert_select "#controlled-variant textarea", count: 0
+    approve_scenario
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+      evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+    @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "approve")
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "SSO playbook", kind: "document", bytes: "Changed company guidance.")
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    assert_select "#controlled-variant [role=status]", text: "Revise and review current company evidence before creating a variant."
+    assert_select "#controlled-variant textarea", count: 0
+    assert_no_difference "Scenario.count" do
+      post variant_workspace_corpus_scenario_path(workspaces(:beta_support), @corpus, @scenario), params: { version_id: @scenario.current_version_id,
+        mutation: '{"plan":"starter"}', reason: "Foreign", expected_difference: "Foreign" }
+      assert_response :not_found
+    end
+  end
+
   test "expert repairs a private conversation quote while history and viewers stay read only" do
     approve_scenario
     approved = @scenario.current_version

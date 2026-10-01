@@ -626,10 +626,15 @@ edit/error/saved crops use `scenarios/conversation-quote-*` below. These authore
 records prove engineering, not expert judgment or scenario quality.
 
 Approve, reject or merge into another approved scenario by ID. Every decision
-records the expert and version. Create a variant from an approved version by
-changing one existing fact with exact before/after values, reason and expected
-difference. The child keeps parent evidence, requires an expert revision and gets
-its own approval. No external processing occurs. Expired evidence hides scenario
+records the expert and version. Create a variant from a current approved, fresh
+version by changing 1–5 existing named facts in a JSON object (at most 10 KiB).
+Inspect the parent facts first. Keep values typed; duplicate keys, new keys and
+no-ops fail atomically. The child records exact before/after, reason and proposed
+difference. It keeps parent evidence and fixed parentage, but clears all expectations,
+hidden facts and follow-ups. Write fresh source-backed expectations and review the
+new version separately; a title-only edit cannot inherit the parent's outcome.
+See [precise bounds and limits](./SCENARIO_QUALITY.md#controlled-variants).
+No external processing occurs. Expired evidence hides scenario
 reads and blocks writes before purge. Full-page review/variant/error captures live
 under `.amp/in/artifacts/scenarios/` when `CAPTURE_LAB_SCREENSHOTS=1`.
 

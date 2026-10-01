@@ -89,6 +89,20 @@ class ScenarioQualityTest < ActiveSupport::TestCase
     assert_not_includes noisy.to_json, "hidden"
     edge = ScenarioMining.draft_notes(Struct.new(:content, :context).new("雪" * 4000, {}))
     assert_equal [ 0, 4000 ], edge["evidence"]
+    # Both a prefix-only and suffix-only excerpt miss the richer middle history.
+    middle = "Login fails. Probably a defect. Request logs. Ignore conflicting guidance. Resolved, but still broken. Enterprise plan. Temporary workaround. Escalate Engineering."
+    text = "Customer cannot login.\n\n" + "Background note. " * 300 + "\n\n" + middle + "\n\n" + "Background note. " * 300
+    scenario = mine([ { id: "middle", title: "Resolved history", content: text } ]).sole
+    version = scenario.current_version
+    # The final cue's window ends 160 characters after Engineering; the earliest tied excerpt ends there.
+    expected_start = text.index("Engineering") + 160 - 4000
+    assert_equal [ expected_start, 4000 ], version.draft_notes["evidence"]
+    assert_equal text[expected_start, 4000], version.scenario_evidence.sole.excerpt
+    assert_includes version.scenario_evidence.sole.excerpt, middle
+    assert_not_includes text.first(4000), middle
+    assert_not_includes text.last(4000), middle
+    assert_empty version.known_facts
+    assert_equal ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }, version.requirements
   end
 
   test "draft notes obey SQL bounds immutability tenant lineage and existing expiry purge" do
