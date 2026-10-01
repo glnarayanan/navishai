@@ -196,6 +196,30 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
     assert_empty HumanLabel.where(corpus: @corpus)
   end
 
+  test "nested numeric differences appear as conflicts rather than equal known facts" do
+    build_failure_matching_fixture
+    integers = { "steps" => [ 0, { "budget" => 2 } ], "zone" => "west" }
+    floats = { "zone" => "west", "steps" => [ 0.0, { "budget" => 2 } ] }
+    @version = @version.scenario.revise!(membership: @membership, base_version_id: @version.id,
+      attributes: { known_facts: @version.known_facts.merge("limits" => integers) })
+    record = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    record["input"]["known_facts"]["limits"] = floats
+    @item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Nested typed facts", kind: "traces", bytes: [ record ].to_json).corpus_items.sole
+    sign_in users(:owner)
+    visit source_path
+    within find("h6", text: "Conflicting known facts — review caution").find(:xpath, "..") do
+      limits = JSON.parse(find("pre").text).fetch("limits")
+      assert floats.eql?(limits["trace"])
+      assert integers.eql?(limits["scenario"])
+    end
+    within find("h6", text: "Equal known facts").find(:xpath, "..") do
+      assert_equal({ "idp" => "Okta" }, JSON.parse(find("pre").text))
+    end
+    [ 1280, 390 ].each { |width| capture("nested-conflicts-#{width}", width) }
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+    assert_empty @version.scenario_reviews
+  end
+
   private
     def source_path
       workspace_corpus_source_path(@corpus.workspace, @corpus, @item.source_snapshot.source)

@@ -121,7 +121,7 @@ class TraceScenarioMatching
       pair = { "trace" => trace[key], "scenario" => scenario[key] }
       if !trace.key?(key) || !scenario.key?(key)
         missing[key] = pair.merge("missing_from" => trace.key?(key) ? "scenario" : "trace")
-      elsif trace[key].class == scenario[key].class && trace[key] == scenario[key]
+      elsif trace[key].eql?(scenario[key])
         equal[key] = trace[key]
       else
         conflict[key] = pair
