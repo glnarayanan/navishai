@@ -375,8 +375,15 @@ Count current unmerged version IDs in SQL before loading candidate definitions
 or evidence associations. Refuse above 2000; never take the first 2000 as a sample.
 Hold the corpus lock through count and loading so normal scenario writes/purge
 cannot change membership between them. Load that collection once for the page's
-traces. This version-count preflight does not yet move the searched-text byte
-check before association loading or bound every retained field.
+traces. Read byte lengths and link/review metadata first, using the same eligibility
+rules. Refuse above 10 MiB before searched strings/excerpts load; preserve UTF-8,
+joining newlines, ordered prefix bytes and no-sampling semantics. Then read only
+matching version fields, known facts and searched expectation quotes. Keep all
+evidence IDs/source metadata for decision freshness, but no unused source bodies,
+context, hidden facts, contract statements or ignored quote text. Native scoped
+preloading shares this link projection across the two passes. Returned records
+are read projections; full definition pages and explicit permitted-knowledge reads
+remain separate. This is not a cap on every metadata allocation or semantic proof.
 
 Experts may append match/different/uncertain decisions with a reason on an exact
 trace item and current scenario version. Retain each author's history; later
