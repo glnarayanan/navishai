@@ -36,18 +36,27 @@
   <% if @input %>
     <%= render "preview", input: @input %>
     <section id="impact-request" class="section-block config-panel" aria-labelledby="impact-request-title"><h2 id="impact-request-title">Request optional model analysis</h2>
-      <p>The operator must approve this exact workspace/endpoint for corpus processing. Target/judge or scenario-purpose approval is not enough. Review full text, hidden facts and masking limits; masking is not PII clearance. Sent data cannot be recalled by expiry or purge.</p>
+      <p>The operator must approve this exact workspace/endpoint for impact processing in NAVISHAI_IMPACT_ENDPOINTS. Corpus, target/judge or scenario-purpose approval is not enough. Review full text, hidden facts and masking limits; masking is not PII clearance. Sent data cannot be recalled by expiry or purge.</p>
       <p>One once-only call · 256–4096 output tokens · 100 KiB response · 30-second deadline. Unknown outcomes/cost never retry or show zero. New inputs/settings require a new preview and consent and may cost more.</p>
-      <%= form_with url: workspace_corpus_assumption_impacts_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+      <% if @wire %>
+        <h3>Exact model request</h3><p>POST JSON to <%= @endpoint %> · <%= JSON.generate(@wire).bytesize %> bytes. This is the complete actual body, including instructions and settings. Local author/importer IDs, intake/expiry times and snapshot metadata do not leave the workspace.</p>
+        <details id="impact-wire"><summary>Inspect complete JSON request body</summary><pre class="evidence-text"><%= JSON.generate(@wire) %></pre></details>
+        <p>Transport also sends standard JSON headers, an opaque once-only request UUID and any operator-managed bearer token. No credential appears in this preview.</p>
+      <% else %><p>Enter settings, then preview the exact model request locally. That preview sends nothing and queues no job. Consent is available only after it.</p><% end %>
+      <%= form_with url: workspace_corpus_assumption_impacts_path(Current.workspace, @corpus), class: "form-stack", data: { turbo: false } do |form| %>
         <%= form.hidden_field :source_id, value: @input.fetch("source_id"), id: nil %>
         <%= form.hidden_field :before_snapshot_id, value: @input.dig("before", "snapshot_id"), id: nil %>
         <%= form.hidden_field :after_snapshot_id, value: @input.dig("after", "snapshot_id"), id: nil %>
         <%= form.hidden_field :version_ids, value: @input.fetch("scenarios").pluck("version_id").join(" "), id: nil %>
         <%= form.hidden_field :input_digest, value: AssumptionChangeAnalysis.digest(@input), id: nil %>
+        <%= form.hidden_field :wire_digest, value: @wire_digest, id: nil if @wire %>
         <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 6, maxlength: 10240, required: true, aria: { describedby: "impact-settings-help" } %><p id="impact-settings-help">Use endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or an integer 0–2147483647. Never enter credentials.</p></div>
-        <% if @input.fetch("historical") %><div class="checkbox-field"><%= form.check_box :historical_confirm, checked: false %><%= form.label :historical_confirm, "I intentionally compare these historical snapshots, not current policy." %></div><% end %>
-        <div class="checkbox-field"><%= form.check_box :impact_disclose, checked: false %><%= form.label :impact_disclose, "I approve sending both exact document snapshots, their provenance and every selected scenario assumption/requirement shown above to this endpoint, model and settings." %></div>
-        <%= form.submit "Request change analysis", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <%= form.button "Preview exact model request", type: :submit, name: :preview_only, value: "1", class: "button", data: { turbo_submits_with: "Loading local preview…" } %>
+        <% if @wire %>
+          <% if @input.fetch("historical") %><div class="checkbox-field"><%= form.check_box :historical_confirm, checked: false %><%= form.label :historical_confirm, "I intentionally compare these historical snapshots, not current policy." %></div><% end %>
+          <div class="checkbox-field"><%= form.check_box :impact_disclose, checked: false %><%= form.label :impact_disclose, "I approve sending the exact JSON body above, including both document texts and all selected scenario assumptions/requirements, to the displayed endpoint, model and settings." %></div>
+          <%= form.submit "Request change analysis", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <% end %>
       <% end %>
     </section>
   <% end %>

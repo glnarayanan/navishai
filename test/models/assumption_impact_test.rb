@@ -29,9 +29,10 @@ class AssumptionImpactTest < ActiveSupport::TestCase
         assert_equal 1, calls.size
         assert_equal impact.request_key, calls.sole["Idempotency-Key"]
         body = JSON.parse(calls.sole.body)
-        assert_equal input, body.fetch("input")
-        assert_equal "source-assumption-impact-v1", body.fetch("schema")
+        assert_equal AssumptionChangeAnalysis.wire_input(input), body.fetch("input")
+        assert_equal "source-assumption-impact-v2", body.fetch("schema")
         assert_equal 20, body.fetch("proposal_limit")
+        assert_equal "Bearer test-only-impact-token", calls.sole["Authorization"]
         assert_not_includes calls.sole.body, "Synthetic expert fixture only"
         assert_not_includes calls.sole.body, "test-only-impact-token"
         assert_nil impact.assumption_impact_result.result["cost"]
@@ -44,21 +45,55 @@ class AssumptionImpactTest < ActiveSupport::TestCase
     assert_not @version.stale?
   end
 
-  test "exact corpus purpose and human digest-bound consent are required before queueing" do
-    with_impact_approval do
+  test "old corpus scenario and evaluation approvals cannot authorize impact but exact impact and preview can" do
+    with_old_purpose_approvals do
       assert_no_difference([ "AssumptionImpact.count", "AuditEvent.count" ]) do
-        assert_raises(CorpusIntake::Invalid) { request_impact(disclose: false) }
-        assert_raises(CorpusIntake::Invalid) { request_impact(input_digest: "0" * 64) }
-        assert_raises(CorpusIntake::Invalid) { request_impact(configuration: impact_configuration.merge("secret" => "not-allowed")) }
+        assert_raises(EvaluationHttp::Error) { request_impact }
+        with_impact_approval(workspace_id: workspaces(:beta_support).id) { assert_raises(EvaluationHttp::Error) { request_impact } }
+        with_impact_approval(endpoint: "https://example.com/different") { assert_raises(EvaluationHttp::Error) { request_impact } }
+        with_impact_approval do
+          assert_raises(CorpusIntake::Invalid) { request_impact(disclose: false) }
+          assert_raises(CorpusIntake::Invalid) { request_impact(input_digest: "0" * 64) }
+          assert_raises(CorpusIntake::Invalid) { request_impact(wire_digest: nil) }
+          assert_raises(CorpusIntake::Invalid) { request_impact(wire_digest: "0" * 64) }
+          digest = AssumptionChangeAnalysis.wire_digest(impact_preview, impact_configuration)
+          [ { "model" => "changed" }, { "endpoint" => "https://example.com/different" }, { "settings" => impact_configuration.fetch("settings").merge("seed" => 99) } ].each do |change|
+            assert_raises(CorpusIntake::Invalid) { request_impact(configuration: impact_configuration.merge(change), wire_digest: digest) }
+          end
+          assert_raises(CorpusIntake::Invalid) { request_impact(configuration: impact_configuration.merge("secret" => "not-allowed")) }
+        end
+      end
+      with_impact_response(calls: calls = []) do
+        impact = request_impact
+        AssumptionImpactJob.perform_now(impact.id)
+        assert_equal "complete", impact.reload.state
+        assert_equal 1, calls.size
+        assert_equal "Bearer test-only-impact-token", calls.sole["Authorization"]
       end
     end
-    with_impact_approval(workspace_id: workspaces(:beta_support).id) { assert_raises(EvaluationHttp::Error) { request_impact } }
-    with_impact_approval(endpoint: "https://example.com/different") { assert_raises(EvaluationHttp::Error) { request_impact } }
-    with_impact_approval do
-      ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]"
-      with_endpoint_approval { assert_raises(EvaluationHttp::Error) { request_impact } }
+  end
+
+  test "impact approval alone controls pre-call transport and post-call retention even with all old approvals" do
+    with_old_purpose_approvals do
+      with_impact_response(calls: calls = []) do
+        impact = request_impact
+        ENV.delete("NAVISHAI_IMPACT_ENDPOINTS")
+        # Transport must independently enforce the purpose, not only the job.
+        assert_equal "error", AssumptionChangeAnalysis.call(impact).fetch("decision")
+        assert_empty calls
+        AssumptionImpactJob.perform_now(impact.id)
+        assert_equal "interrupted", impact.reload.state
+        assert_empty calls
+        assert_nil impact.assumption_impact_result
+      end
+      with_impact_response(calls: calls = [], during_call: -> { ENV.delete("NAVISHAI_IMPACT_ENDPOINTS") }) do
+        impact = request_impact(configuration: impact_configuration.deep_merge("settings" => { "seed" => 71 }))
+        2.times { AssumptionImpactJob.perform_now(impact.id) }
+        assert_equal 1, calls.size
+        assert_equal "interrupted", impact.reload.state
+        assert_nil impact.assumption_impact_result
+      end
     end
-    assert_equal 0, AssumptionImpact.where(corpus: @corpus).count
   end
 
   test "historical after snapshots need separate confirmation and remain exact" do
@@ -145,7 +180,7 @@ class AssumptionImpactTest < ActiveSupport::TestCase
     @membership.update!(role: :owner)
     with_impact_approval do
       impact = request_impact(configuration: impact_configuration.deep_merge("settings" => { "seed" => 18 }))
-      ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]"
+      ENV["NAVISHAI_IMPACT_ENDPOINTS"] = "[]"
       AssumptionImpactJob.perform_now(impact.id)
       assert_equal "interrupted", impact.reload.state
       assert_nil impact.assumption_impact_result

@@ -17,7 +17,7 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
     fill_in "After snapshot ID", with: @after.id
     fill_in "Scenario IDs (spaces or commas)", with: @scenarios.map(&:id).join(", ")
     click_button "Preview fixed change"
-    assert_selector "h2", text: "Exact disclosure preview"
+    assert_selector "h2", text: "Fixed comparison and local provenance"
     assert_text "Only Enterprise plans support SAML."
     assert_text "Business and Enterprise plans support SAML."
     within "#impact-preview" do
@@ -31,14 +31,25 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
       assert_text @after.mask_digest
     end
     fill_in "Model configuration (JSON)", with: impact_configuration.to_json
+    assert_no_field "impact_disclose"
+    assert_no_button "Request change analysis"
+    click_button "Preview exact model request"
+    assert_selector "#impact-wire"
+    assert_equal 0, AssumptionImpact.where(corpus: @corpus).count
+    assert_selector "h3", text: "Exact model request"
+    find("summary", text: "Inspect complete JSON request body").send_keys(:enter)
+    wire = page.evaluate_script("document.querySelector('#impact-wire pre').textContent")
+    assert_equal %w[content context title], JSON.parse(wire).fetch("input").fetch("before").keys.sort
     assert_unchecked_field "impact_disclose"
     [ 1280, 390 ].each { |width| capture("preview-#{width}", width) }
     fill_in "Model configuration (JSON)", with: "{broken"
-    click_button "Request change analysis"
+    click_button "Preview exact model request"
     assert_selector "[role=alert]", text: /valid JSON/
     assert_field "Model configuration (JSON)", with: "{broken"
+    assert_no_field "impact_disclose"
     [ 1280, 390 ].each { |width| capture("repair-#{width}", width) }
     fill_in "Model configuration (JSON)", with: impact_configuration.to_json
+    click_button "Preview exact model request"
     with_impact_approval do
       click_button "Request change analysis"
       assert_selector "[role=alert]", text: /Confirm disclosure/
@@ -57,6 +68,8 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
       assert_text "Possibly affected requirements"
       assert_text "An expert must check rollout dates and account exceptions"
       assert_equal 1, calls.size
+      assert_equal wire, calls.sole.body
+      assert_equal wire, page.evaluate_script("document.querySelector('#impact-wire pre').textContent")
       assert_equal before, [ ScenarioVersion.count, ScenarioReview.count, HumanLabel.count ]
       assert_empty @source.dependent_versions
       assert @version.approved?
@@ -84,6 +97,7 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
     visit new_workspace_corpus_assumption_impact_path(@workspace, @corpus, **impact_selection_params)
     assert_text "Historical comparison"
     fill_in "Model configuration (JSON)", with: impact_configuration.to_json
+    click_button "Preview exact model request"
     with_impact_approval do
       check "impact_disclose"
       click_button "Request change analysis"

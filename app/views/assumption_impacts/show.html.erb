@@ -33,6 +33,9 @@
     <p>Requested by expert #<%= @impact.requested_by_id %> at <%= @impact.created_at.to_fs(:long) %> in workspace #<%= @impact.workspace_id %>, corpus #<%= @impact.corpus_id %>. Confirmation bound to this preview digest.</p>
     <pre class="evidence-text"><%= JSON.pretty_generate(@impact.configuration.merge("protocol" => @impact.processing_version, "request_key" => @impact.request_key, "input_digest" => @impact.input_digest, "request_digest" => @impact.request_digest)) %></pre>
   </details>
+  <% if @wire %>
+    <details id="impact-wire" class="section-block"><summary>Exact fixed JSON request body</summary><p>POST to <%= @impact.configuration.fetch("endpoint") %> · <%= JSON.generate(@wire).bytesize %> bytes. Local provenance below is not model input.</p><pre class="evidence-text"><%= JSON.generate(@wire) %></pre></details>
+  <% else %><p role="status">Legacy protocol receipt. This page does not reconstruct its wire with the current protocol; queued legacy attempts cannot dispatch.</p><% end %>
   <%= render "preview", input: @input %>
   <% if Current.require_membership!.can_write? %><p><%= link_to "Review a new comparison preview", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, source_id: @impact.source_id) %>. The same fixed input/settings reuse this attempt, even after an error or interruption. A changed request may incur a new charge.</p><% end %>
 </main>

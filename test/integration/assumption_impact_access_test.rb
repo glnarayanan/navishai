@@ -16,10 +16,37 @@ class AssumptionImpactAccessTest < ActionDispatch::IntegrationTest
       assert_select "#impact-preview", text: /Business and Enterprise plans support SAML/
       assert_select "#impact-preview", text: /Business excludes SAML/
       assert_select "#impact-request input[name=version_ids][value='#{@version_ids.join(' ')}']"
-      assert_select "#impact-request input#impact_disclose[checked]", count: 0
+      assert_select "#impact-request input#impact_disclose", count: 0
+      assert_select "#impact-request input[type=submit]", count: 0
       ids = css_select("[id]").map { |node| node["id"] }
       assert_equal ids.uniq, ids, "Visible labels must not share IDs with hidden confirmation inputs"
       assert_select "a[href=?]", workspace_corpus_source_path(@workspace, @corpus, @source, snapshot: @before.number, anchor: "record-#{@before.corpus_items.sole.id}"), text: "Inspect before source snapshot"
+    end
+  end
+
+  test "exact wire preview sends nothing and matches actual transport bytes without local provenance" do
+    with_old_purpose_approvals do
+      assert_no_enqueued_jobs do
+        assert_no_difference([ "AssumptionImpact.count", "AuditEvent.count" ]) do
+          post workspace_corpus_assumption_impacts_path(@workspace, @corpus), params: impact_request_params.except(:impact_disclose, :wire_digest).merge(preview_only: "1")
+          assert_response :success
+        end
+      end
+      wire = css_select("#impact-wire pre").sole.text
+      assert_equal %w[content context title], JSON.parse(wire).fetch("input").fetch("before").keys.sort
+      assert_select "#impact-request input#impact_disclose[checked]", count: 0
+      assert_select "#impact-request input[name=wire_digest][value=?]", AssumptionChangeAnalysis.wire_digest(impact_preview, impact_configuration)
+      with_impact_response(calls: calls = []) do
+        post workspace_corpus_assumption_impacts_path(@workspace, @corpus), params: impact_request_params
+        assert_response :see_other
+        impact = AssumptionImpact.where(corpus: @corpus).sole
+        AssumptionImpactJob.perform_now(impact.id)
+        assert_equal 1, calls.size
+        assert_equal wire, calls.sole.body
+        get workspace_corpus_assumption_impact_path(@workspace, @corpus, impact)
+        assert_response :success
+        assert_equal wire, css_select("#impact-wire pre").sole.text, "JSONB ordering cannot change the fixed wire"
+      end
     end
   end
 
@@ -39,6 +66,13 @@ class AssumptionImpactAccessTest < ActionDispatch::IntegrationTest
         assert_response :unprocessable_content
         assert_select "[role=alert]", text: /preview changed/
         assert_select "input#impact_disclose[checked]", count: 0
+        [ impact_request_params.except(:wire_digest),
+          impact_request_params.merge(configuration: impact_configuration.deep_merge("settings" => { "seed" => 99 }).to_json) ].each do |request|
+          post workspace_corpus_assumption_impacts_path(@workspace, @corpus), params: request
+          assert_response :unprocessable_content
+          assert_select "[role=alert]", text: /exact model request changed/
+          assert_select "input#impact_disclose[checked]", count: 0
+        end
       end
       post workspace_corpus_assumption_impacts_path(@workspace, @corpus), params: impact_request_params
       assert_response :see_other
@@ -92,6 +126,26 @@ class AssumptionImpactAccessTest < ActionDispatch::IntegrationTest
     with_impact_response(calls: calls = []) { AssumptionImpactJob.perform_now(@impact.id) }
     assert_empty calls
     assert_equal "interrupted", @impact.reload.state
+  end
+
+  test "legacy v1 consent never dispatches under the v2 disclosure contract" do
+    with_impact_response(calls: calls = []) do
+      original = request_impact
+      attributes = original.attributes.except("id").merge("processing_version" => "source-assumption-impact-v1",
+        "request_key" => SecureRandom.uuid, "request_digest" => "b" * 64)
+      legacy = AssumptionImpact.find(AssumptionImpact.insert_all!([ attributes ], returning: %w[id]).rows.sole.sole)
+      original.assumption_impact_inputs.each do |entry|
+        legacy.assumption_impact_inputs.create!(workspace: @workspace, corpus: @corpus, scenario_version_id: entry.scenario_version_id)
+      end
+      2.times { AssumptionImpactJob.perform_now(legacy.id) }
+      assert_empty calls
+      assert_equal "interrupted", legacy.reload.state
+      assert_nil legacy.assumption_impact_result
+      get workspace_corpus_assumption_impact_path(@workspace, @corpus, legacy)
+      assert_response :success
+      assert_select "[role=status]", text: /queued legacy attempts cannot dispatch/
+      assert_select "#impact-wire", count: 0
+    end
   end
 
   test "completed historical proposals remain inspectable after newer versions without applying old assumptions" do

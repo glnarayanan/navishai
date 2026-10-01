@@ -14,18 +14,21 @@ class AssumptionImpact < ApplicationRecord
     :request_digest, :processing_version, :request_key, :created_at
   validates :state, inclusion: { in: %w[queued running complete interrupted] }
 
-  def self.request!(corpus:, membership:, source_id:, before_snapshot_id:, after_snapshot_id:, version_ids:, configuration:, input_digest:, disclose: false, historical: false)
+  def self.request!(corpus:, membership:, source_id:, before_snapshot_id:, after_snapshot_id:, version_ids:, configuration:, input_digest:, wire_digest: nil, disclose: false, historical: false)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       raise CorpusIntake::Invalid, "Confirm disclosure of the exact documents and scenario assumptions before requesting change analysis." unless disclose == true
       raise CorpusIntake::Invalid, "Use endpoint, model and fixed settings; never enter credentials." unless ModelGateway.valid_configuration?(configuration)
       input = AssumptionChangeAnalysis.preview(corpus:, source_id:, before_snapshot_id:, after_snapshot_id:, version_ids:)
       raise CorpusIntake::Invalid, "The preview changed. Review it again and confirm fresh disclosure." unless AssumptionChangeAnalysis.digest(input) == input_digest
+      unless AssumptionChangeAnalysis.wire_digest(input, configuration) == wire_digest
+        raise CorpusIntake::Invalid, "The exact model request changed or was not previewed. Preview it again and confirm fresh disclosure."
+      end
       if input.fetch("historical") && historical != true
         raise CorpusIntake::Invalid, "Confirm that this historical comparison is intentional; it does not describe current policy."
       end
       AssumptionChangeAnalysis.check_payload!(input, configuration)
-      EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
+      EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :impact)
       request_digest = AssumptionChangeAnalysis.digest({ "input" => input, "configuration" => configuration, "protocol" => AssumptionChangeAnalysis::VERSION })
       existing = where(corpus:).find_by(request_digest:)
       return existing if existing
@@ -58,7 +61,7 @@ class AssumptionImpact < ApplicationRecord
     current = AssumptionChangeAnalysis.preview(corpus:, source_id:, before_snapshot_id:, after_snapshot_id:, version_ids: ids)
     raise CorpusIntake::Invalid, "Fixed assumptions or document inputs changed; no proposals retained." unless ids == input.fetch("scenarios").pluck("version_id") && AssumptionChangeAnalysis.digest(current) == input_digest
     AssumptionChangeAnalysis.check_payload!(input, configuration)
-    EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
+    EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :impact)
     true
   end
 

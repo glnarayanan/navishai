@@ -31,13 +31,15 @@ module AssumptionImpactTestHelper
   end
 
   def request_impact(**overrides)
-    AssumptionImpact.request!(**{ corpus: @corpus, membership: @membership, source_id: @source.id,
+    attributes = { corpus: @corpus, membership: @membership, source_id: @source.id,
       before_snapshot_id: @before.id, after_snapshot_id: @after.id, version_ids: @version_ids,
-      configuration: impact_configuration, input_digest: AssumptionChangeAnalysis.digest(impact_preview), disclose: true }.merge(overrides))
+      configuration: impact_configuration, input_digest: AssumptionChangeAnalysis.digest(impact_preview), disclose: true }.merge(overrides)
+    attributes[:wire_digest] = overrides.fetch(:wire_digest) { AssumptionChangeAnalysis.wire_digest(impact_preview, attributes.fetch(:configuration)) }
+    AssumptionImpact.request!(**attributes)
   end
 
   def impact_response
-    { "schema" => "source-assumption-impact-v1", "model" => "change-fixture-2026-10", "decision" => "proposal",
+    { "schema" => "source-assumption-impact-v2", "model" => "change-fixture-2026-10", "decision" => "proposal",
       "reason" => "Synthetic fixture: changed SAML entitlement may affect this scenario.",
       "affected" => [ { "reference" => "scenario-version-#{@version.id}", "field" => "requirements", "assumption_quote" => "Treat Business SAML as unsupported.",
         "before_quote" => "Only Enterprise plans support SAML.", "after_quote" => "Business and Enterprise plans support SAML.",
@@ -47,11 +49,11 @@ module AssumptionImpactTestHelper
   end
 
   def with_impact_approval(workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT)
-    original = ENV["NAVISHAI_CORPUS_ENDPOINTS"]
-    ENV["NAVISHAI_CORPUS_ENDPOINTS"] = [ { workspace_id:, endpoint:, bearer_token: "test-only-impact-token" } ].to_json
+    original = ENV["NAVISHAI_IMPACT_ENDPOINTS"]
+    ENV["NAVISHAI_IMPACT_ENDPOINTS"] = [ { workspace_id:, endpoint:, bearer_token: "test-only-impact-token" } ].to_json
     yield
   ensure
-    original ? ENV["NAVISHAI_CORPUS_ENDPOINTS"] = original : ENV.delete("NAVISHAI_CORPUS_ENDPOINTS")
+    original ? ENV["NAVISHAI_IMPACT_ENDPOINTS"] = original : ENV.delete("NAVISHAI_IMPACT_ENDPOINTS")
   end
 
   def with_impact_response(response: impact_response, calls: [], during_call: nil)
@@ -62,12 +64,24 @@ module AssumptionImpactTestHelper
     end
   end
 
+  def with_old_purpose_approvals
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS]
+    originals = registries.index_with { |key| ENV[key] }
+    registries.each { |key| ENV[key] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "old-purpose-token" } ].to_json }
+    ENV.delete("NAVISHAI_IMPACT_ENDPOINTS")
+    yield
+  ensure
+    originals.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
   def impact_selection_params
     { source_id: @source.id, before_snapshot_id: @before.id, after_snapshot_id: @after.id, scenario_ids: @scenarios.map(&:id).join(" ") }
   end
 
   def impact_request_params
     impact_selection_params.except(:scenario_ids).merge(version_ids: @version_ids.join(" "),
-      input_digest: AssumptionChangeAnalysis.digest(impact_preview), configuration: impact_configuration.to_json, impact_disclose: "1")
+      input_digest: AssumptionChangeAnalysis.digest(impact_preview),
+      wire_digest: AssumptionChangeAnalysis.wire_digest(impact_preview, impact_configuration),
+      configuration: impact_configuration.to_json, impact_disclose: "1")
   end
 end

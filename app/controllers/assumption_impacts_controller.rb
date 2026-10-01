@@ -21,14 +21,19 @@ class AssumptionImpactsController < ApplicationController
   def create
     raise CorpusIntake::Invalid, "Model configuration must be JSON of at most 10 KiB." unless params[:configuration].is_a?(String) && params[:configuration].bytesize <= 10.kilobytes
     configuration = JSON.parse(params[:configuration])
+    raise CorpusIntake::Invalid, "Use endpoint, model and fixed settings; never enter credentials." unless ModelGateway.valid_configuration?(configuration)
+    if params[:preview_only] == "1"
+      prepare_preview(configuration:)
+      return render :new, status: @preview_error ? :unprocessable_content : :ok
+    end
     impact = AssumptionImpact.request!(corpus: @corpus, membership: Current.require_membership!,
       source_id: params[:source_id], before_snapshot_id: params[:before_snapshot_id], after_snapshot_id: params[:after_snapshot_id],
-      version_ids: params[:version_ids], configuration:, input_digest: params[:input_digest],
+      version_ids: params[:version_ids], configuration:, input_digest: params[:input_digest], wire_digest: params[:wire_digest],
       disclose: params[:impact_disclose] == "1", historical: params[:historical_confirm] == "1")
     redirect_to workspace_corpus_assumption_impact_path(Current.workspace, @corpus, impact),
       notice: "Fixed change-analysis attempt opened. Refresh or duplicate submission never sends another request.", status: :see_other
   rescue CorpusIntake::Invalid, SupportOutput::Invalid, EvaluationHttp::Error, JSON::ParserError => error
-    prepare_preview
+    prepare_preview(configuration: ModelGateway.valid_configuration?(configuration) ? configuration : nil)
     flash.now[:alert] = error.is_a?(JSON::ParserError) ? "Model configuration must be valid JSON. Repair it and confirm disclosure again." : error.message
     render :new, status: :unprocessable_content
   end
@@ -38,6 +43,7 @@ class AssumptionImpactsController < ApplicationController
       @impact = AssumptionImpact.where(corpus: @corpus).find(params[:id])
       raise ActiveRecord::RecordNotFound if @impact.expired?
       @input = @impact.input
+      @wire = AssumptionChangeAnalysis.payload(@input, @impact.configuration) if @impact.processing_version == AssumptionChangeAnalysis::VERSION
       @result = @impact.assumption_impact_result&.result
       @source_changed = @impact.source.reload.current_snapshot_id != @impact.source_head_id ||
         @impact.source.source_snapshots.maximum(:number) != @input.fetch("source_latest_snapshot_number")
@@ -58,7 +64,7 @@ class AssumptionImpactsController < ApplicationController
       @corpus = Current.workspace.corpora.find(params[:corpus_id])
     end
 
-    def prepare_preview
+    def prepare_preview(configuration: nil)
       @corpus.with_lock do
         raise CorpusIntake::Invalid, "Corpus sources expired; retained assumptions cannot be disclosed." if @corpus.eval_definitions_expired?
         @document_page = params[:document_page].to_i.clamp(1, 10000)
@@ -74,6 +80,12 @@ class AssumptionImpactsController < ApplicationController
         if params[:before_snapshot_id].present? && params[:after_snapshot_id].present?
           @version_ids = params[:version_ids].presence || AssumptionChangeAnalysis.current_version_ids(corpus: @corpus, scenario_ids: params[:scenario_ids])
           @input = AssumptionChangeAnalysis.preview(corpus: @corpus, source_id: params[:source_id], before_snapshot_id: params[:before_snapshot_id], after_snapshot_id: params[:after_snapshot_id], version_ids: @version_ids)
+          if configuration
+            AssumptionChangeAnalysis.check_payload!(@input, configuration)
+            @wire = AssumptionChangeAnalysis.payload(@input, configuration)
+            @wire_digest = AssumptionChangeAnalysis.wire_digest(@input, configuration)
+            @endpoint = configuration.fetch("endpoint")
+          end
         end
       end
     rescue CorpusIntake::Invalid => error

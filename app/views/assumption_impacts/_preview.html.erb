@@ -1,6 +1,6 @@
 <section id="impact-preview" class="section-block comparison-row" aria-labelledby="impact-preview-title">
-  <h2 id="impact-preview-title">Exact disclosure preview</h2>
-  <p><%= input.fetch("scenarios").size %> fixed versions · two complete document records · <%= number_to_human_size(JSON.generate(input).bytesize) %> before protocol/settings overhead. No sampling or truncation.</p>
+  <h2 id="impact-preview-title">Fixed comparison and local provenance</h2>
+  <p><%= input.fetch("scenarios").size %> fixed versions · two complete document records · <%= number_to_human_size(JSON.generate(AssumptionChangeAnalysis.wire_input(input)).bytesize) %> of document/assumption data before protocol/settings overhead. No sampling or truncation. Local metadata do not grant disclosure; inspect the separate exact request before confirming.</p>
   <p>Source #<%= input.fetch("source_id") %> · <%= input.fetch("source_name") %> · head at preview #<%= input.fetch("source_head_id") %> · latest snapshot number <%= input.fetch("source_latest_snapshot_number") %> · retained until <%= input.fetch("source_expires_at") %>.</p>
   <% if input.fetch("historical") %><p role="status">Historical comparison. The after-snapshot is not current policy; a separate confirmation is required.</p><% end %>
   <div class="review-layout">
@@ -14,7 +14,7 @@
     <% end %>
   </div>
   <h3>Selected assumptions and requirements</h3>
-  <p>Situation, known and hidden facts, requirements, mutation and follow-ups leave this workspace if you confirm. Reviews, labels, outputs and other corpus records do not. Hidden facts are not target input here; this is separately approved corpus processing.</p>
+  <p>Situation, known and hidden facts, requirements, mutation and follow-ups leave this workspace only after exact-request preview and confirmation. Reviews, labels, outputs and other corpus records do not. Hidden facts are not target input here; this needs separate impact-purpose approval.</p>
   <% input.fetch("scenarios").each do |entry| %>
     <details class="source-record"><summary><%= entry.fetch("title") %> · scenario #<%= entry.fetch("scenario_id") %>, version <%= entry.fetch("number") %></summary>
       <p><%= link_to "Inspect fixed scenario version", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.fetch("scenario_id"), version: entry.fetch("number")) %> · <%= entry.fetch("reference") %></p>

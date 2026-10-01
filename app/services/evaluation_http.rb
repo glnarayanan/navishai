@@ -31,7 +31,7 @@ class EvaluationHttp
   end
 
   def self.approval!(url, workspace_id:, purpose: :evaluation)
-    registry = { evaluation: "NAVISHAI_EVALUATION_ENDPOINTS", scenario: "NAVISHAI_SCENARIO_ENDPOINTS", corpus: "NAVISHAI_CORPUS_ENDPOINTS", matching: "NAVISHAI_MATCHING_ENDPOINTS" }.fetch(purpose)
+    registry = { evaluation: "NAVISHAI_EVALUATION_ENDPOINTS", scenario: "NAVISHAI_SCENARIO_ENDPOINTS", corpus: "NAVISHAI_CORPUS_ENDPOINTS", matching: "NAVISHAI_MATCHING_ENDPOINTS", impact: "NAVISHAI_IMPACT_ENDPOINTS" }.fetch(purpose)
     entries = JSON.parse(ENV.fetch(registry, "[]"))
     entry = entries.is_a?(Array) && entries.find { |candidate| candidate.is_a?(Hash) && candidate["workspace_id"] == workspace_id && candidate["endpoint"] == url }
     token = entry && entry["bearer_token"]

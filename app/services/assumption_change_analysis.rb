@@ -1,5 +1,5 @@
 class AssumptionChangeAnalysis
-  VERSION = "source-assumption-impact-v1"
+  VERSION = "source-assumption-impact-v2"
   MAX_VERSIONS = 50
   MAX_PROPOSALS = 20
   MAX_INPUT_BYTES = 256.kilobytes
@@ -33,8 +33,8 @@ class AssumptionChangeAnalysis
       versions = ScenarioVersion.where(workspace_id: corpus.workspace_id, corpus_id: corpus.id, id: selected).joins(:scenario)
         .where("scenarios.current_version_id = scenario_versions.id AND scenarios.merged_into_id IS NULL").order(:id)
       raise CorpusIntake::Invalid, "Selected versions changed or are not current active same-corpus versions. Review a new preview." unless versions.pluck(:id) == selected
-      # Refuse before full definitions load. Encoded input/payload checks below
-      # include JSON escaping and provenance. Count only JSON strings here;
+      # Refuse before full definitions load. Encoded wire checks below
+      # include JSON escaping and protocol overhead. Count only JSON strings here;
       # PostgreSQL's number formatting and spaces can exceed wire JSON size.
       definition_bytes = versions.sum(Arel.sql(<<~'SQL'))
         octet_length(scenario_versions.title) + octet_length(scenario_versions.situation) +
@@ -45,7 +45,7 @@ class AssumptionChangeAnalysis
       documents = corpus.corpus_items.where(source_snapshot_id: [ before.id, after.id ])
       raise CorpusIntake::Invalid, "Each document snapshot must contain exactly one complete record." unless documents.count == 2
       document_bytes = documents.sum(Arel.sql(<<~'SQL'))
-        octet_length(title) + octet_length(content) + octet_length(external_id) +
+        octet_length(title) + octet_length(content) +
           (SELECT COALESCE(SUM(octet_length(fragment[1])), 0)
            FROM regexp_matches(context::text, $json$"(?:[^"\\]|\\.)*"$json$, 'g') AS fragments(fragment))
       SQL
@@ -62,7 +62,7 @@ class AssumptionChangeAnalysis
         "source_expires_at" => source.expires_at.iso8601(6), "historical" => after.id != source.current_snapshot_id,
         "before" => document(before), "after" => document(after), "scenarios" => entries }
       raise CorpusIntake::Invalid, "These retained document texts are identical; choose a content change." if input.dig("before", "content") == input.dig("after", "content")
-      check_bytes!(JSON.generate(input).bytesize)
+      check_bytes!(JSON.generate(wire_input(input)).bytesize)
       input
     end
   end
@@ -93,9 +93,20 @@ class AssumptionChangeAnalysis
     raise CorpusIntake::Invalid, "Change analysis accepts at most 256 KiB of complete documents and selected assumptions. Choose fewer versions; nothing is sampled or truncated." if size > MAX_INPUT_BYTES
   end
 
+  def self.wire_input(input)
+    { "historical" => input.fetch("historical"),
+      "before" => input.fetch("before").slice("title", "content", "context"),
+      "after" => input.fetch("after").slice("title", "content", "context"),
+      "scenarios" => input.fetch("scenarios").map { |entry| entry.slice("reference", "title", "assumptions") } }
+  end
+
   def self.payload(input, configuration)
-    { "schema" => VERSION, "instructions" => INSTRUCTIONS, "model" => configuration.fetch("model"),
-      "settings" => configuration.fetch("settings"), "proposal_limit" => MAX_PROPOSALS, "input" => input }
+    canonical({ "schema" => VERSION, "instructions" => INSTRUCTIONS, "model" => configuration.fetch("model"),
+      "settings" => configuration.fetch("settings"), "proposal_limit" => MAX_PROPOSALS, "input" => wire_input(input) })
+  end
+
+  def self.wire_digest(input, configuration)
+    digest({ "endpoint" => configuration.fetch("endpoint"), "body" => payload(input, configuration) })
   end
 
   def self.check_payload!(input, configuration)
@@ -105,7 +116,7 @@ class AssumptionChangeAnalysis
   def self.call(impact)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     response = EvaluationHttp.call(configuration: impact.configuration.slice("endpoint"), payload: payload(impact.input, impact.configuration),
-      workspace_id: impact.workspace_id, request_key: impact.request_key, purpose: :corpus)
+      workspace_id: impact.workspace_id, request_key: impact.request_key, purpose: :impact)
     validate_response!(response, input: impact.input, model: impact.configuration.fetch("model"))
     response.merge("elapsed_ms" => ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round, "usage_and_cost" => "endpoint_reported")
   rescue SupportOutput::Invalid, EvaluationHttp::Error
@@ -138,7 +149,7 @@ class AssumptionChangeAnalysis
     scenario = input.fetch("scenarios").find { |entry| entry.fetch("reference") == proposal["reference"] }
     return false unless scenario
     field = scenario.fetch("assumptions").fetch(proposal["field"])
-    field_text = field.is_a?(String) ? field : JSON.generate(field)
+    field_text = field.is_a?(String) ? field : JSON.generate(canonical(field))
     field_text.include?(proposal["assumption_quote"]) && input.dig("before", "content").include?(proposal["before_quote"]) && input.dig("after", "content").include?(proposal["after_quote"])
   end
   private_class_method :valid_proposal?
