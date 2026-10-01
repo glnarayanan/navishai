@@ -16,7 +16,7 @@ class CorpusIntake
     else conversations(text)
     end
     raise Invalid, "An upload needs 1–2000 records with unique IDs." unless records.size.between?(1, MAX_ITEMS) && records.map { |record| record["id"].to_s }.uniq.size == records.size
-    records.each do |record|
+    records = records.map do |record|
       unless record["id"].is_a?(String) || record["id"].is_a?(Integer)
         raise Invalid, "Each record needs a string or integer ID."
       end
@@ -24,7 +24,17 @@ class CorpusIntake
         raise Invalid, "Each record needs a string title, string content and an object context."
       end
       raise Invalid, "Source text must not contain null bytes." if record.to_json.include?("\\u0000")
+      fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
+        content: record.fetch("content"), context: record.fetch("context", {}) }
+      if redaction == "email"
+        fields = redact(fields)
+        fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
+      end
+      SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
+      fields
     end
+    raise Invalid, "Masking would merge distinct record IDs. Rename those IDs before upload; no records were imported." unless records.map { |record| record[:external_id] }.uniq.size == records.size
+    processing_version = kind == "traces" ? SupportTrace::VERSION : PROCESSING_VERSION
 
     corpus.with_lock do
       corpus.authorize_writer!(membership)
@@ -33,19 +43,12 @@ class CorpusIntake
       source.expires_at = retention_days.to_i.days.from_now
       source.save!
       digest = Digest::SHA256.hexdigest(bytes)
-      snapshot = source.source_snapshots.find_by(digest:, redaction:)
+      snapshot = source.source_snapshots.find_by(digest:, redaction:, processing_version:)
       unless snapshot
         snapshot = source.source_snapshots.create!(workspace: corpus.workspace, corpus:,
           number: (source.source_snapshots.maximum(:number) || 0) + 1, digest:, redaction:,
-          processing_version: kind == "traces" ? SupportTrace::VERSION : PROCESSING_VERSION, imported_by: membership.user, created_at: Time.current)
-        records.each do |record|
-          fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
-            content: record.fetch("content"), context: record.fetch("context", {}) }
-          if redaction == "email"
-            fields = redact(fields)
-            fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
-          end
-          SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
+          processing_version:, imported_by: membership.user, created_at: Time.current)
+        records.each do |fields|
           snapshot.corpus_items.create!(fields.merge(workspace: corpus.workspace, corpus:, created_at: Time.current))
         end
       end
@@ -91,7 +94,12 @@ class CorpusIntake
   def self.redact(value)
     case value
     when String then value.gsub(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i, "[email redacted]")
-    when Hash then value.to_h { |key, child| [ key.is_a?(String) ? redact(key) : key, redact(child) ] }
+    when Hash
+      value.each_with_object({}) do |(key, child), masked|
+        masked_key = key.is_a?(String) ? redact(key) : key
+        raise Invalid, "Email masking would merge distinct JSON keys. Rename those keys before upload; no records were imported." if masked.key?(masked_key)
+        masked[masked_key] = redact(child)
+      end
     when Array then value.map { |child| redact(child) }
     else value
     end

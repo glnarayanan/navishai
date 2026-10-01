@@ -87,8 +87,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   pagination that cannot interpret query data as routing authority.
 - [#180](https://github.com/glnarayanan/navishai/pull/180), based on #179: expert nomination of one
   fixed record into a local unapproved draft, without changing analysis selection.
-- `rebuild/41-complete-replay-matching`, based on #180: complete fixed-case
+- [#181](https://github.com/glnarayanan/navishai/pull/181), based on #180: complete fixed-case
   replay matching with retained-input comparison and read-only per-trace pages.
+- `rebuild/42-intake-integrity`, based on #181: atomic refusal of masking
+  collisions and processing-version-aware source snapshot identity.
 
 ## Built and checked
 
@@ -1005,6 +1007,42 @@ and empty-page controls were inspected. No overflow or CSP violations. Direct ri
 review/native audits used; named reviews remain unavailable. No schema, provider,
 customer data, dependency, label, merge, release or deployment changed.
 
+GitHub CI for #181 passed at its exact head
+([run](https://github.com/glnarayanan/navishai/actions/runs/36854187687), completed
+11:19:33 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+## Intake integrity (slice 42)
+
+Red tests reproduced recursive email-key value loss and reuse of an older
+processor's snapshot. Intake now validates normalized masking before any lookup
+or source/retention mutation, including repeated uploads. Distinct masked keys
+(including false/nil and nested arrays) or IDs refuse the whole batch with a
+content-free rename/retry error. Original-text mode stays an explicit choice.
+Historical output stays fixed, not repaired. Lookup and SQL uniqueness include
+processing version; identical bytes under changed processing create a new snapshot.
+Only configured lab databases received the index migration; old databases remain
+untouched.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m13.89s: 296 Ruby files clean,
+audits/eager loading passed, 397 Rails tests / 4765 assertions and 40 browser
+tests / 1767 assertions, no failures/errors/skips. These combined working-tree
+checks also include the next SQL-debug-log privacy slice; they are not remote CI
+evidence for either new branch. A separate full browser run passed with the same
+40 tests / 1767 assertions. Earlier full runs exposed two existing browser races:
+opening a disclosure before refresh replaced it, and visiting home before sign-out
+finished. Controlled refresh replacement and awaiting the sign-in redirect fix
+the tests without changing authentication or weakening assertions. Those test
+fixes have separate commits.
+
+The collision journey uses Enter, confirms no records/jobs or source/retention
+changes, and inspects the retained original snapshot. Fresh desktop/390px form
+and alert captures remain readable without overflow or CSP violations.
+`bin/prove-backup-restore` passed with exact fingerprints and sixteen immutable
+tables; only disposable proof databases/archive were removed. Direct risk review
+and native audits used; named reviews remain unavailable. No dependency, provider,
+customer data, authoritative label, merge, release or deployment changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1045,9 +1083,9 @@ Reviewable failure matching, bounded multi-request discovery, image execution an
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
-The next independent intake slice must refuse recursive masking-key collisions
-without losing data and include processing version in snapshot reuse identity.
-Broader explicit redaction choices and larger-corpus processing remain engineering
+Intake now refuses recursive masking-key collisions without losing data and binds
+processing version in snapshot reuse identity. Broader explicit redaction choices
+and larger-corpus processing remain engineering
 work; these checks do not finish them or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer

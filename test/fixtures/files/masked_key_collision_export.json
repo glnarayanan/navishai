@@ -1,0 +1,4 @@
+[
+  {"id":"valid-first","title":"Certificate evidence","content":"Collect current metadata before making a configuration change.","context":{"plan":"enterprise"}},
+  {"id":"colliding-last","title":"Conflicting diagnostic reports","content":"Keep both reported facts; do not silently discard one.","context":{"contacts":[{"first@example.org":"Enterprise diagnostics","second@example.org":"Different lower-plan diagnostics"}]}}
+]
