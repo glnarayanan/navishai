@@ -408,7 +408,23 @@ remain separate. This is not a cap on every metadata allocation or semantic proo
 
 Intersect literal terms before tokenizing fact JSON. Fewer than two raw shared
 terms cannot pass after fact-word exclusion, so skip that unused work. Keep the
-post-exclusion threshold, full searched membership, bounds and ordering unchanged.
+post-exclusion threshold, full searched membership and bounds unchanged.
+
+Rank by summed term rarity rather than raw overlap count. Reuse local discovery's
+inverse-frequency weighting: each distinct shared term contributes
+\(\ln(1 + N / d)\), where \(N\) is all eligible searched current versions and \(d\)
+is the number containing that term. Count a term once per definition across its
+searched fields; repeated occurrences and query words cannot boost it. Compute
+these frequencies once for the page's traces, after the existing refusal checks.
+Exclude fact words from each candidate's scored overlap as before. Sum terms in
+sorted order; equal-fact count and version ID break score ties.
+
+Common symptoms can otherwise displace a rarer diagnostic term. This weighting
+addresses that lexical case, not causal understanding. Retain conflicting facts,
+exact source links, score contributions and the explicit human selection path.
+Scores change with eligible corpus membership and cannot measure confidence,
+compare corpora, resolve negation or find zero-overlap paraphrases. No new storage,
+provider disclosure, model, dependency or authoritative decision follows ranking.
 
 Experts may append match/different/uncertain decisions with a reason on an exact
 trace item and current scenario version. Retain each author's history; later

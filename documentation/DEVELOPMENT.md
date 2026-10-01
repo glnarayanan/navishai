@@ -168,8 +168,12 @@ A trace source page suggests at most five current scenario versions from the sam
 corpus. Local retrieval searches title, situation, taxonomy and non-trace
 expectation excerpts. It excludes hidden facts, recorded output, imported
 corrections and trace excerpts. At least two distinct terms must overlap after
-excluding known-fact keys/values. Candidates sort by shared terms, equal facts,
-then version ID. This is literal retrieval, not semantic accuracy or probability.
+excluding known-fact keys/values. Candidates sort by summed corpus term rarity,
+equal facts, then version ID. Each shared term adds \(\ln(1 + N / d)\): \(N\)
+eligible searched current definitions, \(d\) definitions containing that term.
+Count each term once per definition, not per occurrence or matching candidate.
+The native **Why this rank?** disclosure shows rounded contributions. Scores are
+not confidence or semantic similarity, and change when eligible membership changes.
 
 `bin/rails test test/services/trace_scenario_retrieval_test.rb` checks an authored
 technical-support matrix through real intake and scenario APIs. A signing-key
@@ -180,6 +184,14 @@ Document expectation text can introduce an unrelated billing candidate. Trace
 expectations, knowledge quotes, outputs and imported corrections stay excluded.
 These exact ranks disclose known method limits. Intended identities are synthetic
 author assumptions, not expert labels or evidence of customer retrieval quality.
+
+An asymmetric rarity case first fails the old raw-count method: seven common
+symptom definitions displace a two-term diagnostic candidate. Rarity brings that
+candidate first. Independent counts prove its score and each term contribution;
+query/definition repetition cannot boost rank. Old and rejected versions stay
+outside frequency counts; unmatched eligible definitions remain in the denominator.
+The earlier limits still reproduce. This proves a ranking change, not customer
+quality, useful coverage or calibrated retrieval accuracy.
 
 Bounds are 2000 current versions and 10 MiB of complete candidate text. Exceeding
 either bound searches nothing rather than truncating. Candidate inputs load once
@@ -203,10 +215,10 @@ versions cannot appear. Exact links, shared terms and equal/conflicting/missing
 facts help experts compare evidence; null, false, zero and absence differ.
 Versions with fewer than two raw shared terms skip unused fact tokenization.
 The same threshold still applies after excluding fact words; membership, ranks,
-byte/count bounds and the disclosed literal method stay unchanged.
+byte/count bounds and the disclosed literal method stay unchanged by that shortcut.
 Comparisons retain nested numeric types: integer 0 conflicts with float 0.0
 inside objects and arrays too. Object-key order alone does not create a conflict.
-Exact facts break equal-term ties; a match hint never records an expert decision.
+Exact facts break equal-score ties; a match hint never records an expert decision.
 
 Writers may record match, different or uncertain with a reason on the exact trace
 and current version. Corrections append; the paginated history shows 50 decisions

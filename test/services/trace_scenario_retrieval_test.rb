@@ -10,6 +10,57 @@ class TraceScenarioRetrievalTest < ActiveSupport::TestCase
     @versions = {}
   end
 
+  test "rare diagnostic terms outrank more shared common symptoms without repetition boosts" do
+    scenario(:cursor, "Checkpoint cursor", "Checkpoint cursor discarded.")
+    distractors = 7.times.map { |index| "symptom_#{index}".to_sym }
+    distractors.each do |key|
+      scenario(key, "Export report", "Export pagination skips records. Scope denied.")
+    end
+    trace = intake_trace("Export pagination skips records; checkpoint cursor lost.", "Agent guessed.")
+    result = assert_retrieval(trace, intended: :cursor, ranked: [ :cursor, *distractors.first(4) ], intended_rank: 1,
+      shared: [ %w[checkpoint cursor], *Array.new(4) { %w[export pagination records skips] } ])
+
+    # Eight searched definitions; each diagnostic term occurs in one, each
+    # symptom term in seven. Counts are independent of occurrences or query size.
+    assert_equal %w[checkpoint cursor], result.candidates.first.term_weights.keys
+    result.candidates.first.term_weights.each_value { |weight| assert_in_delta Math.log(9), weight, 1e-12 }
+    assert_in_delta 2 * Math.log(9), result.candidates.first.score, 1e-12
+    result.candidates.drop(1).each do |candidate|
+      candidate.term_weights.each_value { |weight| assert_in_delta Math.log(15.0 / 7), weight, 1e-12 }
+      assert_in_delta 4 * Math.log(15.0 / 7), candidate.score, 1e-12
+    end
+    repeated = intake_trace("Export pagination skips records; checkpoint cursor lost. " * 10, "Agent guessed.")
+    assert_equal result.candidates.map { |candidate| [ candidate.version.id, candidate.score, candidate.term_weights ] },
+      TraceScenarioMatching.call(item: repeated).candidates.map { |candidate| [ candidate.version.id, candidate.score, candidate.term_weights ] }
+
+    previous = @versions.fetch(distractors.first)
+    @versions[distractors.first] = previous.scenario.revise!(membership: @membership, base_version_id: previous.id,
+      attributes: { situation: "Export pagination skips records. Scope denied. " * 50 })
+    after = TraceScenarioMatching.call(item: trace)
+    assert_equal [ :cursor, *distractors.drop(1).first(4) ].map { |key| @versions.fetch(key).id }, after.candidates.map { |candidate| candidate.version.id }
+    assert_in_delta result.candidates.first.score, after.candidates.first.score, 1e-12
+    assert_in_delta result.candidates.last.score, after.candidates.last.score, 1e-12
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+  end
+
+  test "rarity uses all eligible current definitions not just query matches or old rejected versions" do
+    version = scenario(:cursor, "Checkpoint cursor", "Checkpoint cursor discarded.")
+    unrelated = scenario(:billing, "Invoice balance", "Invoice balance differs.")
+    trace = intake_trace("Checkpoint cursor lost.", "Agent guessed.")
+    result = assert_retrieval(trace, intended: :cursor, ranked: [ :cursor ], intended_rank: 1, shared: [ %w[checkpoint cursor] ])
+    assert_in_delta 2 * Math.log(3), result.candidates.sole.score, 1e-12
+
+    @versions[:cursor] = version.scenario.revise!(membership: @membership, base_version_id: version.id,
+      attributes: { title: "Revised checkpoint cursor" })
+    assert_in_delta result.candidates.sole.score, TraceScenarioMatching.call(item: trace).candidates.sole.score, 1e-12
+    unrelated.scenario.review!(membership: @membership, version_id: unrelated.id, decision: "reject")
+    after = TraceScenarioMatching.call(item: trace)
+    assert_equal 1, after.searched_versions
+    assert_equal @versions.fetch(:cursor).id, after.candidates.sole.version.id
+    assert_in_delta 2 * Math.log(2), after.candidates.sole.score, 1e-12
+    assert_equal %w[checkpoint cursor], after.candidates.sole.term_weights.keys
+  end
+
   test "issue diagnosis loses to a verbose symptom despite being retrieved" do
     scenario(:cause, "Signing key drift", "Identity metadata retains an obsolete signing key.",
       excerpt: "Inspect certificate rotation before refreshing metadata.")

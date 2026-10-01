@@ -1,7 +1,7 @@
 <section aria-labelledby="matching-<%= item.id %>">
   <h4 id="matching-<%= item.id %>">Reviewable failure candidates</h4>
   <% result = @failure_candidates.fetch(item.id) %>
-  <p><%= TraceScenarioMatching::METHOD %> Suggestions are not proof of the same issue. A human match cannot approve, edit, compile or execute a scenario, grant knowledge, label calibration or admit a regression.</p>
+  <p><%= TraceScenarioMatching::METHOD %> Negation and paraphrases are not understood. Suggestions are not proof of the same issue. A human match cannot approve, edit, compile or execute a scenario, grant knowledge, label calibration or admit a regression.</p>
   <p>Same corpus only · up to 2000 current, unmerged versions and 10 MiB of complete searched text · top 5 candidates. Rejected, expired and stale evidence is excluded. Titles, situations, taxonomy and exact non-trace expectation excerpts are searched; imported corrections and hidden facts are not. Taxonomy may still be an unreviewed proposal. <%= result.searched_versions %> versions searched; <%= result.searched_bytes %> bytes.</p>
   <% if result.message %><p role="status"><%= result.message %></p><% end %>
   <% if @decision_error && @decision_form["corpus_item_id"] == item.id.to_s %><p role="alert"><%= @decision_error %> Your decision and reason are retained below. Reload stale evidence before submitting again.</p><% end %>
@@ -33,6 +33,12 @@
         <h5><%= index + 1 %>. <%= link_to "#{version.title} · v#{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario, version: version.number) %></h5>
         <p><%= version.approved? ? "Expert-approved scenario version" : "Scenario version needs expert review" %>. Matching does not change its review.</p>
         <p>Exact shared terms: <%= candidate.shared_terms.join(", ") %></p>
+        <p>Literal rank score: <%= number_with_precision(candidate.score, precision: 6) %> — not confidence.</p>
+        <details><summary>Why this rank?</summary>
+          <p>Each distinct shared term adds ln(1 + searched versions / versions containing that term). Repeated words add nothing. The sum ranks candidates; equal known facts break ties, then version ID.</p>
+          <p>These rounded contributions use all eligible searched definitions, not just matching candidates. Scores change with the corpus; do not compare them across corpora or treat them as semantic similarity.</p>
+          <pre class="evidence-text"><%= JSON.pretty_generate(candidate.term_weights.transform_values { |weight| weight.round(6) }) %></pre>
+        </details>
         <div class="review-layout">
           <section><h6>Equal known facts</h6><pre class="evidence-text"><%= JSON.pretty_generate(candidate.equal_facts) %></pre></section>
           <section><h6>Conflicting known facts — review caution</h6><pre class="evidence-text"><%= JSON.pretty_generate(candidate.conflicting_facts) %></pre></section>

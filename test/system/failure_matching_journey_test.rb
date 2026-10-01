@@ -6,6 +6,44 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
   include FailureMatchingFixture
   include EvaluationTestHelper
 
+  test "expert inspects corpus rarity contributions without turning rank into confidence or a decision" do
+    build_failure_matching_fixture
+    @version = @version.scenario.revise!(membership: @membership, base_version_id: @version.id,
+      attributes: { title: "Checkpoint cursor", taxonomy_label: "Checkpoint cursor", situation: "Checkpoint cursor discarded.", known_facts: {} })
+    7.times do
+      matching_version(title: "Export report", situation: "Export pagination skips records. Scope denied.", facts: {})
+    end
+    record = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    record["input"] = { "situation" => "Export pagination skips records; checkpoint cursor lost.", "known_facts" => {}, "knowledge" => [] }
+    record["observed_failure"] = "Agent guessed."
+    @item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Cursor traces", kind: "traces", bytes: [ record ].to_json).corpus_items.sole
+    sign_in users(:owner)
+    visit source_path
+    section = "section[aria-labelledby='matching-#{@item.id}']"
+    assert_selector "#{section} > article", count: 5
+    assert_text "8 versions searched"
+    assert_text "Negation and paraphrases are not understood."
+    within "#{section} > article:first-of-type" do
+      assert_link "Checkpoint cursor · v2"
+      assert_text "Exact shared terms: checkpoint, cursor"
+      assert_text "Literal rank score: 4.394449 — not confidence."
+      summary = find("summary", text: "Why this rank?")
+      summary.send_keys(:enter)
+      assert_selector "details[open]", text: "Repeated words add nothing."
+      assert_equal({ "checkpoint" => 2.197225, "cursor" => 2.197225 }, JSON.parse(find("details[open] pre").text))
+      assert_text "do not compare them across corpora"
+    end
+    [ 1280, 390 ].each { |width| capture("rare-terms-#{width}", width, selector: "#{section} > article:first-of-type") }
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+    assert_empty @version.scenario_reviews
+    assert_empty HumanLabel.where(corpus: @corpus)
+    within "#{section} > article:first-of-type" do
+      find("summary", text: "Why this rank?").send_keys(:enter)
+      assert_no_selector "details[open]"
+      assert_field "Decision for scenario #{@version.scenario_id} v2", with: "uncertain"
+    end
+  end
+
   test "a matched trace revises the existing scenario through expert review compilation and regression" do
     build_failure_matching_fixture
     @workspace = @corpus.workspace

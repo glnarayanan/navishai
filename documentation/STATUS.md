@@ -114,8 +114,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   skipping irrelevant fact tokenization.
 - [#202](https://github.com/glnarayanan/navishai/pull/202), based on #201: private current-scenario
   lookup with exact counts, bounded metadata and native repair/paging.
-- `rebuild/63-company-evidence-lookup`, based on #202: bounded local document
+- [#203](https://github.com/glnarayanan/navishai/pull/203), based on #202: bounded local document
   selection beyond the initial picker window, with private repair and expert review.
+- `rebuild/64-rare-term-failure-ranking`, based on #203: corpus-relative literal
+  ranking with inspectable term contributions, unchanged limits and human authority.
 
 ## Built and checked
 
@@ -1605,6 +1607,42 @@ including [#202's run](https://github.com/glnarayanan/navishai/actions/runs/3690
 The prior log/step investigation still establishes no cause. No remote action
 changed those jobs, and earlier #155/#158 failures remain failed.
 
+## Corpus-relative failure ranking (slice 64)
+
+A red authored test reproduced a raw-count miss: seven common symptom candidates
+displaced a two-term diagnostic candidate. Literal retrieval now sums distinct
+shared-term rarity across all eligible searched current definitions, then uses
+equal facts and version ID for ties. It reuses local discovery's inverse-frequency
+weighting; repeated words cannot boost the score. Scope, freshness, byte/count
+refusal and explicit expert associations stay unchanged. Scores grant no authority.
+
+Focused service checks pass 21 tests / 267 assertions. Independent eight-definition
+counts verify score/contributions, query and definition repetition, historical and
+rejected versions, and unmatched denominator members. Existing scope, typed facts,
+metadata projections, real 2000-version and UTF-8 byte bounds still pass. The seven
+earlier retrieval limits still reproduce, including negation, paraphrase misses,
+symptom displacement and irrelevant expectation vocabulary. No customer quality,
+coverage or accuracy claim follows this ranking change.
+
+Rendered journeys pass 5 tests / 223 assertions. Keyboard Enter opens/closes
+**Why this rank?**; rounded term contributions and membership-dependent score
+limits stay visible without a confidence percentage. Desktop/390px captures were
+inspected; overflow and CSP checks pass. Original association/revision/regression,
+viewer, empty and stale-repair paths pass. Native style passes for 302 Ruby files.
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 9m50.49s: 464 Rails tests /
+7008 assertions and 50 browser tests / 2286 assertions, no failures/errors/skips.
+Native security audits and eager loading pass; whole-command peak RSS is
+541940 KiB. Direct risk review used; named review tools remain unavailable.
+No schema, dependency, provider, customer data or expert label changed.
+
+At 19:07–19:09 UTC on 1 October, #190/#195/#199 remain exact-head remote green;
+the other fourteen PRs in #187–203 remain in progress inside `bin/ci`. Each running
+job's runner/container/checkout/Ruby setup passed, but every active-log request returns BlobNotFound and
+every artifact list is empty. No current failure cause is known. Historical #155
+failed a calibration-report browser assertion; #158 failed a corpus-search browser
+assertion. Later synchronization/cache changes address those paths, but neither
+old failure explains today's opaque running jobs. No remote job was changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1615,7 +1653,8 @@ Company-document lookup now reaches beyond the initial evidence-picker window.
 Expert calibration now has a personal read-only review queue.
 This does not finish the full rebuild or establish customer value. Trace failure
 matching now suggests five local literal candidates from up to 2000 current
-versions, with explicit expert associations; it is not semantic matching.
+versions using corpus-relative term rarity, with explicit expert associations;
+it is not semantic matching. Negation and zero-overlap paraphrases remain unresolved.
 Replay compatibility now searches all fixed cases and paginates exact matches. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
