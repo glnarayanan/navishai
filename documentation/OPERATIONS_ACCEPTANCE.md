@@ -212,6 +212,35 @@ Ponytail Audit and CE Code Review tools were unavailable. After cleanup, read-on
 catalog checks found zero `navishai_ops_` databases and roles, and the final exact
 Compose directory was absent. No broad cleanup ran.
 
+### Mixed Rails test isolation
+
+A follow-up seed-1 run reproduced four Workspace fixture errors: ops teardown
+dropped its databases/roles but left their configuration on `ActiveRecord::Base`.
+The test now saves the prior pool configuration and restores it in `ensure`, or
+removes the proof pool if none existed. Every teardown asserts exact restoration.
+That assertion failed on all four ops tests before the fix. The proof helper and
+standalone operations scripts remain unchanged.
+
+A one-off wrapper created fresh names through `Operations::DatabaseRecovery`,
+loaded the lab structure, set its generated `DATABASE_URL`, `RAILS_ENV=test` and
+`PARALLEL_WORKERS=1` for Rails, and cleaned its assets in `ensure`. These commands
+ran inside it:
+
+```sh
+bin/rails db:environment:set
+bin/rails test test/ops/runtime_database_access_test.rb test/models/workspace_test.rb --seed 1
+bin/rails test test/ops/runtime_database_access_test.rb test/models/workspace_test.rb --seed 2
+bin/rails test test/ops/runtime_database_access_test.rb test/models/workspace_test.rb --seed 19
+```
+
+Each mixed run passed 8 tests and 34 assertions, with no failures/errors/skips.
+The initial manual schema load lacked Rails environment metadata; the native
+metadata command resolved its preparation error before the final runs. Only
+disposable databases received work; no existing test database was reset.
+`mise exec -- ruby test/ops/runtime_database_access_test.rb --seed 1` passed 4 tests
+and 25 assertions standalone. RuboCop, Ruby syntax and diff checks passed. This
+checks mixed fixture execution, not the parent's full integrated-schema suite.
+
 ## Remaining host gate
 
 An authorized disposable clean public host is not available in this orb. Public

@@ -6,6 +6,7 @@ require_relative "../../lib/navishai/runtime_database_access"
 
 class RuntimeDatabaseAccessTest < Minitest::Test
   def setup
+    @previous_configuration = ActiveRecord::Base.connection_handler.retrieve_connection_pool(ActiveRecord::Base.connection_specification_name)&.db_config
     @recovery = Operations::DatabaseRecovery.new
     @recovery.create!
     ActiveRecord::Base.establish_connection(@recovery.configuration)
@@ -16,6 +17,14 @@ class RuntimeDatabaseAccessTest < Minitest::Test
 
   def teardown
     @recovery&.close
+  ensure
+    if @previous_configuration
+      ActiveRecord::Base.establish_connection(@previous_configuration)
+    else
+      ActiveRecord::Base.remove_connection
+    end
+    restored = ActiveRecord::Base.connection_handler.retrieve_connection_pool(ActiveRecord::Base.connection_specification_name)&.db_config
+    assert @previous_configuration.equal?(restored), "Ops teardown must restore the previous Base connection configuration"
   end
 
   def grant
