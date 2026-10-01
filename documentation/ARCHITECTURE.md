@@ -392,6 +392,10 @@ preloading shares this link projection across the two passes. Returned records
 are read projections; full definition pages and explicit permitted-knowledge reads
 remain separate. This is not a cap on every metadata allocation or semantic proof.
 
+Intersect literal terms before tokenizing fact JSON. Fewer than two raw shared
+terms cannot pass after fact-word exclusion, so skip that unused work. Keep the
+post-exclusion threshold, full searched membership, bounds and ordering unchanged.
+
 Experts may append match/different/uncertain decisions with a reason on an exact
 trace item and current scenario version. Retain each author's history; later
 corrections append rather than rewrite it. Same-corpus foreign keys, immutability,
