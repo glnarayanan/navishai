@@ -55,6 +55,15 @@ labels or predictions. Filters change only the review list, never the report's
 denominator. This read-only queue asks for review; it cannot settle a dispute,
 relabel, tune a grader, select an error cost or call a provider.
 
+Development previews reuse the report and fixed sample artifacts, not another
+trial table. A newer deterministic version of the same grader runs locally against
+development outputs after rechecking case eligibility. Keep its report separate
+from saved predictions and the original review queue. Do not write predictions,
+labels or approvals; refuse held-out data and judge execution. Candidate counts
+use current expert labels on original requirements, not labels approving the
+candidate. Changed meaning needs new labels; any revision needs fresh held-out
+calibration. Personal first-label hiding also applies to candidate disagreements.
+
 ## External execution
 
 Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.

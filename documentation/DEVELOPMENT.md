@@ -649,6 +649,23 @@ predictions cannot count as agreement. Viewers retain the read-only sample list
 without these review controls. Desktop/mobile queues, a dispute filter and an empty
 focus are captured under `.amp/in/artifacts/calibration-review/`.
 
+Use **Preview a revised grader** on development samples to test a newer
+deterministic version of the same grader. The preview runs locally on fixed outputs
+and current permitted knowledge, after checking case approval and evidence. It
+shows a separate confusion matrix using the latest expert labels on the original
+fixed requirements. It never saves predictions, rebinds labels, changes approvals
+or calls a judge. Held-out previews, other graders and stale cases are refused.
+The original report and review queue still use saved predictions. Candidate
+disagreement links appear only after the reviewing expert's own first label;
+viewers may inspect aggregates without review controls.
+
+Changing a requirement's meaning invalidates reuse of its old labels. Even a useful
+development preview needs fresh calibration on the revised fixed definition and
+held-out expert evidence before trust. Create a separate set for that version and
+obtain labels; this screen neither copies them nor proves population accuracy.
+Desktop/mobile preview, held-out refusal and empty states are captured under
+`.amp/in/artifacts/calibration-preview/`.
+
 Calibration sets, samples, predictions and labels reject Ruby/SQL updates and use
 composite same-corpus/grader relationships. Expiry hides them before purge; source
 purge removes them through case and grader relationships. Audit keeps no outputs

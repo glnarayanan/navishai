@@ -52,8 +52,16 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   once-only receipts, strict proposal reduction and explicit allocation/call consent.
 - [#163](https://github.com/glnarayanan/navishai/pull/163), based on #162: bounded local failure candidates,
   exact fact/evidence comparisons and append-only expert association history.
-- `rebuild/24-production-boundary`, based on #163: separate preparation/runtime
+- [#164](https://github.com/glnarayanan/navishai/pull/164), based on #163: separate preparation/runtime
   database roles, explicit schema preparation and disposable production-runtime proof.
+- [#165](https://github.com/glnarayanan/navishai/pull/165), based on #164: bounded retained-source download,
+  exact normalized history and private-copy warnings.
+- [#166](https://github.com/glnarayanan/navishai/pull/166), based on #165: saved-result calibration intake,
+  fixed provenance, explicit cohorts and blind first-label review.
+- [#167](https://github.com/glnarayanan/navishai/pull/167), based on #166: response-scoped v2 transcript checks,
+  source-backed failure/regression and separate calibration proof.
+- `rebuild/28-calibration-trials`, based on #167: local revised-grader development
+  previews, separate matrices and held-out/first-label guards.
 
 ## Built and checked
 
@@ -536,8 +544,8 @@ overflow/CSP failures. The combined CI evidence above includes this slice.
 `bin/prove-backup-restore` passes with exact saved-result development provenance,
 unchanged manual held-out label history, all table fingerprints, 16 populated
 immutable tables, foreign isolation and no resend. It removes only its disposable
-databases/archive. This connects results to calibration intake; testing revised
-graders against development data still needs a separate engineering slice.
+databases/archive. This connects results to calibration intake. The later local
+development preview tests revised deterministic graders without rebinding artifacts.
 
 GitHub CI for #165 and #166 passed
 ([source run](https://github.com/glnarayanan/navishai/actions/runs/36813755668),
@@ -568,7 +576,27 @@ required outcome; corrected that fixture without weakening the approval gate.
 No overflow/CSP failures, dependency, live provider or customer data. Backup/restore
 and diff checks pass too. Direct risk review/native audits used; named reviews
 remain unavailable. Interactive turn execution and grader-revision development
-comparison remain engineering work, not pilot-data approval gates.
+comparison remained engineering work after that slice, not pilot-data approval gates.
+
+Revised-grader previews reuse fixed development outputs and the latest labels on
+original requirements. They accept only a newer deterministic version of the same
+scoped grader; held-out data, judges, foreign definitions and stale cases are refused.
+Candidate matrices stay separate from saved predictions and the original review
+queue. No label, prediction, approval, audit or job is written. Meaning changes
+need new labels; fresh held-out calibration remains necessary. Candidate sample
+links also respect the reviewing expert's first-label hiding.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 4m35.03s: 281 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+340 Rails tests / 3722 assertions and 28 browser tests / 1158 assertions,
+no failures/errors/skips. Asymmetric evidence distinguishes the original two true
+positives from the candidate's one missed failure. Disputes stay excluded, appended
+corrections affect counts without rewriting history, and fixed predictions remain
+unchanged. The live browser retains the preview on refresh, follows an already
+labelled disagreement, refuses held-out tuning and renders an empty revised set.
+Desktop/390px preview, refusal and empty captures were inspected without
+overflow/CSP failures. Direct risk review/native audits used; named reviews remain
+unavailable. No provider, customer data, dependency or training was used.
 
 ## Next and limits
 
@@ -601,7 +629,7 @@ Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by lab
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
 Independent engineering includes interactive multi-turn execution,
-grader-revision calibration improvement and clean-host/Compose/egress proof.
+fresh revised-judge calibration and clean-host/Compose/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
