@@ -546,9 +546,21 @@ Edit the issue label, importance, known/hidden JSON facts and five requirement
 lists. Save creates a fixed version; an unchanged save keeps the version and
 approval. Stale edits/reviews cannot overwrite a later revision. Attach exact
 document excerpts as expectation evidence or knowledge available to the target.
-The form lists up to 100 current documents. Adding a newer snapshot of the same
-document/use replaces that evidence only in the new version. Changed documents
-mark prior evidence stale; changed conversation exports do not invalidate history.
+**Find company evidence** searches literal substrings in current document titles,
+source record IDs and text, ignoring case, with the same 200-character/no-null
+phrase and private-bind rules. Context, conversations, expired and historical
+documents stay outside search. Count all same-corpus matches; load only the first
+100 IDs/titles for the picker, not source bodies/context. Narrow the phrase to
+reach a later document. Save edits before this separate GET; it changes no version,
+selects no document and copies no excerpt. Choose the source and exact quote yourself.
+Failed revisions keep the phrase, choice and expert edits; an explicitly selected
+trace survives search/clear separately. Viewer/history pages offer no new editing
+controls. Invalid GETs return 422 with retained input, repair and no document options.
+URLs/history retain the phrase despite Rails log filtering. Desktop/mobile lookup,
+picker, empty and error crops use `scenarios/documents-*` below.
+Adding a newer snapshot of the same document/use replaces that evidence only in
+the new version. Changed documents mark prior evidence stale; changed conversation
+exports do not invalidate history.
 
 Approve, reject or merge into another approved scenario by ID. Every decision
 records the expert and version. Create a variant from an approved version by

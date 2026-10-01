@@ -110,6 +110,14 @@ Enter submits; paging keeps the phrase, and clear returns to the first page. Emp
 and invalid states retain input and offer repair without partial rows. Copy warns
 about URL/history privacy and keeps lookup separate from association or approval.
 
+Find company evidence uses a separate native GET disclosure above the editor.
+Copy asks experts to save edits first, states the literal current-document scope
+and reports the full match count beside the hundred-option limit. Searching opens
+the evidence picker without selecting a document or copying an excerpt. Failed
+revisions retain the phrase, choice and expert text; clear and corpus inspection
+offer recovery. The selected trace stays separate. Viewer/history pages have no
+new editing controls. Existing focus, alert and responsive styles serve all states.
+
 Model suggestions extend the same scenario page through a native disclosure.
 The request preview names its exact fixed context/evidence and separate purpose
 approval. Invalid JSON stays in the labelled field; consent resets on errors.

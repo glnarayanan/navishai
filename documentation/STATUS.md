@@ -112,8 +112,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
 - [#199](https://github.com/glnarayanan/navishai/pull/199)–[#201](https://github.com/glnarayanan/navishai/pull/201),
   each based on its predecessor: varied 100,000-input proof, exact ID lookup and
   skipping irrelevant fact tokenization.
-- `rebuild/62-local-scenario-search`, based on #201: private current-scenario
+- [#202](https://github.com/glnarayanan/navishai/pull/202), based on #201: private current-scenario
   lookup with exact counts, bounded metadata and native repair/paging.
+- `rebuild/63-company-evidence-lookup`, based on #202: bounded local document
+  selection beyond the initial picker window, with private repair and expert review.
 
 ## Built and checked
 
@@ -1567,12 +1569,49 @@ Completed GitHub suites took 12–18 minutes overall; size alone does not explai
 multi-hour runs. Nothing was cancelled, rerun, merged, released or deployed.
 Earlier failed #155/#158 runs remain failed.
 
+## Searchable company evidence (slice 63)
+
+The scenario editor previously offered only the first hundred current documents,
+although its revision API accepted later eligible records. A red request test
+reproduced the missing rendered path. A private literal document filter now counts
+all same-corpus current matches and loads only a hundred IDs/titles for selection.
+It excludes context, conversations, stale snapshots and expired/foreign sources.
+The separate GET warns experts to save edits first; it selects no evidence, copies
+no excerpt and changes no version, approval, label or job. Failed edits keep their
+filter, explicit choice and expert text. Selected traces survive filtering/clear.
+
+Focused access checks pass 16 tests / 385 assertions. Actual intake of 102 synthetic
+documents proves the original window, late match, exact quote attachment and an
+unapproved new version. Other checks cover literal wildcards and Unicode,
+privacy-filtered DEBUG binds, metadata-only projection, scope/expiry, repair,
+invalid search and edit together, and trace retention. Rendered scenario
+journeys pass 3 tests / 125 assertions, with keyboard Enter, explicit selection,
+invalid excerpt repair, empty/error/clear recovery and no overflow/CSP violations.
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 10m45.77s: 462 Rails tests /
+6954 assertions and 49 browser tests / 2240 assertions, no failures/errors/skips.
+302 Ruby files, native security audits and eager loading pass; whole-command peak
+RSS is 546216 KiB. Direct risk review used; named review tools remain unavailable.
+Final inspection found inherited mobile emulation in some desktop captures.
+Scenario journeys now clear that state and wait/assert the actual requested width;
+an explicit inherited-emulation fixture checks the repair. Application code stayed
+unchanged. Final `CAPTURE_LAB_SCREENSHOTS=1 bin/rails test:system` passes 49 tests /
+2258 assertions, no failures/errors/skips. Corrected desktop/390px lookup, picker,
+empty and invalid crops were inspected; native style and diff checks pass.
+No production dependency, schema, provider, customer data or expert label changed.
+
+At 18:47 UTC on 1 October, #190/#195/#199 remain exact-head remote green.
+The other thirteen PRs in #187–202 remain in progress without a conclusion,
+including [#202's run](https://github.com/glnarayanan/navishai/actions/runs/36906946939).
+The prior log/step investigation still establishes no cause. No remote action
+changed those jobs, and earlier #155/#158 failures remain failed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
 regression, exact source-change impact and fixed-case target-version comparison.
 Corpus exploration now has bounded, source-backed literal search.
 The scenario list offers private current-definition lookup for expert selection.
+Company-document lookup now reaches beyond the initial evidence-picker window.
 Expert calibration now has a personal read-only review queue.
 This does not finish the full rebuild or establish customer value. Trace failure
 matching now suggests five local literal candidates from up to 2000 current
@@ -1641,8 +1680,8 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
 3. Approve exact target/judge/scenario/corpus-processing endpoints, disclosure scope
    and cost limits before live execution. The private registries still have zero entries.
 4. Provide or authorise a disposable clean host with authority over proxy/network
-   testing if no runner can supply it. The runner list was empty at 04:46 UTC on
-   1 October. Private Compose ingress now passes; public ingress, useful-egress
+   testing if no runner can supply it. The runner list remains empty at the slice-63
+   check on 1 October. Private Compose ingress now passes; public ingress, useful-egress
    and deny-policy proof remain unfinished. The removed trial's exact failure
    cause remains unverified despite the controlled userland-proxy reproduction.
 

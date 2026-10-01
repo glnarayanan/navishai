@@ -52,11 +52,27 @@
       <% end %>
     <% else %><p>No model proposal for this version. Only a writer can request one from the current, active version with current company evidence.</p><% end %>
   </details>
+  <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+    <details id="document-search" class="section-block config-panel" <%= "open" if params[:corpus_query].present? %>>
+      <summary>Find company evidence</summary>
+      <p id="document-search-help">Save edits before searching. Search a literal phrase in current document titles, source record IDs and text, ignoring case. This local lookup changes no version, evidence or approval.</p>
+      <%= form_with url: workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, anchor: "document-search"), method: :get, class: "form-stack", role: "search" do |form| %>
+        <%= form.hidden_field :version, value: @version.number %>
+        <% if @trace_item %><%= form.hidden_field :trace_item_id, value: @trace_item.id %><% end %>
+        <div class="field"><%= form.label :corpus_query, "Company evidence phrase" %><%= form.search_field :corpus_query, value: @document_query, maxlength: 200, aria: { invalid: @document_search_error.present?, describedby: @document_search_error ? "document-search-help document-search-error" : "document-search-help" } %></div>
+        <%= form.submit "Find documents", class: "button" %>
+      <% end %>
+      <p><%= link_to "Clear document search", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: @version.number, trace_item_id: @trace_item&.id, anchor: "document-search") %>. Phrases stay in your browser URL/history; do not paste secrets.</p>
+      <% if @document_search_error %><p id="document-search-error" class="inline-error" role="alert"><%= @document_search_error %></p><% else %><p role="status"><%= pluralize(@document_count, "matching document") %> · first 100 by record ID in the source picker below. Narrow the phrase if needed; counts are not coverage.</p><% end %>
+      <p><%= link_to "Inspect current company records", workspace_corpus_path(Current.workspace, @corpus, corpus_query: @document_query, anchor: "corpus-records") %>. Choose the source record and its exact excerpt yourself, then save a new version for expert review.</p>
+    </details>
+  <% end %>
   <div class="review-layout">
     <section aria-labelledby="definition-title"><h2 id="definition-title">Scenario definition</h2>
       <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
         <%= form_with url: workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), method: :patch, scope: :scenario, class: "form-stack" do |form| %>
           <%= hidden_field_tag :version_id, params[:version_id] || @version.id %>
+          <%= hidden_field_tag :corpus_query, @document_query, id: nil %>
           <div class="field"><%= form.label :title %><%= form.text_field :title, value: @form_values.fetch("title", @version.title), required: true, maxlength: 500 %></div>
           <div class="field"><%= form.label :situation, "Customer starting situation" %><%= form.text_area :situation, value: @form_values.fetch("situation", @version.situation), rows: 4, required: true, maxlength: 10000 %></div>
           <div class="field-grid"><div class="field"><%= form.label :taxonomy_label, "Issue family" %><%= form.text_field :taxonomy_label, value: @form_values.fetch("taxonomy_label", @version.taxonomy_label), required: true, maxlength: 500 %></div><div class="field"><%= form.label :importance %><%= form.select :importance, %w[normal high critical], selected: @form_values.fetch("importance", @version.importance) %></div></div>
@@ -66,7 +82,7 @@
           </details>
           <% ScenarioVersion::REQUIREMENT_TYPES.each do |kind| %><div class="field"><%= form.label kind, "#{kind.humanize} — one requirement per line" %><%= form.text_area kind, value: @form_values.fetch(kind, @version.requirements.fetch(kind).join("\n")), rows: 3 %></div><% end %>
           <div class="field"><%= form.label :follow_ups, "Expert follow-ups (JSON array)" %><%= form.text_area :follow_ups, value: @form_values.fetch("follow_ups", JSON.pretty_generate(@version.follow_ups)), rows: 8 %><small>At most 10 entries / 10 KiB. Each has exactly after_assistant_contains (nonblank literal, ≤500 characters) and message (user text, ≤2000 characters). No null bytes. Example: [{"after_assistant_contains":"expiry date", "message":"It expired yesterday."}]. Only the latest assistant reply can release the next message. Literals do not prove meaning. Saving creates an unapproved version requiring source-backed expert review.</small></div>
-          <details id="scenario-evidence" <%= "open" if @trace_item || params[:evidence_item_id].present? %>><summary>Attach source evidence</summary><p>Choose a current document or the selected retained trace and paste its exact excerpt. A document replaces its prior evidence of the same use; distinct trace records add evidence. Old versions stay fixed. Up to 100 current documents are listed.</p>
+          <details id="scenario-evidence" <%= "open" if @trace_item || params[:evidence_item_id].present? || @document_query.present? %>><summary>Attach source evidence</summary><p>Choose a current document or the selected retained trace and paste its exact excerpt. A document replaces its prior evidence of the same use; distinct trace records add evidence. Old versions stay fixed. Up to 100 matching current documents are listed; use Find company evidence above to narrow them.</p>
             <% if @trace_item %>
               <%= hidden_field_tag :trace_item_id, @trace_item.id %>
               <p>Selected trace · record <%= @trace_item.external_id %> · snapshot <%= @trace_item.source_snapshot.number %>. <%= link_to "Inspect selected trace: #{@trace_item.title}", source_evidence_path(@trace_item) %></p>

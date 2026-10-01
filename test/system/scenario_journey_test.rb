@@ -4,6 +4,78 @@ require_relative "../test_helpers/scenario_test_helper"
 class ScenarioJourneyTest < ApplicationSystemTestCase
   include ScenarioTestHelper
 
+  test "expert searches company evidence beyond the initial picker and saves an unapproved revision" do
+    build_scenarios
+    100.times do |index|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Earlier guide #{index}", kind: "document", bytes: "Earlier company guidance #{index}.")
+    end
+    document = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Signing policy", kind: "document", bytes: "Inspect the quasar boundary before escalation.").corpus_items.sole
+    original = @scenario.current_version
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#document-search summary").click
+    assert_selector "#document-search [role=status]", text: "102 matching documents"
+    assert_no_selector "select[name=evidence_item_id] option[value='#{document.id}']", visible: :all
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 390, height: 1000, deviceScaleFactor: 2, mobile: false)
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      capture("documents-all-#{width}", selector: "#document-search")
+    end
+    fill_in "Company evidence phrase", with: "QuAsAr"
+    find_field("Company evidence phrase").send_keys(:enter)
+    assert_selector "#document-search [role=status]", text: "1 matching document"
+    assert_field "Company evidence phrase", with: "QuAsAr"
+    assert_selector "#scenario-evidence[open]"
+    assert_selector :select, "Source record", selected: "No added evidence"
+    select "Signing policy", from: "Source record"
+    select "Expected behaviour evidence", from: "Evidence use"
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("documents-matched-#{width}", selector: "#document-search")
+      capture("documents-picker-#{width}", selector: "#scenario-evidence")
+    end
+    fill_in "Exact source excerpt", with: "Wrong excerpt"
+    click_button "Save new version"
+    assert_selector "#evidence-error[role=alert]", text: "Read the exact source record"
+    assert_field "Company evidence phrase", with: "QuAsAr"
+    assert_selector :select, "Source record", selected: "Signing policy"
+    assert_field "Exact source excerpt", with: "Wrong excerpt"
+    assert_equal original.id, @scenario.reload.current_version_id
+    fill_in "Exact source excerpt", with: document.content
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    assert_text document.content
+    assert_empty @scenario.reload.current_version.scenario_reviews
+    find("#document-search summary").click
+    fill_in "Company evidence phrase", with: "An absent document"
+    click_button "Find documents"
+    assert_selector "#document-search [role=status]", text: "0 matching documents"
+    assert_selector :select, "Source record", options: [ "No added evidence" ]
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      capture("documents-empty-#{width}", selector: "#document-search")
+    end
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario, corpus_query: "x" * 201)
+    assert_selector "#document-search-error[role=alert]", text: "200 characters and no null bytes"
+    assert_field "Company evidence phrase", with: "x" * 201
+    assert_equal "true", find_field("Company evidence phrase")["aria-invalid"]
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("documents-error-#{width}", selector: "#document-search")
+    end
+    click_link "Clear document search"
+    assert_no_selector "#document-search-error"
+    assert_equal "", find_field("Company evidence phrase", visible: :all).value
+    assert_equal 100, all("select[name=evidence_item_id] option[value]:not([value=''])", visible: :all).size
+    assert_equal 2, @scenario.reload.current_version.number
+  end
+
   test "expert finds current scenarios and recovers from empty and invalid local searches" do
     build_scenarios
     version = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
@@ -11,7 +83,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     sign_in users(:owner)
     visit workspace_corpus_scenarios_path(@workspace, @corpus)
     [ 1280, 390 ].each do |width|
-      page.current_window.resize_to(width, 1000)
+      resize_viewport(width, 1000)
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("search-all-#{width}")
@@ -22,7 +94,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_selector ".workspace-card", count: 1
     assert_link "Signing certificate expiry", href: workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
     [ 1280, 390 ].each do |width|
-      page.current_window.resize_to(width, 1000)
+      resize_viewport(width, 1000)
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("search-matched-#{width}")
@@ -33,7 +105,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_text "No scenarios on this page"
     assert_no_selector ".workspace-card"
     [ 1280, 390 ].each do |width|
-      page.current_window.resize_to(width, 1000)
+      resize_viewport(width, 1000)
       assert_no_horizontal_overflow
       capture("search-empty-#{width}")
     end
@@ -43,7 +115,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_equal "true", find_field("Scenario search phrase")["aria-invalid"]
     assert_no_selector ".workspace-card"
     [ 1280, 390 ].each do |width|
-      page.current_window.resize_to(width, 1000)
+      resize_viewport(width, 1000)
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("search-error-#{width}")
@@ -76,7 +148,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     click_button "Save expert decision"
     assert_text "Version 2 · expert · approve"
     [ 1280, 390 ].each do |width|
-      page.current_window.resize_to(width, 1600)
+      resize_viewport(width, 1600)
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("review-#{width}")
@@ -108,14 +180,22 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
   end
 
   private
-    def capture(name)
+    def resize_viewport(width, height)
+      page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+      page.current_window.resize_to(width, height)
+      Selenium::WebDriver::Wait.new(timeout: Capybara.default_max_wait_time).until { page.evaluate_script("window.innerWidth") == width }
+      assert_equal width, page.evaluate_script("window.innerWidth")
+    end
+
+    def capture(name, selector: nil)
       return unless ENV["CAPTURE_LAB_SCREENSHOTS"] == "1"
 
       path = Rails.root.join(".amp/in/artifacts/scenarios/#{name}.png")
       FileUtils.mkdir_p(path.dirname)
       page.execute_script("window.scrollTo(0, 0)")
       size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
-      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: 0, width: size.fetch("width"), height: size.fetch("height"), scale: 2 })
+      bounds = selector ? page.evaluate_script("document.querySelector(#{selector.to_json}).getBoundingClientRect().toJSON()") : { "y" => 0, "height" => size.fetch("height") }
+      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: bounds.fetch("y"), width: size.fetch("width"), height: bounds.fetch("height"), scale: 2 })
       File.binwrite(path, Base64.decode64(image.fetch("data")))
     end
 end
