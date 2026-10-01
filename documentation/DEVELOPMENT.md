@@ -590,11 +590,26 @@ live under `.amp/in/artifacts/scenario-proposals/`; no live model ran.
 ## Expert calibration
 
 Create a set for one exact grader version. Add up to 100 support-output-v1 samples
-bound to compiled checks using that version. Choose development or held-out before
-review; an identical JSON output on the same check reuses its sample regardless of
-key order and cannot change cohorts. Creation rechecks current scenario approval
-and source evidence. Deterministic predictions run locally; rubric samples need an
-explicitly requested judge attempt. Neither upload nor label sends data out.
+bound to compiled checks using that version. Choose development or held-out
+explicitly; no cohort is preselected. An identical JSON output on the same check
+reuses its sample regardless of key order only when its origin also matches; it
+cannot change cohorts or acquire different result provenance. Creation rechecks
+current scenario approval and source evidence. Deterministic predictions run locally;
+rubric samples need an explicitly requested judge attempt. Neither upload nor label
+sends data out.
+
+On a retained result, **Add this saved output to calibration** offers sets for
+the case's exact grader versions. Select a set, case check and cohort; the server
+copies only that result's fixed output and case identity, ignoring supplied output.
+Execution errors and results without output cannot become samples. Changed or
+unapproved scenarios, stale evidence, expired sources and foreign cases are blocked.
+The sample retains exact result/run provenance, not machine judgments or human
+labels. Result/run links stay hidden before a writer's first label; the neutral
+identities remain visible. This reduces anchoring, not access rights. Selected
+failures are biased examples, not representative held-out measurement; examples
+used to tune belong in development. Each expert must still supply their own label.
+Desktop/mobile live selection, retained-error, blind and revealed captures live
+under `.amp/in/artifacts/result-calibration/`.
 
 Experts label pass, fail or uncertain and give their evidence. The first judgment
 view hides machine and other experts' labels to reduce anchoring, not to promise a

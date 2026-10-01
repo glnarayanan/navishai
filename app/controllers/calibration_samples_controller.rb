@@ -7,11 +7,19 @@ class CalibrationSamplesController < ApplicationController
 
   def new
     @checks = EvalCaseCheck.where(corpus: @corpus, grader_version: @set.grader_version).includes(eval_case: :scenario_version).order(id: :desc).limit(100)
+    if params[:evaluation_result_id].present?
+      @result = EvaluationResult.where(corpus: @corpus).find(params[:evaluation_result_id])
+      @checks = @checks.where(eval_case_id: @result.eval_case_id)
+    end
   end
 
   def create
-    raise SupportOutput::Invalid, "Output must be support-output-v1 JSON of at most 100 KiB." if params[:output].to_s.bytesize > SupportOutput::MAX_BYTES
-    sample = @set.add_sample!(membership: Current.require_membership!, check_id: params[:check_id], cohort: params[:cohort], output: JSON.parse(params[:output].to_s))
+    output = nil
+    unless params[:evaluation_result_id].present?
+      raise SupportOutput::Invalid, "Output must be support-output-v1 JSON of at most 100 KiB." if params[:output].to_s.bytesize > SupportOutput::MAX_BYTES
+      output = JSON.parse(params[:output].to_s)
+    end
+    sample = @set.add_sample!(membership: Current.require_membership!, check_id: params[:check_id], cohort: params[:cohort], output:, evaluation_result_id: params[:evaluation_result_id])
     redirect_to workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample), notice: "Fixed sample saved. Label the behaviour before seeing its machine prediction.", status: :see_other
   end
 

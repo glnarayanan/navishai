@@ -17,20 +17,27 @@ class CalibrationSet < ImmutableRecord
     end
   end
 
-  def add_sample!(membership:, check_id:, cohort:, output:)
+  def add_sample!(membership:, check_id:, cohort:, output: nil, evaluation_result_id: nil)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       check = EvalCaseCheck.where(corpus:, grader_version:).find(check_id)
       check.eval_case.eligible!
+      result = EvaluationResult.where(corpus:).find(evaluation_result_id) if evaluation_result_id.present?
+      if result
+        raise EvalCase::Invalid, "Choose a check from this result's fixed case and grader version." unless result.eval_case_id == check.eval_case_id
+        raise EvalCase::Invalid, "This result has no usable output. Choose another retained result." if result.status == "error" || result.output.nil?
+        output = result.output
+      end
       SupportOutput.validate!(output)
       digest = Digest::SHA256.hexdigest(output.to_json)
       existing = calibration_samples.find_by(eval_case_check: check, output:)
       if existing
+        raise EvalCase::Invalid, "This exact output already has different provenance (sample ##{existing.id}). Review that sample or choose another output; provenance cannot be replaced." unless existing.evaluation_result_id == result&.id
         raise EvalCase::Invalid, "This output already belongs to #{existing.cohort.humanize.downcase}; samples cannot change cohorts." unless existing.cohort == cohort
         return existing
       end
       raise EvalCase::Invalid, "A calibration set holds at most 100 samples." if calibration_samples.count >= 100
-      sample = calibration_samples.create!(workspace:, corpus:, grader_version:, eval_case_check: check, created_by: membership.user, cohort:, output_digest: digest, output:, created_at: Time.current)
+      sample = calibration_samples.create!(workspace:, corpus:, grader_version:, eval_case_check: check, eval_case: check.eval_case, evaluation_result: result, created_by: membership.user, cohort:, output_digest: digest, output:, created_at: Time.current)
       if grader_version.kind == "deterministic"
         result = DeterministicGrader.call(definition: grader_version.definition, output:, knowledge: check.eval_case.scenario_version.target_input.fetch("knowledge"))
         sample.create_calibration_prediction!(workspace:, corpus:, result:, processing_version: grader_version.processing_version, created_at: Time.current)

@@ -238,6 +238,8 @@ CREATE TABLE public.calibration_samples (
     output_digest character varying NOT NULL,
     output jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
+    eval_case_id bigint NOT NULL,
+    evaluation_result_id bigint,
     CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY (ARRAY[('development'::character varying)::text, ('held_out'::character varying)::text])) AND (jsonb_typeof(output) = 'object'::text)))
 );
 
@@ -491,8 +493,8 @@ CREATE TABLE public.corpus_discovery_batches (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_80999236e2 CHECK ((((phase)::text = ANY ((ARRAY['discovery'::character varying, 'reducer'::character varying])::text[])) AND (("position" >= 1) AND ("position" <= 31)) AND (jsonb_typeof(input_refs) = 'array'::text) AND ((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND ((result IS NULL) OR (jsonb_typeof(result) = 'object'::text)))),
-    CONSTRAINT corpus_batch_receipt_matches_claim CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = ANY ((ARRAY['proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (result IS NOT NULL) AND (result ? 'decision'::text) AND COALESCE(((result ->> 'decision'::text) = (state)::text), false))))
+    CONSTRAINT chk_rails_80999236e2 CHECK ((((phase)::text = ANY (ARRAY[('discovery'::character varying)::text, ('reducer'::character varying)::text])) AND (("position" >= 1) AND ("position" <= 31)) AND (jsonb_typeof(input_refs) = 'array'::text) AND ((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('proposal'::character varying)::text, ('abstain'::character varying)::text, ('error'::character varying)::text])) AND ((result IS NULL) OR (jsonb_typeof(result) = 'object'::text)))),
+    CONSTRAINT corpus_batch_receipt_matches_claim CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = ANY (ARRAY[('proposal'::character varying)::text, ('abstain'::character varying)::text, ('error'::character varying)::text])) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (result IS NOT NULL) AND (result ? 'decision'::text) AND COALESCE(((result ->> 'decision'::text) = (state)::text), false))))
 );
 
 
@@ -1596,7 +1598,7 @@ CREATE TABLE public.trace_scenario_decisions (
     decision character varying NOT NULL,
     reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_a0c71cf02f CHECK ((((decision)::text = ANY ((ARRAY['match'::character varying, 'different'::character varying, 'uncertain'::character varying])::text[])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
+    CONSTRAINT chk_rails_a0c71cf02f CHECK ((((decision)::text = ANY (ARRAY[('match'::character varying)::text, ('different'::character varying)::text, ('uncertain'::character varying)::text])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
 );
 
 
@@ -2401,6 +2403,13 @@ ALTER TABLE ONLY public.workspace_invitations
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: calibration_check_case_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX calibration_check_case_identity ON public.eval_case_checks USING btree (workspace_id, corpus_id, id, eval_case_id);
 
 
 --
@@ -3356,6 +3365,22 @@ CREATE TRIGGER trace_scenario_decisions_immutable BEFORE UPDATE ON public.trace_
 
 
 --
+-- Name: calibration_samples calibration_sample_check_case; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT calibration_sample_check_case FOREIGN KEY (workspace_id, corpus_id, eval_case_check_id, eval_case_id) REFERENCES public.eval_case_checks(workspace_id, corpus_id, id, eval_case_id) ON DELETE CASCADE;
+
+
+--
+-- Name: calibration_samples calibration_sample_result_case; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.calibration_samples
+    ADD CONSTRAINT calibration_sample_result_case FOREIGN KEY (workspace_id, corpus_id, evaluation_result_id, eval_case_id) REFERENCES public.evaluation_results(workspace_id, corpus_id, id, eval_case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: calibration_sets fk_rails_03578f8e6c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4018,6 +4043,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001040000'),
 ('20261001030000'),
 ('20261001020000'),
 ('20261001010000'),

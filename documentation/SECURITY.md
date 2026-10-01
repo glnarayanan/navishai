@@ -79,12 +79,15 @@ need a current-version token. Request logs filter grader forms and definitions.
 Source purge removes compiled cases and all corpus graders; expiry hides grader
 text and case inputs before purge. Suite names survive without sensitive cases.
 
-Calibration samples bind an exact output to a compiled check and the set's grader
-version through composite foreign keys. Sets, samples, predictions and human labels
-reject updates in Ruby and SQL. Writes lock the membership and corpus; labels use
+Calibration samples bind an exact output to a compiled case/check and the set's
+grader version through composite foreign keys. Optional saved-result provenance
+must name that same case/corpus/workspace. Intake copies the scoped retained output,
+not supplied JSON or its judgments, and requires an explicit cohort. Duplicate
+manual/different-result provenance cannot be overwritten. Sets, samples, predictions
+and human labels reject updates in Ruby and SQL. Writes lock the membership and corpus; labels use
 stale-write tokens and cannot overwrite another expert. First-label UI hides machine
-and other expert decisions; this is not a security or double-blind boundary. Viewers
-can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
+and other expert decisions, including result/run links; this is not a security or
+double-blind boundary. Viewers can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
 output and rationale copies, and parameter logs filter both.
 
 Calibration review filters are allowlisted read-only states within the selected

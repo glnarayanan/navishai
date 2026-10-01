@@ -33,7 +33,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Grader version | Fixed check definition, rubric, threshold, and optional model settings. |
 | Human label | Attributable expert judgment on exact evidence/output and definition versions. |
 | Calibration set | Output samples for one fixed grader version; development and held-out samples stay distinct. |
-| Calibration sample | Fixed recorded output, cohort and compiled check that experts judge. |
+| Calibration sample | Fixed output, explicit cohort and compiled case/check that experts judge; optionally backed by one exact saved result. |
 | Calibration prediction | Machine decision on a fixed sample, distinct from authoritative human labels. |
 | Calibration judge attempt | One consented, once-claimed execution on a fixed sample. It cannot overwrite a prediction or label. |
 | Evaluation target | System under test, not a NavishAI support persona. |
@@ -59,6 +59,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
 - Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
 - Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.
+- Saved results can supply fixed calibration output, not expert labels. A duplicate cannot replace its manual/different-result origin or cohort. Selected failures do not establish held-out representativeness.
 - A run freezes membership and visible inputs at request time. Target, suite and grader edits never rewrite its definitions or results.
 - A claimed run does not retry after an unknown outcome. Another execution requires a deliberate new run.
 - An HTTP run needs exact per-workspace operator endpoint approval and human disclosure confirmation. Credentials are not artifacts; the immutable item UUID identifies its attempt, not proof of remote exactly-once execution.

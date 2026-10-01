@@ -4,6 +4,8 @@ class CalibrationSample < ImmutableRecord
   belongs_to :calibration_set
   belongs_to :grader_version
   belongs_to :eval_case_check
+  belongs_to :eval_case
+  belongs_to :evaluation_result, optional: true
   belongs_to :created_by, class_name: "User"
   has_one :calibration_prediction
   has_one :calibration_judge_run
