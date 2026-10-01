@@ -86,6 +86,12 @@ else
   source = trace.source_snapshot.source
   source.update!(expires_at: 1.minute.ago)
   raise "Expiry gate" unless corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?
+  begin
+    sample.label!(membership:, previous_id: label.id, decision: "pass", rationale: "Expired proof must not write a label.")
+    raise "Expired sample accepted a label"
+  rescue EvalCase::Invalid => error
+    raise unless error.message.include?("Source retention ended")
+  end
   SourcePurge.call(source:)
   raise "Purge gate" if CorpusItem.exists?(trace.id) || EvalCase.exists?(fixed_case.id) || HumanLabel.exists?(label.id) || EvaluationResult.where(id: [ failure.id, success.id ]).exists?
   raise "Purge audit" unless AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_type: "Source", subject_id: source.id).sole.metadata == {}

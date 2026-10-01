@@ -16,7 +16,8 @@ module Operations
       @prefix = "navishai_ops_#{Process.pid}_#{SecureRandom.hex(6)}"
       @owner = "#{@prefix}_owner"
       @runtime = "#{@prefix}_runtime"
-      @password = SecureRandom.hex(32)
+      @owner_password = SecureRandom.hex(32)
+      @runtime_password = SecureRandom.hex(32)
       @databases = %w[primary cache queue cable].to_h { |name| [ name, "#{@prefix}_#{name}" ] }
       @created = []
       @roles = []
@@ -32,15 +33,15 @@ module Operations
     end
 
     def create_roles!
-      [ owner, runtime ].each do |name|
-        admin.exec("CREATE ROLE #{PG::Connection.quote_ident(name)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD #{admin.escape_literal(@password)}")
+      { owner => @owner_password, runtime => @runtime_password }.each do |name, password|
+        admin.exec("CREATE ROLE #{PG::Connection.quote_ident(name)} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD #{admin.escape_literal(password)}")
         @roles << name
       end
     end
 
     def configuration(name = "primary", as_runtime: false)
       if as_runtime
-        { adapter: "postgresql", host: "127.0.0.1", username: runtime, password: @password, database: databases.fetch(name) }
+        { adapter: "postgresql", host: "127.0.0.1", username: runtime, password: @runtime_password, database: databases.fetch(name) }
       else
         { adapter: "postgresql", host: @socket, username: @user, database: databases.fetch(name) }
       end
@@ -60,7 +61,7 @@ module Operations
     def tool(*command, input: "")
       output, status = Open3.capture2e({ "PATH" => ENV.fetch("PATH"), "HOME" => "/tmp" }, *command,
         stdin_data: input, unsetenv_others: true)
-      raise "PostgreSQL tool failed: #{output.gsub(@password, '<REDACTED>')}" unless status.success?
+      raise "PostgreSQL tool failed: #{output.gsub(@owner_password, '<REDACTED>').gsub(@runtime_password, '<REDACTED>')}" unless status.success?
       output
     end
 
@@ -149,6 +150,13 @@ module Operations
     end
 
     def verify_runtime!
+      config = configuration(as_runtime: true)
+      begin
+        PG.connect(host: config.fetch(:host), dbname: config.fetch(:database), user: owner, password: config.fetch(:password)) { }
+        raise "Runtime credential authenticated as owner"
+      rescue PG::ConnectionBad => error
+        raise unless error.message.include?("password authentication failed")
+      end
       databases.each_key do |name|
         ActiveRecord::Base.establish_connection(configuration(name, as_runtime: true))
         connection = ActiveRecord::Base.connection
@@ -187,7 +195,7 @@ module Operations
         connection.execute("DELETE FROM runtime_grant_probe")
       end
       ActiveRecord::Base.establish_connection(configuration(as_runtime: true))
-      puts "PASS: real password-authenticated runtime logins across four databases, 20 privilege denials, restored current and future table/sequence DML grants."
+      puts "PASS: distinct owner/runtime credentials, real runtime logins across four databases, 20 privilege denials, restored current and future table/sequence DML grants."
     end
 
     def drop_assets!

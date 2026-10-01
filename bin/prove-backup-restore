@@ -172,6 +172,12 @@ begin
     source = trace.source_snapshot.source
     source.update!(expires_at: 1.minute.ago)
     assert_proof(corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?, "restored source expiry hides dependent definitions")
+    begin
+      sample.label!(membership:, previous_id: correction.id, decision: "pass", rationale: "Expired proof must not write a label.")
+      raise "Expired sample accepted a label"
+    rescue EvalCase::Invalid => error
+      raise unless error.message.include?("Source retention ended")
+    end
     SourcePurge.call(source:)
     assert_proof(!Source.exists?(source.id) && !CorpusItem.exists?(trace.id) && !ScenarioVersion.exists?(fixed_case.scenario_version_id) && !HumanLabel.exists?(label.id) && !EvaluationResult.exists?(saved_result.id) && !TraceScenarioDecision.exists?(association.id), "runtime purge clears restored source and dependent results, labels and associations")
     assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_type: "Source", subject_id: source.id).sole.metadata == {}, "minimal purge audit survives without source content")

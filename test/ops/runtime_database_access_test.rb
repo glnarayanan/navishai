@@ -36,6 +36,11 @@ class RuntimeDatabaseAccessTest < Minitest::Test
     refute connection.select_value("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")
     refute connection.select_value("SELECT has_database_privilege(current_user, current_database(), 'CREATE')")
     refute_equal @recovery.runtime, connection.select_value("SELECT relowner::regrole::text FROM pg_class WHERE relname='records'")
+    config = @recovery.configuration(as_runtime: true)
+    error = assert_raises(PG::ConnectionBad) do
+      PG.connect(host: config.fetch(:host), dbname: config.fetch(:database), user: @recovery.owner, password: config.fetch(:password)) { }
+    end
+    assert_includes error.message, "password authentication failed"
   end
 
   def test_rejects_elevated_runtime_before_any_grants
