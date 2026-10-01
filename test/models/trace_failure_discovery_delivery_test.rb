@@ -14,7 +14,7 @@ class TraceFailureDiscoveryDeliveryTest < ActiveSupport::TestCase
     entered, release = Queue.new, Queue.new
     calls = 0
     worker = nil
-    with_corpus_approval do
+    with_trace_discovery_approval do
       discovery = request_trace_discovery
       response = trace_discovery_response
       with_test_method(EvaluationHttp, :call, ->(**) { calls += 1; entered << true; release.pop; response }) do
@@ -42,14 +42,14 @@ class TraceFailureDiscoveryDeliveryTest < ActiveSupport::TestCase
   test "revoked membership endpoint expiry and changed comparison set discard unlocked responses with no retry" do
     changes = [
       -> { @membership.update!(role: "viewer") },
-      -> { ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]" },
+      -> { ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = "[]" },
       -> { @document.source_snapshot.source.update!(expires_at: 1.second.ago) },
       -> { @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { situation: "Changed starting situation" }) }
     ]
     changes.each_with_index do |change, index|
       @document.source_snapshot.source.update!(expires_at: 30.days.from_now)
       @membership.update!(role: "owner")
-      with_corpus_approval do
+      with_trace_discovery_approval do
         discovery = request_trace_discovery
         response = trace_discovery_response
         calls = 0
@@ -66,7 +66,7 @@ class TraceFailureDiscoveryDeliveryTest < ActiveSupport::TestCase
   end
 
   test "queued cancellation and old crashed claims cannot send on repeated job delivery" do
-    with_corpus_approval do
+    with_trace_discovery_approval do
       queued = request_trace_discovery
       queued.interrupt!(membership: @membership)
       running = request_trace_discovery

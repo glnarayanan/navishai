@@ -18,7 +18,7 @@ class TraceFailureDiscoveriesController < ApplicationController
   def create
     raise CorpusIntake::Invalid, "Model configuration must be JSON of at most 10 KiB." unless params[:configuration].is_a?(String) && params[:configuration].bytesize <= 10.kilobytes
     discovery = TraceFailureDiscovery.request!(corpus: @corpus, membership: Current.require_membership!, configuration: JSON.parse(params[:configuration]),
-      disclose: params[:corpus_disclose] == "1", input_digest: params[:input_digest])
+      disclose: params[:trace_discovery_disclose] == "1", input_digest: params[:input_digest])
     redirect_to discovery_path(discovery), notice: "Trace failure discovery queued. Refresh sends nothing.", status: :see_other
   rescue JSON::ParserError, CorpusIntake::Invalid, EvaluationHttp::Error, SupportOutput::Invalid => error
     prepare_preview

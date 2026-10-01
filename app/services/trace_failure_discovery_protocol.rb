@@ -26,7 +26,7 @@ class TraceFailureDiscoveryProtocol
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     payload = discovery.input_content.merge("schema" => VERSION, "instructions" => INSTRUCTIONS, "model" => discovery.configuration.fetch("model"),
       "settings" => discovery.configuration.fetch("settings"), "group_limit" => MAX_GROUPS)
-    response = EvaluationHttp.call(configuration: discovery.configuration.slice("endpoint"), payload:, workspace_id: discovery.workspace_id, request_key: discovery.request_key, purpose: :corpus)
+    response = EvaluationHttp.call(configuration: discovery.configuration.slice("endpoint"), payload:, workspace_id: discovery.workspace_id, request_key: discovery.request_key, purpose: :trace_discovery)
     validate!(response, input: discovery.input_content, model: discovery.configuration.fetch("model"))
     response.merge("elapsed_ms" => ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round, "usage_and_cost" => "endpoint_reported")
   rescue EvaluationHttp::Error, SupportOutput::Invalid

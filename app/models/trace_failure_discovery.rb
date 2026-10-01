@@ -20,7 +20,7 @@ class TraceFailureDiscovery < ApplicationRecord
       raise CorpusIntake::Invalid, "Use endpoint, model and fixed settings; never include credentials." unless ModelGateway.valid_configuration?(configuration)
       preview = TraceFailureDiscoveryPreview.current(corpus)
       raise CorpusIntake::Invalid, "The preview changed. Reload and confirm all current contents again. No request started." unless TraceFailureDiscoveryPreview.digest(preview.fetch(:input)) == input_digest
-      EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
+      EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :trace_discovery)
       discovery = create!(workspace: corpus.workspace, corpus:, requested_by: membership.user, configuration:, input_content: preview.fetch(:input), input_digest:,
         processing_version: TraceFailureDiscoveryProtocol::VERSION, created_at: Time.current)
       { trace_failure_discovery_inputs: [ preview.fetch(:items), :corpus_item ], trace_failure_discovery_versions: [ preview.fetch(:versions), :scenario_version ],
@@ -49,7 +49,7 @@ class TraceFailureDiscovery < ApplicationRecord
     corpus.authorize_writer!(membership)
     ensure_evidence!
     raise CorpusIntake::Invalid, "Unsupported discovery protocol or settings." unless processing_version == TraceFailureDiscoveryProtocol::VERSION && ModelGateway.valid_configuration?(configuration)
-    EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
+    EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :trace_discovery)
     true
   end
 

@@ -62,7 +62,19 @@ module TraceFailureDiscoveryTestHelper
       ], "emerging_families" => [ group ], "coverage_gaps" => [ group.merge("label" => "No destructive-retry case in the disclosed set") ], "usage" => { "input_tokens" => 2131, "output_tokens" => 611 }, "cost" => nil }
   end
 
+  def with_trace_discovery_approval
+    original = ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"]
+    ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "test-only-trace-discovery-token" } ].to_json
+    yield
+  ensure
+    original ? ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = original : ENV.delete("NAVISHAI_TRACE_DISCOVERY_ENDPOINTS")
+  end
+
   def with_trace_discovery_response(response: trace_discovery_response, calls: [])
-    with_discovery_response(response:, calls:) { yield }
+    with_trace_discovery_approval do
+      with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
+        with_test_method(EvaluationHttp, :perform, ->(_uri, request, _address) { calls << request; response.to_json }) { yield }
+      end
+    end
   end
 end

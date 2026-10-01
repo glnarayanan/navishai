@@ -25,7 +25,7 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
   end
 
   test "consent endpoint purpose and exact preview must all pass before any receipt or job" do
-    with_corpus_approval do
+    with_trace_discovery_approval do
       [ { disclose: false }, { input_digest: "wrong" }, { configuration: discovery_configuration.merge("bearer_token" => "forbidden") } ].each do |options|
         assert_no_difference [ "TraceFailureDiscovery.count", "AuditEvent.count" ] do
           assert_no_enqueued_jobs { assert_raises(CorpusIntake::Invalid) { request_trace_discovery(**options) } }
@@ -42,6 +42,53 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
     end
   end
 
+  test "corpus target judge scenario and matching approvals cannot authorize trace discovery" do
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS]
+    originals = ENV.to_h.slice(*registries)
+    approvals = { "corpus" => registries[0], "target" => registries[1], "judge" => registries[1], "scenario" => registries[2], "matching" => registries[3] }
+    approvals.each do |purpose, registry|
+      registries.each { |key| ENV[key] = "[]" }
+      ENV[registry] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "test-only-#{purpose}-token" } ].to_json
+      assert_no_difference [ "TraceFailureDiscovery.count", "AuditEvent.count" ] do
+        assert_no_enqueued_jobs { assert_raises(EvaluationHttp::Error, purpose) { request_trace_discovery } }
+      end
+    end
+  ensure
+    registries&.each { |key| originals[key] ? ENV[key] = originals[key] : ENV.delete(key) }
+  end
+
+  test "revoking only trace discovery blocks queued sends and discards native responses despite all other approvals" do
+    registries = %w[NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS]
+    originals = ENV.to_h.slice(*registries)
+    registries.each { |key| ENV[key] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT, bearer_token: "test-only-other-purpose-token" } ].to_json }
+    %w[queued response].each do |boundary|
+      with_trace_discovery_approval do
+        discovery = request_trace_discovery
+        response = trace_discovery_response
+        calls = []
+        ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = "[]" if boundary == "queued"
+        with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
+          with_test_method(EvaluationHttp, :perform, ->(_uri, request, _address) {
+            calls << request
+            assert_equal "Bearer test-only-trace-discovery-token", request["Authorization"]
+            ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = "[]"
+            response.to_json
+          }) do
+            assert_equal "error", TraceFailureDiscoveryProtocol.call(discovery).fetch("decision") if boundary == "queued"
+            2.times { TraceFailureDiscoveryJob.perform_now(discovery.id) }
+          end
+        end
+        assert_equal boundary == "queued" ? 0 : 1, calls.size
+        assert_equal "interrupted", discovery.reload.state
+        assert_nil discovery.trace_failure_discovery_result
+        assert_equal 0, AuditEvent.where(action: "trace.discovery_completed", subject_id: discovery.id).count
+        assert_equal 1, AuditEvent.where(action: "trace.discovery_interrupted", subject_id: discovery.id).count
+      end
+    end
+  ensure
+    registries&.each { |key| originals[key] ? ENV[key] = originals[key] : ENV.delete(key) }
+  end
+
   test "one native gateway call retains unreported failure family and gap proposals with complete mixed accounting and no authority" do
     calls = []
     with_trace_discovery_response(calls:) do
@@ -53,6 +100,7 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
       sent = JSON.parse(calls.sole.body)
       assert_equal @items.values.map(&:id).sort, sent.fetch("traces").pluck("id")
       assert_equal discovery.request_key, calls.sole["Idempotency-Key"]
+      assert_equal "Bearer test-only-trace-discovery-token", calls.sole["Authorization"]
       assert_equal TraceFailureDiscoveryProtocol::VERSION, sent.fetch("schema")
       assert_equal expected_digest, TraceFailureDiscoveryPreview.digest(discovery.input_content)
       result = discovery.trace_failure_discovery_result.result_content
@@ -236,7 +284,7 @@ class TraceFailureDiscoveryTest < ActiveSupport::TestCase
   end
 
   test "direct deletion of linked item version or compiled case purges the whole immutable disclosure not just one join" do
-    with_corpus_approval do
+    with_trace_discovery_approval do
       discovery = request_trace_discovery
       @case.delete
       assert_not TraceFailureDiscovery.exists?(discovery.id)

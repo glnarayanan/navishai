@@ -53,13 +53,16 @@ The writer supplies the native `ModelGateway` configuration:
 
 Use no credentials in this JSON. Native limits allow `max_output_tokens` 256–4096
 and a null or integer seed from 0 through 2147483647. The operator must approve the exact
-workspace/endpoint in **`NAVISHAI_CORPUS_ENDPOINTS`** for corpus processing,
-including this trace/document/case-definition purpose. Target, judge and scenario
-registries do not grant it. All registry entries stay empty by default. Approval
-does not supply user consent: the writer must separately confirm the exact shown
-contents, purpose, endpoint, model and settings. A changed preview clears consent
-and starts nothing. The preview digest sorts object keys recursively without
-changing array order or numeric types.
+workspace/endpoint in **`NAVISHAI_TRACE_DISCOVERY_ENDPOINTS`** for the separate
+**`:trace_discovery`** purpose. Corpus, target, judge, scenario and matching
+approvals do not grant it, even for the same workspace/endpoint. Corpus approval
+covers source-record processing, not this trace/definition/case disclosure.
+The new registry defaults to `[]`; leave entries empty until an operator grants
+this exact purpose. Approval does not supply user consent: the writer must
+separately confirm the exact shown contents, trace-discovery purpose, endpoint,
+model and settings through `trace_discovery_disclose`. A corpus-consent parameter
+cannot grant it. A changed preview clears consent and starts nothing. The preview
+digest sorts object keys recursively without changing array order or numeric types.
 
 ## Versioned wire contract
 
@@ -207,9 +210,18 @@ controller/show, corpus-discovery internals, landing, global CSS or log initiali
 Its additive routes, four audit entries, `SourcePurge` deletion and optional
 `SupportTrace.propose!` argument must remain when combining worker bundles.
 
-Migration `20261001210000` creates six operation-specific tables, SQL foreign keys,
-immutability guards and deletion hooks. Resolve migration timestamp conflicts and
-regenerate `db/structure.sql` after integration. Production preparation must run
+The parent owns central configuration and must forward
+`NAVISHAI_TRACE_DISCOVERY_ENDPOINTS` with an empty `[]` default in the operator
+environment/Compose entries and document its separate scope. The shared gateway
+map adds only `:trace_discovery`; it grants no other purpose and has no live entry.
+Revoking this approval blocks queued sends and discards in-flight responses even
+when every other purpose remains approved. Tests prove both boundaries through
+the native gateway, including its distinct credential and no retry.
+
+Migration `20261001230000` creates six operation-specific tables, SQL foreign keys,
+immutability guards and deletion hooks. Its timestamp leaves `210000` and `220000`
+to the scenario-quality slice. Regenerate `db/structure.sql` after integration;
+this fix does not edit the parent-owned shared schema. Production preparation must run
 the existing owner-only `db:grant_runtime` after schema preparation for all four
 databases. It already grants all tables/sequences and future defaults to the
 restricted `navishai` role; there is no per-table list or new privilege here.

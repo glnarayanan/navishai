@@ -14,16 +14,17 @@ class TraceFailureDiscoveryJourneyTest < ApplicationSystemTestCase
     click_button "Request trace failure discovery"
     assert_selector "[role=alert]", text: /valid JSON/
     assert_field "Model configuration (JSON)", with: "{incomplete"
-    assert_no_selector "input#corpus_disclose:checked"
+    assert_no_selector "input#trace_discovery_disclose:checked"
     fill_in "Model configuration (JSON)", with: discovery_configuration.to_json
-    with_corpus_approval do
+    with_trace_discovery_approval do
       click_button "Request trace failure discovery"
       assert_selector "[role=alert]", text: /Confirm the exact contents/
       assert_equal 0, TraceFailureDiscovery.where(corpus: @corpus).count
-      find("input#corpus_disclose").send_keys(:space)
-      assert_selector "input#corpus_disclose:checked"
+      find("input#trace_discovery_disclose").send_keys(:space)
+      assert_selector "input#trace_discovery_disclose:checked"
       [ 1280, 390 ].each { |width| capture("preview-#{width}", width) }
-      assert_selector "label[for=corpus_disclose]", text: /scenario definitions and compiled cases.*proposed failure, emerging-family and coverage-gap discovery/
+      assert_selector "label[for=trace_discovery_disclose]", text: /scenario definitions and compiled cases.*separate trace-discovery purpose.*proposed failure, emerging-family and coverage-gap discovery/
+      assert_text "Corpus, target, judge, scenario or matching approval cannot grant this purpose"
       capture("preview-form-390", 390, target: "Request discovery")
       click_button "Request trace failure discovery"
       assert_selector "h1", text: "Trace failure discovery", exact_text: true
@@ -92,7 +93,7 @@ class TraceFailureDiscoveryJourneyTest < ApplicationSystemTestCase
       capture("expired-390", 390)
       @document.source_snapshot.source.update!(expires_at: 30.days.from_now)
     end
-    with_corpus_approval do
+    with_trace_discovery_approval do
       queued = request_trace_discovery
       visit workspace_corpus_trace_failure_discovery_path(@workspace, @corpus, queued)
       click_button "Interrupt discovery attempt"

@@ -6,36 +6,38 @@ class TraceFailureDiscoveryAccessTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
   setup { build_trace_discovery; sign_in_as users(:owner) }
 
-  test "request requires renewed consent exact preview fixed settings and corpus purpose approval" do
+  test "request requires renewed trace discovery consent exact preview fixed settings and separate purpose approval" do
     path = workspace_corpus_trace_failure_discoveries_path(@workspace, @corpus)
     parameters = { configuration: discovery_configuration.to_json, input_digest: TraceFailureDiscoveryPreview.digest(trace_discovery_input) }
-    with_corpus_approval do
+    with_trace_discovery_approval do
       assert_no_difference [ "TraceFailureDiscovery.count", "AuditEvent.count" ] do
         assert_no_enqueued_jobs do
-          post path, params: parameters
+          post path, params: parameters.merge(corpus_disclose: "1")
           assert_response :unprocessable_content
           assert_select "[role=alert]", text: /Confirm the exact contents/
           assert_select "textarea[name=configuration]", text: discovery_configuration.to_json
-          assert_select "input#corpus_disclose[checked]", count: 0
-          post path, params: parameters.merge(configuration: "{incomplete", corpus_disclose: "1")
+          assert_select "input#trace_discovery_disclose[checked]", count: 0
+          assert_select "label[for=trace_discovery_disclose]", text: /complete traces, documents, scenario definitions and compiled cases.*separate trace-discovery purpose/
+          assert_select "p", text: /Corpus, target, judge, scenario or matching approval cannot grant this purpose/
+          post path, params: parameters.merge(configuration: "{incomplete", trace_discovery_disclose: "1")
           assert_response :unprocessable_content
           assert_select "textarea[name=configuration]", text: "{incomplete"
-          assert_select "input#corpus_disclose[checked]", count: 0
-          post path, params: parameters.merge(configuration: "null", corpus_disclose: "1")
+          assert_select "input#trace_discovery_disclose[checked]", count: 0
+          post path, params: parameters.merge(configuration: "null", trace_discovery_disclose: "1")
           assert_response :unprocessable_content
-          post path, params: parameters.merge(input_digest: "outdated", corpus_disclose: "1")
+          post path, params: parameters.merge(input_digest: "outdated", trace_discovery_disclose: "1")
           assert_response :unprocessable_content
           assert_select "[role=alert]", text: /preview changed/
         end
       end
       assert_enqueued_with(job: TraceFailureDiscoveryJob) do
-        post path, params: parameters.merge(corpus_disclose: "1")
+        post path, params: parameters.merge(trace_discovery_disclose: "1")
         assert_response :see_other
       end
     end
     with_endpoint_approval do
       assert_no_difference "TraceFailureDiscovery.count" do
-        post path, params: parameters.merge(corpus_disclose: "1")
+        post path, params: parameters.merge(trace_discovery_disclose: "1")
         assert_response :unprocessable_content
       end
     end
