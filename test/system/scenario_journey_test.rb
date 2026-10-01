@@ -4,6 +4,57 @@ require_relative "../test_helpers/scenario_test_helper"
 class ScenarioJourneyTest < ApplicationSystemTestCase
   include ScenarioTestHelper
 
+  test "expert nominates a long issue label without losing its fixed source proposal" do
+    @membership = memberships(:owner_support)
+    @workspace = @membership.workspace
+    @corpus = @workspace.corpora.create!(name: "Long diagnostic term history")
+    original_label = "certificate" + "x" * 490
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Diagnostic history", kind: "conversations", bytes: [
+      { id: "first", title: "and", content: original_label },
+      { id: "second", title: "the", content: original_label }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 1, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    cluster = analysis.issue_clusters.sole
+    member = cluster.cluster_members.find_by!(corpus_item: snapshot.corpus_items.find_by!(external_id: "second"))
+    assert_nil member.selection_reason
+    sign_in users(:owner)
+    visit workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, cluster)
+    find("#member-#{member.id} summary").send_keys(:enter)
+    within "#member-#{member.id}" do
+      fill_in "Why this record needs a scenario", with: "Inspect this fixed diagnostic case."
+      click_button "Create scenario draft"
+    end
+    assert_text "Version 1 · mined · needs review"
+    assert_text "Draft label shortened to 500 characters"
+    assert_field "Issue family", with: "certificate" + "x" * 489
+    assert_link "Inspect full source issue family", href: workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, cluster)
+    scenario = @corpus.scenarios.sole
+    assert_not scenario.current_version.approved?
+    assert_equal original_label, scenario.current_version.scenario_evidence.sole.excerpt
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("bounded-label-#{width}", selector: "main > p:has(a)")
+    end
+    click_link "Inspect full source issue family"
+    assert_selector ".page-heading p", text: original_label
+    within "#member-#{member.id}" do
+      find("summary").send_keys(:enter)
+      assert_link "Open existing scenario"
+      assert_no_button "Create scenario draft"
+    end
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("bounded-label-family-#{width}", selector: ".page-heading")
+    end
+    assert_equal original_label, cluster.reload.proposed_label
+    assert_empty scenario.current_version.scenario_reviews
+  end
+
   test "expert replaces a late conversation quote repairs an error and retains hidden fixed history" do
     build_scenarios
     quote = "Inspect the signing certificate expiry date before any configuration change."

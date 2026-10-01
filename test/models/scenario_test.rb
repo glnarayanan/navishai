@@ -1,4 +1,5 @@
 require "test_helper"
+require "stringio"
 require_relative "../test_helpers/scenario_test_helper"
 require_relative "../test_helpers/family_evidence_fixture"
 
@@ -21,6 +22,61 @@ class ScenarioTest < ActiveSupport::TestCase
     assert_no_difference "Scenario.count" do
       assert_equal @scenarios.map(&:id).sort, ScenarioMining.call(analysis: @analysis, membership: @membership).map(&:id).sort
     end
+  end
+
+  test "mining bounds Unicode draft labels without changing full proposals evidence or expert revisions" do
+    @corpus = @workspace.corpora.create!(name: "Long diagnostic term boundaries")
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Diagnostic export", kind: "conversations", bytes: [
+      { id: "boundary", title: "and", content: "é" * 500 },
+      { id: "oversized", title: "the", content: "雪" * 501 }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 2, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    assert_equal "complete", analysis.reload.state
+    before = analysis.attributes
+    scenarios = nil
+    assert_no_difference [ "ScenarioReview.count", "HumanLabel.count", "TaxonomyVersion.count", "EvaluationRun.count" ] do
+      assert_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ], 2 do
+        scenarios = ScenarioMining.call(analysis:, membership: @membership)
+      end
+    end
+    boundary = scenarios.find { |scenario| scenario.corpus_item.external_id == "boundary" }
+    oversized = scenarios.find { |scenario| scenario.corpus_item.external_id == "oversized" }
+    assert_equal "é" * 500, boundary.current_version.taxonomy_label
+    assert_equal boundary.cluster_member.selection_reason, boundary.current_version.selection_reason
+    assert_equal "雪" * 500, oversized.current_version.taxonomy_label
+    assert_includes oversized.current_version.selection_reason, "Draft label shortened to 500 characters"
+    assert_includes oversized.current_version.selection_reason, oversized.cluster_member.selection_reason
+    assert_equal "雪" * 501, oversized.cluster_member.issue_cluster.proposed_label
+    scenarios.each do |scenario|
+      assert_equal snapshot.id, scenario.corpus_item.source_snapshot_id
+      assert_equal scenario.corpus_item.content, scenario.current_version.scenario_evidence.sole.excerpt
+      assert_equal "expectation", scenario.current_version.scenario_evidence.sole.kind
+      assert_not scenario.current_version.approved?
+      assert_empty scenario.current_version.requirements["outcomes"]
+      assert_empty scenario.current_version.scenario_reviews
+    end
+    revision = oversized.revise!(membership: @membership, base_version_id: oversized.current_version_id, attributes: { taxonomy_label: "Expert diagnostic family" })
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_equal scenarios.map(&:id).sort, ScenarioMining.call(analysis:, membership: @membership).map(&:id).sort
+      assert_equal oversized, ScenarioMining.call(analysis:, membership: @membership, member_id: oversized.cluster_member_id, reason: "Review again").sole
+    end
+    assert_equal revision, oversized.reload.current_version
+    assert_equal "Expert diagnostic family", revision.taxonomy_label
+    assert_equal before, analysis.reload.attributes
+    assert_equal "雪" * 501, oversized.cluster_member.issue_cluster.proposed_label
+  end
+
+  test "source-derived taxonomy labels stay private in Rails SQL debug binds" do
+    previous_logger = ActiveRecord::Base.logger
+    buffer = StringIO.new
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer)
+    marker = "private-diagnostic-label-67"
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { taxonomy_label: marker })
+    assert_includes buffer.string, '["taxonomy_label", "[FILTERED]"]'
+    assert_not_includes buffer.string, marker
+  ensure
+    ActiveRecord::Base.logger = previous_logger
   end
 
   test "expert nomination creates one unapproved source-backed draft without rewriting fixed selection" do

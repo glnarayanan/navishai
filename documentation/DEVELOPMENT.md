@@ -330,6 +330,10 @@ draft with exact source evidence and author attribution. Correct its starting
 context and source-backed outcomes before approval. No model call or human label
 occurs; fixed selection and analysis totals stay unchanged. Repeated requests open
 the existing scenario without revising it. Viewers have no nomination controls.
+Mining shortens labels above 500 characters only in the new draft, with a notice
+and **Inspect full source issue family** link. Original proposals and quotes stay
+fixed; a shortened draft is not an expert label. Boundary and browser checks cover
+selected mining and first nomination without revising saved expert decisions.
 Errors retain the reason, open record, filter and page; navigation returns to the
 read-only evidence route, never the POST action. Nomination reasons stay filtered
 from request logs. Desktop/mobile form, repair and existing-scenario crops live

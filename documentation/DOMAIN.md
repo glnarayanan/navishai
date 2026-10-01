@@ -60,6 +60,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Frequency, risk, coverage, confidence, and severity are different facts. Counts alone do not measure scenario quality.
 - Expectation evidence stays hidden from a target; knowledge evidence is an explicit excerpt the expert permits it to use.
 - A source-backed human expectation is not a claim that the historic answer was correct. Mining cannot approve it.
+- A mined draft label may shorten a source term to 500 characters. The full proposal and evidence stay fixed and inspectable; shortening supplies no expert label or approval.
 - A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
 - Compilation covers every contract statement exactly once. A case retains its exact approval and bindings; an edit creates a new definition.
 - A deterministic trace check is not proof that an external tool ran or that a response is semantically correct.

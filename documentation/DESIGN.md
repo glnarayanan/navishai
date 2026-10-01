@@ -103,6 +103,9 @@ exact company evidence on desktop; mobile stacks them. Facts, document attachmen
 and controlled variants use native disclosures. Evidence marks what stays hidden
 from the target. Expert approval binds to a version; saves reset review only when
 content changes. Invalid edits retain their text, and stale edits require a reload.
+Shortened mined labels show a selection notice and full source-family inspection
+link, not a replacement for expert review. Long family text wraps inside the heading
+on desktop and mobile; the full proposal and refresh control remain available.
 Variants show the parent version, named fact change, reason and expected difference.
 Unedited variants cannot inherit approval. Source changes flag affected evidence;
 replacing a document excerpt creates a new version. Merge uses an approved scenario
