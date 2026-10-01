@@ -11,7 +11,7 @@
       <% end %>
     </ul>
     <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
-    <p><%= link_to "Explore current records", "#corpus-records" %></p>
+    <p><%= link_to "Explore current records", "#corpus-records", data: { turbo: false } %></p>
   </section>
   <section class="section-block config-panel"><h2>Corpus analysis</h2>
     <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>

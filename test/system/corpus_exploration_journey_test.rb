@@ -9,7 +9,10 @@ class CorpusExplorationJourneyTest < ApplicationSystemTestCase
     CorpusIntake.call(corpus:, membership:, name: "Current SSO policy", kind: "document", bytes: "Enterprise SAML policy requires current metadata.")
     sign_in users(:owner)
     visit workspace_corpus_path(workspace, corpus)
+    page.execute_script("window.__corpusJumpFetches = 0; document.addEventListener('turbo:before-fetch-request', () => window.__corpusJumpFetches += 1)")
     click_link "Explore current records"
+    assert_includes page.current_url, "#corpus-records"
+    assert_equal 0, page.evaluate_script("window.__corpusJumpFetches"), "A same-page jump must not reload and replace the search form."
     fill_in "Search phrase", with: "ENTERPRISE"
     select "Support history", from: "Search source"
     find("input[name=corpus_query]").send_keys(:enter)
