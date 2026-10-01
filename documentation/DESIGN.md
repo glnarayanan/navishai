@@ -184,7 +184,9 @@ Suite runs ask for a target version through a labelled picker with a clear promp
 Queued/running views offer refresh, not silent resubmission. Results pair individual
 decisions and source evidence with recorded output; mobile stacks these sections.
 Copy distinguishes fixtures, abstentions and execution errors from support quality.
-Failure groups disclose their exact-grader grouping. A regression needs the expert's
+Failure patterns group fixed requirement kinds and check types across grader versions.
+Each check retains its exact grader, evidence and individual uncertainty; a group
+does not establish a shared cause. A regression needs the expert's
 reason and retains the source result, case and author. Target JSON errors preserve
 the edit; prior versions stay inspectable. The existing visual system remains unchanged.
 

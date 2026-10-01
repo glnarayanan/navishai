@@ -1885,6 +1885,23 @@ warnings/errors and dependency/importmap audits passed. See
 [MODEL_CORPUS_OBSERVATIONS.md](./MODEL_CORPUS_OBSERVATIONS.md). Fixtures prove
 retention/contracts, not company-wide semantic understanding or model quality.
 
+## Saved-run failure patterns (slice 76)
+
+Runs now group effective failed checks by fixed requirement kind and check type
+across grader versions. Each check retains its exact result, contract, grader,
+source excerpt and expert importance. Individual confidence/thresholds and nearby
+abstentions/errors stay separate; no root cause, semantic equivalence or score.
+There is no new receipt, job, provider call or authority write.
+
+Parent focused/adjacent checks passed 35 tests / 596 assertions; native browser
+journeys passed 3 / 271, with no failures, errors or skips. Desktop expanded
+grader/evidence and mobile uncertainty states were rendered and inspected.
+Keyboard disclosures, exact-result navigation, read-only refresh, CSP and overflow
+checks passed at 1280/390/320px. Ruby style passed 321 files, eager loading passed
+and Brakeman reported zero warnings/errors. [FAILURE_PATTERNS.md](./FAILURE_PATTERNS.md)
+records the grouping contract and limits. Named review tools remain unavailable;
+direct risk review used. Fixtures do not establish live support quality.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
