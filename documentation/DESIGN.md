@@ -127,8 +127,11 @@ The report keeps held-out/development tabs, a labelled failure-positive confusio
 matrix, fixed judge abstention threshold and explicit unknown rates. The threshold
 uses that report's exact version, not the current grader; deterministic previews
 show not applicable. Copy explains the strict-below rule and confidence limits.
-It shows sample counts and exclusions, not a
-universal support score. Upload errors retain the output; compact case-check options
+It shows each excluded sample once, including unlabelled samples, and a separate
+whole-cohort prediction tally. Copy names the overlap and certain-label gate;
+missing/error/abstaining predictions cannot imply accuracy. Both summaries wrap
+on mobile and use the same fixed/preview report partial, not a universal support
+score. Upload errors retain the output; compact case-check options
 link to full requirements in a native disclosure. Mobile stacks review sections.
 
 Error-cost assumptions stay in an optional native disclosure. Blank forms choose

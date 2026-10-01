@@ -87,6 +87,42 @@ class CalibrationTest < ActiveSupport::TestCase
     assert_nil report[:recall]
   end
 
+  test "whole cohort prediction totals stay separate from exclusive label exclusions" do
+    other = Membership.create!(workspace: @workspace, user: users(:teammate), role: :member)
+    set = CalibrationSet.define!(corpus: @corpus, membership: @membership, name: "Overlapping evidence states", grader_version_id: @outcome_grader.current_version_id)
+    check = @case.eval_case_checks.find_by!(requirement_kind: "outcomes")
+    disputed = nil
+    [ [ "abstain", [ "fail", "pass" ] ], [ nil, [ "uncertain" ] ], [ "error", [] ],
+      [ "abstain", [ "fail" ] ], [ nil, [ "pass" ] ], [ "fail", [ "pass" ] ],
+      [ "pass", [ "fail" ] ], [ "pass", [] ] ].each_with_index do |(prediction, labels), index|
+      sample = set.add_sample!(membership: @membership, check_id: check.id, cohort: "held_out", output: support_output(text: "Overlap #{index}"))
+      sample.create_calibration_prediction!(workspace: @workspace, corpus: @corpus, result: { "decision" => prediction, "reason" => "Authored prediction" }, processing_version: "test-judge-v1", created_at: Time.current) if prediction
+      label(sample, labels.first) if labels.any?
+      if labels.size == 2
+        sample.label!(membership: other, previous_id: nil, decision: labels.last, rationale: "Authored competing label.")
+        disputed = sample
+      end
+    end
+    development = set.add_sample!(membership: @membership, check_id: check.id, cohort: "development", output: support_output(text: "Separate development output"))
+    label(development, "fail")
+    report = CalibrationReport.call(set:)
+    assert_equal [ 8, 6, 2, 2, 1, 1, 1, 1 ], report.values_at(:samples, :labelled, :compared, :unlabelled, :disputed, :uncertain, :abstained, :unpredicted)
+    assert_equal({ "pass" => 2, "fail" => 1, "abstain" => 2, "error" => 1, "missing" => 2 }, report[:predictions])
+    assert_equal [ 0, 1, 1, 0 ], report.values_at(:true_positive, :false_positive, :false_negative, :true_negative)
+    assert_equal 1.0, report[:disagreement_rate]
+    assert_equal 8, report[:predictions].values.sum
+    assert_equal 8, report.values_at(:compared, :unlabelled, :disputed, :uncertain, :abstained, :unpredicted).sum
+    assert_equal({ "pass" => 0, "fail" => 0, "abstain" => 0, "error" => 0, "missing" => 1 }, CalibrationReport.call(set:, cohort: "development")[:predictions])
+
+    previous = disputed.latest_labels.find_by!(labelled_by: other.user)
+    disputed.label!(membership: other, previous_id: previous.id, decision: "fail", rationale: "Authored correction after source review.")
+    corrected = CalibrationReport.call(set:)
+    assert_equal [ 0, 2 ], corrected.values_at(:disputed, :abstained)
+    assert_equal report[:predictions], corrected[:predictions]
+    assert_equal 2, corrected[:compared]
+    assert_equal 3, disputed.human_labels.count
+  end
+
   test "personal review states use latest labels without revealing other judgments before a first label" do
     other = Membership.create!(workspace: @workspace, user: users(:teammate), role: :member)
     aligned = add_sample(output: support_output(text: "Aligned failure"))

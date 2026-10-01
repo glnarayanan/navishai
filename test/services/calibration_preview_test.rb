@@ -15,6 +15,8 @@ class CalibrationPreviewTest < ActiveSupport::TestCase
     assert_equal 3, candidate[:compared]
     assert_equal [ 2, 0, 0, 1 ], original.values_at(:true_positive, :false_positive, :false_negative, :true_negative)
     assert_equal [ 1, 0, 1, 1 ], candidate.values_at(:true_positive, :false_positive, :false_negative, :true_negative)
+    assert_equal({ "pass" => 1, "fail" => 2, "abstain" => 0, "error" => 0, "missing" => 0 }, original[:predictions])
+    assert_equal({ "pass" => 2, "fail" => 1, "abstain" => 0, "error" => 0, "missing" => 0 }, candidate[:predictions])
     assert_equal 0.5, candidate[:recall]
     assert_equal 1.0, original[:recall]
     assert_equal before, @preview_set.calibration_samples.includes(:calibration_prediction, :human_labels).map { |sample| [ sample.attributes, sample.calibration_prediction.attributes, sample.human_labels.map(&:attributes) ] }
