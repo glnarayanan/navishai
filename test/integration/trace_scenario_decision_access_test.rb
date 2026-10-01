@@ -139,6 +139,25 @@ class TraceScenarioDecisionAccessTest < ActionDispatch::IntegrationTest
     assert_empty TraceScenarioDecision.where(corpus: @corpus)
   end
 
+  test "manual lookup never aliases decimal exponent suffix or collection input to another scenario ID" do
+    id = @version.scenario_id.to_s
+    invalid_ids = [ "#{id}.5", "#{id}e2", "#{id}suffix", [ id ], { value: id }, "9" * 20 ]
+    assert_no_difference [ "TraceScenarioDecision.count", "ScenarioVersion.count", "ScenarioReview.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        invalid_ids.each do |invalid_id|
+          get source_path, params: { selected_trace_id: @item.id, selected_scenario_id: invalid_id }
+          assert_response :success
+          assert_select "#selected-scenario-#{@item.id} p[role=status]", text: /Choose a scenario in this corpus/
+          assert_select "#selected-scenario-#{@item.id} input[name=scenario_version_id]", count: 0
+          assert_select "#selected-scenario-#{@item.id} a[href*='trace_item_id']", count: 0
+        end
+        get source_path, params: { selected_trace_id: @item.id, selected_scenario_id: id }
+        assert_response :success
+        assert_select "#selected-scenario-#{@item.id} input[name=scenario_version_id][value='#{@version.id}']"
+      end
+    end
+  end
+
   test "viewers can inspect an explicit selection but neither decide nor revise it" do
     Membership.create!(workspace: @corpus.workspace, user: users(:teammate), role: :viewer)
     sign_in_as users(:teammate)

@@ -220,6 +220,8 @@ reasoned decision or open the existing trace-evidence editor. Viewers only inspe
 A failed stale POST retains its original version, decision and reason, never moves
 them to the current version, and requires a fresh explicit selection. Foreign IDs
 show no foreign title; ineligible choices offer no decision form.
+Enter one whole numeric #ID. Decimal/exponent values, text suffixes and parameter
+collections cannot open a different scenario by trimming or casting the input.
 
 Association does not approve or edit a scenario, grant knowledge, label a
 calibration sample, compile, execute or admit a regression. Writers can open the
