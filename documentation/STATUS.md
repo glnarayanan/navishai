@@ -539,6 +539,37 @@ immutable tables, foreign isolation and no resend. It removes only its disposabl
 databases/archive. This connects results to calibration intake; testing revised
 graders against development data still needs a separate engineering slice.
 
+GitHub CI for #165 and #166 passed
+([source run](https://github.com/glnarayanan/navishai/actions/runs/36813755668),
+[calibration run](https://github.com/glnarayanan/navishai/actions/runs/36813916792)).
+Earlier failed #155/#158 runs remain failed; none of these PRs was merged.
+
+Response-scoped transcript checks use fixed v2 definitions without changing old
+v1 records or semantics. Each matching user turn checks only its following assistant
+reply block. Earlier/user-only/unrelated later mentions cannot pass; repeated anchors,
+missing/blank replies, Unicode/case and malformed definitions are tested. The
+two-line form retains errors with a specific repair message and four visible rows.
+These grade recorded transcripts, not meaning or incremental target execution.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 4m40.46s: 277 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors, eager loading passed;
+333 Rails tests / 3660 assertions and 27 browser tests / 1096 assertions,
+no failures/errors/skips. Focused native checks pass with 11 tests / 198 assertions;
+the browser journey passes with 69 assertions. An exact source-backed fixture
+requirement fails a misleading earlier mention, receives human regression admission
+and a separate blind development label, then passes on the same fixed case after
+target correction. Duplicate delivery calls the scripted target once per run;
+hidden facts stay absent and grader revision cannot rewrite prior results.
+
+Desktop/390px form/error/failure/pass captures were inspected. The first inspection
+found generic error text and a clipped malformed value; the final error names the
+two-line rule and displays the full retained value. A fixture approval lacked a
+required outcome; corrected that fixture without weakening the approval gate.
+No overflow/CSP failures, dependency, live provider or customer data. Backup/restore
+and diff checks pass too. Direct risk review/native audits used; named reviews
+remain unavailable. Interactive turn execution and grader-revision development
+comparison remain engineering work, not pilot-data approval gates.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -569,7 +600,7 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering includes executable multi-turn cases,
+Independent engineering includes interactive multi-turn execution,
 grader-revision calibration improvement and clean-host/Compose/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval

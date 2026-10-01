@@ -72,6 +72,13 @@ and deliberately start a new run. Immutable results distinguish reported behavio
 abstention and execution errors. A regression records the exact failed result,
 case, human and reason; adding it never silently rewrites the case.
 
+Response-scoped deterministic checks bind a user phrase to its following assistant
+reply block, ending at the next user message. All matching turns must satisfy the
+required/forbidden phrase; missing or blank replies fail. The v2 check definitions
+retain the existing v1 output schema and old check semantics. These are literal
+reported-transcript checks, not an interactive conversation runner or proof of
+incremental target input. Hidden facts stay outside target input.
+
 HTTP definitions bind only an endpoint. The operator's private environment
 allowlists exact HTTPS port-443 URLs per workspace and holds optional bearer tokens;
 an expert must also confirm visible-input disclosure for each requested run.
