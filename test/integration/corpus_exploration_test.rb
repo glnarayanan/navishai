@@ -112,15 +112,22 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
     buffer = StringIO.new
     original_logger = ActiveRecord::Base.logger
     ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
-    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Private log fixture", kind: "conversations",
-      bytes: [ { id: "log-13", title: "Diagnostic policy", content: "Fixture-only private troubleshooting sequence.", context: { plan: "fixture-private-entitlement" } } ].to_json)
+    statements = []
+    capture = ->(event) { statements << event.payload[:sql] if event.payload[:sql].start_with?('INSERT INTO "corpus_items"') }
+    snapshot = nil
+    ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+      snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Private log fixture", kind: "conversations",
+        bytes: [ { id: "log-13", title: "Diagnostic policy", content: "Fixture-only private troubleshooting sequence.", context: { plan: "fixture-private-entitlement" } } ].to_json)
+    end
     assert_equal "Fixture-only private troubleshooting sequence.", snapshot.corpus_items.sole.content
     assert_equal({ "plan" => "fixture-private-entitlement" }, snapshot.corpus_items.sole.context)
+    assert_equal 1, statements.size
+    assert_not_includes statements.sole, "Fixture-only private troubleshooting sequence."
+    assert_not_includes statements.sole, "fixture-private-entitlement"
     assert_includes buffer.string, "INSERT INTO"
     assert_not_includes buffer.string, "Fixture-only private troubleshooting sequence."
     assert_not_includes buffer.string, "fixture-private-entitlement"
     assert_includes buffer.string, '["content", "[FILTERED]"]'
-    assert_includes buffer.string, '["context", "[FILTERED]"]'
   ensure
     ActiveRecord::Base.logger = original_logger
   end

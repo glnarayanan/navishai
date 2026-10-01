@@ -1204,6 +1204,25 @@ and mobile captures were inspected with readable controls/alerts and no overflow
 or CSP violations. No application guard, style or CSP was weakened. Direct risk review/native audits
 used; named review tools remain unavailable. This branch has no remote CI yet.
 
+## Bounded source storage (slice 48)
+
+Intake validates every item before bounded 1000-row PostgreSQL writes. Source,
+snapshot, retention and audit roll back with a late invalid item, including after
+an earlier batch. Returned associations contain persisted immutable records.
+Unicode, nested scalar types, source identity and six-place timestamps stay intact.
+The proposed `insert_all!` path failed the actual DEBUG-log privacy regression;
+the final path keeps the whole batch in one filtered bind, outside SQL literals.
+A separate failing test proved plain JSON encoding lost fractional seconds;
+explicit six-place timestamps fix it. No intake limits or processing identity changed.
+
+The initial combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 7m9.59s:
+423 Rails tests / 5494 assertions and 43 browser tests / 1951 assertions,
+no failures/errors/skips, with native style, security audits and eager loading.
+The fractional-second correction followed that full run and passed the focused
+intake/exploration tests; later combined evidence must cover its final state.
+Named reviews remain unavailable; direct risk review and native audits used.
+No new dependency, customer data, provider, expert label, merge or deployment.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

@@ -51,8 +51,20 @@ class CorpusIntake
         snapshot = source.source_snapshots.create!(workspace: corpus.workspace, corpus:,
           number: (source.source_snapshots.maximum(:number) || 0) + 1, digest:, redaction:,
           processing_version:, mask_digest:, mask_count: values.size, imported_by: membership.user, created_at: Time.current)
-        records.each do |fields|
-          snapshot.corpus_items.create!(fields.merge(workspace: corpus.workspace, corpus:, created_at: Time.current))
+        records.each_slice(1_000) do |batch|
+          rows = batch.map do |fields|
+            item = CorpusItem.new(fields.merge(workspace: corpus.workspace, corpus:, source_snapshot: snapshot, created_at: Time.current))
+            item.validate!
+            item.attributes.except("id").merge("created_at" => item.created_at.iso8601(6))
+          end
+          # Keep the entire batch in a filtered bind, never in logged SQL literals.
+          bind = ActiveRecord::Relation::QueryAttribute.new("content", JSON.generate(rows), CorpusItem.type_for_attribute("content"))
+          CorpusItem.connection.exec_insert(<<~SQL, "CorpusItem Create", [ bind ])
+            INSERT INTO "corpus_items" (workspace_id, corpus_id, source_snapshot_id, external_id, title, content, context, created_at)
+            SELECT workspace_id, corpus_id, source_snapshot_id, external_id, title, content, context, created_at
+            FROM jsonb_to_recordset($1::jsonb) AS records(workspace_id bigint, corpus_id bigint, source_snapshot_id bigint,
+              external_id text, title text, content text, context jsonb, created_at timestamp)
+          SQL
         end
       end
       source.update!(current_snapshot: snapshot)
