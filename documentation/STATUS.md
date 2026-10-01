@@ -1828,6 +1828,22 @@ eager loading passed. The worker's before/after native regression and committed
 remote #187 timeout remains unattributed: its log contains no query or stack
 snapshot. No remote job, infrastructure, provider or dependency changed.
 
+## Large complete-text local processing (slice 73)
+
+Explicit v4 processes complete conversations within 100,000 records / 1 GiB,
+using the existing global weighting and fail-atomic work caps. Original, streaming
+and smaller full-text methods keep their fixed versions and windows. Evidence
+reads and mining remain bounded to 10 MiB. No model call or new schema follows.
+
+Parent request/access/lifecycle checks passed 7 tests / 189 assertions, and native
+desktop/mobile journeys passed 5 / 326, with no failures, errors or skips.
+Integrated desktop complete and mobile selected states were rendered and inspected;
+keyboard selection, actual widths, CSP and overflow checks passed. Ruby style
+passed 310 files, eager loading passed, Brakeman reported zero warnings/errors,
+and gem/importmap audits passed. [LARGE_FULL_TEXT.md](./LARGE_FULL_TEXT.md) records
+the worker's 47 / 1368 checks, including both 100,000-input proofs. Final combined
+scale/runtime checks remain pending while the other assigned slices join.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
