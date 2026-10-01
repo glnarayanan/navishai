@@ -99,8 +99,21 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   typed family counts and complete-text scalar batches without full-corpus loading.
 - [#186](https://github.com/glnarayanan/navishai/pull/186), based on #185: scalar local processing,
   global frequencies, sparse seed lookup and bounded bulk membership writes.
-- `rebuild/47-large-local-analysis`, based on #186: explicit larger-local method,
+- [#187](https://github.com/glnarayanan/navishai/pull/187), based on #186: explicit larger-local method,
   resource budgets, 100,000-record proof and bounded evidence-page recovery.
+- [#188](https://github.com/glnarayanan/navishai/pull/188)–[#191](https://github.com/glnarayanan/navishai/pull/191),
+  each based on its predecessor: bounded source writes/download preflight, varied
+  local proof and streamed conversation intake.
+- [#192](https://github.com/glnarayanan/navishai/pull/192)–[#194](https://github.com/glnarayanan/navishai/pull/194),
+  each based on its predecessor: matching count/byte/read preflight and typed mutations.
+- [#195](https://github.com/glnarayanan/navishai/pull/195)–[#198](https://github.com/glnarayanan/navishai/pull/198),
+  each based on its predecessor: authored retrieval evidence, complete calibration
+  accounting, explicit expert selection and typed nested matching facts.
+- [#199](https://github.com/glnarayanan/navishai/pull/199)–[#201](https://github.com/glnarayanan/navishai/pull/201),
+  each based on its predecessor: varied 100,000-input proof, exact ID lookup and
+  skipping irrelevant fact tokenization.
+- `rebuild/62-local-scenario-search`, based on #201: private current-scenario
+  lookup with exact counts, bounded metadata and native repair/paging.
 
 ## Built and checked
 
@@ -1523,11 +1536,43 @@ Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 10m7.15s: 452 Rails tests 
 Native style, audits and eager loading pass; whole-command peak RSS is 534344 KiB.
 No semantic-quality, arbitrary-throughput, label or provider claim follows.
 
+## Local scenario lookup (slice 62)
+
+The scenario list now searches current title, situation and taxonomy with one
+private literal phrase. Facts, requirements, source quotes, selection reasons
+and old versions stay outside lookup. Corpus-locked counts and fifty-row metadata
+reads keep complete filter totals, stable IDs and existing review/merge/stale states.
+Viewers remain read-only. Typed Rails binds filter private phrases in request and
+SQL-debug logs; URLs/history still retain them. Invalid input returns 422 with
+retained text, an accessible repair alert and no partial rows.
+
+Focused access checks pass 12 tests / 255 assertions, including literal wildcard,
+Unicode, whole-count paging, tenant/role/expiry, route safety and actual DEBUG-log
+and projection checks. Rendered scenario journeys pass 2 tests / 76 assertions.
+Desktop/390px all, matched, empty and invalid states were inspected; browser checks
+prove Enter, full input retention, clear recovery, ARIA and no overflow/CSP issues.
+The first integration attempt had two test-framework errors, not product failures;
+corrected native assertions and timestamp-bind inspection now pass.
+No rank, expert decision, schema, dependency, provider or customer data changed.
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 12m17.69s: 458 Rails tests /
+6824 assertions and 48 browser tests / 2191 assertions, no failures/errors/skips.
+302 Ruby files, native security audits and eager loading pass; whole-command peak
+RSS is 555724 KiB. Direct risk review used; named review tools remain unavailable.
+
+At 18:16–18:18 UTC on 1 October, exact-head remote CI for #190, #195 and #199
+is green; the other twelve PRs in #187–201 remain inside `bin/ci` with no conclusion.
+Runner/container/checkout/Ruby setup passed for each. #187 and #196 expose neither
+active logs nor artifacts, so the internal command and cause remain unknown.
+Completed GitHub suites took 12–18 minutes overall; size alone does not explain
+multi-hour runs. Nothing was cancelled, rerun, merged, released or deployed.
+Earlier failed #155/#158 runs remain failed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
 regression, exact source-change impact and fixed-case target-version comparison.
 Corpus exploration now has bounded, source-backed literal search.
+The scenario list offers private current-definition lookup for expert selection.
 Expert calibration now has a personal read-only review queue.
 This does not finish the full rebuild or establish customer value. Trace failure
 matching now suggests five local literal candidates from up to 2000 current

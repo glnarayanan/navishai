@@ -103,6 +103,13 @@ Unedited variants cannot inherit approval. Source changes flag affected evidence
 replacing a document excerpt creates a new version. Merge uses an approved scenario
 ID shown in the paginated scenario list, retaining the source identity and decisions.
 
+The scenario list has a labelled native literal-search form and exact match count,
+not semantic ranking or coverage. Current title, situation and taxonomy are the
+only searched fields. ID/version/review/source-change labels stay beside each link.
+Enter submits; paging keeps the phrase, and clear returns to the first page. Empty
+and invalid states retain input and offer repair without partial rows. Copy warns
+about URL/history privacy and keeps lookup separate from association or approval.
+
 Model suggestions extend the same scenario page through a native disclosure.
 The request preview names its exact fixed context/evidence and separate purpose
 approval. Invalid JSON stays in the labelled field; consent resets on errors.

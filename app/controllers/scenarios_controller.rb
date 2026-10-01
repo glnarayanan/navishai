@@ -6,10 +6,27 @@ class ScenariosController < ApplicationController
   rescue_from Scenario::Invalid, EvaluationHttp::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
 
   def index
-    @page = params[:page].to_i.clamp(1, 10000)
-    @scenarios = @corpus.scenarios.where(current_version: ScenarioVersion.unexpired).includes(:current_version).order(:id).offset((@page - 1) * 50).limit(51).to_a
-    @more = @scenarios.size > 50
-    @scenarios = @scenarios.first(50)
+    @query = params[:corpus_query].to_s
+    query = @query.strip
+    @corpus.with_lock do
+      versions = ScenarioVersion.where(corpus: @corpus).unexpired
+      if query.length > 200 || query.include?("\0")
+        @search_error = "Search needs at most 200 characters and no null bytes. Shorten the phrase and try again."
+        versions = versions.none
+      elsif query.present?
+        pattern = ActiveRecord::Relation::QueryAttribute.new("corpus_query",
+          "%#{ActiveRecord::Base.sanitize_sql_like(query)}%", ScenarioVersion.type_for_attribute("title"))
+        versions = versions.where("scenario_versions.title ILIKE :pattern OR scenario_versions.situation ILIKE :pattern OR scenario_versions.taxonomy_label ILIKE :pattern", pattern:)
+      end
+      matching = @corpus.scenarios.where(current_version: versions)
+      @matching_count = matching.count
+      @page = params[:page].to_i.clamp(1, 10000)
+      @more = @matching_count > @page * 50
+      @scenarios = matching.order(:id).offset((@page - 1) * 50).limit(50).to_a
+      ActiveRecord::Associations::Preloader.new(records: @scenarios, associations: :current_version,
+        scope: ScenarioVersion.select(:id, :workspace_id, :corpus_id, :scenario_id, :number, :title, :importance)).call
+    end
+    render :index, status: :unprocessable_content if @search_error
   end
 
   def create

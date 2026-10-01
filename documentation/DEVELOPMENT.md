@@ -529,6 +529,19 @@ discovery copies structured proposals and exact quotes, never expert approval.
 Historical answers are not approved expectations. Experts must check the starting
 situation and source-backed outcomes before approval.
 
+**Find scenarios** searches literal substrings in current title, situation and
+taxonomy label, ignoring case. Trim surrounding spaces; accept at most 200
+characters without null bytes. `%`, `_` and backslash remain literal. Facts,
+requirements, excerpts, selection reasons and historical versions are excluded.
+Count the whole unexpired same-corpus filter, then paginate fifty IDs in stable
+order; load only current list metadata. Review, merge and source-change labels
+remain visible. Search grants no association, approval, job or provider call.
+Viewers have the same read-only lookup. Invalid phrases return 422 with retained
+input and no rows. Clear returns to the first page; paging preserves the phrase.
+Rails request/SQL-debug logs filter the named bind, but browser URLs/history retain
+the phrase. Do not paste secrets. Search captures use `scenarios/search-*` under
+the artifact directory below.
+
 Edit the issue label, importance, known/hidden JSON facts and five requirement
 lists. Save creates a fixed version; an unchanged save keeps the version and
 approval. Stale edits/reviews cannot overwrite a later revision. Attach exact

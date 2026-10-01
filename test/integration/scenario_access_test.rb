@@ -9,6 +9,202 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "local search uses only current title situation and taxonomy literal substrings" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+      attributes: { title: "Historic aurora", situation: "Old definition", taxonomy_label: "Old category" })
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+      attributes: { title: "Current nebula", situation: "Diagnose the quasar boundary", taxonomy_label: "Pulsar diagnostics",
+        known_facts: { private: "known-only-secret" }, hidden_facts: { private: "hidden-only-secret" },
+        requirements: ScenarioVersion::REQUIREMENT_TYPES.index_with { [ "requirement-only-secret" ] } })
+    other = (@scenarios - [ @scenario ]).sole
+    other.revise!(membership: @membership, base_version_id: other.current_version_id,
+      attributes: { title: "Unrelated case", situation: "Unrelated situation", taxonomy_label: "Unrelated category" })
+
+    { "  nEbUlA  " => 1, "QUASAR" => 1, "pUlSaR" => 1, "aurora" => 0,
+      "known-only-secret" => 0, "hidden-only-secret" => 0, "requirement-only-secret" => 0,
+      "Request the certificate expiry date." => 0, @scenario.current_version.selection_reason => 0 }.each do |phrase, count|
+      get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+      assert_response :success
+      assert_select ".workspace-card", count: count
+      assert_select "#scenario-search [role=status]", text: /\A#{count} matching scenario/
+      assert_select ".workspace-card a", text: "Current nebula", count: count
+    end
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "  " }
+    assert_response :success
+    assert_select ".workspace-card", count: 2
+  end
+
+  test "scenario search escapes literal wildcards and stays in its corpus and workspace" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+      attributes: { title: "Literal %_\\ boundary" })
+    foreign = @workspace.corpora.create!(name: "Separate scenario corpus")
+    foreign_item = CorpusIntake.call(corpus: foreign, membership: @membership, name: "Foreign evidence", kind: "document", bytes: "Foreign literal boundary.").corpus_items.sole
+    foreign_scenario = foreign.scenarios.create!(workspace: @workspace, corpus_item: foreign_item)
+    version = foreign_scenario.scenario_versions.create!(@scenario.current_version.attributes.slice(*ScenarioVersion::EDITABLE).merge(
+      workspace: @workspace, corpus: foreign, created_by: @membership.user, number: 1, origin: "expert", selection_reason: "Foreign fixture", created_at: Time.current))
+    version.scenario_evidence.create!(workspace: @workspace, corpus: foreign, corpus_item: foreign_item, kind: "knowledge", excerpt: foreign_item.content)
+    foreign_scenario.update!(current_version: version)
+    [ "%", "_", "\\", "%_\\" ].each do |phrase|
+      get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+      assert_response :success
+      assert_select ".workspace-card", count: 1
+      assert_select ".workspace-card a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, @scenario)}']"
+    end
+    [ "' OR 1=1 --", "<script>foreign()</script>" ].each do |phrase|
+      get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+      assert_response :success
+      assert_select ".workspace-card", count: 0
+      assert_select("input[name=corpus_query]") { |inputs| assert_equal phrase, inputs.sole["value"] }
+      assert_select "script", text: /foreign\(\)/, count: 0
+    end
+    get workspace_corpus_scenarios_path(workspaces(:beta_support), @corpus), params: { corpus_query: "boundary" }
+    assert_response :not_found
+    sign_in_as users(:outsider)
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "boundary" }
+    assert_response :not_found
+  end
+
+  test "viewer scenario search is private read only and preserves honest artifact labels" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+      evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+    approve_scenario
+    other = (@scenarios - [ @scenario ]).sole
+    other.review!(membership: @membership, version_id: other.current_version_id, decision: "reject", note: "Not an approved expectation")
+    phrase = "certificate"
+    Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
+    sign_in_as users(:teammate)
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioReview.count", "ScenarioProposal.count", "HumanLabel.count", "AuditEvent.count", "CorpusAnalysis.count" ] do
+      assert_no_enqueued_jobs do
+        get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+        assert_response :success
+        assert_select "#scenario-search form[method=get] input[type=search][name=corpus_query]", count: 1
+        input = css_select("#scenario-search input[name=corpus_query]").sole
+        assert_select "#scenario-search label[for='#{input['id']}']", text: "Scenario search phrase"
+        submitters = css_select("#scenario-search input[type=submit], #scenario-search button[type=submit], #scenario-search button:not([type])")
+        assert submitters.any? { |element| (element["value"] || element.text) == "Find scenarios" }
+        assert_select ".workspace-card", count: 1
+        assert_not_includes request.filtered_path, phrase
+        assert_includes request.filtered_path, "corpus_query=[FILTERED]"
+      end
+    end
+    sign_in_as users(:owner)
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: other.current_version.title }
+    assert_select ".workspace-card", text: /reject/, count: 1
+    other.review!(membership: @membership, version_id: other.current_version_id, decision: "merge", merge_into_id: @scenario.id)
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: other.current_version.title }
+    assert_select ".workspace-card", text: /merged/, count: 1
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "SSO playbook", kind: "document", bytes: "Changed certificate policy.")
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+    assert_select ".workspace-card", text: /source changed/, count: 1
+    @snapshot.source.update!(expires_at: 1.minute.ago)
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+    assert_select ".workspace-card", count: 0
+    assert_select "#scenario-search [role=status]", text: /\A0 matching scenario/
+  end
+
+  test "invalid scenario phrases retain raw input and offer repair without list records" do
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "雪" * 200 }
+    assert_response :success
+    [ "  " + "x" * 201 + "  ", "bad\0query" ].each do |phrase|
+      get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
+      assert_response :unprocessable_content
+      assert_select "#scenario-search [role=alert]", text: /200 characters and no null bytes/
+      assert_select "input[name=corpus_query]", count: 1
+      assert_includes response.body, %Q(value="#{ERB::Util.html_escape(phrase)}")
+      assert_select ".workspace-card", count: 0
+    end
+    get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "  " + "x" * 200 + "  " }
+    assert_response :success
+    assert_select ".workspace-card", count: 0
+  end
+
+  test "scenario search counts the whole filter and pages fifty ordered IDs with safe local recovery" do
+    template = @scenario.current_version
+    scenarios = 51.times.map do |index|
+      scenario = @corpus.scenarios.create!(workspace: @workspace, corpus_item: @scenario.corpus_item)
+      version = scenario.scenario_versions.create!(template.attributes.slice(*ScenarioVersion::EDITABLE).merge(
+        title: "Paging constellation #{50 - index}", workspace: @workspace, corpus: @corpus, created_by: @membership.user,
+        number: 1, origin: "expert", selection_reason: "Pagination fixture", created_at: Time.current))
+      template.scenario_evidence.each do |evidence|
+        version.scenario_evidence.create!(workspace: @workspace, corpus: @corpus, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt)
+      end
+      scenario.update!(current_version: version)
+      scenario
+    end
+    path = workspace_corpus_scenarios_path(@workspace, @corpus)
+    get path, params: { corpus_query: "constellation", page: 0, protocol: "javascript", host: "alert(1)//", script_name: "//evil.example" }
+    assert_response :success
+    assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
+    assert_equal scenarios.first(50).map { |scenario| workspace_corpus_scenario_path(@workspace, @corpus, scenario) }, css_select(".workspace-card a").map { |link| link["href"] }
+    next_link = css_select("a").find { |link| link.text == "Next records" }
+    assert next_link
+    uri = URI(next_link["href"])
+    assert uri.relative?, uri.to_s
+    assert_equal path, uri.path
+    assert_equal "constellation", Rack::Utils.parse_query(uri.query)["corpus_query"]
+    assert_equal "2", Rack::Utils.parse_query(uri.query)["page"]
+    get next_link["href"]
+    assert_response :success
+    assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
+    assert_select ".workspace-card", count: 1
+    assert_select ".workspace-card a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, scenarios.last)}']"
+    assert_select "a", text: "Next records", count: 0
+    previous = css_select("a").find { |link| link.text == "Previous records" }
+    assert previous
+    uri = URI(previous["href"])
+    assert uri.relative?, uri.to_s
+    assert_equal path, uri.path
+    assert_equal({ "corpus_query" => "constellation", "page" => "1" }, Rack::Utils.parse_query(uri.query).slice("corpus_query", "page"))
+    clear = css_select("#scenario-search a").find { |link| link.text.match?(/Clear/) }
+    assert clear, "Offer a clear-search link"
+    get clear["href"]
+    assert_response :success
+    assert_select "#scenario-search [role=status]", text: /\A53 matching scenarios/
+    assert_select ".workspace-card", count: 50
+    assert_select("input[name=corpus_query]") { |inputs| assert inputs.sole["value"].blank? }
+    get path, params: { corpus_query: "constellation", page: 10001 }
+    assert_response :success
+    assert_select ".workspace-card", count: 0
+    assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
+    previous = css_select("a").find { |link| link.text == "Previous records" }
+    assert previous
+    assert_equal "9999", Rack::Utils.parse_query(URI(previous["href"]).query)["page"]
+  end
+
+  test "scenario search binds private phrases and preloads only current list metadata" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+      attributes: { title: "Private diagnostic nebula", situation: "Situation not needed for rendering" })
+    buffer = StringIO.new
+    original_logger = ActiveRecord::Base.logger
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    statements = []
+    capture = ->(event) { statements << event.payload if event.payload[:sql].start_with?("SELECT") }
+    ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+      get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "diagnostic nebula" }
+      assert_response :success
+      assert_select ".workspace-card a", text: "Private diagnostic nebula", count: 1
+    end
+    searches = statements.select { |payload| payload[:sql].include?("ILIKE") }
+    assert_not_empty searches
+    searches.each do |payload|
+      assert_not_includes payload[:sql], "diagnostic nebula"
+      assert_includes payload[:binds].filter_map { |bind| bind.name if bind.respond_to?(:name) }, "corpus_query"
+    end
+    assert_includes buffer.string, "ILIKE"
+    assert_includes buffer.string, "[FILTERED]"
+    assert_not_includes buffer.string, "diagnostic nebula"
+    projections = statements.map { |payload| payload[:sql].split(/\bFROM\b/, 2).first }.select { |sql| sql.include?('"scenario_versions"') }
+    assert_not_empty projections
+    assert projections.any? { |projection| projection.include?('"scenario_versions"."title"') }
+    projections.each do |projection|
+      refute_match(/"scenario_versions"\.\*/, projection)
+      columns = projection.scan(/"scenario_versions"\."([^"]+)"/).flatten
+      assert_empty columns - %w[id workspace_id corpus_id scenario_id number title importance]
+    end
+  ensure
+    ActiveRecord::Base.logger = original_logger
+  end
+
   test "read write errors preserve expert input and foreign routes are hidden" do
     get workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
     assert_response :success
