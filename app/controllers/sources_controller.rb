@@ -10,10 +10,11 @@ class SourcesController < ApplicationController
     raise CorpusIntake::Invalid, "Choose an export or text document." unless upload.respond_to?(:read)
     snapshot = CorpusIntake.call(corpus: @corpus, membership: Current.require_membership!,
       name: params[:name], kind: params[:kind], bytes: upload.read(CorpusIntake::MAX_BYTES + 1),
-      redaction: params[:redaction], retention_days: params[:retention_days])
+      redaction: params[:redaction], retention_days: params[:retention_days], redaction_values: params[:redaction_values] || "")
     redirect_to workspace_corpus_source_path(Current.workspace, @corpus, snapshot.source),
       notice: "Snapshot #{snapshot.number} retained; #{snapshot.corpus_items.count} source-backed records.", status: :see_other
   rescue CorpusIntake::Invalid, ActiveRecord::RecordInvalid => error
+    flash[:intake_redaction] = params[:redaction] if %w[email none exact].include?(params[:redaction])
     redirect_to workspace_corpus_path(Current.workspace, @corpus), alert: error.message, status: :see_other
   end
 

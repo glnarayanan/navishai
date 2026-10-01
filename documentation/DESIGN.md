@@ -16,10 +16,17 @@ theme control. Navigation uses a keyboard-accessible disclosure at every viewpor
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
 
-Import copy names bytes, redaction and processing version as snapshot identity.
+Import copy names bytes, masking rules and processing version as snapshot identity.
 Masking-collision alerts explain how to repair keys or IDs without showing them,
 choosing original text or implying partial intake. The existing source and retention
 stay fixed. Desktop/mobile keep the same native import controls and privacy limits.
+
+Exact-text mode has one labelled native textarea with literal/case-sensitive limits
+and privacy/retry help. It masks only the author's listed text, not all emails or
+PII. Errors preserve the mode but clear private values; never put them in flash,
+URLs or logs. Source metadata shows the fixed rule count/fingerprint, not the list,
+and warns that masking cannot approve disclosure or rewrite history. The same
+controls and readable wrapped digests work at desktop, 390px and 320px.
 
 Model corpus discovery places the fixed model request beside complete source
 previews on desktop and stacks them on mobile. Consent names exact records and

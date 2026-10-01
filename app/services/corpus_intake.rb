@@ -4,10 +4,13 @@ class CorpusIntake
   MAX_ITEMS = 2_000
   PROCESSING_VERSION = "support-export-v1"
 
-  def self.call(corpus:, membership:, name:, kind:, bytes:, redaction: "email", retention_days: 365)
+  def self.call(corpus:, membership:, name:, kind:, bytes:, redaction: "email", retention_days: 365, redaction_values: "")
     raise Invalid, "Choose conversations, document or traces." unless %w[conversations document traces].include?(kind)
-    raise Invalid, "Choose email redaction or none." unless %w[email none].include?(redaction)
+    raise Invalid, "Choose email masking, exact text or original text." unless %w[email none exact].include?(redaction)
     raise Invalid, "Retention must be 1–3650 days." unless retention_days.to_s.match?(/\A[0-9]+\z/) && retention_days.to_i.between?(1, 3650)
+    values = mask_values(redaction_values, redaction:)
+    mask_digest = Digest::SHA256.hexdigest(JSON.generate(values))
+    pattern = redaction == "email" ? /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i : Regexp.union(values.sort_by { |value| [ -value.length, value ] })
     text = bytes.dup.force_encoding(Encoding::UTF_8)
     raise Invalid, "Upload valid UTF-8 text, at most 10 MiB, without null bytes." if text.bytesize > MAX_BYTES || !text.valid_encoding? || text.include?("\0")
     records = case kind
@@ -26,8 +29,8 @@ class CorpusIntake
       raise Invalid, "Source text must not contain null bytes." if record.to_json.include?("\\u0000")
       fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
         content: record.fetch("content"), context: record.fetch("context", {}) }
-      if redaction == "email"
-        fields = redact(fields)
+      unless redaction == "none"
+        fields = redact(fields, pattern:, redaction:)
         fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
       end
       SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
@@ -43,11 +46,11 @@ class CorpusIntake
       source.expires_at = retention_days.to_i.days.from_now
       source.save!
       digest = Digest::SHA256.hexdigest(bytes)
-      snapshot = source.source_snapshots.find_by(digest:, redaction:, processing_version:)
+      snapshot = source.source_snapshots.find_by(digest:, redaction:, processing_version:, mask_digest:)
       unless snapshot
         snapshot = source.source_snapshots.create!(workspace: corpus.workspace, corpus:,
           number: (source.source_snapshots.maximum(:number) || 0) + 1, digest:, redaction:,
-          processing_version:, imported_by: membership.user, created_at: Time.current)
+          processing_version:, mask_digest:, mask_count: values.size, imported_by: membership.user, created_at: Time.current)
         records.each do |fields|
           snapshot.corpus_items.create!(fields.merge(workspace: corpus.workspace, corpus:, created_at: Time.current))
         end
@@ -91,16 +94,30 @@ class CorpusIntake
   end
   private_class_method :conversations
 
-  def self.redact(value)
+  def self.mask_values(text, redaction:)
+    raise Invalid, "Exact text needs valid UTF-8, at most 8 KiB, without null bytes." unless text.is_a?(String)
+    text = text.dup.force_encoding(Encoding::UTF_8)
+    raise Invalid, "Exact text needs valid UTF-8, at most 8 KiB, without null bytes." if text.bytesize > 8.kilobytes || !text.valid_encoding? || text.include?("\0")
+    values = text.split(/\r?\n/).reject(&:empty?).uniq.sort
+    if redaction == "exact"
+      raise Invalid, "Exact text needs 1–50 unique values, one per line, each 3–200 characters and not blank. Re-enter the values before retrying." unless values.size.between?(1, 50) && values.all? { |value| value.length.between?(3, 200) && value.present? }
+    elsif values.any?
+      raise Invalid, "Choose Mask exact text to apply the entered values; no records were imported. Re-enter the values before retrying."
+    end
+    values
+  end
+  private_class_method :mask_values
+
+  def self.redact(value, pattern:, redaction:)
     case value
-    when String then value.gsub(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i, "[email redacted]")
+    when String then value.gsub(pattern, redaction == "email" ? "[email redacted]" : "[text redacted]")
     when Hash
       value.each_with_object({}) do |(key, child), masked|
-        masked_key = key.is_a?(String) ? redact(key) : key
-        raise Invalid, "Email masking would merge distinct JSON keys. Rename those keys before upload; no records were imported." if masked.key?(masked_key)
-        masked[masked_key] = redact(child)
+        masked_key = key.is_a?(String) ? redact(key, pattern:, redaction:) : key
+        raise Invalid, "#{redaction == 'email' ? 'Email' : 'Exact-text'} masking would merge distinct JSON keys. Rename those keys before upload; no records were imported." if masked.key?(masked_key)
+        masked[masked_key] = redact(child, pattern:, redaction:)
       end
-    when Array then value.map { |child| redact(child) }
+    when Array then value.map { |child| redact(child, pattern:, redaction:) }
     else value
     end
   end

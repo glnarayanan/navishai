@@ -1496,7 +1496,10 @@ CREATE TABLE public.source_snapshots (
     processing_version character varying NOT NULL,
     imported_by_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text]))))
+    mask_digest character varying DEFAULT '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::character varying NOT NULL,
+    mask_count integer DEFAULT 0 NOT NULL,
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying, 'exact'::character varying])::text[])))),
+    CONSTRAINT source_snapshot_mask_policy CHECK ((((mask_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((((redaction)::text = 'exact'::text) AND ((mask_count >= 1) AND (mask_count <= 50)) AND ((mask_digest)::text <> '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)) OR (((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[])) AND (mask_count = 0) AND ((mask_digest)::text = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)))))
 );
 
 
@@ -3046,7 +3049,7 @@ CREATE INDEX index_source_snapshots_on_imported_by_id ON public.source_snapshots
 -- Name: index_source_snapshots_on_processing_identity; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_source_snapshots_on_processing_identity ON public.source_snapshots USING btree (source_id, digest, redaction, processing_version);
+CREATE UNIQUE INDEX index_source_snapshots_on_processing_identity ON public.source_snapshots USING btree (source_id, digest, redaction, processing_version, mask_digest);
 
 
 --
@@ -4050,6 +4053,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001150000'),
 ('20261001140000'),
 ('20261001130000'),
 ('20261001120000'),

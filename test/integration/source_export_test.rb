@@ -60,6 +60,26 @@ class SourceExportTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["Content-Disposition"]
   end
 
+  test "exact text exports immutable rule provenance without retaining or returning the values" do
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Exact source", kind: "document",
+      bytes: "Fixture Private Customer needs logs.", redaction: "exact", redaction_values: "Fixture Private Customer")
+    @source = snapshot.source
+    download(snapshot)
+    assert_response :success
+    data = JSON.parse(response.body)
+    assert_equal "exact", data.dig("snapshot", "redaction")
+    assert_equal 1, data.dig("snapshot", "mask_count")
+    assert_equal Digest::SHA256.hexdigest('["Fixture Private Customer"]'), data.dig("snapshot", "mask_digest")
+    assert_equal "[text redacted] needs logs.", data.fetch("records").sole.fetch("text")
+    assert_not_includes response.body, "Fixture Private Customer"
+    get workspace_corpus_source_path(@workspace, @corpus, @source)
+    assert_response :success
+    assert_select ".page-heading", text: /Exact text masked/
+    assert_select "[role=status]", text: /not approval to disclose data/
+    assert_select "dd", text: /1 unique value;/
+    assert_not_includes response.body, "Fixture Private Customer"
+  end
+
   test "nested production trace retains masked input and reported output" do
     trace = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json")))
     trace.first.fetch("input")["known_facts"]["nested"] = { "contacts" => [ "person@example.org", "雪" ] }

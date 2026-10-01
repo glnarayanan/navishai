@@ -64,8 +64,18 @@ separate operator-controlled retention policy.
 Masking rejects key and record-ID collisions before persistence or snapshot reuse,
 including nested trace facts/outputs. Repair errors contain no source keys. Intake
 does not drop values, switch to original text or repair retained history. Snapshot
-reuse also binds the processing version through a database unique index; a new
-processor cannot silently return a prior processor's artifacts for the same bytes.
+reuse binds the processing version and masking fingerprint through a database
+unique index; changed processing/rules cannot silently return older artifacts.
+
+Exact-text mode masks only the author's listed case-sensitive literals. It is
+separate from email masking, not full PII detection or a customer disclosure policy.
+Rules are bounded, escaped literals, never user-executed regexes. Snapshots keep
+only the sorted unique list's SHA-256 fingerprint/count; the raw list stays outside
+retained definitions, audit, flash and filtered request logs. The author must keep
+it privately for reprocessing. SQL rejects inconsistent mode/count/fingerprint
+and updates. Trace schemas still revalidate after masking. Source names and older
+snapshots stay unchanged; selected patterns may also occur in that metadata/history.
+Hashes are not anonymity guarantees. New masks cannot approve or recall disclosure.
 
 Managers/Admins/Owners may download one exact retained snapshot by POST with typed
 source-name confirmation. Membership, source expiry and snapshot scope are checked

@@ -1,8 +1,12 @@
 <% content_for :title, "#{@source.name} — NavishAI" %>
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
-  <div class="page-heading"><div><h1><%= @source.name %></h1><p>Snapshot <%= @snapshot.number %> · <%= @snapshot.created_at.to_fs(:long) %> · <%= @snapshot.redaction == "email" ? "Email addresses masked" : "Original text" %></p></div></div>
+  <div class="page-heading"><div><h1><%= @source.name %></h1><p>Snapshot <%= @snapshot.number %> · <%= @snapshot.created_at.to_fs(:long) %> · <%= { "email" => "Email addresses masked", "exact" => "Exact text masked", "none" => "Original text" }.fetch(@snapshot.redaction) %></p></div></div>
   <dl class="source-metadata"><dt>Input SHA-256</dt><dd><code><%= @snapshot.digest %></code></dd><dt>Processing</dt><dd><%= @snapshot.processing_version %></dd><dt>Retention ends</dt><dd><%= @source.expires_at.to_date %></dd></dl>
+  <% if @snapshot.redaction == "exact" %>
+    <dl class="source-metadata"><dt>Exact-text values</dt><dd><%= pluralize(@snapshot.mask_count, "unique value") %>; the values themselves are not retained.</dd><dt>Rules SHA-256</dt><dd><code><%= @snapshot.mask_digest %></code></dd></dl>
+    <p role="status">Only the listed, case-sensitive text was masked. Other personal data, emails or credentials may remain. This is not approval to disclose data.</p>
+  <% end %>
   <nav class="workspace-tabs" aria-label="Source snapshots"><% @snapshots.each do |snapshot| %><%= link_to "Snapshot #{snapshot.number}", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: snapshot.number), aria: { current: snapshot.id == @snapshot.id ? "page" : nil } %><% end %></nav>
   <section class="section-block" id="source-impact"><h2>Source change impact</h2><p>Exact evidence links across all retained snapshots of this source, including prior versions. This is not semantic change detection. History stays fixed; experts decide which expectations need revision.</p>
     <% if @corpus.eval_definitions_expired? %><p role="status">Dependencies stay hidden because a corpus source has expired.</p><% else %>
@@ -74,7 +78,7 @@
   <% if Current.require_membership!.can_manage_work? %>
     <details class="section-block" id="source-download" <%= "open" if @download_error %>><summary>Download retained snapshot <%= @snapshot.number %></summary>
       <p>Complete normalized records from this exact snapshot, including titles, text and context, with source identity and processing provenance. This is retained data, not original raw files or a vendor export. No external provider receives it.</p>
-      <p>Email masking is incomplete: other personal or sensitive data may remain. Downloaded copies fall outside local purge; you are responsible for their storage and deletion.</p>
+      <p>Masking is not full PII removal: personal or sensitive data may remain. Downloaded copies fall outside local purge; you are responsible for their storage and deletion.</p>
       <p>Limit: 2000 records and 10 MiB of complete JSON. Larger downloads are refused, never sampled or truncated.</p>
       <% if @download_error %><p role="alert"><%= @download_error %></p><% end %>
       <%= form_with url: download_snapshot_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel", data: { turbo: false } do |form| %>

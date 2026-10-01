@@ -42,6 +42,87 @@ class CorpusIntakeTest < ActiveSupport::TestCase
     assert_includes original.corpus_items.pluck(:content), "Ask admin@example.org for metadata"
   end
 
+  test "expert chosen exact text masks literal case sensitive values without keeping the values" do
+    records = [ { id: "Alice-tenant", title: "Alice SSO", content: "Alice: +1 555 0100; .*! stays literal; alice stays distinct.",
+      context: { "Alice" => [ "+1 555 0100", { "unchanged" => false, "absent" => nil } ] } } ]
+    snapshot = import(records.to_json, redaction: "exact", redaction_values: "Alice\r\n+1 555 0100\n.*!\n")
+    item = snapshot.corpus_items.sole
+    assert_equal "record-#{Digest::SHA256.hexdigest('Alice-tenant')}", item.external_id
+    assert_equal "[text redacted] SSO", item.title
+    assert_equal "[text redacted]: [text redacted]; [text redacted] stays literal; alice stays distinct.", item.content
+    assert_equal({ "[text redacted]" => [ "[text redacted]", { "unchanged" => false, "absent" => nil } ] }, item.context)
+    assert_equal 3, snapshot.mask_count
+    assert_equal Digest::SHA256.hexdigest('["+1 555 0100",".*!","Alice"]'), snapshot.mask_digest
+    assert_not_includes snapshot.attributes.to_json, "Alice"
+    assert_not_includes snapshot.attributes.to_json, "+1 555 0100"
+    assert_equal snapshot.id, import(records.to_json, redaction: "exact", redaction_values: ".*!\nAlice\n+1 555 0100\nAlice").id
+  end
+
+  test "exact matches use longest values at the same position and preserve Unicode and rule boundaries" do
+    records = [ { id: "literal", title: "Fixture", content: "tenant-ABC / tenant-A / café / CAFE / padded ", context: {} } ]
+    snapshot = import(records.to_json, redaction: "exact", redaction_values: "tenant-A\ntenant-ABC\ncafé\n padded ")
+    assert_equal "[text redacted] / [text redacted] / [text redacted] / CAFE /[text redacted]", snapshot.corpus_items.sole.content
+    maximum = 50.times.map { |i| "value-#{i}" }
+    maximum[0] = "雪" * 200
+    assert_equal 50, import(records.to_json, redaction: "exact", redaction_values: maximum.join("\n")).mask_count
+    assert_equal 1, import(records.to_json, redaction: "exact", redaction_values: "abc").mask_count
+    boundary = 40.times.map { |i| "#{i.to_s.rjust(3, '0')}#{'x' * 197}" }.push("q" * 152).join("\n")
+    assert_equal 8192, boundary.bytesize
+    assert_equal 41, import(records.to_json, redaction: "exact", redaction_values: boundary).mask_count
+  end
+
+  test "changed exact text choices create immutable snapshots with distinct database identity" do
+    first = import(@records.to_json, redaction: "exact", redaction_values: "metadata")
+    second = import(@records.to_json, redaction: "exact", redaction_values: "invoices")
+    assert_equal first.digest, second.digest
+    assert_equal first.processing_version, second.processing_version
+    assert_not_equal first.mask_digest, second.mask_digest
+    assert_equal 2, second.number
+    assert_equal "Ask admin@example.org for [text redacted]", first.corpus_items.first.content
+    assert_equal "Ask admin@example.org for metadata", second.corpus_items.first.content
+    assert_equal first.id, import(@records.to_json, redaction: "exact", redaction_values: "metadata").id
+    assert_raises(ActiveRecord::ReadOnlyRecord) { first.update!(mask_count: 2) }
+    assert_raises(ActiveRecord::StatementInvalid) do
+      SourceSnapshot.transaction(requires_new: true) { SourceSnapshot.where(id: first.id).update_all(mask_digest: second.mask_digest) }
+    end
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      SourceSnapshot.transaction(requires_new: true) do
+        first.source.source_snapshots.create!(first.attributes.except("id").merge("number" => 3))
+      end
+    end
+    [ { "mask_count" => 51 }, { "redaction" => "none" } ].each do |invalid|
+      error = assert_raises(ActiveRecord::StatementInvalid) do
+        SourceSnapshot.transaction(requires_new: true) do
+          SourceSnapshot.insert_all!([ first.attributes.except("id").merge("number" => 3).merge(invalid) ])
+        end
+      end
+      assert_kind_of PG::CheckViolation, error.cause
+    end
+  end
+
+  test "exact text errors refuse collisions and malformed rules without changes or private error values" do
+    snapshot = import(@records.to_json)
+    source_state = snapshot.source.reload.attributes
+    collision = [ { id: "one", title: "Fixture", content: "Separate facts", context: { "secret-first" => false, "secret-second" => nil } } ]
+    options = [ { redaction: "exact", redaction_values: "secret-first\nsecret-second", bytes: collision.to_json },
+      { redaction: "exact", redaction_values: "" }, { redaction: "exact", redaction_values: [ "secret-first" ] },
+      { redaction: "exact", redaction_values: "secret-first\0" }, { redaction: "exact", redaction_values: "\xff".b },
+      { redaction: "exact", redaction_values: 51.times.map { |i| "secret-#{i}" }.join("\n") },
+      { redaction: "exact", redaction_values: "x" * 201 }, { redaction: "exact", redaction_values: " " },
+      { redaction: "exact", redaction_values: "ab" },
+      { redaction: "exact", redaction_values: "x" * 8193 }, { redaction: "email", redaction_values: "secret-first" },
+      { redaction: "none", redaction_values: "secret-first" } ]
+    options.each do |option|
+      bytes = option.delete(:bytes) || @records.to_json
+      assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+        error = assert_raises(CorpusIntake::Invalid) { import(bytes, **option, retention_days: 2) }
+        assert_not_includes error.message, "secret-first"
+        assert_not_includes error.message, "secret-second"
+      end
+      assert_equal source_state, snapshot.source.reload.attributes
+    end
+  end
+
   test "recursive masking collisions refuse the whole batch without rewriting retained history" do
     original = import(@records.to_json)
     items_state = original.corpus_items.order(:id).map(&:attributes)

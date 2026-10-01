@@ -43,6 +43,25 @@ class SupportTraceTest < ActiveSupport::TestCase
     assert_equal snapshot.id, import.id
   end
 
+  test "exact text masking reaches every trace copy without weakening its schema" do
+    @traces.sole["input"]["known_facts"]["contact"] = "Fixture Private Contact"
+    @traces.sole["output"]["collected_fields"]["contact"] = "Fixture Private Contact"
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Exact trace", kind: "traces", bytes: @traces.to_json,
+      redaction: "exact", redaction_values: "Fixture Private Contact\nadmin@example.org")
+    item = snapshot.corpus_items.sole
+    assert_equal "[text redacted]", SupportTrace.payload(item).dig("input", "known_facts", "contact")
+    assert_equal "[text redacted]", SupportTrace.payload(item).dig("output", "collected_fields", "contact")
+    assert_includes item.content, "[text redacted]"
+    assert_not_includes item.attributes.to_json, "Fixture Private Contact"
+    assert_not_includes item.attributes.to_json, "admin@example.org"
+    assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+      assert_raises(CorpusIntake::Invalid) do
+        CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Exact trace", kind: "traces", bytes: @traces.to_json,
+          redaction: "exact", redaction_values: "support_trace")
+      end
+    end
+  end
+
   test "malformed partial hidden oversized and duplicate trace batches leave no records" do
     invalid = [ @traces.sole.merge("schema" => "support-trace-v2"), @traces.sole.except("observed_at"),
       @traces.sole.merge("observed_at" => "2026-19-28T15:45:00Z"), @traces.sole.merge("observed_at" => "2026-09-28T15:45:00"),
