@@ -11,6 +11,7 @@ abort "Usage: bin/prove-backup-restore (no arguments)" unless ARGV.empty?
 ENV.keys.grep(/\APG/).each { |key| ENV.delete(key) }
 ENV["RAILS_ENV"] = "test"
 ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_SCENARIO_ENDPOINTS"] = "[]"
 socket = "/var/run/postgresql"
 user = Etc.getpwuid.name
 prefix = "navishai_lab_restore_#{Process.pid}_#{SecureRandom.hex(6)}"

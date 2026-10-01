@@ -99,6 +99,31 @@ retains one immutable prediction beside human label history. Endpoint operators
 own model execution, settings enforcement, deduplication and remote retention.
 There is no direct vendor integration or proof of live judge quality.
 
+## Source-backed model proposals
+
+Extend scenario extraction without making a model authoritative. One requested
+proposal binds to an immutable scenario version, its exact evidence excerpts,
+model/settings and protocol. Reuse the bounded HTTPS transport and native job
+claim pattern. Keep a separate `NAVISHAI_SCENARIO_ENDPOINTS` operator registry:
+target or judge endpoint approval never grants source-processing permission.
+An expert must confirm this version's disclosure on the request form too.
+
+Send only the starting situation, known facts and up to 20 linked excerpts within
+64 KiB. Omit hidden facts, existing expectations, reviews, labels and the rest of
+the corpus. Source text remains untrusted. Proposed requirements each need an
+exact quote from one disclosed excerpt; this proves provenance, not entailment or
+correctness. Abstention and execution errors remain distinct from a proposal.
+
+Retain the immutable proposal beside its fixed input version, reported usage/cost
+and elapsed time. Never advance the scenario, approve it, create a human label,
+compile an eval or overwrite an expert edit. Experts use the existing version and
+review workflow to make any proposed expectations authoritative. One attempt per
+version claims once, sends outside locks, rechecks membership/source/endpoint
+authority before retention and never automatically retries an unknown outcome.
+Deletion cascades from source-backed scenarios through these request/results.
+This is a bounded extraction interface, not semantic corpus clustering or proof
+of model quality. It adds no vendor SDK, training or production dependency.
+
 ## Production failures
 
 Treat uploaded production traces as source records, not a tracing service. The

@@ -32,6 +32,14 @@ Unedited variants cannot inherit approval. Source changes flag affected evidence
 replacing a document excerpt creates a new version. Merge uses an approved scenario
 ID shown in the paginated scenario list, retaining the source identity and decisions.
 
+Model suggestions extend the same scenario page through a native disclosure.
+The request preview names its exact fixed context/evidence and separate purpose
+approval. Invalid JSON stays in the labelled field; consent resets on errors.
+Queued views offer refresh/interrupt, not retry. Completed suggestions put a
+read-only definition beside exact requirement quotes on desktop and stack them on
+mobile. Abstention/error states never show invented expectations. Copy keeps model
+suggestions distinct from the editor and expert approval. No new tokens or controls.
+
 Compiler rows pair each statement with a named grader version and source reference.
 The fixed contract sits beside its target-visible preview on desktop and stacks on
 mobile. Grader edits keep prior definitions visible and preserve invalid input.

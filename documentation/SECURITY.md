@@ -31,6 +31,10 @@ Queries are capped at 200 characters and filtered from Rails parameter/path logs
 The no-referrer policy prevents outbound referrers, not browser URL/history storage.
 Do not put secrets in a search phrase.
 
+Corpus pages disable Turbo cached previews: a fresh navigation cannot replace
+a phrase entered into a cached form. A controlled pending-response browser test
+reproduced the loss before this guard; search still submits through the native form.
+
 Email masking covers record text/context and replaces email record IDs with
 digests. It does not detect all PII or secrets. Source names and input digests are
 still retained; files are not. Expiry hides content at read time and a native hourly
@@ -72,6 +76,21 @@ cohort. They change no labels, predictions, audit records or jobs, and leave rep
 counts unchanged. Before a writer's first label, row state/order does not reveal
 another expert's decision or the prediction. This reduces anchoring, not access to
 aggregate reports. Viewers have no review controls; existing source/access gates apply.
+
+Model scenario proposals require their own exact workspace/URL operator registry
+and version-specific human disclosure confirmation. Evaluation/judge permission
+does not grant source-processing authority. Configuration rejects credentials and
+unknown fields. Only bounded fixed context/excerpts enter the existing guarded
+transport; hidden facts, expectations, labels and unrelated records stay local.
+Each proposed requirement needs an exact disclosed quote, not an invented or foreign
+reference. Quote existence does not prove entailment or defeat prompt injection;
+gateways must treat source content as data, not instructions.
+
+Request definitions and results have same-corpus foreign keys and SQL immutability.
+Jobs claim once outside network locks and recheck authority before retention.
+Unknown outcomes never retry automatically; purge cascades through local copies.
+Proposals cannot advance a scenario, create labels, approve or compile an eval.
+Experts keep the existing revision/review gates. No live scenario endpoint ran.
 
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
