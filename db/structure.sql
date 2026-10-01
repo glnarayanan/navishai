@@ -41,6 +41,27 @@ $$;
 
 
 --
+-- Name: prevent_corpus_batch_rewrite(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_corpus_batch_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - ARRAY['state', 'result', 'started_at', 'finished_at'])
+     IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['state', 'result', 'started_at', 'finished_at'])
+     OR (OLD.state IN ('proposal', 'abstain', 'error') AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD))
+     OR (OLD.state = 'running' AND NEW.state NOT IN ('proposal', 'abstain', 'error'))
+     OR (OLD.state = 'running' AND NEW.started_at IS DISTINCT FROM OLD.started_at)
+     OR (OLD.state = 'queued' AND NEW.state <> 'running') THEN
+    RAISE EXCEPTION 'batch definition, claim and terminal receipt are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_evaluation_run_rebind(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -102,9 +123,9 @@ CREATE TABLE public.audit_events (
     occurred_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT audit_events_action_format CHECK (((action)::text ~ '^[a-z0-9]+([._][a-z0-9]+)*$'::text)),
-    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying, 'system'::character varying, 'anonymous'::character varying])::text[]))),
-    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY ((ARRAY['user'::character varying, 'break_glass'::character varying])::text[])) = (actor_id IS NOT NULL))),
-    CONSTRAINT audit_events_source CHECK (((source)::text = ANY ((ARRAY['web'::character varying, 'job'::character varying, 'task'::character varying, 'integration'::character varying, 'system'::character varying])::text[])))
+    CONSTRAINT audit_events_actor_kind CHECK (((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text, ('system'::character varying)::text, ('anonymous'::character varying)::text]))),
+    CONSTRAINT audit_events_actor_presence CHECK ((((actor_kind)::text = ANY (ARRAY[('user'::character varying)::text, ('break_glass'::character varying)::text])) = (actor_id IS NOT NULL))),
+    CONSTRAINT audit_events_source CHECK (((source)::text = ANY (ARRAY[('web'::character varying)::text, ('job'::character varying)::text, ('task'::character varying)::text, ('integration'::character varying)::text, ('system'::character varying)::text])))
 );
 
 
@@ -143,7 +164,7 @@ CREATE TABLE public.calibration_judge_runs (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_f2c1efb45c CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+    CONSTRAINT chk_rails_f2c1efb45c CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
 
@@ -217,7 +238,7 @@ CREATE TABLE public.calibration_samples (
     output_digest character varying NOT NULL,
     output jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY ((ARRAY['development'::character varying, 'held_out'::character varying])::text[])) AND (jsonb_typeof(output) = 'object'::text)))
+    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY (ARRAY[('development'::character varying)::text, ('held_out'::character varying)::text])) AND (jsonb_typeof(output) = 'object'::text)))
 );
 
 
@@ -361,7 +382,8 @@ CREATE TABLE public.corpus_analyses (
     request_key uuid DEFAULT gen_random_uuid() NOT NULL,
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
-    CONSTRAINT chk_rails_6685537a78 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100)) AND (jsonb_typeof(configuration) = 'object'::text)))
+    call_plan jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT chk_rails_6685537a78 CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('failed'::character varying)::text])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100)) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -451,6 +473,49 @@ ALTER SEQUENCE public.corpus_analysis_results_id_seq OWNED BY public.corpus_anal
 
 
 --
+-- Name: corpus_discovery_batches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpus_discovery_batches (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_analysis_id bigint NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    phase character varying NOT NULL,
+    "position" integer NOT NULL,
+    input_refs jsonb NOT NULL,
+    input_digest character varying NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    result jsonb,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_80999236e2 CHECK ((((phase)::text = ANY ((ARRAY['discovery'::character varying, 'reducer'::character varying])::text[])) AND (("position" >= 1) AND ("position" <= 31)) AND (jsonb_typeof(input_refs) = 'array'::text) AND ((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND ((result IS NULL) OR (jsonb_typeof(result) = 'object'::text)))),
+    CONSTRAINT corpus_batch_receipt_matches_claim CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (result IS NULL)) OR (((state)::text = ANY ((ARRAY['proposal'::character varying, 'abstain'::character varying, 'error'::character varying])::text[])) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (result IS NOT NULL) AND (result ? 'decision'::text) AND COALESCE(((result ->> 'decision'::text) = (state)::text), false))))
+);
+
+
+--
+-- Name: corpus_discovery_batches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpus_discovery_batches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpus_discovery_batches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpus_discovery_batches_id_seq OWNED BY public.corpus_discovery_batches.id;
+
+
+--
 -- Name: corpus_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -501,7 +566,7 @@ CREATE TABLE public.eval_case_checks (
     grader_version_id bigint NOT NULL,
     requirement_kind character varying NOT NULL,
     requirement_index integer NOT NULL,
-    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY ((ARRAY['outcomes'::character varying, 'actions'::character varying, 'forbidden'::character varying, 'escalation'::character varying, 'grounding'::character varying])::text[])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
+    CONSTRAINT chk_rails_0711ec2a7e CHECK ((((requirement_kind)::text = ANY (ARRAY[('outcomes'::character varying)::text, ('actions'::character varying)::text, ('forbidden'::character varying)::text, ('escalation'::character varying)::text, ('grounding'::character varying)::text])) AND ((requirement_index >= 0) AND (requirement_index <= 19))))
 );
 
 
@@ -607,7 +672,7 @@ CREATE TABLE public.eval_suites (
     kind character varying DEFAULT 'evaluation'::character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY ((ARRAY['evaluation'::character varying, 'regression'::character varying])::text[])))
+    CONSTRAINT chk_rails_b35cd7079f CHECK (((kind)::text = ANY (ARRAY[('evaluation'::character varying)::text, ('regression'::character varying)::text])))
 );
 
 
@@ -647,7 +712,7 @@ CREATE TABLE public.evaluation_results (
     created_at timestamp(6) without time zone NOT NULL,
     execution jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT chk_rails_5576047e12 CHECK ((jsonb_typeof(execution) = 'object'::text)),
-    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'incomplete'::character varying, 'error'::character varying])::text[])) AND (jsonb_typeof(decisions) = 'array'::text)))
+    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('incomplete'::character varying)::text, ('error'::character varying)::text])) AND (jsonb_typeof(decisions) = 'array'::text)))
 );
 
 
@@ -723,7 +788,7 @@ CREATE TABLE public.evaluation_runs (
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     judge_disclosure boolean DEFAULT false NOT NULL,
-    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])))
 );
 
 
@@ -763,7 +828,7 @@ CREATE TABLE public.evaluation_target_versions (
     created_at timestamp(6) without time zone NOT NULL,
     trace_item_id bigint,
     CONSTRAINT chk_rails_d846093cc8 CHECK (((((adapter)::text = 'recorded'::text) = (trace_item_id IS NOT NULL)) AND (((adapter)::text <> 'recorded'::text) OR (configuration = '{}'::jsonb)))),
-    CONSTRAINT chk_rails_e676976417 CHECK (((number > 0) AND ((adapter)::text = ANY ((ARRAY['scripted'::character varying, 'http'::character varying, 'recorded'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text)))
+    CONSTRAINT chk_rails_e676976417 CHECK (((number > 0) AND ((adapter)::text = ANY (ARRAY[('scripted'::character varying)::text, ('http'::character varying)::text, ('recorded'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text)))
 );
 
 
@@ -835,7 +900,7 @@ CREATE TABLE public.grader_versions (
     processing_version character varying NOT NULL,
     definition jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY ((ARRAY['deterministic'::character varying, 'rubric_judge'::character varying])::text[])) AND (jsonb_typeof(definition) = 'object'::text)))
+    CONSTRAINT chk_rails_c8ce9f5a75 CHECK (((number > 0) AND ((kind)::text = ANY (ARRAY[('deterministic'::character varying)::text, ('rubric_judge'::character varying)::text])) AND (jsonb_typeof(definition) = 'object'::text)))
 );
 
 
@@ -905,7 +970,7 @@ CREATE TABLE public.human_labels (
     decision character varying NOT NULL,
     rationale text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'uncertain'::character varying])::text[])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
+    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('uncertain'::character varying)::text])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
 );
 
 
@@ -1005,7 +1070,7 @@ CREATE TABLE public.memberships (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     role character varying NOT NULL,
-    CONSTRAINT memberships_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[])))
+    CONSTRAINT memberships_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text])))
 );
 
 
@@ -1039,7 +1104,7 @@ CREATE TABLE public.oidc_identities (
     subject character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT oidc_identities_lengths CHECK ((((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048)) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
+    CONSTRAINT oidc_identities_lengths CHECK (((length((issuer)::text) >= 1) AND (length((issuer)::text) <= 2048) AND ((length((subject)::text) >= 1) AND (length((subject)::text) <= 255))))
 );
 
 
@@ -1143,7 +1208,7 @@ CREATE TABLE public.scenario_evidence (
     corpus_item_id bigint NOT NULL,
     kind character varying NOT NULL,
     excerpt text NOT NULL,
-    CONSTRAINT chk_rails_6cd9bf465e CHECK ((((kind)::text = ANY ((ARRAY['expectation'::character varying, 'knowledge'::character varying])::text[])) AND ((length(excerpt) >= 1) AND (length(excerpt) <= 4000))))
+    CONSTRAINT chk_rails_6cd9bf465e CHECK ((((kind)::text = ANY (ARRAY[('expectation'::character varying)::text, ('knowledge'::character varying)::text])) AND ((length(excerpt) >= 1) AND (length(excerpt) <= 4000))))
 );
 
 
@@ -1219,7 +1284,7 @@ CREATE TABLE public.scenario_proposals (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_fccaa58882 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text)))
+    CONSTRAINT chk_rails_fccaa58882 CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text)))
 );
 
 
@@ -1256,7 +1321,7 @@ CREATE TABLE public.scenario_reviews (
     note text NOT NULL,
     merged_version_id bigint,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_b908de4663 CHECK ((((decision)::text = ANY ((ARRAY['approve'::character varying, 'reject'::character varying, 'merge'::character varying])::text[])) AND (((decision)::text = 'merge'::text) = (merged_version_id IS NOT NULL))))
+    CONSTRAINT chk_rails_b908de4663 CHECK ((((decision)::text = ANY (ARRAY[('approve'::character varying)::text, ('reject'::character varying)::text, ('merge'::character varying)::text])) AND (((decision)::text = 'merge'::text) = (merged_version_id IS NOT NULL))))
 );
 
 
@@ -1301,7 +1366,7 @@ CREATE TABLE public.scenario_versions (
     mutation jsonb DEFAULT '{}'::jsonb NOT NULL,
     selection_reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY ((ARRAY['mined'::character varying, 'expert'::character varying, 'variant'::character varying])::text[])) AND ((importance)::text = ANY ((ARRAY['normal'::character varying, 'high'::character varying, 'critical'::character varying])::text[])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text)))
+    CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY (ARRAY[('mined'::character varying)::text, ('expert'::character varying)::text, ('variant'::character varying)::text])) AND ((importance)::text = ANY (ARRAY[('normal'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text)))
 );
 
 
@@ -1384,7 +1449,7 @@ CREATE TABLE public.sessions (
     updated_at timestamp(6) without time zone NOT NULL,
     authentication_method character varying NOT NULL,
     revoked_at timestamp(6) without time zone,
-    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY ((ARRAY['local'::character varying, 'oidc'::character varying, 'break_glass'::character varying])::text[])))
+    CONSTRAINT sessions_authentication_method CHECK (((authentication_method)::text = ANY (ARRAY[('local'::character varying)::text, ('oidc'::character varying)::text, ('break_glass'::character varying)::text])))
 );
 
 
@@ -1422,7 +1487,7 @@ CREATE TABLE public.source_snapshots (
     processing_version character varying NOT NULL,
     imported_by_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[]))))
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text]))))
 );
 
 
@@ -1459,7 +1524,7 @@ CREATE TABLE public.sources (
     expires_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_23967a9de0 CHECK (((kind)::text = ANY ((ARRAY['conversations'::character varying, 'document'::character varying, 'traces'::character varying])::text[])))
+    CONSTRAINT chk_rails_23967a9de0 CHECK (((kind)::text = ANY (ARRAY[('conversations'::character varying)::text, ('document'::character varying)::text, ('traces'::character varying)::text])))
 );
 
 
@@ -1568,8 +1633,8 @@ CREATE TABLE public.workspace_invitations (
     accepted_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY ((ARRAY['owner'::character varying, 'admin'::character varying, 'manager'::character varying, 'member'::character varying, 'viewer'::character varying])::text[]))),
-    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'revoked'::character varying, 'expired'::character varying])::text[])))
+    CONSTRAINT workspace_invitations_role CHECK (((role)::text = ANY (ARRAY[('owner'::character varying)::text, ('admin'::character varying)::text, ('manager'::character varying)::text, ('member'::character varying)::text, ('viewer'::character varying)::text]))),
+    CONSTRAINT workspace_invitations_status CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('accepted'::character varying)::text, ('revoked'::character varying)::text, ('expired'::character varying)::text])))
 );
 
 
@@ -1693,6 +1758,13 @@ ALTER TABLE ONLY public.corpus_analysis_inputs ALTER COLUMN id SET DEFAULT nextv
 --
 
 ALTER TABLE ONLY public.corpus_analysis_results ALTER COLUMN id SET DEFAULT nextval('public.corpus_analysis_results_id_seq'::regclass);
+
+
+--
+-- Name: corpus_discovery_batches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_discovery_batches ALTER COLUMN id SET DEFAULT nextval('public.corpus_discovery_batches_id_seq'::regclass);
 
 
 --
@@ -2008,6 +2080,14 @@ ALTER TABLE ONLY public.corpus_analysis_results
 
 
 --
+-- Name: corpus_discovery_batches corpus_discovery_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_discovery_batches
+    ADD CONSTRAINT corpus_discovery_batches_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: corpus_items corpus_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2293,6 +2373,13 @@ CREATE UNIQUE INDEX idx_on_corpus_analysis_id_corpus_item_id_454c89de9d ON publi
 
 
 --
+-- Name: idx_on_corpus_analysis_id_position_9f8574be0c; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_corpus_analysis_id_position_9f8574be0c ON public.corpus_discovery_batches USING btree (corpus_analysis_id, "position");
+
+
+--
 -- Name: idx_on_eval_case_id_requirement_kind_requirement_in_8a3502f15b; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2549,6 +2636,13 @@ CREATE UNIQUE INDEX index_corpus_analyses_on_workspace_id_and_corpus_id_and_id O
 --
 
 CREATE UNIQUE INDEX index_corpus_analysis_results_on_corpus_analysis_id ON public.corpus_analysis_results USING btree (corpus_analysis_id);
+
+
+--
+-- Name: index_corpus_discovery_batches_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_discovery_batches_on_request_key ON public.corpus_discovery_batches USING btree (request_key);
 
 
 --
@@ -3053,6 +3147,13 @@ CREATE TRIGGER corpus_analysis_inputs_immutable BEFORE UPDATE ON public.corpus_a
 --
 
 CREATE TRIGGER corpus_analysis_result_immutable BEFORE UPDATE ON public.corpus_analysis_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: corpus_discovery_batches corpus_discovery_batch_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_discovery_batch_immutable BEFORE UPDATE ON public.corpus_discovery_batches FOR EACH ROW EXECUTE FUNCTION public.prevent_corpus_batch_rewrite();
 
 
 --
@@ -3582,6 +3683,14 @@ ALTER TABLE ONLY public.corpora
 
 
 --
+-- Name: corpus_discovery_batches fk_rails_a9d5efc3ba; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_discovery_batches
+    ADD CONSTRAINT fk_rails_a9d5efc3ba FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: workspace_invitations fk_rails_aa0ff4982f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3812,6 +3921,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001020000'),
 ('20261001010000'),
 ('20261001000000'),
 ('20260930100000'),

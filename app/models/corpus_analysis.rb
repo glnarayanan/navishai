@@ -9,50 +9,90 @@ class CorpusAnalysis < ApplicationRecord
   has_many :issue_clusters
   has_many :taxonomy_versions
   has_one :corpus_analysis_result
-  attr_readonly :workspace_id, :corpus_id, :requested_by_id, :processing_method, :scenario_limit, :configuration, :input_digest, :request_key, :created_at
+  has_many :corpus_discovery_batches
+  attr_readonly :workspace_id, :corpus_id, :requested_by_id, :processing_method, :scenario_limit, :configuration, :input_digest, :call_plan, :request_key, :created_at
   validates :state, inclusion: { in: %w[queued running complete failed] }
   validates :scenario_limit, numericality: { only_integer: true, in: 1..100 }
 
-  def self.request!(corpus:, membership:, scenario_limit:, configuration: nil, disclose: false, input_digest: nil)
+  def self.request!(corpus:, membership:, scenario_limit:, configuration: nil, disclose: false, input_digest: nil, processing_method: nil, call_plan_digest: nil)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       model = !configuration.nil?
-      items = current_inputs(corpus:, model:)
+      batch = processing_method == "model_batch"
+      raise CorpusIntake::Invalid, "Batch discovery requires fixed model settings." if batch && !model
+      items = current_inputs(corpus:, model:, batch:)
+      plan = batch ? BatchCorpusDiscovery.plan(items) : {}
       if model
         raise CorpusIntake::Invalid, "The prior request did not start. Confirm disclosure of the exact corpus preview before model discovery." unless disclose == true
         raise CorpusIntake::Invalid, "Use endpoint, model and fixed settings; never include credentials." unless ModelGateway.valid_configuration?(configuration)
         raise CorpusIntake::Invalid, "Model discovery accepts 1–20 candidates." unless scenario_limit.to_i.between?(1, ModelCorpusDiscovery::MAX_CANDIDATES)
-        preview = ModelCorpusDiscovery.input(items)
+        preview = ModelCorpusDiscovery.input(items, bounded: !batch)
         raise CorpusIntake::Invalid, "The corpus preview changed. Reload and confirm the current records before model discovery." unless ModelCorpusDiscovery.digest(preview) == input_digest
+        raise CorpusIntake::Invalid, "The call plan changed. Reload and confirm the exact allocation." if batch && ModelCorpusDiscovery.digest(plan) != call_plan_digest
         EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
       end
       analysis = corpus.corpus_analyses.create!(workspace: corpus.workspace, requested_by: membership.user,
-        processing_method: model ? ModelCorpusDiscovery::VERSION : METHOD, configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, scenario_limit:)
+        processing_method: batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : METHOD), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
       items.each { |item| analysis.corpus_analysis_inputs.create!(workspace: corpus.workspace, corpus:, corpus_item: item) }
+      if batch
+        plan.fetch("batches").each do |definition|
+          analysis.corpus_discovery_batches.create!(workspace: corpus.workspace, corpus:, **definition.except("bytes").symbolize_keys, created_at: Time.current)
+        end
+        if plan.fetch("reducer")
+          refs = analysis.corpus_discovery_batches.order(:position).pluck(:request_key).map(&:to_s)
+          analysis.corpus_discovery_batches.create!(workspace: corpus.workspace, corpus:, phase: "reducer", position: refs.size + 1,
+            input_refs: refs, input_digest: ModelCorpusDiscovery.digest(plan.fetch("batches").pluck("input_digest")), created_at: Time.current)
+        end
+      end
       AuditEvent.record!(action: "corpus.analysis_requested", source: :web, workspace: corpus.workspace, actor: membership.user, subject: analysis)
       CorpusAnalysisJob.perform_later(analysis.id)
       analysis
     end
   end
 
-  def self.current_inputs(corpus:, model: false)
+  def self.current_inputs(corpus:, model: false, batch: false)
     inputs = corpus.current_items.where(sources: { kind: %w[conversations document] })
     raise CorpusIntake::Invalid, "Local analysis accepts at most 10 MiB of source text. Use a smaller corpus." if !model && inputs.sum("octet_length(content)") > 10.megabytes
-    limit = model ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS
+    limit = model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS
     items = inputs.includes(source_snapshot: :source).order(:id).limit(limit + 1).to_a
     raise CorpusIntake::Invalid, "Analysis needs 1–#{limit} current conversation/document records. Production traces use separate review." unless items.size.between?(1, limit)
     items
   end
 
   def model?
-    processing_method == ModelCorpusDiscovery::VERSION
+    processing_method.in?([ ModelCorpusDiscovery::VERSION, BatchCorpusDiscovery::VERSION ])
+  end
+
+  def batch?
+    processing_method == BatchCorpusDiscovery::VERSION
+  end
+
+  # The job and each batch use this under a short corpus lock, never over transport.
+  def authorize_processing!
+    reload
+    return false unless state == "running"
+    membership = workspace.memberships.find_by!(user: requested_by)
+    corpus.authorize_writer!(membership)
+    raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
+    if model?
+      raise CorpusIntake::Invalid, "Company documentation changed; request a new analysis using current evidence." if stale?
+      raise CorpusIntake::Invalid, "Invalid fixed model settings." unless ModelGateway.valid_configuration?(configuration)
+      items = corpus_items.includes(source_snapshot: :source).order(:id).to_a
+      input = ModelCorpusDiscovery.input(items, bounded: !batch?)
+      raise CorpusIntake::Invalid, "Fixed corpus inputs changed; no proposals saved." unless ModelCorpusDiscovery.digest(input) == input_digest
+      raise CorpusIntake::Invalid, "Fixed call plan changed." if batch? && BatchCorpusDiscovery.plan(items) != call_plan
+      EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
+    else
+      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method == METHOD
+    end
+    true
   end
 
   def interrupt!(membership:)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       lock!
-      raise CorpusIntake::Invalid, "Only queued analyses or attempts started over ten minutes ago can be interrupted." unless state == "queued" || (state == "running" && started_at < 10.minutes.ago)
+      raise CorpusIntake::Invalid, "Only queued analyses or attempts started over ten minutes ago can be interrupted." unless state == "queued" || (state == "running" && (batch? || started_at < 10.minutes.ago))
       update!(state: "failed", finished_at: Time.current, error: "Expert interrupted this attempt. Remote outcome/cost may be unknown; request a new analysis deliberately. No automatic retry.")
       AuditEvent.record!(action: "corpus.analysis_interrupted", source: :web, workspace:, actor: membership.user, subject: self)
     end

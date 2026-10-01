@@ -130,7 +130,7 @@ Keep local discovery and add an explicit model method to the same analysis domai
 Freeze all current conversation/document item IDs, their exact input digest,
 model/settings, protocol and request UUID. The first model request accepts at most
 100 complete records, 256 KiB and 20 candidates; it neither samples nor truncates
-silently. Larger batch discovery remains a separate engineering step.
+silently. The bounded multi-request method below handles larger disclosed inputs.
 
 Corpus disclosure needs `NAVISHAI_CORPUS_ENDPOINTS` and consent bound to the exact
 preview digest. Neither target/judge nor single-scenario approval covers full source

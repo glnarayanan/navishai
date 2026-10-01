@@ -22,6 +22,7 @@
         <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
       <% end %>
       <p><%= link_to "Model-assisted corpus discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus) %>. Preview exact records and approve their separate disclosure before any model request.</p>
+      <p><%= link_to "Bounded multi-request discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch") %>. Preview all records, repeated documents and the fixed maximum call plan separately.</p>
     <% end %>
     <ul class="workspace-list" role="list"><% @analyses.each do |analysis| %><li class="workspace-card"><%= link_to "Analysis #{analysis.id} · #{analysis.state}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></li><% end %></ul>
   </section>

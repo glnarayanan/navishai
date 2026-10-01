@@ -66,10 +66,14 @@ begin
     require_relative "../config/environment"
     require "active_record/fixtures"
     require_relative "../test/test_helpers/recorded_evaluation_test_helper"
+    require_relative "../test/test_helpers/batch_discovery_test_helper"
     ActiveRecord::FixtureSet.create_fixtures(Rails.root.join("test/fixtures"), %w[organizations workspaces users memberships])
-    fixture = Object.new.extend(RecordedEvaluationTestHelper)
+    fixture = Object.new.extend(RecordedEvaluationTestHelper).extend(BatchDiscoveryTestHelper)
     fixture.define_singleton_method(:memberships) do |name|
       Membership.find(ActiveRecord::FixtureSet.identify(name))
+    end
+    fixture.define_singleton_method(:workspaces) do |name|
+      Workspace.find(ActiveRecord::FixtureSet.identify(name))
     end
     fixture.build_compared_evaluation
     corpus = fixture.instance_variable_get(:@corpus)
@@ -83,6 +87,17 @@ begin
     sample = set.add_sample!(membership:, check_id: check.id, cohort: "held_out", output: trace.context.fetch("support_trace").fetch("output"))
     label = sample.label!(membership:, previous_id: nil, decision: "fail", rationale: "Synthetic expert: expiry was not collected.")
     correction = sample.label!(membership:, previous_id: label.id, decision: "uncertain", rationale: "Synthetic correction: retain the first decision too.")
+    fixture.build_batch_corpus
+    calls = []
+    analysis = nil
+    # Test-only approval and stubbed transport: never contact a real endpoint.
+    fixture.with_batch_responses(calls:) do
+      analysis = fixture.request_batch_analysis
+      CorpusAnalysisJob.perform_now(analysis.id)
+    end
+    assert_proof(analysis.reload.state == "complete" && calls.size == 3, "two fixed discoveries and reducer")
+    assert_proof(ENV["NAVISHAI_CORPUS_ENDPOINTS"] == "[]", "synthetic purpose approval removed")
+    batch_keys = analysis.corpus_discovery_batches.order(:position).pluck(:request_key)
     source_db = PG.connect(host: socket, user: user, dbname: source)
     expected = fingerprint(source_db)
     source_db.close
@@ -100,11 +115,18 @@ begin
     assert_proof(before.evaluation_target_version.trace_item_id == trace.id, "trace target provenance")
     assert_proof(fixed_case.reload.scenario_review.decision == "approve", "exact expert approval")
     assert_proof(sample.reload.cohort == "held_out" && sample.human_labels.order(:id).pluck(:id) == [ label.id, correction.id ], "label history/cohort")
+    assert_proof(analysis.reload.summary.fetch("conversations") == 106 && analysis.summary.fetch("clusters") == 2, "complete batch membership")
+    assert_proof(analysis.corpus_discovery_batches.order(:position).pluck(:request_key) == batch_keys && analysis.corpus_discovery_batches.pluck(:state).all? { |state| state == "proposal" }, "fixed UUIDs and terminal batch receipts")
+    sent_again = false
+    fixture.with_test_method(EvaluationHttp, :call, ->(**) { sent_again = true; raise "Restored claimed work must not send" }) { CorpusAnalysisJob.perform_now(analysis.id) }
+    assert_proof(!sent_again && analysis.reload.state == "complete", "restored completed analysis cannot execute again")
     # Raw SQL bypasses model guards: restored PostgreSQL protections must reject it.
-    %w[source_snapshots corpus_items scenario_versions scenario_evidence scenario_reviews eval_cases eval_case_checks grader_versions calibration_sets calibration_samples calibration_predictions human_labels evaluation_target_versions evaluation_results].each do |table|
+    %w[source_snapshots corpus_items scenario_versions scenario_evidence scenario_reviews eval_cases eval_case_checks grader_versions calibration_sets calibration_samples calibration_predictions human_labels evaluation_target_versions evaluation_results corpus_analysis_results].each do |table|
       assert_proof(ActiveRecord::Base.connection.select_value("SELECT count(*) FROM #{table}").to_i > 0, "#{table} fixture exists")
       rejects_sql("UPDATE #{table} SET id = id", PG::RaiseException, "lab versions are immutable")
     end
+    rejects_sql("UPDATE corpus_discovery_batches SET input_digest = repeat('0', 64)", PG::RaiseException, "batch definition, claim and terminal receipt are immutable")
+    rejects_sql("UPDATE corpus_discovery_batches SET state = 'running', result = NULL, finished_at = NULL", PG::RaiseException, "batch definition, claim and terminal receipt are immutable")
     rejects_sql("UPDATE evaluation_runs SET corpus_id = corpus_id + 1", PG::RaiseException, "evaluation run definition is immutable")
     rejects_sql("UPDATE evaluation_run_items SET corpus_id = corpus_id + 1", PG::RaiseException, "lab versions are immutable")
     %w[UPDATE DELETE TRUNCATE].each do |operation|
@@ -120,7 +142,7 @@ begin
     last_audit_id = AuditEvent.maximum(:id)
     event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
     assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
-    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out label history, 14 immutable tables, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out label history, 15 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
   end
 ensure
   ActiveRecord::Base.connection_pool.disconnect! if defined?(ActiveRecord::Base)

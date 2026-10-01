@@ -68,16 +68,20 @@ The script accepts no database names or arguments, ignores inherited libpq
 settings and overrides `DATABASE_URL`/Rails environment inside its own process.
 It creates two unique `navishai_lab_restore_<pid>_<random>` databases from
 `template0`, loads the checked-in structure and synthetic authentication and
-recorded-evaluation fixtures only into its source database, then creates a custom
+recorded-evaluation/batch-discovery fixtures only into its source database, then creates a custom
 format archive and restores it transactionally to the fresh destination. It never
 dumps development, test, production or legacy data and changes no shared service.
-Endpoint approval is empty; recorded/scripted evaluations run locally.
+Recorded/scripted evaluations run locally. Batch discovery uses test-only approval
+and stubbed transport; it sends no request to a real endpoint. The approval returns
+to empty before backup. All other purpose registries stay empty.
 
 After restore it compares canonical SHA-256 fingerprints of every public table's
 complete rows, checks recorded failure and corrected success on the same fixed
 case, exact trace/approval provenance and held-out expert label/correction history.
-Raw SQL must reject updates to 14 populated immutable definition/result/label
-tables, run/item rebinding, foreign-workspace and same-workspace foreign-corpus
+It retains complete batch membership, fixed UUIDs and terminal receipts; duplicate
+delivery after restore must not send. Raw SQL rejects updates to 15 populated
+immutable definition/result/label tables, batch definition/terminal-state rewrites,
+run/item rebinding, foreign-workspace and same-workspace foreign-corpus
 evidence inserts, and audit update/delete/truncate. A new audit append checks the
 restored sequence. Unexpected SQL errors fail rather than masquerade as protection.
 
