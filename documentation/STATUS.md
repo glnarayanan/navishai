@@ -65,8 +65,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   previews, separate matrices and held-out/first-label guards.
 - [#169](https://github.com/glnarayanan/navishai/pull/169), based on #168: partial
   Compose evidence, actual CI state and clean-host proof limits.
-- `rebuild/30-conversation-turns`, based on #169: bounded incremental HTTP
+- [#170](https://github.com/glnarayanan/navishai/pull/170), based on #169: bounded incremental HTTP
   conversations, expert plans, conditional disclosure and fixed turn receipts.
+- `rebuild/31-revised-judge-proof`, based on #170: connected revised-judge
+  calibration and restored conversation/no-resend proof.
 
 ## Built and checked
 
@@ -670,6 +672,37 @@ No provider, customer data, dependency, training, merge, release or deployment.
 
 GitHub CI for #169 passed
 ([run](https://github.com/glnarayanan/navishai/actions/runs/36818942440)).
+GitHub CI for #170 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36820161725), completed
+05:34:58 UTC on 1 October). Both PRs remain open and unmerged.
+
+The revised-judge browser journey saves a new rubric version, compiles a new fixed
+case and creates separate calibration evidence. Its fresh held-out sample inherits
+neither labels nor predictions. Missing disclosure refuses a request; duplicate
+delivery sends one fixture judge call. Prediction stays hidden until a fresh expert
+label. A deliberately wrong high-confidence judgment yields one false positive,
+not the original development sample's true positive. Database reloads confirm the
+original label history, prediction and development report remain unchanged.
+
+Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m19.37s: 285 Ruby files
+clean, native audits clean, Brakeman zero warnings/errors and eager loading passed;
+349 Rails tests / 3825 assertions and 30 browser tests / 1281 assertions,
+no failures/errors/skips. After strengthening the history check to reload the
+database, the focused revised-judge journey passed with 65 assertions; focused
+RuboCop and diff checks pass. Inspected 2x desktop/390px empty, blind and held-out
+captures show unknown rates, first-label hiding and the false-positive report,
+without page overflow or CSP violations. This proves versioned review and separate
+measurement, not live judge quality or customer labels.
+
+`bin/prove-backup-restore` also passed with PASS/CLEAN. It now retains a fixed
+expert-approved conversation plan, actual four-turn transcript, passing result
+and exact terminal turn keys/receipts. The first fixture request omits the future
+message and hidden facts. Duplicate delivery before and after restore makes no
+extra target call. All complete-table fingerprints, 16 populated immutable tables,
+calibration/association history, batch receipts, isolation and audit protections
+still pass. Both fixture approvals return to empty before backup; no live endpoint
+is called. Only disposable databases/archive are removed. Direct risk review and
+native audits used; named reviews remain unavailable. No new production dependency.
 
 ## Next and limits
 
@@ -701,8 +734,9 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering includes connected fresh revised-judge calibration proof
-and end-to-end clean-host/Compose ingress/egress proof.
+Connected fresh revised-judge calibration proof now passes. Independent engineering
+still includes end-to-end Compose ingress/egress proof; local isolated probes do
+not need pilot data, while clean-host acceptance needs a suitable authorised host.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
