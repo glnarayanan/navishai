@@ -89,8 +89,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   fixed record into a local unapproved draft, without changing analysis selection.
 - [#181](https://github.com/glnarayanan/navishai/pull/181), based on #180: complete fixed-case
   replay matching with retained-input comparison and read-only per-trace pages.
-- `rebuild/42-intake-integrity`, based on #181: atomic refusal of masking
+- [#182](https://github.com/glnarayanan/navishai/pull/182), based on #181: atomic refusal of masking
   collisions and processing-version-aware source snapshot identity.
+- `rebuild/43-private-sql-binds`, based on #182: named search bind and shared
+  Rails request/SQL-debug private-field filtering.
 
 ## Built and checked
 
@@ -1042,6 +1044,24 @@ and alert captures remain readable without overflow or CSP violations.
 tables; only disposable proof databases/archive were removed. Direct risk review
 and native audits used; named reviews remain unavailable. No dependency, provider,
 customer data, authoritative label, merge, release or deployment changed.
+
+## Rails SQL-log privacy (slice 43)
+
+An actual DEBUG logger probe disproved SQL interpolation: Rails already kept
+the phrase out of SQL statements. It did expose the anonymous bind value in logs.
+The search now uses a typed `corpus_query` bind, and Active Record shares the
+existing configured request filters. Actual search and insert logs hide the
+phrase and configured content/context values while results and stored text stay
+unchanged. Existing literal wildcard, Unicode, tenant/source, bounds and paging
+tests pass. This is Rails filtering, not a database/proxy/operator-log guarantee.
+
+Eight exploration tests include two logging regressions. The combined intake,
+trace and exploration check passed 25 tests / 463 assertions. The full native CI
+and rendered journey evidence recorded for slice 42 includes these changes.
+Ruby style/eager loading also passed immediately before commit; no app code changed
+after the full run. #182 has been pushed with an open stacked PR; its remote CI
+is separate and was still pending when this slice was prepared. No merge,
+release, deployment, live disclosure/spend, dependency or authoritative label.
 
 ## Next and limits
 

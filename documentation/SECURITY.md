@@ -36,7 +36,12 @@ malformed batches. Request logs filter uploaded data and company-content fields.
 
 Corpus search binds escaped literal phrases and scopes source/record links to the
 same corpus and retained snapshots. Viewers may search without writes or jobs.
-Queries are capped at 200 characters and filtered from Rails parameter/path logs.
+Queries are capped at 200 characters and filtered from Rails parameter/path and
+SQL debug bind logs. A typed, named search bind makes the existing private-field
+filter apply; anonymous binds had exposed phrases at DEBUG despite safe SQL.
+Active Record uses the same configured field filters as request logging, including
+corpus content/context. These controls do not filter every SQL expression or
+PostgreSQL/proxy/operator log; those need separate restricted access and retention.
 The no-referrer policy prevents outbound referrers, not browser URL/history storage.
 Do not put secrets in a search phrase.
 
