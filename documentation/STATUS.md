@@ -2,9 +2,26 @@
 
 **Status:** Single record of what [PRODUCT.md](./PRODUCT.md) requires, what exists, the evidence, and what remains
 
-**Updated:** 29 September 2026
+**Updated:** 1 October 2026
 
 NavishAI is build-complete and pilot-ready for owner review. That describes the source stack, not a published package, launch, live deployment, certification, product validation, or market result. Update this file when implementation state, evidence, or a dated decision changes; do not reopen the specification here.
+
+## Orb setup diagnosis, 1 October 2026
+
+On a diagnostic Debian 12 x86-64 `a1.small` orb with setup skipped, a manual cold run of `.agents/setup` took 129.68 seconds and exited 1 during demo seeding. The script reported these step times:
+
+| Step | Cold time |
+|---|---|
+| APT packages | 41 seconds; 239 MB downloaded, 103 new packages, including LibreOffice and PostgreSQL's LLVM build tools |
+| Ruby and Go | 7 seconds; both used binary downloads, not source builds |
+| Application dependencies | 61 seconds; includes native gem builds and Bundler's locked-version install |
+| pgvector | 12 seconds; source fetch, serial compilation, and install |
+
+Dependabot had widened the documented `json < 3` cap to `< 4`, locking JSON 3.0.2 despite Rails 8.1.3.1's positional `JSON.parse` call. A direct jsonb-read probe and seven focused test errors reproduced the mismatch. A warm rerun passed in 3.57 seconds because `db:prepare` did not retry first-run seeding; that pass did not prove a working seed or jsonb reader. Failed setup prevents Amp from saving a refreshed snapshot, so new orbs may repeat the cold install. The project had no pre-clone or pre-setup script.
+
+Local fixes restore `json < 3` and JSON 2.21.2, keep `bin/setup` in frozen-lockfile mode, time gems and Go modules separately, and compile pgvector with the available CPU cores. Separate clean pgvector builds took 11.02 seconds serially and 5.56 seconds in parallel. Required system packages remain unchanged.
+
+With dependencies installed, fixed setup prepared a fresh disposable database in 6.43 seconds; checks found the demo Workspace, two cases, and eight crew profiles. Two further setup runs took 3.35 and 4.44 seconds, and resume took 0.08 seconds. All three setup runs left the lockfile unchanged. The jsonb-read probe passed; focused seed, crew, and Workspace tests passed 11 tests and 68 assertions. The full Rails suite passed 1,210 tests and 8,917 assertions with no failures, errors, or skips. Gemfile lint, gem audit, shell syntax, whitespace, and a clean login-shell toolchain check passed. Browser and Go suites were not run for this setup change. This is local evidence, not a second cold package install, a pushed fix, or a published snapshot.
 
 ## Orb development evidence, 12 September 2026
 
