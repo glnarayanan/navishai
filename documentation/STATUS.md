@@ -1902,6 +1902,26 @@ and Brakeman reported zero warnings/errors. [FAILURE_PATTERNS.md](./FAILURE_PATT
 records the grouping contract and limits. Named review tools remain unavailable;
 direct risk review used. Fixtures do not establish live support quality.
 
+## Optional model failure matching (slice 77)
+
+Local literal matching stays unchanged. Writers may separately preview one fixed
+trace and all 1–20 eligible current versions within 100 excerpts / 256 KiB, then
+confirm an exact endpoint/request under the empty matching-only registry.
+One once-claimed call proposes match/no-match/uncertain with exact quotes for every
+candidate. No expert association, expectation, label or regression changes.
+
+Parent focused/adjacent checks passed 31 tests / 439 assertions; browser journeys
+passed 7 / 337 with no failures, errors or skips. Native DEBUG request and SQL
+logging retained exact input/result values while filtering private copies.
+Desktop match/no-match and mobile consent/uncertainty captures were inspected;
+keyboard, viewport, CSP and overflow checks passed. Ruby style passed 334 files,
+eager loading passed, Brakeman reported zero warnings/errors and gem/importmap
+audits passed. Native migrations regenerated the combined schema. Empty registry
+forwarding and separate-purpose security guidance now join the worker's routes,
+audit actions and SQL lifecycle guards. Combined runtime/CI checks follow.
+See [MODEL_FAILURE_MATCHING.md](./MODEL_FAILURE_MATCHING.md). Fixtures do not
+prove semantic matching quality, live provider behaviour or deployment readiness.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

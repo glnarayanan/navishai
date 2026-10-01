@@ -8,6 +8,31 @@ class ModelFailureMatchingAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "native request and SQL DEBUG logs filter exact matching copies without changing stored results" do
+    previous_logger = ActiveRecord::Base.logger
+    previous_controller_logger = ActionController::Base.logger
+    buffer = StringIO.new
+    logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    ActiveRecord::Base.logger = ActionController::Base.logger = logger
+    with_matching_response do
+      post request_path, params: matching_parameters
+      assert_response :see_other
+      assert_equal "[FILTERED]", request.filtered_parameters.fetch("configuration")
+      attempt = ModelFailureMatching.where(corpus: @corpus).sole
+      ModelFailureMatchingJob.perform_now(attempt.id)
+      assert_equal "Traffic ceiling reached; wait before resending.", attempt.reload.input.dig("trace", "input", "situation")
+      assert_equal "match", attempt.model_failure_matching_result.result.fetch("suggestions").first.fetch("decision")
+      assert_includes buffer.string, '["input", "[FILTERED]"]'
+      assert_includes buffer.string, '["result", "[FILTERED]"]'
+      assert_not_includes buffer.string, "Traffic ceiling reached"
+      assert_not_includes buffer.string, "Authored fixture:"
+      assert_includes buffer.string, "trace.matching_completed"
+    end
+  ensure
+    ActiveRecord::Base.logger = previous_logger
+    ActionController::Base.logger = previous_controller_logger
+  end
+
   test "default source stays local and preview has complete fixed data without creating an attempt" do
     with_test_method(ModelFailureMatcher, :input, ->(*) { flunk "Default source invoked optional workflow" }) do
       get source_path
