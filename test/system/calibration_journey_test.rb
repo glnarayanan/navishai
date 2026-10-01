@@ -52,6 +52,7 @@ class CalibrationJourneyTest < ApplicationSystemTestCase
     select "Fail — breaks the requirement", from: "Your decision"
     fill_in "Evidence for your decision", with: "The source requires collecting expiry before configuration changes."
     click_button "Save expert label"
+    assert_text "Expert label saved. Prior labels remain in history."
     assert_field "Evidence for your decision", with: "The source requires collecting expiry before configuration changes."
     click_link "SSO diagnostic gate"
     assert_text "1 true positives"
