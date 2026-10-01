@@ -78,5 +78,27 @@ This slice adds no jobs, receipts, domain writes, SQL relationships or grants;
 tenant lineage, immutable versions and expiry/purge behaviour remain unchanged.
 Public GET checks create no corpus, scenario, run or audit record. The parent
 owns combined full CI and integration. This page makes no live-provider, coverage,
-accuracy, cost, customer-acceptance or deployment claim. It is locally committed,
-not pushed, merged, released or deployed.
+accuracy, cost, customer-acceptance or deployment claim. [STATUS](./STATUS.md)
+records current delivery; no merge, release or deployment has occurred.
+
+## Parent integration checks
+
+The integrated headline names SSO handoffs, API fixes and billing rules rather
+than a generic AI benefit. It does not imply prebuilt integrations or a passing
+customer result. Parent checks include privacy slice 68 and acceptance map 69.
+
+`bin/ci` passed setup, style, native audits, eager loading and 481 Rails tests /
+7465 assertions, then failed one old-placeholder logout assertion. The repaired
+test checks the actual public sign-in route. The final
+`CAPTURE_LAB_SCREENSHOTS=1 CAPTURE_LANDING_SCREENSHOTS=1 bin/rails test:system`
+passed 56 tests / 2600 assertions, without failures, errors or skips. Focused
+pages/setup/session checks passed 15 / 150; Ruby style passed 305 files. This does
+not turn the initially failed full command into a green run.
+
+Parent inspected `integrated-desktop-light-full.png` and
+`integrated-mobile-dark-full.png` under `.amp/in/artifacts/landing/` on the current
+managed preview. Both contain the complete example/workflow/privacy/footer at 2x.
+Executed DOM checks confirm six steps, `/session/new`, no horizontal overflow and
+16px body text at 390px. Native tests exercise real sign-in/out, themes, disclosures,
+anchors, focus and CSP. Full captures fix the earlier mobile viewport capture's
+below-the-fold evidence limit; they do not prove external actions or model quality.

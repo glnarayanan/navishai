@@ -5,7 +5,7 @@ class LandingTest < ApplicationSystemTestCase
     [ 1280, 768, 390, 320 ].each do |width|
       viewport(width)
       visit root_path
-      assert_selector "h1", text: "Turn your support history into tests for your AI"
+      assert_selector "h1", text: "Test your AI's SSO handoffs, API fixes and billing rules"
       assert_selector ".landing-workflow li", count: 6
       assert_selector ".landing-specimen figcaption", text: "not customer data or a run"
       assert_selector "main a.button-primary", text: "Sign in to the lab"
