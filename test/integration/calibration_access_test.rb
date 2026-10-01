@@ -46,6 +46,25 @@ class CalibrationAccessTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filter.filter("rationale" => "company evidence").fetch("rationale")
   end
 
+  test "calibration evidence reaches its exact document snapshot rather than its database ID" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+      evidence_item_id: @knowledge.id, evidence_kind: "expectation", excerpt: "Request the certificate expiry date.")
+    @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "approve")
+    evidence = @scenario.current_version.scenario_evidence.find_by!(kind: "expectation", corpus_item: @knowledge)
+    fixed = compile_case(checks: @checks.map { |check| check.merge("scenario_evidence_id" => evidence.id) })
+    @sample = @set.add_sample!(membership: @membership, check_id: fixed.eval_case_checks.find_by!(requirement_kind: "actions").id,
+      cohort: "held_out", output: support_output(text: "Inspect our current playbook."))
+    snapshot = @knowledge.source_snapshot
+    assert_not_equal snapshot.id, snapshot.number
+    get sample_path
+    assert_response :success
+    path = workspace_corpus_source_path(@workspace, @corpus, snapshot.source, snapshot: 1, page: 1, anchor: "record-#{@knowledge.id}")
+    assert_select "a[href='#{path}']", text: "Supporting source snapshot"
+    get path
+    assert_response :success
+    assert_select "article#record-#{@knowledge.id}", text: /Request the certificate expiry date/
+  end
+
   test "viewer reads but cannot label or upload and foreign and expired records are hidden" do
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
     sign_in_as users(:teammate)
