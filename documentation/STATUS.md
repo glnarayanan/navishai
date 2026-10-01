@@ -1256,6 +1256,49 @@ comparison fixes that query without changing discovery or its expectations.
 Style, syntax and eager loading pass. Named reviews remain unavailable; direct
 review used. Full combined checks and remote CI remain separate evidence.
 
+## Streamed conversation intake (slice 51)
+
+Explicit normalized conversation JSONL now accepts 60 MiB / 100,000 records,
+with 1-MiB lines and 256 MiB of encoded normalized fields after masking. Other
+formats, model limits and disclosure stay unchanged. Bounded tempfile reads make
+two passes without a whole-file string. First-pass format/masking/identity checks
+precede source mutation; second-pass validated 1000-row writes stay atomic.
+Changed count/digest or a late invalid record rolls back every batch, snapshot,
+source retention and audit. Retained source kind stays conversations with a fixed
+new processor; historical snapshots remain unchanged. No job, approval, label or
+provider starts automatically.
+
+The initial real 100,000-record file check passed with 136 assertions in 36.37s,
+peaking at 180608 KiB. It retained complete first/last Unicode and typed evidence,
+used 100 bounded inserts, reused the repeat and refused actual record 100001.
+Its final revision also observes every bounded line-read argument; the combined
+green run covers that revision. Smaller focused checks cover exact wire/line/masked
+byte edges, malformed input, duplicate/colliding IDs, roles, changed second pass,
+late rollback and processor history. A multipart request above 10 MiB also passes.
+Byte edges use smaller injected caps, not a 256-MiB allocation.
+
+The live browser imports 3001 records by Enter, repairs format errors privately,
+explicitly requests streaming analysis and creates two source-backed unapproved
+scenarios. The focused journey passes with 72 assertions, including no automatic
+jobs/writes on refusal, labelled format help and no overflow/CSP violations.
+Desktop/390px form, fixed source metadata and complete masked-record captures
+were inspected. A repair crop omitted the page-level alert; the capture target
+now includes the whole body. Final desktop/mobile repair captures were inspected
+with the alert, retained choices and intact controls. `CAPTURE_LAB_SCREENSHOTS=1
+bin/ci` passed in 7m55.88s: 301 Ruby files clean, native security audits/eager
+loading passed; 430 Rails tests / 5966 assertions and 44 browser tests / 2023
+assertions, no failures/errors/skips. This covers final slices 48–51, including
+the timestamp correction and varied proof. No remote CI for these branches yet.
+Direct risk review/native audits used; named review tools remain unavailable.
+
+GitHub #187 remains open with run
+[36875739393](https://github.com/glnarayanan/navishai/actions/runs/36875739393)
+in progress at the 15:11 UTC inspection on 1 October. Its `bin/ci` step began
+14:22:55 UTC. The reason for that duration is unverified; no rerun/cancellation
+occurred. Earlier #155/#158 failures remain failed. Local green checks cannot
+replace exact-head remote evidence. No merge, release, deployment, customer data,
+live provider, dependency, spend or authoritative expert label was introduced.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1301,9 +1344,10 @@ engineering gaps are not customer-data or expert-label approval blockers.
 Intake now refuses recursive masking-key collisions without losing data and binds
 processing version and explicit rule fingerprints in snapshot reuse identity.
 Exact-text masking and larger local processing work within their stated limits.
-Intake still accepts 2000 records / 10 MiB per file; larger single-file intake,
-broader varied-workload scale evidence and retrieval quality remain engineering work.
-These checks do not finish that work or the owner's full acceptance demo.
+Normalized conversation JSONL accepts 100,000 records / 60 MiB per file; other
+formats stay at 2000 / 10 MiB. Varied-workload and larger-file checks now supplement
+the repetitive scale proof. Broader workload evidence and retrieval quality still
+need engineering work; these checks do not finish the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. The partial Compose trial and later passing private-namespace proof

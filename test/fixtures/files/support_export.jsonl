@@ -1,0 +1,2 @@
+{"id":"sso-lines","title":"SAML certificate expired","content":"Ask admin@example.org for metadata before changing configuration.","context":{"plan":"enterprise","escalated":false}}
+{"id":"webhook-lines","title":"Webhook replay","content":"A replay writes two invoices. Engineering needs diagnostic logs.","context":{"impact":"critical","reopened":true}}

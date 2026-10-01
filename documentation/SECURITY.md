@@ -34,6 +34,17 @@ Snapshots and items reject updates in Ruby and SQL. HTML remains escaped evidenc
 never browser instructions. Bounded UTF-8/JSON parsing and atomic inserts reject
 malformed batches. Request logs filter uploaded data and company-content fields.
 
+Explicit conversation JSONL uses bounded tempfile lines and two passes, not a
+whole-file string. Limits: 60 MiB wire, 100,000 records, 1 MiB per line and 256 MiB
+of encoded normalized fields after masking; the existing 64-MiB request limit and
+per-record limits remain. Check IDs and masking collisions across the whole file.
+Changed second-pass bytes/counts and late invalid records roll back every batch,
+source retention and audit. New processing has a distinct version; retained
+conversation kind, tenant checks, immutable provenance and disclosure gates stay
+unchanged. Syntax errors never echo parser source text. The form retains chosen
+format/mode, not private rules or the uploaded file. No provider, job, label or
+approval runs automatically. These are bounds, not a proof of PII removal.
+
 Corpus search binds escaped literal phrases and scopes source/record links to the
 same corpus and retained snapshots. Viewers may search without writes or jobs.
 Queries are capped at 200 characters and filtered from Rails parameter/path and
