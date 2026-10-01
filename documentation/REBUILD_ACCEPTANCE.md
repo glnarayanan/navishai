@@ -20,6 +20,13 @@ implementation or engineering evidence. **G** means evidence needs authorized da
 experts, endpoints, costs or a host. An E contract does not imply semantic quality.
 The owner's example counts and percentages are illustrations, not measured claims.
 
+This map has 45 check groups: 41 E, zero M and four G. That is 41/45 groups
+(91.1%) with engineering evidence, including all 41 ungated engineering groups.
+It is not a feature-count, quality or customer-acceptance score. The four G groups
+remain unproved; conditional P2 below stays separately gated and is not counted
+as delivered. The stack through [#222](https://github.com/glnarayanan/navishai/pull/222)
+is committed, pushed and open, not merged, released or deployed.
+
 ## A — Demolition, architecture and delivery
 
 | Check | Evidence and limit |
@@ -28,7 +35,7 @@ The owner's example counts and percentages are illustrations, not measured claim
 | E — Remove the old product and its unused dependencies | [lab_baseline_test](../test/integration/lab_baseline_test.rb) checks old routes/tables are gone. Inbox, tickets/assignment, customer drafts/sends, SLAs, account-health/renewals, crews, broad memory/Supermemory, process runners and old deployment machinery do not remain behind flags. Git preserves history. |
 | E — Re-derived tenant/source/eval domain and safe fresh setup | [database_preflight_test](../test/services/database_preflight_test.rb), [security_baseline_test](../test/integration/security_baseline_test.rb). Setup refuses obsolete databases and never resets customer data. |
 | E — Atomic Conventional Commits and stacked PRs | [STATUS delivered stack](./STATUS.md#delivered-stack). Implementation branches use the rebuild predecessor, not obsolete main. The owner lockfile checksum remains unstaged and unchanged. |
-| M — Final combined handoff | Tracked-image/runtime proofs pass. Full native `bin/ci` found two stale mining-prefix expectations; corrected scale/draft tests pass 13/818. V3 focused/browser/recovery/upgrade checks pass. Fresh full CI and the last stacked PR handoff remain; no full green CI claim yet. |
+| E — Final combined engineering handoff | Fresh native `bin/ci` passes in 17m48.72s: Rails 640/10520 and browser 71/3561, no failures/errors/skips; style, eager loading and audits pass. Recovery/upgrade pass with v3 receipts; image-specific Compose proof passes. The stack through #222 is pushed/open, not merged/deployed. Remote CI is separate. |
 
 ## B — Corpus and scenario foundation (all P0)
 
@@ -154,13 +161,27 @@ failures/errors/skips at seed 64405. V3 focused checks pass 48 tests / 1083
 assertions; v2/v3 browser checks pass 4 / 193, including inspected desktop/mobile
 preview, originals, relationships, empty/stopped and repair states. Recovery and
 upgrade pass/CLEAN again with exact v3 history, runtime SQL guards, no resend and
-purge. Ruby style passes 375 files, eager loading and native audits pass. Fresh
-full CI follows; no full green CI claim yet.
+purge. Ruby style passes 375 files, eager loading and native audits pass.
+
+Fresh final command:
+
+```sh
+DATABASE_URL=postgresql:///navishai_lab_ci81_test CHROME_ARGS=--no-sandbox \
+  BUNDLE_FROZEN=true bin/ci
+```
+
+Passed in 17m48.72s on the
+[implementation head](https://github.com/glnarayanan/navishai/commit/1563e52).
+Rails: 640 tests / 10520 assertions, seed 31409, two native processes.
+Browser: 71 tests / 3561 assertions, seed 52776. No failures, errors or skips.
+Ruby style 375 files, eager loading, gem/importmap audits and Brakeman pass with
+zero errors/warnings. Final documentation-only delivery updates do not change
+that implementation. Remote PR CI is not this local run.
 Ponytail Audit/CE Code Review tools were unavailable; direct risk review and native
 checks were used. No static warning exclusions were added.
 
-Remaining: finish full CI and the last stacked PR handoff; then the owner must supply permitted unseen
-B2B SaaS data, named expert expectations/held-out labels, exact endpoint approval,
+Remaining: the owner must supply permitted unseen B2B SaaS data,
+named expert expectations/held-out labels, exact endpoint approval,
 disclosure/retention terms and spend limits for the whole live demo. Measure useful
 taxonomy, representative/risky case coverage, correction effort, judge accuracy
 and next-agent regressions there. Public-host acceptance needs separate authority.

@@ -96,4 +96,12 @@ history, actual runtime SQL denials, no resend and expiry/purge. Style passes
 Inspected captures include preview, repair, every original, new relationships,
 empty and stopped results at 1280/390px plus 320px relationship wrapping.
 Named Ponytail/CE tools were unavailable; direct risk review and native checks
-found no remaining blocker. Full combined CI remains separate and pending.
+found no remaining engineering blocker.
+
+Final combined `DATABASE_URL=postgresql:///navishai_lab_ci81_test
+CHROME_ARGS=--no-sandbox BUNDLE_FROZEN=true bin/ci` passes in 17m48.72s:
+Rails 640 tests / 10520 assertions and browser 71 / 3561, no failures/errors/skips.
+Style, eager loading and all native audits pass. See
+[STATUS](./STATUS.md#final-combined-engineering-evidence) for seeds and exact
+implementation attribution. [#222](https://github.com/glnarayanan/navishai/pull/222)
+is pushed/open above #221, not merged/deployed or live-quality acceptance.
