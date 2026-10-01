@@ -8,6 +8,54 @@ class RecordedTargetTest < ActiveSupport::TestCase
 
   setup { build_recorded_evaluation }
 
+  test "database matching agrees with exact replay input including ordered knowledge and typed facts" do
+    second = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Second policy", kind: "document", bytes: "Collect current logs.").corpus_items.sole
+    facts = { "admin" => false, "retry_count" => 0, "optional" => nil, "sequence" => [ "Okta", "Entra" ] }
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: facts },
+      evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: "Request the certificate expiry date before suggesting configuration changes.")
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+      evidence_item_id: second.id, evidence_kind: "knowledge", excerpt: "Collect current logs.")
+    item = compile_replay_history(situations: [ "Exact résumé diagnostic input" ]).sole
+    quotes = { @knowledge.id => "Request the certificate expiry date before suggesting configuration changes.", second.id => "Collect current logs." }
+    ordered_ids = item.scenario_version.scenario_evidence.where(kind: "knowledge").order(:id).pluck(:corpus_item_id)
+    input = { "situation" => "Exact résumé diagnostic input", "known_facts" => facts,
+      "knowledge" => ordered_ids.map { |id| { "reference" => "corpus-item-#{id}", "content" => quotes.fetch(id) } } }
+    assert_equal input, item.scenario_version.target_input
+    reordered = input.to_a.reverse.to_h.merge("known_facts" => facts.to_a.reverse.to_h)
+    different = [ input.merge("knowledge" => []), input.merge("situation" => "Exact resume diagnostic input"),
+      input.merge("known_facts" => facts.except("admin")), input.merge("known_facts" => facts.merge("admin" => nil)),
+      input.merge("known_facts" => facts.merge("retry_count" => false)), input.merge("known_facts" => facts.merge("sequence" => facts["sequence"].reverse)),
+      input.merge("knowledge" => input["knowledge"].reverse), input.merge("knowledge" => [ input["knowledge"].first.merge("reference" => "foreign-policy"), input["knowledge"].last ]),
+      input.merge("knowledge" => [ input["knowledge"].first.merge("content" => "Change configuration first."), input["knowledge"].last ]),
+      input.merge("situation" => "' OR true --") ]
+    records = [ input, reordered, *different ].map.with_index { |value, index| @trace.merge("id" => "matching-fixture-#{index}", "input" => value) }
+    traces = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Exact input variants", kind: "traces", bytes: records.to_json).corpus_items.order(:id).to_a
+    traces.first(2).each { |trace| assert_equal [ item.id ], @corpus.eval_cases.matching_trace(trace).pluck(:id) }
+    traces.drop(2).each { |trace| assert_empty @corpus.eval_cases.matching_trace(trace).pluck(:id) }
+    assert_equal [ @case.id ], @corpus.eval_cases.matching_trace(@trace_item).pluck(:id)
+
+    sql = []
+    capture = ->(event) { sql << event.payload[:sql] if event.payload[:sql].include?("replay_trace") }
+    ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+      assert_equal 1, @corpus.eval_cases.matching_trace(traces.first).count
+      assert_equal [ [ item.id, "Replay fixture case 1" ] ], @corpus.eval_cases.matching_trace(traces.first).pluck(:id, "scenario_versions.title")
+    end
+    assert_equal 2, sql.size
+    sql.each do |statement|
+      [ input["situation"], *quotes.values, "Okta", "Entra" ].each { |private_value| assert_not_includes statement, private_value }
+      assert_includes statement, "replay_trace.context"
+    end
+    foreign_corpus = workspaces(:beta_support).corpora.create!(name: "Foreign retained trace")
+    foreign = CorpusIntake.call(corpus: foreign_corpus, membership: memberships(:outsider_beta), name: "Exact input", kind: "traces", bytes: [ records.first ].to_json).corpus_items.sole
+    assert_empty @corpus.eval_cases.matching_trace(foreign).pluck(:id)
+    assert_empty foreign_corpus.eval_cases.matching_trace(traces.first).pluck(:id)
+    wrong_kind = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Conversation with trace-shaped context", kind: "conversations",
+      bytes: [ { id: "not-a-trace", title: "Context fixture", content: "An untrusted report.", context: { support_trace: records.first } } ].to_json).corpus_items.sole
+    assert_empty @corpus.eval_cases.matching_trace(wrong_kind).pluck(:id)
+    traces.first.source_snapshot.source.update!(expires_at: 1.minute.ago)
+    assert_empty @corpus.eval_cases.matching_trace(traces.first).pluck(:id)
+  end
+
   test "reported production failure becomes a reviewed regression then the same case passes a later target" do
     run = request_run
     EvaluationRunJob.perform_now(run.id)

@@ -269,7 +269,14 @@ Do not fold trace payloads into the term-discovery baseline.
 Recorded replay binds a target version to an exact trace item through a
 same-corpus foreign key. It may return that output only for identical visible
 input; changed context must not inherit an old answer. Replay is local, not a new
-agent execution. Judges retain their separate disclosure gate. Existing fixed
+agent execution. Compatibility discovery compares every fixed case with the
+retained trace in PostgreSQL, binding only its ID and the expiry time. No input
+text enters SQL parameters or logs. JSON object order is irrelevant; fact types,
+array order and ordered knowledge references/excerpts stay exact. Scope the trace
+to the case's workspace/corpus and an unexpired trace source. Count all matches,
+then select only 50 case IDs/titles for that record's independent page. This does
+not establish common meaning or execution eligibility; old cases remain historical.
+Judges retain their separate disclosure gate. Existing fixed
 results and human regression admission own the failure-to-regression path.
 Source purge must clear all corpus scenarios, including trace proposals that have
 no analysis parent, before deleting their evidence. No semantic failure matching,

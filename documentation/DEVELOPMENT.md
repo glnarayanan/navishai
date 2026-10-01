@@ -497,10 +497,16 @@ disclosure confirmation; their errors do not become behavioural failures.
 
 ## Recorded production replay
 
-A trace source page lists cases with identical visible input among the first 100
-fixed corpus cases, including prior versions. This is input compatibility, not
-semantic failure matching or an expert decision. Inspect the contract; execution
-still requires its current approved scenario and current company evidence.
+A trace source page searches all fixed corpus cases for identical visible input,
+including prior versions. It counts exact matches and lists 50 IDs/titles per
+trace page, not complete case definitions. Next/previous and empty-page recovery
+retain that record, snapshot and independent source-impact/history positions.
+Refresh keeps the selected page; viewers can inspect without write controls.
+Expired corpus evidence hides matches instead of claiming zero. The database
+compares retained input by trace ID, not source text in query parameters/logs.
+This is input compatibility, not semantic failure matching or an expert decision.
+Inspect the contract; execution still requires its current approved scenario and
+current company evidence. Historical cases do not gain approval from this list.
 
 A managing role can follow the trace's target-definition link, name the target
 and save the prefilled record ID. Choose `Recorded · uploaded trace`; no JSON

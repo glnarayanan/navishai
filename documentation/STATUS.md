@@ -85,8 +85,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   review, whole-analysis counts and read-only focus/pagination.
 - [#179](https://github.com/glnarayanan/navishai/pull/179), based on #178: local corpus/source-impact
   pagination that cannot interpret query data as routing authority.
-- `rebuild/40-expert-scenario-nomination`, based on #179: expert nomination of one
+- [#180](https://github.com/glnarayanan/navishai/pull/180), based on #179: expert nomination of one
   fixed record into a local unapproved draft, without changing analysis selection.
+- `rebuild/41-complete-replay-matching`, based on #180: complete fixed-case
+  replay matching with retained-input comparison and read-only per-trace pages.
 
 ## Built and checked
 
@@ -977,6 +979,32 @@ navigation; explicit page/disclosure waits now pass without changing product cod
 Direct risk review/native audits used; named review tools remain unavailable.
 No schema, dependency, provider, customer data, training, merge, release or deployment.
 
+GitHub CI for #180 passed at exact head
+[`bbea1e2`](https://github.com/glnarayanan/navishai/commit/bbea1e23d05e3f688a96808e0e71ad88fb5533cb)
+([run](https://github.com/glnarayanan/navishai/actions/runs/36851369957), completed
+10:50:58 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+Exact replay discovery now searches all fixed corpus cases and loads only paged
+IDs/titles. A 102-case regression found one match instead of two before the fix;
+the late match now appears. Database comparison uses retained trace IDs, never
+input text in SQL. Asymmetric tests cover Unicode, typed/missing facts, ordered
+arrays and knowledge, foreign/wrong-kind traces and expiry. Page counts and links
+remain separate from expert association, current approval and execution eligibility.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m37.57s: 295 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+390 Rails tests / 4655 assertions and 39 browser tests / 1734 assertions,
+no failures/errors/skips. Five affected browser journeys passed with 259 assertions.
+The new journey follows match 51 on a retained historical trace, uses Enter for
+next, refreshes, recovers from an empty page and repeats as a viewer without writes
+or jobs. An initial test forgot to open the existing sign-out menu; corrected it.
+The first narrow element crops clipped intact text. A full-width capture repair
+passed the two focused journeys again with 112 assertions; desktop/390px matching
+and empty-page controls were inspected. No overflow or CSP violations. Direct risk
+review/native audits used; named reviews remain unavailable. No schema, provider,
+customer data, dependency, label, merge, release or deployment changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -986,7 +1014,7 @@ Expert calibration now has a personal read-only review queue.
 This does not finish the full rebuild or establish customer value. Trace failure
 matching now suggests five local literal candidates from up to 2000 current
 versions, with explicit expert associations; it is not semantic matching.
-Replay compatibility still checks identical inputs among 100 fixed cases. Recorded
+Replay compatibility now searches all fixed cases and paginates exact matches. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge/source-processing endpoints.
@@ -1017,6 +1045,10 @@ Reviewable failure matching, bounded multi-request discovery, image execution an
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
+The next independent intake slice must refuse recursive masking-key collisions
+without losing data and include processing version in snapshot reuse identity.
+Broader explicit redaction choices and larger-corpus processing remain engineering
+work; these checks do not finish them or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. The partial Compose trial and later passing private-namespace proof

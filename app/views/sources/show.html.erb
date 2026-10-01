@@ -36,9 +36,21 @@
           <% end %>
           <p>Proposals keep the situation and known facts, with no approved requirements. Experts choose current documentation and permitted knowledge.</p>
           <%= render "sources/failure_matching", item: item %>
-          <details><summary>Cases with identical visible input (<%= @trace_matches[item.id].size %>)</summary><p>Checks the first 100 fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
-            <% if @trace_matches[item.id].empty? %><p>No exact match in this bounded search. Create and review a scenario, or inspect other fixed cases.</p><% end %>
-            <ul role="list"><% @trace_matches[item.id].each do |eval_case| %><li><%= link_to "Case #{eval_case.id} · #{eval_case.scenario_version.title}", workspace_corpus_eval_case_path(Current.workspace, @corpus, eval_case) %></li><% end %></ul>
+          <% matching_page = @matching_item_id == item.id.to_s ? @matching_page : 1 %>
+          <% matching_params = { snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page, matching_item_id: item.id, anchor: "replay-cases-#{item.id}" } %>
+          <details id="replay-cases-<%= item.id %>" <%= "open" if @matching_item_id == item.id.to_s %>><summary>Cases with identical visible input<% unless @trace_matching_blocked %> (<%= @trace_match_counts[item.id] %>)<% end %></summary><p>Searches all fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
+            <% if @trace_matching_blocked %><p role="status">Matches stay hidden because a corpus source has expired.</p><% else %>
+              <p>Page <%= matching_page %> · up to 50 exact matches for this trace record. No run, label or decision is created.</p>
+              <% if @trace_matches[item.id].empty? %>
+                <% if @trace_match_counts[item.id].zero? %><p>No exact match in this corpus. Create and review a scenario, or inspect other fixed cases.</p>
+                <% else %><p>No matching cases on this page. <%= link_to "First matching page", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: 1)) %> keeps this trace and snapshot.</p><% end %>
+              <% end %>
+              <ul role="list"><% @trace_matches[item.id].each do |case_id, title| %><li><%= link_to "Case #{case_id} · #{title}", workspace_corpus_eval_case_path(Current.workspace, @corpus, case_id) %></li><% end %></ul>
+              <nav class="workspace-tabs" aria-label="Matching input case pages for <%= item.external_id %>">
+                <% if matching_page > 1 %><%= link_to "Previous matching cases", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: matching_page - 1)) %><% end %>
+                <% if @trace_match_counts[item.id] > matching_page * 50 %><%= link_to "Next matching cases", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: matching_page + 1)) %><% end %>
+              </nav>
+            <% end %>
           </details>
           <% if Current.require_membership!.can_manage_work? && !@corpus.eval_definitions_expired? %><p><%= link_to "Define recorded target from this trace", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus, adapter: "recorded", trace_item_id: item.id) %>. Saving does not execute or send data.</p><% end %>
           <div class="review-layout">
