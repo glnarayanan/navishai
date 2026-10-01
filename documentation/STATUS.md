@@ -1416,6 +1416,29 @@ and the focused browser check (1 test / 36 assertions). Inspected final desktop/
 390px mixed and empty states show complete readable counts, unknowns and warnings.
 No provider, label, approval, schema or dependency changed.
 
+## Explicit expert scenario selection (slice 57)
+
+The retrieval matrix exposed a real UI gap: association writes already accepted
+eligible versions outside five suggestions, but the page offered only those five.
+A scoped, read-only #ID lookup now opens one chosen current scenario for the trace.
+Writers reuse the existing reasoned decision and trace-evidence editor; viewers
+only inspect. Foreign IDs reveal no title. Rejected/stale choices get no decision
+form. Failed stale writes retain the original version and reason, never transfer
+them to a newer version, and require explicit reselection.
+
+The red lookup test failed before the UI existed. Native style, 16 access/model
+checks / 216 assertions and three browser journeys / 171 assertions pass. Final
+desktop/390px selection, stale recovery and exact trace-editor captures were
+inspected. Selected inputs and full trace/source links remain readable; long native
+picker options may truncate, with the full identity shown separately. No rank,
+approval, expectation, label, provider, schema or dependency change follows a GET.
+
+Slices 54–56 are committed/pushed as open stacked
+[#194](https://github.com/glnarayanan/navishai/pull/194),
+[#195](https://github.com/glnarayanan/navishai/pull/195) and
+[#196](https://github.com/glnarayanan/navishai/pull/196). Remote CI is separate from
+the combined local proof. No merge/release/deployment or live disclosure occurred.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

@@ -73,6 +73,20 @@ class SourcesController < ApplicationController
         history = decisions.includes(:reviewed_by, scenario_version: :scenario).order(id: :desc).offset((@decision_page - 1) * 50).limit(51).to_a
         @more_decisions = history.size > 50
         @trace_decisions = history.first(50).group_by(&:corpus_item_id)
+        if params.key?(:selected_scenario_id)
+          @selected_trace = @items.find { |item| item.id.to_s == params[:selected_trace_id].to_s }
+          raise ActiveRecord::RecordNotFound unless @selected_trace
+
+          @corpus.with_lock do
+            @selected_scenario = @corpus.scenarios.find_by(id: params[:selected_scenario_id])
+            @selected_version = if @decision_form
+              @selected_scenario&.scenario_versions&.find_by(id: @decision_form["scenario_version_id"])
+            else
+              @selected_scenario&.current_version
+            end
+            @selected_eligible = @selected_version && TraceScenarioMatching.eligible?(@selected_version) && SupportTrace.payload(@selected_trace)["observed_failure"].present?
+          end
+        end
       end
     end
   end
@@ -85,7 +99,8 @@ class SourcesController < ApplicationController
     redirect_to helpers.source_evidence_path(@item), notice: "Trace decision appended. Scenario approval and replay compatibility are unchanged.", status: :see_other
   rescue Scenario::Invalid, CorpusIntake::Invalid, ActiveRecord::RecordInvalid => error
     @decision_error = error.message
-    @decision_form = params.permit(:corpus_item_id, :scenario_version_id, :decision, :reason).to_h
+    @decision_form = params.permit(:corpus_item_id, :scenario_version_id, :decision, :reason, :selected_scenario_id).to_h
+    params[:selected_trace_id] = @item.id if params.key?(:selected_scenario_id)
     params[:snapshot] = @item.source_snapshot.number
     params[:page] = @item.source_snapshot.corpus_items.where("id < ?", @item.id).count / 50 + 1
     show

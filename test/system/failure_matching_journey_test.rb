@@ -141,6 +141,61 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
     capture("viewer-390", 390)
   end
 
+  test "expert selects a missed scenario repairs a stale association and opens exact trace evidence" do
+    build_failure_matching_fixture
+    policy = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Quota guidance", kind: "document", bytes: "Retry after cooldown.").corpus_items.sole
+    missed = matching_version(title: "Request quota", situation: "Request quota exhausted; retry after cooldown.", facts: { "plan" => "enterprise" }, item: policy, excerpt: policy.content)
+    trace = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    trace.merge!("id" => "rate-failure", "title" => "Immediate retry failure", "observed_failure" => "Assistant resends immediately.", "human_correction" => "Wait before resending.")
+    trace["input"] = { "situation" => "Traffic ceiling reached; wait before resending.", "known_facts" => { "plan" => "enterprise" }, "knowledge" => [] }
+    trace["output"]["messages"] = [ { "role" => "assistant", "content" => "I will resend immediately." } ]
+    @item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Quota traces", kind: "traces", bytes: [ trace ].to_json).corpus_items.sole
+    assert_empty TraceScenarioMatching.call(item: @item).candidates
+    sign_in users(:owner)
+    visit source_path
+    assert_text "No candidates share at least two meaningful terms"
+    find("summary", text: "Inspect an existing scenario").click
+    fill_in "Scenario ID for trace rate-failure", with: missed.scenario_id
+    find("input[value='Inspect selected scenario']").send_keys(:enter)
+    assert_selector "#selected-scenario-#{@item.id} h5", text: "Expert-selected scenario"
+    assert_field "Decision for scenario #{missed.scenario_id} v1", with: "uncertain"
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+    assert_empty missed.scenario_reviews
+    [ 1280, 390 ].each { |width| capture("manual-selected-#{width}", width, selector: "#selected-scenario-#{@item.id}") }
+
+    revised = missed.scenario.revise!(membership: @membership, base_version_id: missed.id, attributes: { title: "Request quota diagnostics" })
+    select "Match", from: "Decision for scenario #{missed.scenario_id} v1"
+    fill_in "Reason for this association", with: "Authored expert: same quota workflow despite different words."
+    click_button "Append trace decision"
+    assert_selector "[role=alert]", text: "Choose a current"
+    assert_text "No decision was saved or moved to a newer version"
+    assert_text "Authored expert: same quota workflow despite different words."
+    assert_no_button "Append trace decision"
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+    [ 1280, 390 ].each { |width| capture("manual-stale-#{width}", width) }
+    find("input[value='Inspect selected scenario']").send_keys(:enter)
+    assert_field "Decision for scenario #{missed.scenario_id} v2", with: "uncertain"
+    assert_field "Reason for this association", with: ""
+    select "Match", from: "Decision for scenario #{missed.scenario_id} v2"
+    fill_in "Reason for this association", with: "Authored expert checked this exact current version."
+    click_button "Append trace decision"
+    assert_text "Trace decision appended"
+    assert_equal revised.id, TraceScenarioDecision.where(corpus_item: @item).sole.scenario_version_id
+    assert_not revised.reload.approved?
+    find("summary", text: "Inspect an existing scenario").click
+    fill_in "Scenario ID for trace rate-failure", with: missed.scenario_id
+    find("input[value='Inspect selected scenario']").send_keys(:enter)
+    click_link "Revise selected scenario with this trace"
+    assert_equal @item.id.to_s, find_field("Source record").value
+    assert_field "Customer starting situation", with: "Request quota exhausted; retry after cooldown."
+    assert_field "Exact source excerpt", with: ""
+    assert_field "Outcomes — one requirement per line", with: ""
+    assert_link "Inspect selected trace: #{@item.title}", href: workspace_corpus_source_path(@corpus.workspace, @corpus, @item.source_snapshot.source, snapshot: 1, page: 1, anchor: "record-#{@item.id}")
+    [ 1280, 390 ].each { |width| capture("manual-revision-#{width}", width, selector: "#scenario-evidence") }
+    assert_equal revised.id, missed.scenario.reload.current_version_id
+    assert_empty HumanLabel.where(corpus: @corpus)
+  end
+
   private
     def source_path
       workspace_corpus_source_path(@corpus.workspace, @corpus, @item.source_snapshot.source)

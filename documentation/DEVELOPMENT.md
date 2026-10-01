@@ -209,6 +209,15 @@ Viewers can inspect candidates/history but cannot decide. Errors retain the chos
 version and reason; changed evidence or access blocks writes. Purge removes the
 associations through their source-backed records.
 
+**Inspect an existing scenario** accepts the #ID shown in this corpus's scenario
+list. Its explicit GET opens that scenario's current version even when the literal
+method misses it or ranks it outside five. It inspects one chosen artifact; it
+does not extend the search limits or rank. Writers may then append the same
+reasoned decision or open the existing trace-evidence editor. Viewers only inspect.
+A failed stale POST retains its original version, decision and reason, never moves
+them to the current version, and requires a fresh explicit selection. Foreign IDs
+show no foreign title; ineligible choices offer no decision form.
+
 Association does not approve or edit a scenario, grant knowledge, label a
 calibration sample, compile, execute or admit a regression. Writers can open the
 exact scenario version through "Revise with this trace". The evidence disclosure

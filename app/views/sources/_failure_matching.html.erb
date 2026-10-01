@@ -6,7 +6,27 @@
   <% if result.message %><p role="status"><%= result.message %></p><% end %>
   <% if @decision_error && @decision_form["corpus_item_id"] == item.id.to_s %><p role="alert"><%= @decision_error %> Your decision and reason are retained below. Reload stale evidence before submitting again.</p><% end %>
   <% unless @corpus.eval_definitions_expired? %>
-    <% if result.candidates.empty? && !result.message %><p>No candidates share at least two meaningful terms. Open an existing scenario or use Propose scenario from trace for a new case.</p><% end %>
+    <% if result.candidates.empty? && !result.message %><p>No candidates share at least two meaningful terms. Inspect an existing scenario below or use Propose scenario from trace for a new case.</p><% end %>
+    <% selected = @selected_trace&.id == item.id %>
+    <details class="section-block config-panel" id="scenario-selection-<%= item.id %>" <%= "open" if selected %>><summary>Inspect an existing scenario</summary>
+      <p>Literal suggestions can miss the right issue. <%= link_to "Browse scenarios in this corpus", workspace_corpus_scenarios_path(Current.workspace, @corpus) %>, then enter its #ID. This read opens its current version; it makes no association or approval.</p>
+      <%= form_with url: workspace_corpus_source_path(Current.workspace, @corpus, @source, anchor: "scenario-selection-#{item.id}"), method: :get, class: "form-stack" do |form| %>
+        <%= form.hidden_field :snapshot, value: @snapshot.number, id: nil %><%= form.hidden_field :page, value: @page, id: nil %><%= form.hidden_field :selected_trace_id, value: item.id, id: nil %>
+        <div class="field"><%= form.label :selected_scenario_id, "Scenario ID for trace #{item.external_id}", for: "selected-scenario-id-#{item.id}" %><%= form.number_field :selected_scenario_id, value: selected ? params[:selected_scenario_id] : nil, min: 1, step: 1, required: true, id: "selected-scenario-id-#{item.id}" %></div>
+        <%= form.submit "Inspect selected scenario", class: "button" %>
+      <% end %>
+      <% if selected %><section id="selected-scenario-<%= item.id %>" class="section-block"><h5>Expert-selected scenario</h5>
+        <% if @selected_version %>
+          <p><%= link_to "#{@selected_version.title} · v#{@selected_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @selected_scenario, version: @selected_version.number) %>. Your selection is separate from literal ranking; inspect the fixed facts and company evidence before deciding.</p>
+          <% if @selected_eligible %>
+            <% if Current.require_membership!.can_write? %>
+              <p><%= link_to "Revise selected scenario with this trace", workspace_corpus_scenario_path(Current.workspace, @corpus, @selected_scenario, version: @selected_version.number, trace_item_id: item.id, anchor: "scenario-evidence") %>. This opens the existing editor; it copies no correction or expectation and grants no approval.</p>
+              <%= render "sources/trace_decision_form", item:, version: @selected_version, selected_scenario_id: @selected_scenario.id %>
+            <% end %>
+          <% else %><p role="status">This fixed version or trace is not eligible for an association. Review the current scenario and fresh source evidence, then select again. No decision was saved or moved to a newer version.</p><% end %>
+        <% else %><p role="status">Choose a scenario in this corpus with a retained current version. No decision was saved.</p><% end %>
+      </section><% end %>
+    </details>
     <% result.candidates.each_with_index do |candidate, index| %>
       <% version = candidate.version %>
       <article class="section-block">
@@ -25,13 +45,7 @@
         </details>
         <% if Current.require_membership!.can_write? %>
           <p><%= link_to "Revise with this trace", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario, version: version.number, trace_item_id: item.id, anchor: "scenario-evidence") %>. Opens the exact version with this trace selected. Nothing copies, changes or gains approval until you make a separate expert revision.</p>
-          <% retained = @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && @decision_form["scenario_version_id"] == version.id.to_s ? @decision_form : {} %>
-          <%= form_with url: decide_trace_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel" do |form| %>
-            <%= form.hidden_field :corpus_item_id, value: item.id %><%= form.hidden_field :scenario_version_id, value: version.id %>
-            <div class="field"><%= form.label :decision, "Decision for scenario #{version.scenario_id} v#{version.number}", for: "decision-#{item.id}-#{version.id}" %><%= form.select :decision, [["Match", "match"], ["Different issue", "different"], ["Uncertain", "uncertain"]], { selected: retained["decision"] || "uncertain" }, id: "decision-#{item.id}-#{version.id}" %></div>
-            <div class="field"><%= form.label :reason, "Reason for this association", for: "reason-#{item.id}-#{version.id}" %><%= form.text_area :reason, value: retained["reason"], id: "reason-#{item.id}-#{version.id}", required: true, maxlength: 2000 %></div>
-            <%= form.submit "Append trace decision", class: "button", data: { turbo_submits_with: "Saving…" } %>
-          <% end %>
+          <%= render "sources/trace_decision_form", item:, version:, selected_scenario_id: nil %>
         <% end %>
       </article>
     <% end %>
@@ -39,6 +53,6 @@
     <h5>Expert associations and history</h5><p>History page <%= @decision_page %> · up to 50 decisions across these source records. Each expert's latest decision stays distinct. Disagreement is not resolved; corrections append. Historical associations do not imply current approval or replay compatibility.</p>
     <% if history.empty? %><p>No decisions for this trace on this history page.</p><% end %>
     <% history.each do |entry| %><article class="source-record"><p><strong><%= entry.decision %></strong> · <%= entry.reviewed_by.email_address %> · <%= entry.created_at.to_fs(:long) %> · <%= @latest_decision_ids.include?(entry.id) ? "Latest for this expert and version" : "Earlier decision" %></p><p><%= link_to "#{entry.scenario_version.title} · v#{entry.scenario_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.scenario_version.scenario, version: entry.scenario_version.number) %></p><p><%= entry.reason %></p></article><% end %>
-    <% if @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && result.candidates.none? { |candidate| candidate.version.id.to_s == @decision_form["scenario_version_id"] } %><details open><summary>Retained decision on unavailable version</summary><p><%= @decision_form["decision"] %> · version ID <%= @decision_form["scenario_version_id"] %></p><pre class="evidence-text"><%= @decision_form["reason"] %></pre><p>This version is no longer an eligible candidate. Open the current scenario and review fresh evidence; nothing was saved.</p></details><% end %>
+    <% if @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && result.candidates.none? { |candidate| candidate.version.id.to_s == @decision_form["scenario_version_id"] } && !(selected && @selected_eligible) %><details open><summary>Retained decision on unavailable version</summary><p><%= @decision_form["decision"] %> · version ID <%= @decision_form["scenario_version_id"] %></p><pre class="evidence-text"><%= @decision_form["reason"] %></pre><p>This fixed version is not available in a decision form. Open the current scenario and review fresh evidence; nothing was saved.</p></details><% end %>
   <% end %>
 </section>
