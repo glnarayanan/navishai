@@ -1,0 +1,139 @@
+.landing {
+  --landing-gap: 3.5rem;
+  padding-bottom: 2rem;
+}
+
+.landing p { color: var(--muted); }
+.landing h2 { font-size: clamp(1.75rem, 3vw, 2.5rem); letter-spacing: -.03em; max-width: 24ch; }
+.landing h3 { font-size: 1.2rem; letter-spacing: -.02em; margin: 0 0 .5rem; }
+.landing section[id], .landing h1[id] { scroll-margin-top: 2rem; }
+.landing dt { color: var(--foreground); font-weight: 500; }
+.landing dd { color: var(--muted); }
+.landing dl { margin: 0; }
+
+.landing-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem 1.75rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.landing-nav a, .landing-text-link, .landing-footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+.landing-nav a { color: var(--muted); text-decoration: none; }
+.landing-nav a:hover { color: var(--accent); text-decoration: underline; }
+
+.landing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  align-items: center;
+  gap: var(--landing-gap);
+  padding: 4rem 0;
+}
+.landing-hero h1 {
+  max-width: 16ch;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  line-height: 1.08;
+  letter-spacing: -.035em;
+  margin: 0 0 1.5rem;
+}
+.landing-hero .landing-lead { color: var(--foreground); font-size: 1.25rem; }
+.landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.5rem; margin: 1.75rem 0 1rem; }
+.landing .landing-note { font-size: .875rem; }
+
+.landing-specimen {
+  margin: 0;
+  padding: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: .375rem;
+  background: var(--surface);
+}
+.landing-specimen figcaption { font-size: .875rem; color: var(--muted); margin-bottom: 1.25rem; }
+.landing-specimen h2 { font-size: 1.5rem; letter-spacing: -.025em; max-width: 24ch; margin-bottom: 1.5rem; }
+.landing-specimen dl > div { padding: 1rem 0; border-top: 1px solid var(--border); }
+.landing-specimen dt { margin-bottom: .4rem; }
+.landing-specimen code { font-family: "Geist Mono", monospace; color: var(--foreground); font-size: .9rem; overflow-wrap: anywhere; }
+.landing-specimen p { font-size: .875rem; margin: .5rem 0 0; }
+
+.landing-domain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--landing-gap);
+  padding: 2rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.landing-domain h2 { font-size: 1.5rem; margin: 0; }
+.landing-domain p { margin: 0; }
+.landing-section { padding: 4.5rem 0; border-bottom: 1px solid var(--border); }
+.landing-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: var(--landing-gap); }
+.landing-split > *, .landing-case > * { min-width: 0; }
+.landing-split > div > p { margin-top: 1rem; }
+.landing-section-heading { margin-bottom: 2.5rem; }
+.landing-section-heading p { max-width: 68ch; margin-top: 1rem; }
+
+.landing-workflow { list-style: none; counter-reset: workflow; padding: 0; margin: 0; }
+.landing-workflow li { position: relative; counter-increment: workflow; padding: 1.5rem 0 1.5rem 3rem; border-top: 1px solid var(--border); }
+.landing-workflow li:first-child { padding-top: 0; border-top: 0; }
+.landing-workflow li:last-child { padding-bottom: 0; }
+.landing-workflow li::before {
+  content: counter(workflow, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+  font-family: "Geist Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+.landing-workflow p { margin: 0; }
+
+.landing-case { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--landing-gap); }
+.landing-case > section { padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.landing-facts > div, .landing-checks > div { margin-top: 1.25rem; }
+.landing-facts dt, .landing-checks dt { margin-bottom: .35rem; }
+.landing-loop > div { padding: 1.5rem 0; border-top: 1px solid var(--border); }
+.landing-loop > div:first-child { padding-top: 0; border-top: 0; }
+.landing-loop > div:last-child { padding-bottom: 0; }
+.landing-loop dt { font-size: 1.2rem; margin-bottom: .5rem; }
+
+.landing-boundaries { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem var(--landing-gap); }
+.landing-boundaries > div { border-top: 1px solid var(--border); padding-top: 1.25rem; }
+.landing-boundaries dt { font-size: 1.2rem; margin-bottom: .5rem; }
+.landing-disclosure { border-bottom: 1px solid var(--border); }
+.landing-disclosure summary { padding: 1.25rem 0; margin-inline-start: 1.25rem; list-style-position: outside; font-weight: 500; }
+.landing-disclosure summary:hover { color: var(--accent); }
+.landing-disclosure p { margin: 0 0 1.5rem; }
+.landing-case + .landing-disclosure { margin-top: 2rem; border-top: 1px solid var(--border); }
+.landing-questions .landing-disclosure:first-child { border-top: 1px solid var(--border); }
+
+.landing-close { display: flex; align-items: center; justify-content: space-between; gap: var(--landing-gap); padding: 4rem 0; }
+.landing-close > div { min-width: 0; }
+.landing-close h2 { max-width: 28ch; }
+.landing-close p { margin: 1rem 0 0; }
+.landing-close .button { flex-shrink: 0; }
+.landing-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem; font-size: .875rem; }
+.landing-footer p { margin: 0; }
+
+@media (max-width: 60rem) {
+  .landing { --landing-gap: 2rem; }
+  .landing-hero, .landing-split { grid-template-columns: minmax(0, 1fr); }
+  .landing-hero h1 { max-width: 20ch; }
+  .landing-specimen { max-width: 42rem; }
+  .landing-specimen h2 { max-width: none; }
+}
+
+@media (max-width: 40rem) {
+  .landing-hero { padding: 2.5rem 0; }
+  .landing-hero h1 { font-size: clamp(2.25rem, 9vw, 3.25rem); }
+  .landing .landing-note, .landing-specimen figcaption, .landing-specimen p, .landing-footer { font-size: 1rem; }
+  .landing-specimen { padding: 1.25rem; }
+  .landing-specimen code { font-size: 1rem; }
+  .landing-domain, .landing-case, .landing-boundaries { grid-template-columns: minmax(0, 1fr); }
+  .landing-section { padding: 3rem 0; }
+  .landing-section-heading { margin-bottom: 2rem; }
+  .landing-close { flex-direction: column; align-items: start; padding: 3rem 0; }
+  .landing-nav { gap: 0 1.25rem; }
+}
