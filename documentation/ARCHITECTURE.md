@@ -98,6 +98,23 @@ source objects; load only the fifty records on the filtered page. Hold the corpu
 lock through checks, counts and page loading. These changes do not raise analysis
 or provider limits, sample membership or change discovery's method.
 
+### Complete-text local discovery
+
+Add an explicit full-text local version within the existing 2000-record / 10-MiB
+input bound. The first 4000 characters can omit later diagnostic evidence; this
+method tokenizes complete conversation text and titles, with complete documents
+as before. Keep global frequencies, ordered seed clustering, 0.3 cosine threshold,
+risk priority, source membership and expert gates. Apply the existing term-entry,
+vocabulary and seed-comparison budgets; failure commits no partial proposals.
+
+Freeze `tfidf-full-text-seed-centroid-selection-v3` for that deliberate request.
+Do not reinterpret original v1 or larger-local v2 definitions: their 4000-character
+window and results remain fixed. Full text does not raise intake/read bounds,
+permit model configuration or disclosure, or establish semantic discovery quality.
+Mining still creates unapproved title/context/action drafts with bounded excerpts;
+experts inspect the full source and correct them. No provider, new index, service,
+schema or dependency is needed for this local method.
+
 Local processing uses complete fixed membership with scalar record batches,
 global document frequencies and sparse term vectors, not independent batch clusters.
 An inverted seed index skips zero-overlap comparisons without changing the

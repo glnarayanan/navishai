@@ -12,6 +12,9 @@ class CorpusDiscovery
 
   def self.call(analysis)
     analysis.fixed_inputs(item_ids: [])
+    full_text = analysis.full_text?
+    bounded = analysis.streaming? || full_text
+    method_label = full_text ? "Full-text local" : "Streaming local"
     conversations = []
     doc_terms = {}
     documents = 0
@@ -26,16 +29,16 @@ class CorpusDiscovery
           documents += 1
           terms(content).each { |word| doc_terms[word] = true }
         else
-          conversations << { id:, external_id:, title:, counts: terms(title + " " + content.first(4000)).tally,
+          conversations << { id:, external_id:, title:, counts: terms(title + " " + (full_text ? content : content.first(4000))).tally,
             signals: signals(content:, critical:, reopened:) }
           term_entries += conversations.last[:counts].size
           conversations.last[:counts].each_key { |word| frequencies[word] += 1 }
         end
-        raise CorpusIntake::Invalid, "Streaming local discovery exceeded its term-entry or vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && (term_entries > MAX_TERM_ENTRIES || doc_terms.size > MAX_DISTINCT_TERMS || frequencies.size > MAX_DISTINCT_TERMS)
+        raise CorpusIntake::Invalid, "#{method_label} discovery exceeded its term-entry or vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if bounded && (term_entries > MAX_TERM_ENTRIES || doc_terms.size > MAX_DISTINCT_TERMS || frequencies.size > MAX_DISTINCT_TERMS)
       end
     end
     raise CorpusIntake::Invalid, "Add historical conversations before analysis." if conversations.empty?
-    raise CorpusIntake::Invalid, "Streaming local discovery exceeded its vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && (frequencies.keys | doc_terms.keys).size > MAX_DISTINCT_TERMS
+    raise CorpusIntake::Invalid, "#{method_label} discovery exceeded its vocabulary budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if bounded && (frequencies.keys | doc_terms.keys).size > MAX_DISTINCT_TERMS
     vectors = conversations.to_h { |record| [ record[:id], record[:counts].transform_values(&:to_f) ] }
     vectors.each_value do |vector|
       vector.each { |word, count| vector[word] = count * Math.log(1.0 + conversations.size.to_f / frequencies.fetch(word)) }
@@ -49,7 +52,7 @@ class CorpusDiscovery
       # A seed without a shared term has cosine zero and cannot meet 0.3.
       candidates = vector.keys.flat_map { |word| seeds[word] }.uniq.sort
       comparisons += candidates.size
-      raise CorpusIntake::Invalid, "Streaming local discovery exceeded its seed-comparison budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if analysis.streaming? && comparisons > MAX_SEED_COMPARISONS
+      raise CorpusIntake::Invalid, "#{method_label} discovery exceeded its seed-comparison budget; no proposals saved. Use a smaller corpus; nothing is sampled or retried." if bounded && comparisons > MAX_SEED_COMPARISONS
       index, best_score = nil, -1
       candidates.each do |position|
         seed_id = groups[position].first[:id]
@@ -100,7 +103,7 @@ class CorpusDiscovery
     end
     { "conversations" => conversations.size, "documents" => documents, "clusters" => groups.size,
       "selected" => selected.size, "represented_clusters" => selected.map(&:first).uniq.size,
-      "risk_mentions" => conversations.count { |record| record[:signals].any? }, "text_window" => 4000, "similarity_threshold" => 0.3 }
+      "risk_mentions" => conversations.count { |record| record[:signals].any? }, "text_window" => full_text ? "complete" : 4000, "similarity_threshold" => 0.3 }
   end
 
   def self.terms(text)

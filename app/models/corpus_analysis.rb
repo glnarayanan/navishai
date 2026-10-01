@@ -1,6 +1,7 @@
 class CorpusAnalysis < ApplicationRecord
   METHOD = "tfidf-seed-centroid-selection-v1"
   STREAM_METHOD = "tfidf-stream-seed-centroid-selection-v2"
+  FULL_TEXT_METHOD = "tfidf-full-text-seed-centroid-selection-v3"
   MAX_ITEMS = 2_000
   MAX_RECORD_BYTES = 10.megabytes
   LARGE_MAX_ITEMS = 100_000
@@ -25,8 +26,10 @@ class CorpusAnalysis < ApplicationRecord
       model = !configuration.nil?
       batch = processing_method == "model_batch"
       streaming = processing_method == "local_stream"
+      full_text = processing_method == "local_full_text"
       raise CorpusIntake::Invalid, "Batch discovery requires fixed model settings." if batch && !model
       raise CorpusIntake::Invalid, "Streaming local discovery cannot use model settings or disclosure." if streaming && model
+      raise CorpusIntake::Invalid, "Full-text local discovery cannot use model settings or disclosure." if full_text && (model || disclose)
       items = current_inputs(corpus:, model:, batch:, streaming:, ids_only: !model)
       plan = batch ? BatchCorpusDiscovery.plan(items) : {}
       if model
@@ -38,8 +41,9 @@ class CorpusAnalysis < ApplicationRecord
         raise CorpusIntake::Invalid, "The call plan changed. Reload and confirm the exact allocation." if batch && ModelCorpusDiscovery.digest(plan) != call_plan_digest
         EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
       end
+      local_method = full_text ? FULL_TEXT_METHOD : (streaming ? STREAM_METHOD : METHOD)
       analysis = corpus.corpus_analyses.create!(workspace: corpus.workspace, requested_by: membership.user,
-        processing_method: streaming ? STREAM_METHOD : (batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : METHOD)), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
+        processing_method: batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : local_method), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
       ids = model ? items.map(&:id) : items
       ids.each_slice(1000) do |batch_ids|
         CorpusAnalysisInput.insert_all!(batch_ids.map { |id| { workspace_id: corpus.workspace_id, corpus_id: corpus.id, corpus_analysis_id: analysis.id, corpus_item_id: id } }, returning: false)
@@ -94,6 +98,10 @@ class CorpusAnalysis < ApplicationRecord
     processing_method == STREAM_METHOD
   end
 
+  def full_text?
+    processing_method == FULL_TEXT_METHOD
+  end
+
   def input_limits
     streaming? ? [ LARGE_MAX_ITEMS, LARGE_MAX_RECORD_BYTES ] : [ model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, MAX_RECORD_BYTES ]
   end
@@ -122,7 +130,7 @@ class CorpusAnalysis < ApplicationRecord
       raise CorpusIntake::Invalid, "Fixed call plan changed." if batch? && BatchCorpusDiscovery.plan(items) != call_plan
       EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
     else
-      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method.in?([ METHOD, STREAM_METHOD ])
+      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method.in?([ METHOD, STREAM_METHOD, FULL_TEXT_METHOD ])
     end
     true
   end

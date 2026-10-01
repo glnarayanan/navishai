@@ -30,8 +30,8 @@
       <details><summary>Fixed model response and reported cost</summary><p>Missing usage/cost stays unknown. Endpoint reports are not verified charges or quality evidence.<% if @analysis.batch? %> This response reports only the final call, not the total. Inspect each batch receipt for its own reported usage/cost; unknown reports prevent a known total.<% end %></p><pre class="evidence-text"><%= JSON.pretty_generate(@model_result) %></pre></details>
     <% end %>
   <% else %>
-    <p>Local term clustering, not semantic diagnosis. It uses titles and the first 4000 characters of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
-    <% if @analysis.streaming? %><p>Streaming local limits: 100,000 complete records / 1 GiB, 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. A budget failure retains no proposals and never retries automatically. Complete evidence reads remain bounded to 10 MiB. These bounds do not grant model disclosure or prove discovery quality.</p><% end %>
+    <p>Local term clustering, not semantic diagnosis. It uses titles and <%= @analysis.full_text? ? "the complete text" : "the first 4000 characters" %> of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
+    <% if @analysis.streaming? || @analysis.full_text? %><p><%= @analysis.full_text? ? "Full-text local limits: 2000 complete records / 10 MiB" : "Streaming local limits: 100,000 complete records / 1 GiB" %>, 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. A budget failure retains no proposals and never retries automatically. Complete evidence reads remain bounded to 10 MiB. These bounds do not grant model disclosure or prove discovery quality.</p><% end %>
   <% end %>
   <% if @analysis.state == "failed" %><p role="alert" class="inline-error"><%= @analysis.error %></p><% end %>
   <% if @analysis.state.in?(%w[queued running]) %>

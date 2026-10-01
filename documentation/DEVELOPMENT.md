@@ -358,13 +358,13 @@ guard; old oversized analyses cannot bypass it. Exact model JSON/per-call limits
 remain separate. No sampling, truncation or fixed-input rewrites occur.
 Blocked previews/history show a corpus recovery link and no partial source records
 or mining controls. Refresh changes nothing; a new analysis needs smaller inputs.
-TF-IDF seed clustering uses titles plus the first 4000 conversation characters;
+Original v1 and streaming v2 TF-IDF seed clustering use titles plus the first 4000 conversation characters;
 cosine similarity ≥0.3 joins a seed cluster. Explicit critical/risk/reopen mentions
 precede nearest-centroid representatives. Every selection retains its reason.
 Processing reads scalar batches of 100 in fixed external-ID/ID order, keeps sparse
 term counts and global document frequencies, and skips only zero-overlap seeds.
 It never clusters each batch independently. Full-text signals stay separate from
-the 4000-character term window; only exact JSON critical/reopen values qualify.
+those versions' 4000-character term window; only exact JSON critical/reopen values qualify.
 Cluster membership writes use bounded bulk inserts under the checked job
 transaction. No complete source objects or whole context payloads load during
 processing. Vector lengths and each centroid's length are computed once, not
@@ -372,6 +372,25 @@ rescanned for every candidate. Selection rules and the original method stay fixe
 Keyword signals, term clusters and document-term gaps are hypotheses, not measured
 issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
+
+Choose **Full-text local** explicitly for `tfidf-full-text-seed-centroid-selection-v3`.
+It tokenizes complete conversation text and titles within the original 2000-record /
+10-MiB complete-field bounds, not just the first 4000 characters. Documents remain
+complete. Ordered seeds, global frequencies, 0.3 threshold, risk selection and
+source-backed review stay unchanged. It uses the same resource caps as streaming
+below; exceeding a cap commits no partial proposals and never retries. Local
+configuration or disclosure cannot turn it into a model request. Invalid requests
+retain the selected local method for repair; the original method stays the default.
+Historical v1/v2 inputs, windows and results remain fixed.
+
+`bin/rails test test/services/corpus_discovery_test.rb test/integration/corpus_access_test.rb`
+checks complete-text late diagnostics, independently known budget edges, fixed
+historical inputs, unapproved mining, local-only requests and viewer restrictions.
+Full-text selection can separate terms the older window misses; it does not prove
+semantic diagnosis or company taxonomy quality. Mining still produces title/context/
+action drafts with a bounded source excerpt; experts inspect the full source and
+correct them before approval. Desktop/390px picker, queued, complete and failed
+captures live under `.amp/in/artifacts/streaming-discovery/full-text-*`.
 
 Choose **Streaming local** explicitly to use `tfidf-stream-seed-centroid-selection-v2`.
 It accepts up to 100,000 complete conversation/document records and 1 GiB of the

@@ -116,8 +116,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   lookup with exact counts, bounded metadata and native repair/paging.
 - [#203](https://github.com/glnarayanan/navishai/pull/203), based on #202: bounded local document
   selection beyond the initial picker window, with private repair and expert review.
-- `rebuild/64-rare-term-failure-ranking`, based on #203: corpus-relative literal
+- [#204](https://github.com/glnarayanan/navishai/pull/204), based on #203: corpus-relative literal
   ranking with inspectable term contributions, unchanged limits and human authority.
+- `rebuild/65-full-text-local-discovery`, based on #204: explicit complete-text
+  local discovery within existing bounds, with fixed older methods and human review.
 
 ## Built and checked
 
@@ -1643,6 +1645,34 @@ failed a calibration-report browser assertion; #158 failed a corpus-search brows
 assertion. Later synchronization/cache changes address those paths, but neither
 old failure explains today's opaque running jobs. No remote job was changed.
 
+## Complete-text local discovery (slice 65)
+
+Both older local versions clustered titles plus the first 4000 conversation
+characters. A separate explicit v3 now includes complete conversation text within
+the original 2000-record / 10-MiB bound. It preserves global frequencies, ordered
+seeds, threshold, risk priority and expert authority. Existing term-entry,
+vocabulary and comparison budgets fail atomically. No source inputs, historical
+v1/v2 windows/results or mining approvals change.
+
+Focused service/access checks pass 17 tests / 280 assertions. Long asymmetric
+conversations share a preamble but have distinct late diagnostics: full text
+separates them; both older methods retain their original shared cluster. Fixed
+historical membership, exact budget boundaries and one-below failures, repeated
+job refusal, immutable method identity, unapproved mining, local-only configuration,
+disclosure refusal, writer/foreign/viewer checks and method-preserving repair pass.
+These authored records test engineering, not real-company taxonomy quality.
+
+Rendered journeys pass 3 tests / 195 assertions, covering explicit keyboard
+selection, queued local-only disclosure, complete late-term families, unapproved
+scenario mining and a budget failure with no partial proposals or retry. Desktop
+and 390px picker/queued/complete/failed captures were inspected; actual width,
+overflow and CSP checks pass. Native style passes for 302 Ruby files.
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 11m9.22s: 468 Rails tests /
+7121 assertions and 51 browser tests / 2355 assertions, no failures/errors/skips.
+Native security audits and eager loading pass; whole-command peak RSS is
+455456 KiB. Direct risk review used; named review tools remain unavailable.
+No schema, dependency, model/provider, customer data or expert label changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1662,6 +1692,8 @@ authoritative expert corrections and approved target/judge/source-processing end
 The endpoint registries have no configured entries. Original local analysis keeps
 2000 records / 10 MiB; explicit streaming local accepts 100,000 / 1 GiB within
 its resource budgets, with complete reads still bounded to 10 MiB.
+Explicit full-text local covers complete conversations within 2000 / 10 MiB and
+the same computation budgets; the older methods keep their 4000-character window.
 Model corpus discovery proposes company families and
 structured source-backed scenarios from complete fixed records: one request within
 100 records / 256 KiB, or bounded multi-request discovery within 2000 records /
@@ -1696,6 +1728,10 @@ formats stay at 2000 / 10 MiB. Varied-workload and larger-file checks now supple
 the repetitive scale proof, including a heterogeneous 100,000-input journey.
 Broader workload evidence and retrieval quality still
 need engineering work; these checks do not finish the owner's full acceptance demo.
+Local scenario context extraction remains title/context/action based, with bounded
+first-source excerpts; complete-text clustering does not fix that draft-quality gap.
+Larger complete-text workloads also need bounded engineering work and evidence,
+not a silent increase of existing limits or a semantic-quality claim.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. The partial Compose trial and later passing private-namespace proof
