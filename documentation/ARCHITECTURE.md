@@ -37,6 +37,14 @@ Use a fresh baseline schema for this unreleased product. Do not drop an existing
 
 Intake accepts bounded, valid UTF-8 text/JSON, rejects malformed records atomically, records content digests and redaction, and never renders raw HTML. Large work runs through Solid Queue with progress, limits, terminal errors, and attributable settings. Dataset exploration should paginate; analysis must disclose method and limits. Deterministic term/risk mining is a baseline, not a claim of semantic discovery or 100,000-conversation quality.
 
+Corpus exploration uses local, case-insensitive literal substring search over
+current, unexpired item titles, record IDs, normalised text and JSON context.
+Scope source filters to the same corpus before querying. Escape SQL wildcards,
+bind values, bound the phrase and paginate 50 records. Show exact source/snapshot
+links, not semantic ranking or coverage. Filter search phrases from request logs;
+the existing no-referrer policy applies. No model call, search service or new index
+is needed for the current intake bounds.
+
 Machine proposals never approve themselves. Experts correct taxonomy and scenario expectations before compilation. Calibration binds labels to exact grader/output versions and separates held-out examples. Store individual decisions, not an opaque score.
 
 ## External execution

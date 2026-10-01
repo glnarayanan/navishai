@@ -25,9 +25,22 @@ class CorporaController < ApplicationController
     @corpus = Current.workspace.corpora.find(params[:id])
     @sources = @corpus.sources.includes(:current_snapshot).order(:name)
     @analyses = @corpus.corpus_analyses.order(id: :desc).limit(10)
-    @page = [ params[:page].to_i, 1 ].max
-    @items = @corpus.current_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
+    @query = params[:corpus_query].to_s.strip
+    @selected_source = @corpus.sources.where("expires_at > ?", Time.current).find(params[:source_id]) if params[:source_id].present?
+    matching = @corpus.current_items
+    matching = matching.where(sources: { id: @selected_source.id }) if @selected_source
+    if @query.length > 200 || @query.include?("\0")
+      @search_error = "Search needs at most 200 characters and no null bytes. Shorten the phrase and try again."
+      matching = matching.none
+    elsif @query.present?
+      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(@query)}%"
+      matching = matching.where("corpus_items.title ILIKE :pattern OR corpus_items.external_id ILIKE :pattern OR corpus_items.content ILIKE :pattern OR corpus_items.context::text ILIKE :pattern", pattern:)
+    end
+    @matching_count = matching.count
+    @page = params[:page].to_i.clamp(1, 10000)
+    @items = matching.includes(source_snapshot: :source).order(:id).offset((@page - 1) * 50).limit(51).to_a
     @more = @items.size > 50
     @items = @items.first(50)
+    render :show, status: :unprocessable_content if @search_error
   end
 end

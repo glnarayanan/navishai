@@ -16,6 +16,12 @@ theme control. Navigation uses a keyboard-accessible disclosure at every viewpor
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
 
+Corpus exploration uses a labelled phrase/source GET form with a count of observed
+matches, not semantic coverage. Desktop places fields side by side; mobile stacks
+them. Native disclosures show retained text/context and exact source/snapshot links.
+Pagination keeps filters; clear, empty and invalid states offer recovery. Copy warns
+that phrases remain in browser history despite request-log filtering.
+
 Scenario review places the starting situation and behavioural requirements beside
 exact company evidence on desktop; mobile stacks them. Facts, document attachment
 and controlled variants use native disclosures. Evidence marks what stays hidden

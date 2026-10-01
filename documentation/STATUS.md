@@ -1,6 +1,6 @@
 # Rebuild status
 
-Updated 30 September 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
+Updated 1 October 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
 milestones. The rebuild is not complete. Nothing has merged, released or deployed.
 
 ## Delivered stack
@@ -35,8 +35,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   immutable reports and source-backed proposals that require expert expectations.
 - [#154](https://github.com/glnarayanan/navishai/pull/154), based on #153: exact-input-compatible recorded
   targets, fixed replay results and human failure-to-regression admission.
-- `rebuild/15-impact-comparisons`, based on #154: source-backed change impact and
+- [#155](https://github.com/glnarayanan/navishai/pull/155), based on #154: source-backed change impact and
   saved-run comparisons that retain exact case/input identity.
+- `rebuild/16-corpus-exploration`, based on #155: local literal corpus search,
+  source filters, retained context and exact paginated provenance.
 
 ## Built and checked
 
@@ -263,10 +265,29 @@ Impeccable found no new issues. Direct risk review/native audits used; Ponytail
 Audit and CE Code Review remain unavailable. No provider call, dependency or
 schema change. GitHub CI for #153 and #154 also passed.
 
+Corpus exploration `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 2m36.33s;
+227 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors
+and eager loading passes. 248 Rails tests / 2375 assertions and 15 browser tests /
+555 assertions, no failures/errors/skips. Search tests distinguish title, ID, text
+and context, Unicode/case, literal wildcards, redaction, current/expired/foreign
+sources, query bounds and record-51 provenance. Viewer search writes/queues nothing;
+phrases are filtered from Rails parameters/path logs, not browser history.
+The browser uses Enter, narrows a source, opens retained context, follows an exact
+snapshot/record and recovers from empty/invalid searches. Four desktop/390px captures
+were inspected; DOM checks show no page overflow or CSP violations. The final links
+reuse the existing provenance helper rather than adding a redirect route.
+Impeccable found no new issues; direct risk review/native audits used. No schema,
+provider or dependency change. Ponytail Audit and CE Code Review remain unavailable.
+GitHub CI on #155 passed the Rails checks but failed an existing calibration browser
+test that navigated before label-save completion. A separate test fix now waits for
+the saved-label notice; the full local checks above include it. Remote revalidation
+belongs to the next stacked branch, not a claim that the failed #155 run passed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
 regression, exact source-change impact and fixed-case target-version comparison.
+Corpus exploration now has bounded, source-backed literal search.
 This does not finish the full rebuild or establish customer value. Trace matching currently means
 exact input compatibility among 100 cases, not semantic failure matching. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a

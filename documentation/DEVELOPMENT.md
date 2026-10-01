@@ -82,6 +82,22 @@ Solid Queue in production. Managers/Admins/Owners can delete a source by typing 
 name. In development run `bin/rails runner 'SourceRetentionJob.perform_now'` to
 enforce expiry. No export route exists; intake stays local.
 
+## Corpus exploration
+
+On a corpus page, follow **Explore current records**. Search a literal phrase of
+at most 200 characters across titles, record IDs, normalised text and JSON context,
+ignoring case. A source filter narrows the same search. SQL wildcard characters
+stay literal; this is not semantic ranking or measured coverage. Only current,
+unexpired snapshots appear. Matches paginate at 50 records and retain both filters.
+
+Expand a record to inspect its retained text/context and exact source/snapshot
+link. The link reaches the right source page even beyond record 50. Historic
+snapshots remain inspectable through their source, not the current search.
+Empty/invalid searches keep a recovery path. Search phrases are filtered from
+Rails request logs but remain in the browser URL/history; never paste secrets.
+Viewer searches queue no work and change no records. Desktop/mobile matches,
+empty and invalid states are captured under `.amp/in/artifacts/corpus-exploration/`.
+
 ## Local discovery
 
 Request analysis with a 1–100 candidate limit. The job freezes current source-backed

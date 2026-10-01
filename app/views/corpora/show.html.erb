@@ -11,6 +11,7 @@
       <% end %>
     </ul>
     <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
+    <p><%= link_to "Explore current records", "#corpus-records" %></p>
   </section>
   <section class="section-block config-panel"><h2>Corpus analysis</h2>
     <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
@@ -44,8 +45,19 @@
       <details class="section-block"><summary>Production trace format</summary><p>A JSON array of support-trace-v1 objects, at most 100 KiB each. Fields: schema, id, title, target_version, observed_at (ISO 8601 with timezone), input, output, observed_failure and human_correction. Input has situation, known_facts and knowledge; output uses support-output-v1. Failure/correction may be empty text. Extra fields, hidden expectations and malformed outputs are rejected. Reports do not create authoritative labels or run an agent.</p></details>
     </section>
   <% end %>
-  <section class="section-block"><h2>Current corpus records</h2><p>Page <%= @page %> · up to 50 records from current, unexpired snapshots.</p>
-    <% @items.each do |item| %><details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary><pre class="evidence-text"><%= item.content %></pre></details><% end %>
-    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  <section class="section-block" id="corpus-records"><h2>Explore current records</h2><p>Search a literal phrase in titles, source record IDs, normalised text and context, ignoring case. Only current, unexpired snapshots appear. This local search does not find semantic matches or measure coverage.</p>
+    <%= form_with url: workspace_corpus_path(Current.workspace, @corpus, anchor: "corpus-records"), method: :get, class: "form-stack config-panel" do |form| %>
+      <div class="field-grid"><div class="field"><%= form.label :corpus_query, "Search phrase" %><%= form.search_field :corpus_query, value: @query, maxlength: 200 %></div>
+        <div class="field"><%= form.label :source_id, "Search source" %><%= form.select :source_id, @sources.select { |source| source.expires_at > Time.current }.map { |source| [ source.name, source.id ] }, { include_blank: "All current sources", selected: @selected_source&.id } %></div></div>
+      <%= form.submit "Search retained records", class: "button" %>
+    <% end %>
+    <p><%= link_to "Clear search", workspace_corpus_path(Current.workspace, @corpus, anchor: "corpus-records") %>. Search phrases appear in your browser URL/history; do not paste secrets.</p>
+    <% if @search_error %><p class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching record") %> · page <%= @page %> · up to 50 records.</p><% end %>
+    <% if !@search_error && @items.empty? %><p>No records on this page. Clear the phrase or source filter, return to the first page, or import company data.</p><% end %>
+    <% @items.each do |item| %><details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary>
+      <p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %></p>
+      <pre class="evidence-text"><%= item.content %></pre><details><summary>Retained context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
+    </details><% end %>
+    <nav class="workspace-tabs" aria-label="Record pages"><% if @page > 1 %><%= link_to "Previous records", url_for(request.query_parameters.merge(page: @page - 1, anchor: "corpus-records")) %><% end %><% if @more %><%= link_to "Next records", url_for(request.query_parameters.merge(page: @page + 1, anchor: "corpus-records")) %><% end %></nav>
   </section>
 </main>
