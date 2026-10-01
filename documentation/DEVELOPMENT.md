@@ -187,6 +187,22 @@ Rails request logs but remain in the browser URL/history; never paste secrets.
 Viewer searches queue no work and change no records. Desktop/mobile matches,
 empty and invalid states are captured under `.amp/in/artifacts/corpus-exploration/`.
 
+From an analysis family, follow **Explore all family records and source counts**.
+This reads complete fixed members, not just the overview's ten examples or the
+current export. Exact `context.escalated`, `context.reopened` and `context.failed`
+booleans have separate true, false and missing/nonboolean counts. Critical impact
+requires exactly `context.impact == "critical"`. Literal mention groups use complete
+retained text, not titles, context text or proposed importance. None verifies an
+outcome, risk or expert label. Local/model families use the same source rules.
+
+Filters keep full-family denominators and paginate 50 complete records. Refresh
+retains the filter/page; empty and invalid filters offer recovery. Exact historical
+source links still work after a newer export. Any expired fixed analysis input
+blocks inspection. Families above 2000 records or 10 MiB of text plus JSON context
+are refused without partial counts. GETs create no records, jobs or provider calls.
+Desktop/mobile expanded, empty and invalid captures live under
+`.amp/in/artifacts/family-evidence/`.
+
 ## Local discovery
 
 Request analysis with a 1–100 candidate limit. The job freezes current source-backed
