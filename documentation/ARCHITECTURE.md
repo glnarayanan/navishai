@@ -111,9 +111,11 @@ Freeze `tfidf-full-text-seed-centroid-selection-v3` for that deliberate request.
 Do not reinterpret original v1 or larger-local v2 definitions: their 4000-character
 window and results remain fixed. Full text does not raise intake/read bounds,
 permit model configuration or disclosure, or establish semantic discovery quality.
-Mining still creates unapproved title/context/action drafts with bounded excerpts;
-experts inspect the full source and correct them. No provider, new index, service,
-schema or dependency is needed for this local method.
+Local mining proposes a bounded source opening and cue-rich evidence window,
+with first/last literal review questions. It copies no raw context into known facts
+and invents no expectations. Experts inspect full sources and write the starting
+facts and supported outcomes. See [SCENARIO_QUALITY.md](./SCENARIO_QUALITY.md).
+No provider, new index, service or dependency is needed for local discovery.
 
 Local processing uses complete fixed membership with scalar record batches,
 global document frequencies and sparse term vectors, not independent batch clusters.

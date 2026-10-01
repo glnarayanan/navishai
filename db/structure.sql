@@ -1500,8 +1500,8 @@ CREATE TABLE public.source_snapshots (
     created_at timestamp(6) without time zone NOT NULL,
     mask_digest character varying DEFAULT '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::character varying NOT NULL,
     mask_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying, 'exact'::character varying])::text[])))),
-    CONSTRAINT source_snapshot_mask_policy CHECK ((((mask_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((((redaction)::text = 'exact'::text) AND ((mask_count >= 1) AND (mask_count <= 50)) AND ((mask_digest)::text <> '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)) OR (((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[])) AND (mask_count = 0) AND ((mask_digest)::text = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)))))
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text, ('exact'::character varying)::text])))),
+    CONSTRAINT source_snapshot_mask_policy CHECK ((((mask_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((((redaction)::text = 'exact'::text) AND ((mask_count >= 1) AND (mask_count <= 50)) AND ((mask_digest)::text <> '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)) OR (((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text])) AND (mask_count = 0) AND ((mask_digest)::text = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)))))
 );
 
 

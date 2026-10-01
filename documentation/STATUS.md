@@ -1844,6 +1844,26 @@ and gem/importmap audits passed. [LARGE_FULL_TEXT.md](./LARGE_FULL_TEXT.md) reco
 the worker's 47 / 1368 checks, including both 100,000-input proofs. Final combined
 scale/runtime checks remain pending while the other assigned slices join.
 
+## Source review drafts and controlled variants (slice 74)
+
+Local mining now proposes a bounded opening and cue-rich source review, not raw
+context or action sentences as facts/expectations. Source offsets and questions
+remain proposals. Structured extraction preserves supplied starting facts and
+refuses invented hidden facts. Experts still write and review expected outcomes.
+Variants change 1–5 named facts, retain exact parents/before-after values and clear
+expectations, hidden facts and follow-ups. Fresh expert revision/review is required.
+
+Parent focused and adjacent checks passed 70 tests / 1579 assertions; browser
+journeys passed 12 / 543, with no failures, errors or skips. An initial integration
+run caught a privacy test that relied on copied source facts. The test now authors
+its fact in the expert revision; no product guard was weakened. Desktop source
+questions and mobile repair/coupled receipts were rendered and inspected. Ruby
+style passed 314 files, eager loading passed and Brakeman reported zero warnings
+or errors. Both additive migrations ran in development and isolated test schemas;
+the native schema dump matches them. See [SCENARIO_QUALITY.md](./SCENARIO_QUALITY.md)
+for the worker's broader 100 / 1868 checks and literal-method limits. No live
+model, training, customer-quality or semantic-coverage claim follows.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

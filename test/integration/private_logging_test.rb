@@ -36,12 +36,13 @@ class PrivateLoggingTest < ActionDispatch::IntegrationTest
     requirements = ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "private68-requirement" ])
     follow_ups = [ { "after_assistant_contains" => "private68-condition", "message" => "private68-follow-up" } ]
     version = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
-      attributes: { title: "private68-title", requirements:, follow_ups: })
+      attributes: { title: "private68-title", known_facts: { "plan" => "enterprise" }, requirements:, follow_ups: })
     @scenario.review!(membership: @membership, version_id: version.id, decision: "approve")
     variant = @scenario.variant!(membership: @membership, version_id: version.id, variable: "plan", after: "private68-plan",
       reason: "private68-reason", expected_difference: "private68-behaviour")
     taxonomy = TaxonomyVersion.review!(analysis: @analysis, membership: @membership, cluster_id: @scenario.cluster_member.issue_cluster_id, label: "private68-taxonomy")
     assert_equal "private68-title", version.reload.title
+    assert_equal({ "plan" => "enterprise" }, version.known_facts)
     assert_equal requirements, version.requirements
     assert_equal follow_ups, version.follow_ups
     assert_equal "private68-behaviour", variant.current_version.reload.mutation.fetch("expected_difference")
