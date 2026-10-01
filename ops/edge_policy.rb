@@ -40,17 +40,17 @@ module Operations
       validate_namespace!(namespace)
       # Validate before invoking sudo or inspecting a network.
       rules(bridge)
-      prefix = [ "sudo", "-n", "nsenter", "--net=#{namespace}" ]
-      output, status = Open3.capture2e(*prefix, "ip", "link", "show", "dev", bridge)
+      prefix = [ "-n", "nsenter", "--net=#{namespace}" ]
+      output, status = Open3.capture2e("sudo", *prefix, "ip", "link", "show", "dev", bridge)
       raise "Edge bridge missing in this namespace: #{output}" unless status.success? && output.include?(bridge)
       %w[iptables ip6tables].each do |family|
-        output, status = Open3.capture2e(*prefix, "sysctl", "-n", "net.bridge.bridge-nf-call-#{family}")
+        output, status = Open3.capture2e("sudo", *prefix, "sysctl", "-n", "net.bridge.bridge-nf-call-#{family}")
         raise "Bridge #{family} filtering must already be enabled; no host sysctl was changed." unless status.success? && output.strip == "1"
       end
       [ false, true ].each do |ipv6|
         binary = ipv6 ? "ip6tables" : "iptables"
         chain, payload = rules(bridge, ipv6:)
-        installed_rules, exists = Open3.capture2e(*prefix, binary, "-w", "5", "-S", chain)
+        installed_rules, exists = Open3.capture2e("sudo", *prefix, binary, "-w", "5", "-S", chain)
         # Never replace or flush other rules. Refuse partial/stale policy rather
         # than call it green; workloads must remain stopped on failure.
         if exists.success?
@@ -62,13 +62,13 @@ module Operations
           actual = installed_rules.lines.grep(/\A-A /).map { |line| normalize.call(line) }
           raise "Changed #{binary} policy; inspect the exact namespace/chain." unless actual == expected
           %w[INPUT FORWARD].each do |hook|
-            hooks, installed = Open3.capture2e(*prefix, binary, "-w", "5", "-S", hook)
+            hooks, installed = Open3.capture2e("sudo", *prefix, binary, "-w", "5", "-S", hook)
             first = hooks.lines.grep(/\A-A /).first&.strip
             raise "Changed #{binary} policy priority; keep workloads stopped." unless installed.success? && first == "-A #{hook} -i #{bridge} -j #{chain}"
           end
           next
         end
-        output, status = Open3.capture2e(*prefix, "#{binary}-restore", "--wait", "5", "--noflush", stdin_data: payload)
+        output, status = Open3.capture2e("sudo", *prefix, "#{binary}-restore", "--wait", "5", "--noflush", stdin_data: payload)
         raise "Edge policy failed: #{output}" unless status.success?
       end
       puts "PASS: IPv4 special-use deny and IPv6 global-only/special-use deny on #{bridge}, inside the explicit private namespace only."

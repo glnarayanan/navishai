@@ -140,6 +140,11 @@ begin
     state.lines.any? { |line| line.strip == "complete" }
   end
   wait.call("two-family native analysis", &analysis_complete)
+  optional_complete = lambda do
+    state = run.call(*docker, "exec", web, "bin/rails", "runner", 'require Rails.root.join("ops/current_workflows_proof"); puts Operations::CurrentWorkflowsProof.verify_queued(JSON.parse(File.read(Rails.root.join("tmp/proof-optional-requests.json"))))')
+    state.lines.any? { |line| line.strip == "true" }
+  end
+  wait.call("native matching/impact/discovery disclosure refusal", &optional_complete)
   inspect = JSON.parse(run.call(*docker, "inspect", web, pg, jobs))
   web_info, pg_info, jobs_info = inspect
   [ web_info, jobs_info ].each do |info|
@@ -271,11 +276,15 @@ begin
     membership = Membership.find_by!(workspace_id: original.workspace_id, user_id: original.requested_by_id)
     analysis = CorpusAnalysis.request!(corpus: original.corpus, membership:, scenario_limit: 2)
     File.write(Rails.root.join("tmp/proof-analysis-id"), analysis.id)
+    require Rails.root.join("ops/current_workflows_proof")
+    requests = Operations::CurrentWorkflowsProof.seed(execute: false, membership:)
+    File.write(Rails.root.join("tmp/proof-optional-requests.json"), JSON.generate(requests), perm: 0o600)
     puts "PASS: runtime queued fresh work after web/jobs restart without changing original history."
   RUBY
   wait.call("post-restart two-family native analysis", &analysis_complete)
+  wait.call("post-restart native matching/impact/discovery disclosure refusal", &optional_complete)
   puts "PASS: kernel-counted IPv4/IPv6 edge deny for previously reachable metadata/CGNAT/benchmark/private peers and ULA/documentation IPv6; trusted simulated public TLS, control DB and loopback ingress survive policy and web/jobs restart."
-  puts "PASS: separate native jobs completed two-family analysis before and after restart; local Compose proof in #{(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)}s."
+  puts "PASS: separate native jobs completed two-family analysis and interrupted matching/impact/trace discovery without approval or results before and after restart; local Compose proof in #{(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)}s."
 rescue StandardError
   if compose
     output, status = Open3.capture2e(environment, *compose, "logs", "--no-color", "--tail", "40", stdin_data: "", unsetenv_others: true)

@@ -83,6 +83,10 @@ else
     snapshot = CorpusIntake.call(corpus:, membership:, name: "Post-upgrade exact masking", kind: "document", bytes: "Synthetic Contact needs expiry.", redaction: "exact", redaction_values: "Synthetic Contact")
     raise "New schema behavior" unless snapshot.mask_count == 1 && snapshot.corpus_items.sole.content == "[text redacted] needs expiry."
   end
+  if ScenarioVersion.column_names.include?("draft_notes")
+    require Rails.root.join("ops/current_workflows_proof")
+    Operations::CurrentWorkflowsProof.verify(Operations::CurrentWorkflowsProof.seed)
+  end
   source = trace.source_snapshot.source
   source.update!(expires_at: 1.minute.ago)
   raise "Expiry gate" unless corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?

@@ -4,7 +4,7 @@ status = File.read("/proc/self/status")
 raise "Effective capabilities" unless status[/^CapEff:\s+(\w+)/, 1].to_i(16).zero?
 raise "Privilege escalation" unless status[/^NoNewPrivs:\s+(\d+)/, 1] == "1"
 raise "Administrator secret entered runtime" if %w[POSTGRES_PASSWORD NAVISHAI_POSTGRES_PASSWORD NAVISHAI_DATABASE_USERNAME NAVISHAI_PREPARE_PASSWORD].any? { |key| ENV.key?(key) }
-%w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS].each { |key| raise "Disclosure registry" unless ENV.fetch(key) == "[]" }
+%w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS].each { |key| raise "Disclosure registry" unless ENV.fetch(key) == "[]" }
 connection = ActiveRecord::Base.connection
 raise "Runtime role" unless connection.select_value("SELECT current_user") == "navishai"
 %w[rolsuper rolcreatedb rolcreaterole rolreplication rolbypassrls].each { |flag| raise flag if connection.select_value("SELECT #{flag} FROM pg_roles WHERE rolname = current_user") }
@@ -27,6 +27,9 @@ CorpusIntake.call(corpus:, membership:, name: "Synthetic conversations", kind: "
 CorpusIntake.call(corpus:, membership:, name: "Synthetic policy", kind: "document", bytes: "Ask for certificate expiry before changing configuration. Engineering needs reproducible API logs.")
 analysis = CorpusAnalysis.request!(corpus:, membership:, scenario_limit: 2)
 File.write(Rails.root.join("tmp/proof-analysis-id"), analysis.id)
+require Rails.root.join("ops/current_workflows_proof")
+requests = Operations::CurrentWorkflowsProof.seed(execute: false, membership:)
+File.write(Rails.root.join("tmp/proof-optional-requests.json"), JSON.generate(requests), perm: 0o600)
 raise "Cache write" unless Rails.cache.write("synthetic-proof", "local-only")
 raise "Cache read" unless Rails.cache.read("synthetic-proof") == "local-only"
 SolidCable::Message.count

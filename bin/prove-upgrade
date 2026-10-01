@@ -7,7 +7,7 @@ require "tmpdir"
 abort "Usage: bin/prove-upgrade (no arguments)" unless ARGV.empty?
 ENV.keys.grep(/\APG/).each { |key| ENV.delete(key) }
 ENV["RAILS_ENV"] = "test"
-%w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS].each { |key| ENV[key] = "[]" }
+%w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_MATCHING_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS].each { |key| ENV[key] = "[]" }
 root = File.expand_path("..", __dir__)
 recovery = Operations::DatabaseRecovery.new
 ENV["DATABASE_URL"] = recovery.url
@@ -26,6 +26,7 @@ begin
     recovery.load_structure!(File.join(source, "db/structure.sql"))
     environment = { "PATH" => ENV.fetch("PATH"), "HOME" => ENV.fetch("HOME"), "RAILS_ENV" => "test", "DATABASE_URL" => recovery.url,
       "NAVISHAI_EVALUATION_ENDPOINTS" => "[]", "NAVISHAI_SCENARIO_ENDPOINTS" => "[]", "NAVISHAI_CORPUS_ENDPOINTS" => "[]",
+      "NAVISHAI_MATCHING_ENDPOINTS" => "[]", "NAVISHAI_IMPACT_ENDPOINTS" => "[]", "NAVISHAI_TRACE_DISCOVERY_ENDPOINTS" => "[]",
       "SCHEMA" => File.join(directory, "upgraded-structure.sql") }
     run = lambda do |checkout, *arguments|
       output, status = Open3.capture2e(environment, File.join(checkout, "bin/rails"), *arguments, chdir: checkout, unsetenv_others: true)
@@ -45,11 +46,24 @@ begin
     run.call(root, "db:migrate")
     environment.delete("PGOPTIONS")
     after = recovery.snapshot("primary")
-    # The one rehearsed additive migration adds only these source metadata columns.
+    # Project only declared additive defaults; every other old value stays exact.
+    new_tables = %w[model_failure_matchings model_failure_matching_candidates model_failure_matching_results
+      assumption_impacts assumption_impact_inputs assumption_impact_results trace_failure_discoveries
+      trace_failure_discovery_inputs trace_failure_discovery_versions trace_failure_discovery_cases
+      trace_failure_discovery_results trace_failure_reviews]
     recovery.connect("primary") do |db|
       data = db.exec("SELECT COALESCE(jsonb_agg(row ORDER BY row::text), '[]'::jsonb)::text FROM (SELECT to_jsonb(t) - ARRAY['mask_digest','mask_count'] AS row FROM source_snapshots t) records").getvalue(0, 0)
       after.fetch(:rows)['"source_snapshots"'] = Digest::SHA256.hexdigest(data)
-      raise "Missing applied migration" unless db.exec("SELECT 1 FROM schema_migrations WHERE version='20261001150000'").ntuples == 1
+      data = db.exec("SELECT COALESCE(jsonb_agg(row ORDER BY row::text), '[]'::jsonb)::text FROM (SELECT to_jsonb(t) - 'draft_notes' AS row FROM scenario_versions t) records").getvalue(0, 0)
+      after.fetch(:rows)['"scenario_versions"'] = Digest::SHA256.hexdigest(data)
+      raise "Old source masking defaults" unless db.exec("SELECT 1 FROM source_snapshots WHERE mask_count <> 0 OR mask_digest <> '#{Digest::SHA256.hexdigest('[]')}'").ntuples.zero?
+      raise "Old draft notes changed" unless db.exec("SELECT 1 FROM scenario_versions WHERE draft_notes <> '{}'::jsonb").ntuples.zero?
+      new_tables.each do |table|
+        raise "New table not empty: #{table}" unless db.exec("SELECT count(*) FROM #{PG::Connection.quote_ident(table)}").getvalue(0, 0) == "0"
+      end
+      %w[20261001150000 20261001200000 20261001210000 20261001220000 20261001230000 20261002010100].each do |version|
+        raise "Missing applied migration #{version}" unless db.exec_params("SELECT 1 FROM schema_migrations WHERE version=$1", [ version ]).ntuples == 1
+      end
       metadata = db.exec("SELECT key, value FROM ar_internal_metadata").values.to_h
       raise "Wrong migration environment metadata" unless metadata.fetch("environment") == "test" && (metadata.keys - %w[environment schema_sha1]).empty?
       if metadata.key?("schema_sha1")
@@ -58,7 +72,7 @@ begin
     end
     housekeeping = [ '"schema_migrations"', '"ar_internal_metadata"' ]
     before_rows = expected.fetch("primary").fetch(:rows).reject { |table, _| housekeeping.include?(table) }
-    after_rows = after.fetch(:rows).reject { |table, _| housekeeping.include?(table) }
+    after_rows = after.fetch(:rows).reject { |table, _| (housekeeping + new_tables.map { |name| PG::Connection.quote_ident(name) }).include?(table) }
     changed = (before_rows.keys | after_rows.keys).select { |table| before_rows[table] != after_rows[table] }
     raise "Upgrade changed historical rows in #{changed.join(', ')}" unless changed.empty?
     %w[cache queue cable].each { |name| raise "Upgrade changed #{name}" unless recovery.snapshot(name) == expected.fetch(name) }
@@ -69,7 +83,7 @@ begin
     recovery.verify_runtime!
     ActiveRecord::Base.connection_pool.disconnect!
     run.call(root, "runner", File.join(root, "ops/upgrade_fixture.rb"), "verify", manifest)
-    puts "PASS: genuine migration preserves every old row/auxiliary database, supports new masking and keeps lineage/SQL/lifecycle controls under runtime."
+    puts "PASS: genuine migrations preserve every old row/auxiliary database, assert 12 new empty tables and additive defaults, then exercise current workflows and lineage/SQL/lifecycle controls under runtime."
     # Rollback means restore the pre-upgrade archives, never run destructive down migrations.
     recovery.restore!(directory, expected:)
     recovery.verify_runtime!

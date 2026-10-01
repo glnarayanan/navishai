@@ -10,6 +10,9 @@ ENV["RAILS_ENV"] = "test"
 ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
 ENV["NAVISHAI_SCENARIO_ENDPOINTS"] = "[]"
 ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_MATCHING_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_IMPACT_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = "[]"
 recovery = Operations::DatabaseRecovery.new
 ENV["DATABASE_URL"] = recovery.url
 
@@ -109,6 +112,8 @@ begin
       redaction: "exact", redaction_values: "Fixture Private Contact")
     masking_current = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
       redaction: "exact", redaction_values: "Fixture Private Contact\nmetadata")
+    require_relative "../ops/current_workflows_proof"
+    current_workflows = Operations::CurrentWorkflowsProof.seed
     recovery.prepare_auxiliary!(Rails.root, analysis:)
     ActiveRecord::Base.connection_pool.disconnect!
     recovery.restore!(directory)
@@ -183,6 +188,7 @@ begin
     assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_type: "Source", subject_id: source.id).sole.metadata == {}, "minimal purge audit survives without source content")
     puts "PASS: exact table content/provenance, exact-text masking fingerprints/history/reuse, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
     puts "PASS: restored expiry and runtime purge remove source-backed definitions/results/labels/associations while keeping the content-free audit."
+    Operations::CurrentWorkflowsProof.verify(current_workflows)
   end
 ensure
   recovery.close

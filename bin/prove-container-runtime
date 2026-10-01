@@ -40,7 +40,8 @@ begin
   runtime_password = SecureRandom.hex(32)
   common = { "NAVISHAI_APP_HOST" => "example.invalid", "NAVISHAI_DATABASE_HOST" => "/var/run/postgresql",
     "SECRET_KEY_BASE" => SecureRandom.hex(64), "NAVISHAI_EVALUATION_ENDPOINTS" => "[]",
-    "NAVISHAI_SCENARIO_ENDPOINTS" => "[]", "NAVISHAI_CORPUS_ENDPOINTS" => "[]" }
+    "NAVISHAI_SCENARIO_ENDPOINTS" => "[]", "NAVISHAI_CORPUS_ENDPOINTS" => "[]",
+    "NAVISHAI_MATCHING_ENDPOINTS" => "[]", "NAVISHAI_IMPACT_ENDPOINTS" => "[]", "NAVISHAI_TRACE_DISCOVERY_ENDPOINTS" => "[]" }
   files = {
     "postgres.env" => { "POSTGRES_USER" => "navishai_setup", "POSTGRES_PASSWORD" => owner_password,
       "POSTGRES_DB" => "navishai_lab_production", "NAVISHAI_DATABASE_PASSWORD" => runtime_password,
@@ -93,6 +94,13 @@ begin
     state = run.call(*docker, "exec", web, "bin/rails", "runner", 'a = CorpusAnalysis.find(File.read(Rails.root.join("tmp/proof-analysis-id"))); raise a.error.to_s if a.state == "failed"; raise "Incorrect complete analysis" if a.state == "complete" && (a.summary.fetch("conversations") != 2 || a.summary.fetch("clusters") != 2); puts a.state')
     break if state.lines.any? { |line| line.strip == "complete" }
     raise "Native jobs did not complete in 60 seconds." if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    sleep 1
+  end
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+  loop do
+    state = run.call(*docker, "exec", web, "bin/rails", "runner", 'require Rails.root.join("ops/current_workflows_proof"); puts Operations::CurrentWorkflowsProof.verify_queued(JSON.parse(File.read(Rails.root.join("tmp/proof-optional-requests.json"))))')
+    break if state.lines.any? { |line| line.strip == "true" }
+    raise "Native optional disclosure refusals did not finish in 60 seconds." if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
     sleep 1
   end
   puts "PASS: separate native jobs process completed the queued corpus analysis."

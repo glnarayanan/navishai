@@ -73,7 +73,8 @@ module Operations
     def prepare_auxiliary!(root, analysis:)
       %w[cache queue cable].each do |name|
         ActiveRecord::Base.establish_connection(configuration(name))
-        ActiveRecord::Base.connection.execute("SET ROLE #{PG::Connection.quote_ident(owner)}")
+        connection = ActiveRecord::Base.connection
+        connection.execute("SET ROLE #{connection.quote_column_name(owner)}")
         load File.join(root, "db/#{name}_schema.rb")
       end
       connect("cache") do |db|
@@ -96,7 +97,7 @@ module Operations
       databases.each_key do |name|
         ActiveRecord::Base.establish_connection(configuration(name))
         connection = ActiveRecord::Base.connection
-        connection.execute("SET ROLE #{PG::Connection.quote_ident(owner)}")
+        connection.execute("SET ROLE #{connection.quote_column_name(owner)}")
         Navishai::RuntimeDatabaseAccess.grant!(connection, runtime_role: runtime)
       end
       ActiveRecord::Base.connection_pool.disconnect!
@@ -183,7 +184,7 @@ module Operations
           maximum = connection.select_value("SELECT max(id) FROM #{table}")
           inserted = connection.select_value(inserts.fetch(name))
           raise "Restored #{name} sequence did not advance" unless inserted > maximum
-          connection.execute("DELETE FROM #{table} WHERE id=#{inserted}")
+          connection.execute("DELETE FROM #{table} WHERE id=#{connection.quote(inserted)}")
         end
         # Prove default ACLs survive: an owner-created post-restore sequence/table
         # permits runtime inserts, but never gives it schema/table ownership.

@@ -81,7 +81,9 @@ local analysis. All four databases and role flags enter the pre-upgrade backup.
 With writers stopped, the generated owner role runs current `bin/rails db:migrate`.
 The schema dump goes into the private proof directory, never into tracked files.
 All old business-row fingerprints must stay exact, projecting out only the two
-declared new masking columns. The proof checks the applied migration and Rails'
+declared new masking columns and empty scenario `draft_notes`. The proof asserts
+those defaults, all six new migration IDs and all 12 new workflow tables empty
+before excluding those tables from the old-row comparison. It checks Rails'
 environment/schema metadata separately; it does not silently ignore business
 changes. Queue/cache/cable rows and ACLs stay exact. Current code then connects
 through actual runtime authentication, tests old source/case/approval/label/result
@@ -250,6 +252,42 @@ A private namespace and simulated public-address peer cannot establish them.
 No host, firewall, infrastructure or hosting policy change is authorized here.
 
 The three local proofs close their named engineering gaps, not this host gate.
-No screenshot is needed for these nonvisual checks. Broad integrated application/CI
-checks and any new receipt schema/fixture integration remain the parent workstream's
-responsibility; shared authorities, STATUS, product modules and CI stayed untouched.
+No screenshot is needed for these nonvisual checks.
+
+## Combined rebuild receipts and runtime checks
+
+The shared synthetic fixture in `ops/current_workflows_proof.rb` now exercises
+matching, source-assumption impact and trace-discovery receipts, expert source-review
+notes, coupled variants, v2 support observations and the explicit complete-text
+processing version. It uses stubbed transport only. Recovery fingerprints these
+records before four-database backup and verifies their exact values after restore.
+Upgrade first asserts additive defaults and empty new tables, then fresh current
+code creates and checks these workflows under actual runtime authentication.
+Old-code backup rollback never loads the new helper.
+
+Both proofs now pass all 12 new-table immutable UPDATE guards and trigger-disable
+denials, foreign-corpus matching/trace membership, claimed impact-input refusal,
+frozen variant-parent and draft-note guards, no completed resend, expiry and
+corpus-wide deletion with content-free audits. A first lineage probe hit a duplicate
+key before the foreign key; the corrected probe uses a distinct foreign input and
+requires `PG::ForeignKeyViolation`, not any rejection. No product guard changed.
+
+Executed against the combined slice-79 schema on 1 October:
+
+```sh
+bin/prove-backup-restore
+bin/prove-upgrade
+DATABASE_URL=postgresql:///navishai_lab_browser72_test PARALLEL_WORKERS=1 \
+  bin/rails test test/ops/runtime_database_access_test.rb \
+  test/ops/edge_policy_test.rb test/models/workspace_test.rb --seed 1
+bin/rubocop
+bin/rails zeitwerk:check
+```
+
+Both database proofs printed PASS and CLEAN. The mixed native tests passed
+12 tests / 107 assertions with no failures, errors or skips. Ruby style passed
+371 files; eager loading passed. The Compose/native-job proof now checks all six
+empty disclosure registries and queues synthetic matching/impact/discovery attempts
+for the separate native worker. It must interrupt each without a result, before
+and after web/jobs restart. Its combined-image execution and full CI follow these
+database checks; earlier image evidence does not certify the joined head.
