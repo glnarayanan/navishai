@@ -79,7 +79,10 @@ the assistant reply scope and makes no claim of interactive execution or meaning
 Calibration uses the same evidence/review split. The first-label state hides machine
 and other expert decisions; after saving, their disagreement appears below the form.
 The report keeps held-out/development tabs, a labelled failure-positive confusion
-matrix and explicit unknown rates. It shows sample counts and exclusions, not a
+matrix, fixed judge abstention threshold and explicit unknown rates. The threshold
+uses that report's exact version, not the current grader; deterministic previews
+show not applicable. Copy explains the strict-below rule and confidence limits.
+It shows sample counts and exclusions, not a
 universal support score. Upload errors retain the output; compact case-check options
 link to full requirements in a native disclosure. Mobile stacks review sections.
 

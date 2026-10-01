@@ -75,8 +75,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   revision, fresh expert review/compilation and fixed-case regression proof.
 - [#174](https://github.com/glnarayanan/navishai/pull/174), based on #173: complete fixed-family source counts,
   filtered exploration and historical provenance without new judgments.
-- `rebuild/35-calibration-costs`, based on #174: optional fixed human error costs,
+- [#175](https://github.com/glnarayanan/navishai/pull/175), based on #174: optional fixed human error costs,
   exact observed totals and unchanged calibration history.
+- `rebuild/36-calibration-threshold`, based on #175: report-local fixed judge
+  abstention rules without tuning or changing predictions/labels.
 
 ## Built and checked
 
@@ -833,6 +835,31 @@ no resend. Only its disposable databases/archive were removed. Direct risk revie
 and native audits used; named review tools unavailable. No customer cost policy,
 spend, provider, data, dependency, training, merge, release or deployment was chosen.
 
+GitHub CI for #174 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36837357438), completed
+08:39:53 UTC on 1 October); #175 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36837670586), completed
+08:43:19 UTC). Both exact branch heads remain open and unmerged. The earlier
+failed #155/#158 runs remain failed.
+
+Calibration reports now display their exact fixed judge abstention threshold beside
+counts, explain strict-below/equality and distinguish confidence from calibrated
+probability. Deterministic reports/previews show not applicable. A new access test
+failed before implementation, then proved that a later 0.95/current-kind edit cannot
+replace the original 0.8 rule or change labels/predictions/jobs. The browser retains
+0.8 on the old set, shows 0.95 on a fresh set and obtains separate held-out labels.
+The first browser attempt used the wrong existing field label; the corrected four
+affected journeys pass with 275 assertions. Inspected 2x desktop/390px captures show
+fixed/new/empty rules and deterministic costs without clipping, overflow or CSP
+failures. The boundary execution tests still distinguish below from equality.
+
+Final `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m28.73s: 295 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors and eager loading passed;
+371 Rails tests / 4129 assertions and 33 browser tests / 1494 assertions, no failures,
+errors or skips. Eleven focused access/grader tests pass with 174 assertions.
+No backend semantics, schema, provider call, labels or thresholds were changed by
+the feature. Direct risk review/native audits used; named reviews remain unavailable.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -866,8 +893,7 @@ and economics. Fixture checks do not establish discovery quality or judge accura
 Connected fresh revised-judge calibration, matched-trace → existing-scenario
 evidence revision, family-level source-signal counts/drill-down and private Compose
 ingress/control/edge proof now pass. Optional expert-supplied calibration error-cost
-assumptions also pass. Report-local judge-threshold disclosure remains independent
-engineering, not a pilot-data gate.
+assumptions and report-local judge-threshold disclosure also pass.
 Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
 authorised host; private namespace probes cannot establish them.
 Reviewable failure matching, bounded multi-request discovery, image execution and

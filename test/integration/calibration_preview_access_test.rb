@@ -17,7 +17,9 @@ class CalibrationPreviewAccessTest < ActionDispatch::IntegrationTest
     assert_empty writes
     assert_response :success
     assert_select "#fixed-report td", text: "2 true positives"
+    assert_select "#fixed-report .judge-threshold", text: "Not applicable — deterministic grader"
     assert_select "#candidate-report td", text: "1 false negatives"
+    assert_select "#candidate-report .judge-threshold", text: "Not applicable — deterministic grader"
     assert_select "#candidate-report", text: /original fixed requirements/
     assert_select "#review-samples [data-review-state=aligned]", count: 3
     assert_select "option[selected]", value: @preview_candidate.id.to_s

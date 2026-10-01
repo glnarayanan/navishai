@@ -87,11 +87,16 @@ class JudgeJourneyTest < ApplicationSystemTestCase
       sign_in users(:owner)
       visit workspace_corpus_grader_path(@workspace, @corpus, @outcome_grader)
       fill_in "Company rubric", with: "#{@outcome_grader.current_version.definition.fetch('rubric')} An evidence request alone is not a diagnosis."
+      fill_in "Judge abstention threshold", with: "0.95"
       click_button "Save grader version"
       assert_text "Compiled cases keep their prior grader version"
       revised = @outcome_grader.reload.current_version
       assert_equal 3, revised.number
       assert_equal 2, @case.eval_case_checks.find_by!(requirement_kind: "outcomes").grader_version.number
+      visit workspace_corpus_calibration_set_path(@workspace, @corpus, @judge_set, cohort: "development")
+      assert_selector "#fixed-report .judge-threshold", exact_text: "0.8"
+      assert_text "not calibrated probability or accuracy"
+      [ 1280, 390 ].each { |width| capture("fixed-threshold-#{width}", width) }
 
       visit new_workspace_corpus_eval_case_path(@workspace, @corpus, scenario_id: @scenario.id)
       @scenario.current_version.requirements.each do |kind, statements|
@@ -115,6 +120,7 @@ class JudgeJourneyTest < ApplicationSystemTestCase
       assert_text "0 samples · 0 labelled · 0 compared"
       assert_text "Not enough evidence"
       fresh_set = @corpus.calibration_sets.find_by!(name: "Fresh revised diagnosis")
+      assert_selector "#fixed-report .judge-threshold", exact_text: "0.95"
       [ 1280, 390 ].each { |width| capture("revision-empty-#{width}", width) }
 
       held_out_output = support_output(text: "Certificate expiry could be a cause. Please share the certificate expiry date.")
@@ -136,7 +142,7 @@ class JudgeJourneyTest < ApplicationSystemTestCase
       click_button "Request fixed judge"
       assert_text "Queued · one fixed attempt"
       calls = []
-      with_judge_response(response: judge_response(output: held_out_output), calls:) do
+      with_judge_response(response: judge_response(output: held_out_output, confidence: 0.99), calls:) do
         2.times { CalibrationJudgeRunJob.perform_now(fresh_sample.reload.calibration_judge_run.id) }
       end
       assert_equal 1, calls.size
