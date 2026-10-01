@@ -499,6 +499,28 @@ This is not Compose, an external clean host, public TLS, egress-policy, SMTP/OID
 production backup or upgrade acceptance. No production service or dependency was
 added, and no real credential, customer data or live provider was used.
 
+GitHub CI for #164 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36811262222)).
+
+Retained-source download is built: managing roles confirm the exact source name,
+choose a fixed current/historical snapshot and receive complete normalized JSON.
+Scoped reads, fresh membership/expiry, CSRF, ID-only filenames, no-store/nosniff,
+2000-record/10-MiB refusal, nested masking and content-free snapshot audit are tested.
+Downloads are not original/vendor files and cannot be recalled by local purge.
+The actual browser download retains the historical snapshot, masked Unicode text
+and one preparation audit; its private temporary file is removed. Desktop/390px
+form/history/error/viewer captures were inspected without overflow/CSP failures.
+
+Combined working-tree `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 4m44.99s:
+274 Ruby files clean, native audits clean, Brakeman zero warnings/errors and eager
+loading passed; 327 Rails tests / 3529 assertions and 26 browser tests / 1027
+assertions, no failures/errors/skips. This also covers the saved-result calibration
+slice. Three focused browser journeys pass with 165 assertions. The first download
+check used a nonexistent test attribute after receiving the correct file; the
+corrected check now derives expected masked text independently. Direct risk review
+and native audits used; named review tools remain unavailable. No customer data,
+live provider or dependency was introduced.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -529,7 +551,7 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering includes executable multi-turn cases, source export,
+Independent engineering includes executable multi-turn cases,
 connected result-to-calibration improvement and clean-host/Compose/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval

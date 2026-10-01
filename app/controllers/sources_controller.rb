@@ -2,7 +2,7 @@ class SourcesController < ApplicationController
   include WorkspaceAuthorization
   before_action :require_workspace
   before_action -> { require_role(:owner, :admin, :manager, :member) }, only: %i[create decide_trace]
-  before_action -> { require_role(:owner, :admin, :manager) }, only: :destroy
+  before_action -> { require_role(:owner, :admin, :manager) }, only: %i[destroy download_snapshot]
   before_action :load_corpus
 
   def create
@@ -67,6 +67,21 @@ class SourcesController < ApplicationController
     @decision_form = params.permit(:corpus_item_id, :scenario_version_id, :decision, :reason).to_h
     params[:snapshot] = @item.source_snapshot.number
     params[:page] = @item.source_snapshot.corpus_items.where("id < ?", @item.id).count / 50 + 1
+    show
+    render :show, status: :unprocessable_content
+  end
+
+  def download_snapshot
+    @source = @corpus.sources.where(workspace_id: Current.workspace.id).find(params[:id])
+    @snapshot = @source.source_snapshots.where(workspace_id: Current.workspace.id, corpus_id: @corpus.id).find(params[:snapshot_id])
+    json = @source.download_snapshot!(snapshot_id: @snapshot.id, membership: Current.require_membership!, confirmation: params[:download_confirmation])
+    response.headers["Cache-Control"] = "no-store"
+    send_data json, type: "application/json", disposition: "attachment",
+      filename: "source-#{@source.id}-snapshot-#{@snapshot.id}.json"
+  rescue CorpusIntake::Invalid => error
+    @download_error = error.message
+    @download_confirmation = params[:download_confirmation]
+    params[:snapshot] = @snapshot.number
     show
     render :show, status: :unprocessable_content
   end

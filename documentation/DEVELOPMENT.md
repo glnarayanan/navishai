@@ -111,7 +111,22 @@ Retention is 1–3650 days from the latest import, including a repeat. Expired c
 leaves exploration immediately; `SourceRetentionJob` deletes it hourly through
 Solid Queue in production. Managers/Admins/Owners can delete a source by typing its
 name. In development run `bin/rails runner 'SourceRetentionJob.perform_now'` to
-enforce expiry. No export route exists; intake stays local.
+enforce expiry. Intake stays local.
+
+Managing roles can also open **Download retained snapshot** on an exact current
+or historical source page and type its source name. The POST attachment contains
+complete normalized title/text/context records, source/snapshot identity, input
+digest, intake time and processing/redaction versions. It is
+`navishai-retained-source-v1` JSON, not a vendor export or the original raw file.
+It is not a vendor-format reimport path. Limits are 2000 records / 10 MiB of complete
+JSON; larger snapshots fail without a partial download. Read-only source pages
+write nothing; successful preparation appends a content-free snapshot audit, not
+proof of receipt. Downloads send no data to a provider. Masking can leave personal
+or sensitive data, and downloaded copies need their own storage/deletion policy:
+local purge cannot recall them. Members/Viewers have no download permission.
+The browser proof checks an actual masked historical JSON download and removes
+its private temporary copy; desktop/mobile review captures live under
+`.amp/in/artifacts/source-export/`.
 
 ## Corpus exploration
 
