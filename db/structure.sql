@@ -10,6 +10,69 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: check_assumption_impact_input(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_assumption_impact_input() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM assumption_impacts a,
+    jsonb_array_elements(a.input->'scenarios') s
+    WHERE a.id = NEW.assumption_impact_id AND a.state = 'queued'
+      AND s->>'version_id' = NEW.scenario_version_id::text) THEN
+    RAISE EXCEPTION 'change analysis input must be a disclosed fixed version before claim';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
+-- Name: check_assumption_impact_result(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_assumption_impact_result() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM assumption_impacts
+    WHERE id = NEW.assumption_impact_id AND state = 'running') THEN
+    RAISE EXCEPTION 'change analysis result requires a claimed running attempt';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
+-- Name: prevent_assumption_impact_rewrite(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_assumption_impact_rewrite() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.state <> 'queued' THEN
+      RAISE EXCEPTION 'change analysis must start with an unclaimed queued attempt';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF (to_jsonb(NEW) - ARRAY['state','error','started_at','finished_at'])
+       IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['state','error','started_at','finished_at'])
+    OR OLD.state IN ('complete','interrupted')
+    OR (OLD.state = 'queued' AND NEW.state NOT IN ('running','interrupted'))
+    OR (OLD.state = 'running' AND (NEW.state NOT IN ('complete','interrupted') OR NEW.started_at IS DISTINCT FROM OLD.started_at)) THEN
+    RAISE EXCEPTION 'change analysis definition, claim and terminal receipt are immutable';
+  END IF;
+  IF NEW.state = 'complete' AND NOT EXISTS (
+    SELECT 1 FROM assumption_impact_results WHERE assumption_impact_id = NEW.id) THEN
+    RAISE EXCEPTION 'complete change analysis requires its immutable result';
+  END IF;
+  RETURN NEW;
+END; $$;
+
+
+--
 -- Name: prevent_audit_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -116,6 +179,121 @@ CREATE TABLE public.ar_internal_metadata (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: assumption_impact_inputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.assumption_impact_inputs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    assumption_impact_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL
+);
+
+
+--
+-- Name: assumption_impact_inputs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.assumption_impact_inputs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: assumption_impact_inputs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.assumption_impact_inputs_id_seq OWNED BY public.assumption_impact_inputs.id;
+
+
+--
+-- Name: assumption_impact_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.assumption_impact_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    assumption_impact_id bigint NOT NULL,
+    result jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_1e5d699980 CHECK (((jsonb_typeof(result) = 'object'::text) AND (result ? 'decision'::text) AND ((result ->> 'decision'::text) = ANY (ARRAY['proposal'::text, 'abstain'::text, 'error'::text]))))
+);
+
+
+--
+-- Name: assumption_impact_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.assumption_impact_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: assumption_impact_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.assumption_impact_results_id_seq OWNED BY public.assumption_impact_results.id;
+
+
+--
+-- Name: assumption_impacts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.assumption_impacts (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    source_id bigint NOT NULL,
+    before_snapshot_id bigint NOT NULL,
+    after_snapshot_id bigint NOT NULL,
+    source_head_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    historical boolean NOT NULL,
+    input jsonb NOT NULL,
+    input_digest character varying NOT NULL,
+    configuration jsonb NOT NULL,
+    request_digest character varying NOT NULL,
+    processing_version character varying NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT assumption_impact_claim_state CHECK (((((state)::text = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (error IS NULL)) OR (((state)::text = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (error IS NULL)) OR (((state)::text = 'complete'::text) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (error IS NULL)) OR (((state)::text = 'interrupted'::text) AND (finished_at IS NOT NULL) AND (error IS NOT NULL)))),
+    CONSTRAINT chk_rails_555d6f7666 CHECK (((before_snapshot_id <> after_snapshot_id) AND (historical = (after_snapshot_id <> source_head_id)) AND (jsonb_typeof(input) = 'object'::text) AND (jsonb_typeof(configuration) = 'object'::text) AND ((input_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((request_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: assumption_impacts_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.assumption_impacts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: assumption_impacts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.assumption_impacts_id_seq OWNED BY public.assumption_impacts.id;
 
 
 --
@@ -1200,7 +1378,7 @@ CREATE TABLE public.model_failure_matchings (
     started_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_4970aac3ac CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text) AND ((input_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+    CONSTRAINT chk_rails_4970aac3ac CHECK ((((state)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('complete'::character varying)::text, ('interrupted'::character varying)::text])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text) AND ((input_digest)::text ~ '^[0-9a-f]{64}$'::text)))
 );
 
 
@@ -1865,6 +2043,27 @@ ALTER SEQUENCE public.workspaces_id_seq OWNED BY public.workspaces.id;
 
 
 --
+-- Name: assumption_impact_inputs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_inputs ALTER COLUMN id SET DEFAULT nextval('public.assumption_impact_inputs_id_seq'::regclass);
+
+
+--
+-- Name: assumption_impact_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_results ALTER COLUMN id SET DEFAULT nextval('public.assumption_impact_results_id_seq'::regclass);
+
+
+--
+-- Name: assumption_impacts id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts ALTER COLUMN id SET DEFAULT nextval('public.assumption_impacts_id_seq'::regclass);
+
+
+--
 -- Name: audit_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2199,6 +2398,30 @@ ALTER TABLE ONLY public.workspaces ALTER COLUMN id SET DEFAULT nextval('public.w
 
 ALTER TABLE ONLY public.ar_internal_metadata
     ADD CONSTRAINT ar_internal_metadata_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: assumption_impact_inputs assumption_impact_inputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_inputs
+    ADD CONSTRAINT assumption_impact_inputs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: assumption_impact_results assumption_impact_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_results
+    ADD CONSTRAINT assumption_impact_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: assumption_impacts assumption_impacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT assumption_impacts_pkey PRIMARY KEY (id);
 
 
 --
@@ -2744,6 +2967,48 @@ CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_scenario_version_id_i_5b28007b
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_scenario_version_id_i_f1f6e32c78 ON public.scenario_evidence USING btree (workspace_id, corpus_id, scenario_version_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_source_id_id_5d6a5df986; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_source_id_id_5d6a5df986 ON public.source_snapshots USING btree (workspace_id, corpus_id, source_id, id);
+
+
+--
+-- Name: index_assumption_impact_results_on_assumption_impact_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_assumption_impact_results_on_assumption_impact_id ON public.assumption_impact_results USING btree (assumption_impact_id);
+
+
+--
+-- Name: index_assumption_impacts_on_corpus_id_and_request_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_assumption_impacts_on_corpus_id_and_request_digest ON public.assumption_impacts USING btree (corpus_id, request_digest);
+
+
+--
+-- Name: index_assumption_impacts_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_assumption_impacts_on_request_key ON public.assumption_impacts USING btree (request_key);
+
+
+--
+-- Name: index_assumption_impacts_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_assumption_impacts_on_requested_by_id ON public.assumption_impacts USING btree (requested_by_id);
+
+
+--
+-- Name: index_assumption_impacts_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_assumption_impacts_on_workspace_id_and_corpus_id_and_id ON public.assumption_impacts USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -3377,6 +3642,48 @@ CREATE INDEX trace_decision_history ON public.trace_scenario_decisions USING btr
 
 
 --
+-- Name: unique_assumption_impact_input; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_assumption_impact_input ON public.assumption_impact_inputs USING btree (assumption_impact_id, scenario_version_id);
+
+
+--
+-- Name: assumption_impacts assumption_impact_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assumption_impact_immutable BEFORE INSERT OR UPDATE ON public.assumption_impacts FOR EACH ROW EXECUTE FUNCTION public.prevent_assumption_impact_rewrite();
+
+
+--
+-- Name: assumption_impact_inputs assumption_impact_input_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assumption_impact_input_immutable BEFORE UPDATE ON public.assumption_impact_inputs FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: assumption_impact_inputs assumption_impact_input_matches_preview; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assumption_impact_input_matches_preview BEFORE INSERT ON public.assumption_impact_inputs FOR EACH ROW EXECUTE FUNCTION public.check_assumption_impact_input();
+
+
+--
+-- Name: assumption_impact_results assumption_impact_result_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assumption_impact_result_immutable BEFORE UPDATE ON public.assumption_impact_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: assumption_impact_results assumption_impact_result_matches_claim; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER assumption_impact_result_matches_claim BEFORE INSERT ON public.assumption_impact_results FOR EACH ROW EXECUTE FUNCTION public.check_assumption_impact_result();
+
+
+--
 -- Name: audit_events audit_events_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3862,11 +4169,27 @@ ALTER TABLE ONLY public.scenario_versions
 
 
 --
+-- Name: assumption_impacts fk_rails_616c220273; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT fk_rails_616c220273 FOREIGN KEY (workspace_id, corpus_id, source_id, before_snapshot_id) REFERENCES public.source_snapshots(workspace_id, corpus_id, source_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: workspace_invitations fk_rails_627a78e220; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.workspace_invitations
     ADD CONSTRAINT fk_rails_627a78e220 FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: assumption_impacts fk_rails_6950474d2e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT fk_rails_6950474d2e FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3950,6 +4273,14 @@ ALTER TABLE ONLY public.scenarios
 
 
 --
+-- Name: assumption_impact_results fk_rails_80524f3ee9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_results
+    ADD CONSTRAINT fk_rails_80524f3ee9 FOREIGN KEY (workspace_id, corpus_id, assumption_impact_id) REFERENCES public.assumption_impacts(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: issue_clusters fk_rails_8102c9b2a4; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3995,6 +4326,14 @@ ALTER TABLE ONLY public.scenario_proposals
 
 ALTER TABLE ONLY public.calibration_judge_runs
     ADD CONSTRAINT fk_rails_8cddf9f3e6 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: assumption_impacts fk_rails_9265226575; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT fk_rails_9265226575 FOREIGN KEY (workspace_id, corpus_id, source_id) REFERENCES public.sources(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -4190,6 +4529,14 @@ ALTER TABLE ONLY public.eval_suites
 
 
 --
+-- Name: assumption_impacts fk_rails_d31835cb6c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT fk_rails_d31835cb6c FOREIGN KEY (workspace_id, corpus_id, source_id, after_snapshot_id) REFERENCES public.source_snapshots(workspace_id, corpus_id, source_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: eval_cases fk_rails_d48950e1f0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4211,6 +4558,14 @@ ALTER TABLE ONLY public.scenario_versions
 
 ALTER TABLE ONLY public.scenarios
     ADD CONSTRAINT fk_rails_db9ebf41f5 FOREIGN KEY (workspace_id, corpus_id, cluster_member_id) REFERENCES public.cluster_members(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: assumption_impact_inputs fk_rails_dbe00f18b8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_inputs
+    ADD CONSTRAINT fk_rails_dbe00f18b8 FOREIGN KEY (workspace_id, corpus_id, assumption_impact_id) REFERENCES public.assumption_impacts(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -4294,6 +4649,14 @@ ALTER TABLE ONLY public.scenario_proposals
 
 
 --
+-- Name: assumption_impacts fk_rails_f42173c24f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impacts
+    ADD CONSTRAINT fk_rails_f42173c24f FOREIGN KEY (workspace_id, corpus_id, source_id, source_head_id) REFERENCES public.source_snapshots(workspace_id, corpus_id, source_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: calibration_samples fk_rails_f5bc28b28d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4307,6 +4670,14 @@ ALTER TABLE ONLY public.calibration_samples
 
 ALTER TABLE ONLY public.eval_case_checks
     ADD CONSTRAINT fk_rails_f6f209f707 FOREIGN KEY (workspace_id, corpus_id, eval_case_id, scenario_version_id) REFERENCES public.eval_cases(workspace_id, corpus_id, id, scenario_version_id) ON DELETE CASCADE;
+
+
+--
+-- Name: assumption_impact_inputs fk_rails_f7a4785dcd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assumption_impact_inputs
+    ADD CONSTRAINT fk_rails_f7a4785dcd FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -4340,6 +4711,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261002010100'),
 ('20261001220000'),
 ('20261001210000'),
 ('20261001200000'),

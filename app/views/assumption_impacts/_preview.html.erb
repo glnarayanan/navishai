@@ -1,0 +1,24 @@
+<section id="impact-preview" class="section-block comparison-row" aria-labelledby="impact-preview-title">
+  <h2 id="impact-preview-title">Exact disclosure preview</h2>
+  <p><%= input.fetch("scenarios").size %> fixed versions · two complete document records · <%= number_to_human_size(JSON.generate(input).bytesize) %> before protocol/settings overhead. No sampling or truncation.</p>
+  <p>Source #<%= input.fetch("source_id") %> · <%= input.fetch("source_name") %> · head at preview #<%= input.fetch("source_head_id") %> · latest snapshot number <%= input.fetch("source_latest_snapshot_number") %> · retained until <%= input.fetch("source_expires_at") %>.</p>
+  <% if input.fetch("historical") %><p role="status">Historical comparison. The after-snapshot is not current policy; a separate confirmation is required.</p><% end %>
+  <div class="review-layout">
+    <% %w[before after].each do |side| %>
+      <% document = input.fetch(side) %>
+      <section aria-labelledby="impact-<%= side %>-title"><h3 id="impact-<%= side %>-title"><%= side.humanize %> · snapshot <%= document.fetch("number") %></h3>
+        <p><%= link_to "Inspect #{side} source snapshot", workspace_corpus_source_path(Current.workspace, @corpus, input.fetch("source_id"), snapshot: document.fetch("number"), anchor: "record-#{document.fetch('record_id')}") %> · fixed record #<%= document.fetch("record_id") %></p>
+        <pre class="evidence-text"><%= document.fetch("content") %></pre>
+        <details><summary><%= side.humanize %> provenance and retained context</summary><pre class="evidence-text"><%= JSON.pretty_generate(document.except("content")) %></pre></details>
+      </section>
+    <% end %>
+  </div>
+  <h3>Selected assumptions and requirements</h3>
+  <p>Situation, known and hidden facts, requirements, mutation and follow-ups leave this workspace if you confirm. Reviews, labels, outputs and other corpus records do not. Hidden facts are not target input here; this is separately approved corpus processing.</p>
+  <% input.fetch("scenarios").each do |entry| %>
+    <details class="source-record"><summary><%= entry.fetch("title") %> · scenario #<%= entry.fetch("scenario_id") %>, version <%= entry.fetch("number") %></summary>
+      <p><%= link_to "Inspect fixed scenario version", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.fetch("scenario_id"), version: entry.fetch("number")) %> · <%= entry.fetch("reference") %></p>
+      <pre class="evidence-text"><%= JSON.pretty_generate(entry) %></pre>
+    </details>
+  <% end %>
+</section>

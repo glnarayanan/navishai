@@ -1,0 +1,18 @@
+<% content_for :title, "Source assumption impact — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Source assumption impact</h1><p>Optional proposals for product, policy and document changes, including unlinked assumptions.</p></div></div>
+  <p>Exact linked-source dependencies stay on source pages. These model proposals change no definitions, staleness, approvals or labels. Selected versions are not company-wide coverage.</p>
+  <% if @expired %>
+    <p role="status">Corpus sources expired. Private change-analysis history stays hidden until purge.</p>
+  <% else %>
+    <% if Current.require_membership!.can_write? %><p><%= link_to "Preview a document change", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus), class: "button button-primary" %></p><% end %>
+    <p><%= pluralize(@count, "retained attempt") %></p>
+    <% if @impacts.empty? %><p>No attempts on this page. Previewing is local; no model runs until explicit disclosure confirmation and endpoint approval.</p><% end %>
+    <% @impacts.each do |impact| %><article class="source-record"><h2><%= link_to "Attempt ##{impact.id} · #{impact.state.humanize}", workspace_corpus_assumption_impact_path(Current.workspace, @corpus, impact) %></h2><p>Snapshot IDs <%= impact.before_snapshot_id %> → <%= impact.after_snapshot_id %> · <%= impact.created_at.to_fs(:long) %></p></article><% end %>
+    <nav class="workspace-tabs" aria-label="Change-analysis pages">
+      <% if @page > 1 %><%= link_to "Previous attempts", workspace_corpus_assumption_impacts_path(Current.workspace, @corpus, page: @page - 1) %><% end %>
+      <% if @count > @page * 50 %><%= link_to "Next attempts", workspace_corpus_assumption_impacts_path(Current.workspace, @corpus, page: @page + 1) %><% end %>
+    </nav>
+  <% end %>
+</main>
