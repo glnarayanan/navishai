@@ -80,6 +80,14 @@ source objects; load only the fifty records on the filtered page. Hold the corpu
 lock through checks, counts and page loading. These changes do not raise analysis
 or provider limits, sample membership or change discovery's method.
 
+Local processing uses complete fixed membership with scalar record batches,
+global document frequencies and sparse term vectors, not independent batch clusters.
+An inverted seed index skips zero-overlap comparisons without changing the
+0.3 cosine decision or seed-order ties. Keep full-text signals, centroid selection
+and exact provenance. Bulk membership writes remain inside the checked corpus
+transaction. First prove the same bounded method's behaviour before adding an
+explicit larger-local version; existing model bounds and consent remain separate.
+
 Corpus exploration uses local, case-insensitive literal substring search over
 current, unexpired item titles, record IDs, normalised text and JSON context.
 Scope source filters to the same corpus before querying. Escape SQL wildcards,

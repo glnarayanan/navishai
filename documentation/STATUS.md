@@ -95,8 +95,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   Rails request/SQL-debug private-field filtering.
 - [#184](https://github.com/glnarayanan/navishai/pull/184), based on #183: opt-in exact-text masking,
   fixed rule fingerprints and private recovery without rewriting history.
-- `rebuild/45-bounded-analysis-review`, based on #184: bounded fixed-record reads,
+- [#185](https://github.com/glnarayanan/navishai/pull/185), based on #184: bounded fixed-record reads,
   typed family counts and complete-text scalar batches without full-corpus loading.
+- `rebuild/46-streaming-local-discovery`, based on #185: scalar local processing,
+  global frequencies, sparse seed lookup and bounded bulk membership writes.
 
 ## Built and checked
 
@@ -1127,6 +1129,36 @@ and recovery. DOM checks cover alert semantics, keyboard actions and viewer gate
 Direct risk review/native audits used; named reviews remain unavailable. These
 are local checks; this branch has no remote CI yet. No limits, discovery method,
 dependency, provider approval, expert label, merge, release or deployment changed.
+
+Later exact-head remote evidence: #185 passed run
+[36866373549](https://github.com/glnarayanan/navishai/actions/runs/36866373549)
+at 13:11:36 UTC on 1 October. Failed ancestor runs remain failed.
+
+## Streaming local processing (slice 46)
+
+The same local method now reads scalar batches in fixed external-ID/ID order,
+keeps sparse term counts/global frequencies and skips zero-overlap seed comparisons.
+It does not independently cluster batches or load complete source objects/context.
+Full-text signals, exact JSON critical/reopen flags, centroid ties, labels,
+selection reasons, document gaps and fixed membership retain their semantics.
+Bulk member inserts stay inside the checked job transaction and database guards.
+No analysis, disclosure, candidate or input limit increased in this refactor.
+
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m24.32s: 410 Rails tests /
+5059 assertions, 41 browser tests / 1825 assertions, no failures/errors/skips;
+style, audits and eager loading passed. Focused checks passed 48 tests /
+751 assertions. A temporary comparison with the exact pre-refactor implementation
+passed 24 asymmetric datasets / 48 assertions, including reversed insertion order,
+duplicate external IDs across sources, empty vectors, Unicode, strict report types
+and beyond-window signals. It compared full summaries, ordered family membership,
+signals, labels, selection reasons and document-gap flags; temporary files were
+removed. The permanent regression proves 100 + 12 scalar rows, no source-object
+loads, complete membership, a late rare risk case and stable centroid ties.
+Existing desktop/mobile review journeys remain green. Native audits/direct risk
+review used; named reviews remain unavailable. No remote CI yet for this branch.
+Larger-local bounds and their operational proof are the next behaviour change,
+not a customer-data or expert-label gate. No customer/provider data, live spend,
+dependency, expert label, merge, release or deployment changed.
 
 ## Next and limits
 

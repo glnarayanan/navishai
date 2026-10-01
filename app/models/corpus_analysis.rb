@@ -92,7 +92,7 @@ class CorpusAnalysis < ApplicationRecord
     membership = workspace.memberships.find_by!(user: requested_by)
     corpus.authorize_writer!(membership)
     raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
-    items = fixed_inputs
+    items = fixed_inputs(item_ids: model? ? nil : [])
     if model?
       raise CorpusIntake::Invalid, "Company documentation changed; request a new analysis using current evidence." if stale?
       raise CorpusIntake::Invalid, "Invalid fixed model settings." unless ModelGateway.valid_configuration?(configuration)
