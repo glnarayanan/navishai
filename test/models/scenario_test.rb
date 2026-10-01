@@ -156,6 +156,89 @@ class ScenarioTest < ActiveSupport::TestCase
     assert_raises(Scenario::Invalid) { @scenario.variant!(membership: @membership, version_id: parent.id, variable: "plan", after: "enterprise", reason: "Same", expected_difference: "None") }
   end
 
+  test "PostgreSQL retains integer and float JSON values including nested mutation evidence" do
+    original = @scenario.current_version
+    version = @scenario.scenario_versions.create!(original.attributes.except("id").merge(
+      "number" => original.number + 1,
+      "known_facts" => { "integer" => 0, "float" => 0.0, "nested" => [ { "integer" => 0, "float" => 0.0 } ] },
+      "mutation" => { "before" => { "n" => [ 0 ] }, "after" => { "n" => [ 0.0 ] } })).reload
+    assert_instance_of Integer, version.known_facts["integer"]
+    assert_instance_of Float, version.known_facts["float"]
+    assert_instance_of Integer, version.known_facts.dig("nested", 0, "integer")
+    assert_instance_of Float, version.known_facts.dig("nested", 0, "float")
+    assert_instance_of Integer, version.mutation.dig("before", "n", 0)
+    assert_instance_of Float, version.mutation.dig("after", "n", 0)
+  end
+
+  test "typed JSON variants retain exact round trips and require expert revision and review" do
+    approve_scenario
+    facts = { "scalar" => 0, "nested" => { "z" => [ 7, { "n" => 0 } ], "a" => false }, "nullable" => nil, "ordered" => [ 1, 2 ] }
+    parent = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: facts }).reload
+    @scenario.review!(membership: @membership, version_id: parent.id, decision: "approve")
+    saved = parent.attributes
+    evidence = parent.scenario_evidence.order(:id).pluck(:corpus_item_id, :kind, :excerpt)
+    assert_instance_of Integer, parent.known_facts["scalar"]
+    assert_instance_of Integer, parent.known_facts.dig("nested", "z", 1, "n")
+
+    { "scalar" => 0.0, "nested" => { "a" => false, "z" => [ 7, { "n" => 0.0 } ] }, "nullable" => false, "ordered" => [ 2, 1 ] }.each do |variable, after|
+      child = @scenario.variant!(membership: @membership, version_id: parent.id, variable:, after:,
+        reason: "Author's mutation reason", expected_difference: "Author's expected difference, not an approved expectation")
+      version = child.current_version.reload
+      assert_equal parent.id, child.reload.parent_version_id
+      assert parent.known_facts.merge(variable => after).eql?(version.known_facts)
+      assert parent.known_facts[variable].eql?(version.mutation["before"])
+      assert after.eql?(version.mutation["after"])
+      assert_equal "Author's mutation reason", version.mutation["reason"]
+      assert_equal "Author's expected difference, not an approved expectation", version.mutation["expected_difference"]
+      assert_equal parent.requirements, version.requirements
+      assert_equal evidence, version.scenario_evidence.order(:id).pluck(:corpus_item_id, :kind, :excerpt)
+      assert_empty version.scenario_reviews
+      assert_not version.approved?
+      assert_raises(Scenario::Invalid) { child.review!(membership: @membership, version_id: version.id, decision: "approve") }
+      revision = child.revise!(membership: @membership, base_version_id: version.id, attributes: { situation: "Expert checked this counterfactual starting situation." }).reload
+      assert_equal "expert", revision.origin
+      assert_not revision.approved?
+      assert_equal version.mutation, revision.mutation
+      child.review!(membership: @membership, version_id: revision.id, decision: "approve", note: "Expert checked the source-backed expectations.")
+      assert revision.approved?
+      assert_not version.reload.approved?
+      assert_equal saved, parent.reload.attributes
+      assert parent.approved?
+    end
+
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "AuditEvent.count" ] do
+      reordered = { "a" => false, "z" => [ 7, { "n" => 0 } ] }
+      assert_raises(Scenario::Invalid) do
+        @scenario.variant!(membership: @membership, version_id: parent.id, variable: "nested", after: reordered, reason: "Order only", expected_difference: "None")
+      end
+    end
+  end
+
+  test "type-only direct revisions survive PostgreSQL without treating object order as a change" do
+    approve_scenario
+    before = { "scalar" => 0, "nested" => { "z" => [ 3, { "n" => 0 } ], "a" => nil } }
+    parent = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: before }).reload
+    @scenario.review!(membership: @membership, version_id: parent.id, decision: "approve")
+    saved = parent.attributes
+    after = { "nested" => { "a" => nil, "z" => [ 3, { "n" => 0.0 } ] }, "scalar" => 0.0 }
+    revision = nil
+    assert_difference "ScenarioVersion.count", 1 do
+      revision = @scenario.revise!(membership: @membership, base_version_id: parent.id, attributes: { known_facts: after }).reload
+    end
+    assert_instance_of Float, revision.known_facts["scalar"]
+    assert_instance_of Float, revision.known_facts.dig("nested", "z", 1, "n")
+    assert after.eql?(revision.known_facts)
+    assert_equal "expert", revision.origin
+    assert_not revision.approved?
+    assert_equal saved, parent.reload.attributes
+    assert parent.approved?
+    assert_equal parent.scenario_evidence.pluck(:corpus_item_id, :kind, :excerpt), revision.scenario_evidence.pluck(:corpus_item_id, :kind, :excerpt)
+    assert_no_difference [ "ScenarioVersion.count", "AuditEvent.count" ] do
+      reordered = { "scalar" => 0.0, "nested" => { "z" => [ 3, { "n" => 0.0 } ], "a" => nil } }
+      assert_equal revision, @scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: { known_facts: reordered })
+    end
+  end
+
   test "reject and merge retain decisions and block invalid merge destinations" do
     other = (@scenarios - [ @scenario ]).sole
     @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "reject", note: "Missing context.")

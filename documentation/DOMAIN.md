@@ -53,6 +53,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Exact-text masks come from an explicit author-supplied list, not inferred PII or disclosure policy. Snapshots retain its fixed fingerprint/count, not the list. Prior snapshots and approvals stay unchanged.
 - A changed source never changes a prior scenario, case, label, or run. A dependent definition may need a new version.
 - Evidence links cannot cross workspaces. A variant must retain both its original evidence and its explicit counterfactual changes.
+- Scenario revisions and variants compare retained JSON values with types intact, including nested numbers. Integer 0 differs from float 0.0; object-key order alone changes nothing, while array order matters. Each changed version still needs expert review.
 - Merging preserves the rejected/merged identity and provenance; it does not erase why a case entered the corpus.
 - An execution error is not a behavioural failure. An uncalibrated judgment is not a proven label.
 - Frequency, risk, coverage, confidence, and severity are different facts. Counts alone do not measure scenario quality.
