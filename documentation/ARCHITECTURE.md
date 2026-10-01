@@ -152,6 +152,14 @@ binds values; do not replace it with interpolated SQL. Active Record shares the
 request filter list, including retained content/context. This does not sanitize
 PostgreSQL, proxy, browser-history or operator logs outside Rails.
 
+Private definitions and processing receipts need the same native field filtering:
+titles, requirements, follow-up plans, mutations, proposed/reviewed labels and
+signals, fixed model input/results, target input and per-check decisions can all
+contain company text. Filter their named Rails binds and request fields, not their
+stored values. Prove the actual DEBUG logger path with native writes and typed
+PostgreSQL binds; preserve existing metadata filters and useful counts/methods. This is
+not a guarantee for SQL literals, database/proxy logs or arbitrary operator output.
+
 Scenario lookup uses the same private literal bind over current title, situation
 and taxonomy label only. Trim the phrase, accept at most 200 characters without
 null bytes, and escape SQL wildcards. Under the corpus lock, count the whole
