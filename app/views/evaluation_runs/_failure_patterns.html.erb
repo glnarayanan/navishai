@@ -1,0 +1,47 @@
+<section class="section-block" id="failure-patterns" aria-labelledby="failure-patterns-heading">
+  <h2 id="failure-patterns-heading">Failure patterns</h2>
+  <p>Observed failed checks grouped across grader versions by support requirement kind and fixed check type. Different tools, phrases and company rules can share a group; inspect each exact requirement below. These groups do not infer a root cause, semantic equivalence or corpus coverage.</p>
+  <p>Case outcomes: <%= @items.count { |item| item.evaluation_result&.status == "fail" } %> failed · <%= @items.count { |item| item.evaluation_result&.status == "pass" } %> passed · <%= @items.count { |item| item.evaluation_result&.status == "incomplete" } %> incomplete · <%= @items.count { |item| item.evaluation_result&.status == "error" } %> execution errors · <%= @items.count { |item| item.evaluation_result.nil? } %> not executed.</p>
+  <p>Expert importance comes from the fixed scenario version, not a calculated severity or support score. Judge confidence is an individual endpoint report, not accuracy. <%= link_to "Review calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus) %>.</p>
+  <% if @failure_patterns.empty? %>
+    <p>No reported behavioural failures yet. Missing, incomplete and error results do not prove a pass. Inspect case results above; refresh only reads saved work.</p>
+  <% end %>
+  <% @failure_patterns.each do |(kind, type), failures| %>
+    <article class="source-record" data-pattern-kind="<%= kind %>" data-pattern-type="<%= type %>">
+      <h3><%= kind.humanize %> · <%= EvaluationFailurePatterns::CHECK_LABELS.fetch(type) %></h3>
+      <p><%= pluralize(failures.size, "failed check") %> across <%= pluralize(failures.map { |failure| failure[:item].eval_case_id }.uniq.size, "fixed case") %> · <%= pluralize(failures.map { |failure| failure[:check].grader_version_id }.uniq.size, "grader version") %>.</p>
+      <% if type == "rubric_judge" %><p>Broad requirement-kind group. Different rubrics may judge different behaviour; their fail decisions are not proof of a shared cause.</p><% end %>
+      <% failures.each do |failure| %>
+        <% item, check, decision = failure.values_at(:item, :check, :decision) %>
+        <% version = item.eval_case.scenario_version %>
+        <details class="source-record" data-failed-check-id="<%= check.id %>">
+          <summary><%= version.importance.humanize %> importance · case #<%= item.eval_case_id %> · <%= version.title %> · check #<%= check.id %></summary>
+          <dl class="source-metadata">
+            <dt>Failed scenario</dt><dd><%= link_to "#{version.title} · v#{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario_id, version: version.number) %> · authored by expert #<%= version.created_by_id %>.</dd>
+            <dt>Fixed result and contract</dt><dd><%= link_to "Inspect failed result ##{item.evaluation_result.id} and regression review", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %> · <%= link_to "Fixed case ##{item.eval_case_id}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item.eval_case) %>.</dd>
+          </dl>
+          <%= render "check_evidence", check:, decision: %>
+          <% uncertain = item.evaluation_result.decisions.select { |entry| %w[abstain error].include?(entry["decision"]) } %>
+          <% if uncertain.any? %><p><strong>Unresolved checks in this failed case:</strong> <%= uncertain.count { |entry| entry["decision"] == "abstain" } %> abstentions · <%= uncertain.count { |entry| entry["decision"] == "error" } %> judge errors. They did not supply this failure. <%= link_to "Inspect their uncertainty below", "#failure-uncertainty-#{item.evaluation_result.id}" %>.</p><% end %>
+        </details>
+      <% end %>
+    </article>
+  <% end %>
+  <% @items.each do |item| %>
+    <% next unless item.evaluation_result&.status == "fail" %>
+    <% checks = item.eval_case.eval_case_checks.index_by(&:id) %>
+    <% uncertain = item.evaluation_result.decisions.select { |decision| %w[abstain error].include?(decision["decision"]) && checks[decision["check_id"]]&.grader_version_id == decision["grader_version_id"] } %>
+    <% next if uncertain.empty? %>
+    <article class="source-record" id="failure-uncertainty-<%= item.evaluation_result.id %>">
+      <h3>Unresolved checks beside a failure · case #<%= item.eval_case_id %></h3>
+      <p><%= link_to "Result ##{item.evaluation_result.id}", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %> fails on other checks. These abstentions and judge errors are not additional behavioural failures.</p>
+      <% uncertain.each do |decision| %>
+        <% check = checks.fetch(decision["check_id"]) %>
+        <details class="source-record" data-unresolved-check-id="<%= check.id %>">
+          <summary><%= decision["decision"].humanize %> · <%= check.requirement_kind.humanize %> · check #<%= check.id %></summary>
+          <%= render "check_evidence", check:, decision: %>
+        </details>
+      <% end %>
+    </article>
+  <% end %>
+</section>

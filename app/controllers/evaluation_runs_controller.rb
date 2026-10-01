@@ -21,17 +21,21 @@ class EvaluationRunsController < ApplicationController
 
   def show
     @run = @corpus.evaluation_runs.find(params[:id])
-    @items = @run.evaluation_run_items.includes(:evaluation_result, eval_case: :scenario_version).order(:id)
+    @corpus.with_lock do
+      raise ActiveRecord::RecordNotFound if @corpus.eval_definitions_expired?
+      @items = @run.evaluation_run_items.includes(:evaluation_result, eval_case: [ :scenario_version,
+        { eval_case_checks: [ { grader_version: :grader }, :scenario_evidence ] } ]).order(:id).to_a
+      evidence = @items.flat_map { |item| item.eval_case.eval_case_checks.map(&:scenario_evidence) }.uniq(&:id)
+      ActiveRecord::Associations::Preloader.new(records: evidence, associations: :corpus_item,
+        scope: CorpusItem.select(:id, :workspace_id, :corpus_id, :source_snapshot_id, :external_id).includes(:source_snapshot)).call
+      @failure_patterns = EvaluationFailurePatterns.call(items: @items)
+    end
     @baseline_options = @corpus.evaluation_runs.where.not(id: @run.id).includes(:evaluation_target_version).order(id: :desc).limit(100).to_a
     if params[:baseline_id].present?
       @baseline = @corpus.evaluation_runs.find(params[:baseline_id])
       @comparison = @run.compare_with(baseline: @baseline)
       @baseline_options << @baseline unless @baseline_options.include?(@baseline)
     end
-    @failures = @items.flat_map do |item|
-      (item.evaluation_result&.decisions || []).select { |decision| decision["decision"] == "fail" }.map { |decision| [ item, decision ] }
-    end.group_by { |_item, decision| decision.fetch("grader_version_id") }
-    @graders = @corpus.grader_versions.where(id: @failures.keys).includes(:grader).index_by(&:id)
   rescue EvalCase::Invalid => error
     redirect_to workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run), alert: error.message, status: :see_other
   end
