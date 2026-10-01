@@ -151,6 +151,33 @@ human gates. Mining copies proposed definitions and exact expectation evidence;
 it grants neither approval nor target-visible knowledge. No classifier or new
 dependency follows from this method; fixture responses cannot prove its quality.
 
+### Bounded multi-request discovery
+
+Extend the same analysis with an explicit batch method; keep the single-request
+method unchanged. Freeze up to 2000 complete records within 10 MiB. Pack ordered
+conversations into requests that each satisfy the existing 100-record/256-KiB
+bound, with every current document repeated as shared company evidence. Reject
+an unfit record/document set or more than 30 discovery batches before queuing.
+Consent binds this exact source digest, record allocation and maximum call plan:
+one call per batch and at most one reducer call to the same approved endpoint.
+
+Persist each fixed batch/UUID, once-only claim and immutable result. Recheck source,
+document, membership and corpus-purpose authority before and after every call,
+without holding locks over transport. Interruption, abstention, malformed output,
+revocation or an unknown outcome stops later calls and prevents global proposals.
+Batch receipts remain inspectable; they do not form a partial authoritative dataset.
+No automatic continuation or retry follows a crashed claimed analysis.
+
+A reducer groups already-validated batch cluster references and selects from their
+candidate references. It cannot create members, quotes or scenario definitions.
+Compose global membership and expectation evidence locally from those fixed
+results; do not ask a bounded model response to repeat thousands of source quotes.
+Require an exact partition of all batch clusters and unique candidate selection.
+Reject more than 200 intermediate clusters or a reducer payload over the shared
+1-MiB transport bound instead of dropping families or proposals. Derived proposals
+are untrusted data from the same endpoint, not expert labels. Final selection is
+bounded by the requested candidate limit and still needs expert review.
+
 ## Production failures
 
 Treat uploaded production traces as source records, not a tracing service. The
@@ -171,6 +198,24 @@ Source purge must clear all corpus scenarios, including trace proposals that hav
 no analysis parent, before deleting their evidence. No semantic failure matching,
 automatic authoritative correction, provider call or classifier training follows
 from importing a trace.
+
+### Reviewable failure matching
+
+Add local candidate retrieval across current, unmerged, fresh scenario versions in
+the same corpus, not looser recorded replay. Disclose the bounded search and exact
+shared terms/facts, conflicting facts and source/version links. Literal overlap
+can suggest a review but cannot establish the same issue, diagnosis or expectation;
+no semantic accuracy, probability or coverage follows from it. Hide expired derived
+content. Do not use imported corrections as labels or send data to a provider.
+
+Experts may append match/different/uncertain decisions with a reason on an exact
+trace item and current scenario version. Retain each author's history; later
+corrections append rather than rewrite it. Same-corpus foreign keys, immutability,
+source lifetime and deletion govern these records. A match neither rewrites a
+scenario nor approves a trace, grants knowledge, compiles a case or admits a
+regression. The expert can open the existing scenario or propose a separate one;
+changed input still cannot replay an old output. Meaningful retrieval quality
+remains a pilot question, not a fixture claim.
 
 ## Source impact and run comparisons
 
