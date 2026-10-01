@@ -1,6 +1,7 @@
 class CorpusAnalysis < ApplicationRecord
   METHOD = "tfidf-seed-centroid-selection-v1"
   MAX_ITEMS = 2_000
+  MAX_RECORD_BYTES = 10.megabytes
   belongs_to :workspace
   belongs_to :corpus
   belongs_to :requested_by, class_name: "User"
@@ -51,12 +52,27 @@ class CorpusAnalysis < ApplicationRecord
   end
 
   def self.current_inputs(corpus:, model: false, batch: false)
-    inputs = corpus.current_items.where(sources: { kind: %w[conversations document] })
-    raise CorpusIntake::Invalid, "Local analysis accepts at most 10 MiB of source text. Use a smaller corpus." if !model && inputs.sum("octet_length(content)") > 10.megabytes
-    limit = model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS
-    items = inputs.includes(source_snapshot: :source).order(:id).limit(limit + 1).to_a
-    raise CorpusIntake::Invalid, "Analysis needs 1–#{limit} current conversation/document records. Production traces use separate review." unless items.size.between?(1, limit)
-    items
+    corpus.with_lock do
+      inputs = corpus.current_items.where(sources: { kind: %w[conversations document] }).order(:id)
+      load_inputs(inputs, limit: model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS)
+    end
+  end
+
+  def fixed_inputs
+    corpus.with_lock do
+      raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
+      inputs = corpus_items.order(model? ? :id : [ :external_id, :id ])
+      self.class.load_inputs(inputs, limit: model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS)
+    end
+  end
+
+  # Call under the corpus lock so intake/purge cannot change membership between
+  # aggregate checks and loading. Encoded model/per-call bounds still apply later.
+  def self.load_inputs(inputs, limit:)
+    raise CorpusIntake::Invalid, "Analysis needs 1–#{limit} conversation/document records. Production traces use separate review." unless inputs.count.between?(1, limit)
+    bytes = inputs.sum("octet_length(corpus_items.external_id) + octet_length(corpus_items.title) + octet_length(corpus_items.content) + octet_length(corpus_items.context::text)")
+    raise CorpusIntake::Invalid, "Analysis accepts at most 10 MiB of retained IDs, titles, text and context JSON. Use a smaller corpus; nothing is sampled or truncated." if bytes > MAX_RECORD_BYTES
+    inputs.includes(source_snapshot: :source).to_a
   end
 
   def model?
@@ -74,10 +90,10 @@ class CorpusAnalysis < ApplicationRecord
     membership = workspace.memberships.find_by!(user: requested_by)
     corpus.authorize_writer!(membership)
     raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
+    items = fixed_inputs
     if model?
       raise CorpusIntake::Invalid, "Company documentation changed; request a new analysis using current evidence." if stale?
       raise CorpusIntake::Invalid, "Invalid fixed model settings." unless ModelGateway.valid_configuration?(configuration)
-      items = corpus_items.includes(source_snapshot: :source).order(:id).to_a
       input = ModelCorpusDiscovery.input(items, bounded: !batch?)
       raise CorpusIntake::Invalid, "Fixed corpus inputs changed; no proposals saved." unless ModelCorpusDiscovery.digest(input) == input_digest
       raise CorpusIntake::Invalid, "Fixed call plan changed." if batch? && BatchCorpusDiscovery.plan(items) != call_plan

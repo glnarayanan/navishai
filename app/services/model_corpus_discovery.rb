@@ -23,7 +23,7 @@ class ModelCorpusDiscovery
 
   def self.call(analysis, input: nil, request_key: analysis.request_key, input_digest: analysis.input_digest)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    context = input || self.input(analysis.corpus_items.includes(source_snapshot: :source).order(:id).to_a)
+    context = input || self.input(analysis.fixed_inputs)
     raise CorpusIntake::Invalid, "Fixed corpus inputs changed; no request was sent." unless digest(context) == input_digest
     configuration = analysis.configuration
     payload = context.merge("schema" => VERSION, "instructions" => INSTRUCTIONS, "model" => configuration.fetch("model"),
@@ -59,8 +59,8 @@ class ModelCorpusDiscovery
   end
 
   def self.persist!(analysis, response)
+    items = analysis.fixed_inputs
     analysis.create_corpus_analysis_result!(workspace: analysis.workspace, corpus: analysis.corpus, result: response, created_at: Time.current)
-    items = analysis.corpus_items.includes(source_snapshot: :source).order(:id).to_a
     references = items.index_by { |item| "corpus-item-#{item.id}" }
     clusters = response["decision"] == "proposal" ? response.fetch("clusters") : []
     candidates = response["decision"] == "proposal" ? response.fetch("candidates") : []

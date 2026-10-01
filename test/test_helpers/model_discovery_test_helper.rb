@@ -26,6 +26,37 @@ module ModelDiscoveryTestHelper
     ModelCorpusDiscovery.input(CorpusAnalysis.current_inputs(corpus: @corpus, model: true))
   end
 
+  def add_large_context_sources
+    2.times.map do |index|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Large context #{index}", kind: "conversations",
+        bytes: [ { id: "large-#{index}", title: "Small conversation", content: "Diagnostic evidence.", context: { details: "é" * 3.megabytes } } ].to_json)
+    end
+  end
+
+  # Recreate definitions saved before the complete-record guard, not a new request.
+  def build_fixed_analysis(processing_method: CorpusAnalysis::METHOD, complete: false)
+    analysis = @corpus.corpus_analyses.create!(workspace: @workspace, requested_by: @membership.user, processing_method:, scenario_limit: 2)
+    @corpus.current_items.pluck(:id).each do |id|
+      analysis.corpus_analysis_inputs.create!(workspace: @workspace, corpus: @corpus, corpus_item_id: id)
+    end
+    if complete
+      ids = @corpus.current_items.where(sources: { kind: "conversations" }).order(:id).pluck(:id)
+      cluster = analysis.issue_clusters.create!(workspace: @workspace, corpus: @corpus, proposed_label: "Unreviewed stored family", signals: { count: ids.size })
+      ids.each_with_index do |id, index|
+        cluster.cluster_members.create!(workspace: @workspace, corpus: @corpus, corpus_item_id: id, selection_reason: index.zero? ? "Synthetic stored proposal; expert review required." : nil)
+      end
+      analysis.update!(state: "complete", summary: { selected: 1, conversations: ids.size, represented_clusters: 1, clusters: 1 }, finished_at: Time.current)
+    end
+    analysis
+  end
+
+  def assert_no_corpus_item_materialization
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") { yield }
+    assert_empty loaded, "Complete source rows must not load before their aggregate bounds pass."
+  end
+
   def request_model_analysis(**options)
     CorpusAnalysis.request!(**{ corpus: @corpus, membership: @membership, scenario_limit: 2, configuration: discovery_configuration,
       disclose: true, input_digest: ModelCorpusDiscovery.digest(discovery_input) }.merge(options))

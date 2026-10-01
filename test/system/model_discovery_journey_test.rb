@@ -88,6 +88,30 @@ class ModelDiscoveryJourneyTest < ApplicationSystemTestCase
     assert_equal 0, Scenario.where(corpus: @corpus).count
   end
 
+  test "oversized context blocks previews and fixed history without a partial form and keeps a recovery path" do
+    build_discovery_corpus
+    add_large_context_sources
+    analysis = build_fixed_analysis(complete: true)
+    sign_in users(:owner)
+    visit new_workspace_corpus_corpus_analysis_path(@workspace, @corpus, processing_method: "model_batch")
+    assert_selector "[role=status]", text: /10 MiB.*context JSON/
+    assert_no_button "Request model discovery"
+    assert_no_selector "input#corpus_disclose"
+    [ 1280, 390 ].each { |width| capture("oversized-preview-#{width}", width) }
+    visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+    assert_selector "[role=alert]", text: /10 MiB.*context JSON/
+    assert_text "No partial source preview or candidates are shown."
+    assert_no_button "Create selected scenarios"
+    assert_no_selector "details.source-record"
+    click_link "Refresh result"
+    assert_selector "[role=alert]", text: /10 MiB/
+    [ 1280, 390 ].each { |width| capture("oversized-history-#{width}", width) }
+    find("a", text: "Return to the corpus", exact_text: true).send_keys(:enter)
+    assert_selector "h1", text: @corpus.name
+    assert_equal "complete", analysis.reload.state
+    assert_equal 0, Scenario.where(corpus: @corpus).count
+  end
+
   private
     def capture(name, width)
       page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width:, height: 1100, deviceScaleFactor: 2, mobile: false)

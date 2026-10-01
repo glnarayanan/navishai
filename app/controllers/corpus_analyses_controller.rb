@@ -35,13 +35,17 @@ class CorpusAnalysesController < ApplicationController
   def show
     @analysis = @corpus.corpus_analyses.find(params[:id])
     raise ActiveRecord::RecordNotFound if @analysis.expired?
+    @fixed_items = @analysis.fixed_inputs.index_by(&:id)
     @page = params[:page].to_i.clamp(1, 10000)
-    @clusters = @analysis.issue_clusters.includes(cluster_members: :corpus_item).order(:id).offset((@page - 1) * 10).limit(11).to_a
+    @clusters = @analysis.issue_clusters.includes(:cluster_members).order(:id).offset((@page - 1) * 10).limit(11).to_a
     @more = @clusters.size > 10
     @clusters = @clusters.first(10)
     @taxonomy = @analysis.latest_taxonomy
     @model_result = @analysis.corpus_analysis_result&.result
-    @model_items = @analysis.corpus_items.includes(source_snapshot: :source).order(:id).index_by { |item| "corpus-item-#{item.id}" } if @analysis.model?
+    @model_input = ModelCorpusDiscovery.input(@fixed_items.values, bounded: !@analysis.batch?) if @analysis.model?
+  rescue CorpusIntake::Invalid => error
+    @analysis_input_error = error.message
+    render :show
   end
 
   def interrupt

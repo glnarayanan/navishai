@@ -8,8 +8,7 @@ class CorpusDiscovery
   }.freeze
 
   def self.call(analysis)
-    items = analysis.corpus_items.includes(source_snapshot: :source).order(:external_id, :id).to_a
-    raise CorpusIntake::Invalid, "Source inputs expired; create a new analysis." if items.any? { |item| item.source_snapshot.source.expires_at <= Time.current }
+    items = analysis.fixed_inputs
     documents, conversations = items.partition { |item| item.source_snapshot.source.kind == "document" }
     raise CorpusIntake::Invalid, "Add historical conversations before analysis." if conversations.empty?
     tokens = conversations.to_h { |item| [ item.id, terms(item.title + " " + item.content.first(4000)) ] }

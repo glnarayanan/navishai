@@ -6,7 +6,7 @@
   <p><%= @batch ? "Bounded multi-request discovery sends every complete conversation, repeating all current documents in each discovery batch. At most one reducer receives validated proposals, not human labels or scenarios." : "One request sends the complete records shown below: titles, text and retained context." %> It can propose issue families, high-risk examples and scenario expectations. Quotes prove source links, not correctness. Taxonomy and scenarios still need expert review.</p>
   <p><%= @batch ? "At most 2000 complete records / 10 MiB, 30 discovery batches, each within 100 records / 256 KiB, and 20 final candidates." : "At most 100 conversation/document records, 256 KiB and 20 candidates." %> No silent sampling or truncation. Traces, existing scenarios and human labels stay local. Email masking is not full PII removal; review these records before disclosure.</p>
   <% if @model_input_error %>
-    <p role="status" class="inline-error"><%= @model_input_error %></p><p>Add conversations or use a smaller corpus, then reopen this page. Local analysis remains available on the corpus page.</p>
+    <p role="status" class="inline-error"><%= @model_input_error %></p><p>Add conversations or use a smaller corpus, then reopen this page. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %>. Local analysis also has complete-record limits.</p>
   <% else %>
     <div class="review-layout">
       <section aria-labelledby="disclosure-preview"><h2 id="disclosure-preview">Exact source preview</h2>

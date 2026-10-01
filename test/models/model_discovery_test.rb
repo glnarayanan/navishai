@@ -3,6 +3,7 @@ require_relative "../test_helpers/model_discovery_test_helper"
 
 class ModelDiscoveryTest < ActiveSupport::TestCase
   include ModelDiscoveryTestHelper
+  include ActiveJob::TestHelper
   setup { build_discovery_corpus }
 
   test "corpus disclosure requires its own purpose consent and exact current preview" do
@@ -35,11 +36,75 @@ class ModelDiscoveryTest < ActiveSupport::TestCase
     assert_equal 100, discovery_input.fetch("records").size
     CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations",
       bytes: (1..100).map { |number| { id: number.to_s, title: "Conversation #{number}", content: "Complete retained text." } }.to_json)
-    assert_raises(CorpusIntake::Invalid) { discovery_input }
+    assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { discovery_input } }
     CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations",
       bytes: (1..3).map { |number| { id: number.to_s, title: "Large #{number}", content: "é" * 45_000 } }.to_json)
     assert_raises(CorpusIntake::Invalid) { discovery_input }
     assert_equal 0, CorpusAnalysis.count
+  end
+
+  test "all discovery methods refuse aggregate context before loading complete source rows or queuing" do
+    add_large_context_sources
+    assert_operator @corpus.current_items.sum("octet_length(content)"), :<, 1.kilobyte
+    [ {}, { model: true }, { model: true, batch: true } ].each do |options|
+      assert_no_corpus_item_materialization do
+        error = assert_raises(CorpusIntake::Invalid) { CorpusAnalysis.current_inputs(corpus: @corpus, **options) }
+        assert_includes error.message, "10 MiB"
+      end
+    end
+    assert_no_difference([ "CorpusAnalysis.count", "CorpusAnalysisInput.count", "AuditEvent.count" ]) do
+      assert_no_enqueued_jobs do
+        assert_no_corpus_item_materialization do
+          assert_raises(CorpusIntake::Invalid) { CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 2) }
+        end
+      end
+    end
+  end
+
+  test "previously queued local analysis refuses oversized fixed inputs without proposals or retry" do
+    add_large_context_sources
+    analysis = build_fixed_analysis
+    assert_no_corpus_item_materialization do
+      assert_no_difference([ "IssueCluster.count", "ClusterMember.count", "CorpusAnalysisResult.count" ]) do
+        2.times { CorpusAnalysisJob.perform_now(analysis.id) }
+      end
+    end
+    assert_equal "failed", analysis.reload.state
+    assert_includes analysis.error, "10 MiB"
+  end
+
+  test "fixed local model and batch readers cannot bypass aggregate record checks" do
+    add_large_context_sources
+    [ CorpusAnalysis::METHOD, ModelCorpusDiscovery::VERSION, BatchCorpusDiscovery::VERSION ].each do |method|
+      analysis = build_fixed_analysis(processing_method: method)
+      assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { analysis.fixed_inputs } }
+    end
+    analysis = build_fixed_analysis(complete: true)
+    assert_no_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ]) do
+      assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { ScenarioMining.call(analysis:, membership: @membership) } }
+    end
+  end
+
+  test "exact retained UTF-8 byte boundary preserves complete current and fixed records and ordering" do
+    @corpus = @workspace.corpora.create!(name: "Exact record bounds")
+    # Each ID/title/text is one byte; PostgreSQL spells this object with one space.
+    overhead = 2 * (3 + '{"x": ""}'.bytesize)
+    first = "é" * 2.megabytes
+    second = "b" * (10.megabytes - overhead - first.bytesize)
+    snapshots = [ [ "z", first ], [ "a", second ] ].map do |id, value|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: id, kind: "conversations",
+        bytes: [ { id:, title: "t", content: "c", context: { x: value } } ].to_json)
+    end
+    items = CorpusAnalysis.current_inputs(corpus: @corpus)
+    assert_equal [ "z", "a" ], items.map(&:external_id)
+    assert_equal [ first, second ], items.map { |item| item.context.fetch("x") }
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 1)
+    assert_equal [ "a", "z" ], analysis.fixed_inputs.map(&:external_id)
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "a", kind: "conversations",
+      bytes: [ { id: "a", title: "t", content: "c", context: { x: second + "!" } } ].to_json)
+    assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { CorpusAnalysis.current_inputs(corpus: @corpus) } }
+    assert_equal snapshots.map(&:id).sort, analysis.fixed_inputs.map(&:source_snapshot_id).sort
+    assert_equal [ second, first ], analysis.fixed_inputs.map { |item| item.context.fetch("x") }
   end
 
   test "historic conversations remain fixed and foreign corpus sources stay out of requests" do

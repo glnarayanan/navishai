@@ -77,8 +77,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   filtered exploration and historical provenance without new judgments.
 - [#175](https://github.com/glnarayanan/navishai/pull/175), based on #174: optional fixed human error costs,
   exact observed totals and unchanged calibration history.
-- `rebuild/36-calibration-threshold`, based on #175: report-local fixed judge
+- [#176](https://github.com/glnarayanan/navishai/pull/176), based on #175: report-local fixed judge
   abstention rules without tuning or changing predictions/labels.
+- `rebuild/37-analysis-record-bounds`, based on #176: pre-load complete-record
+  bounds for current and fixed analysis, with read-only blocked-state recovery.
 
 ## Built and checked
 
@@ -859,6 +861,33 @@ native audits clean, Brakeman zero warnings/errors and eager loading passed;
 errors or skips. Eleven focused access/grader tests pass with 174 assertions.
 No backend semantics, schema, provider call, labels or thresholds were changed by
 the feature. Direct risk review/native audits used; named reviews remain unavailable.
+
+GitHub CI for #176 passed at its exact head
+[`913502b`](https://github.com/glnarayanan/navishai/commit/913502bf653cbacb7596db8b9218e371157f31a4)
+([run](https://github.com/glnarayanan/navishai/actions/runs/36839499430), completed
+09:00:23 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+Complete-record guards now count rows and sum retained IDs, titles, text and context
+JSON bytes before loading current or historical analysis inputs. Two individually
+valid 6-MiB contexts reproduced the old aggregate bypass; a 101-record preview
+also loaded all complete rows before refusing them. Both regressions now fail
+before materialisation. Jobs, mining and overview use the same guard. Fixed order,
+digests, membership and batch allocations stay unchanged. Two real PostgreSQL
+connections prove that the corpus lock spans checks and loading, then releases.
+Exact UTF-8 byte-boundary tests distinguish 10 MiB from one byte over it.
+
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m34.39s: style, native security
+audits, eager loading and Rails tests passed; 34 browser tests / 1526 assertions,
+no failures, errors or skips. Focused checks covered current/fixed bounds, old
+queued refusal, no proposals/retry, history, mining and concurrency. Desktop/390px
+blocked-preview/history captures were inspected with readable recovery links,
+no partial controls and no overflow. Browser checks reproduced Turbo's GET-422
+error renderer activating inline scripts under the prior CSP. Accessible blocked
+history now returns a normal page; POST validation remains 422. Final browser
+checks show no CSP violations, without changing nonces or security policy.
+Direct risk review/native audits used; named review tools remain unavailable.
+No schema, dependency, provider, customer data or existing database changed.
 
 ## Next and limits
 

@@ -37,6 +37,17 @@ Use a fresh baseline schema for this unreleased product. Do not drop an existing
 
 Intake accepts bounded, valid UTF-8 text/JSON, rejects malformed records atomically, records content digests and redaction, and never renders raw HTML. Large work runs through Solid Queue with progress, limits, terminal errors, and attributable settings. Dataset exploration should paginate; analysis must disclose method and limits. Deterministic term/risk mining is a baseline, not a claim of semantic discovery or 100,000-conversation quality.
 
+Current analysis previews/requests and fixed processing, mining and overview reads
+share a pre-load count and retained-field byte check. Count IDs, titles, text and
+PostgreSQL's context JSON bytes, not just conversation text. Hold a short corpus
+lock from the aggregate checks through loading; intake/purge cannot change that
+collection between them. Refuse oversized historical inputs too, without rewriting
+membership, sampling or retrying. Local order stays external ID then ID; model
+order stays ID, preserving disclosure digests and batch allocation. Exact encoded
+model and per-call limits still apply after this source-row guard. A blocked GET
+renders the accessible analysis's state with no partial preview or write controls;
+it is not a failed document navigation. POST validation still returns 422.
+
 Corpus exploration uses local, case-insensitive literal substring search over
 current, unexpired item titles, record IDs, normalised text and JSON context.
 Scope source filters to the same corpus before querying. Escape SQL wildcards,

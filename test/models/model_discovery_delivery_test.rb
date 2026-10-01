@@ -40,4 +40,39 @@ class ModelDiscoveryDeliveryTest < ActiveSupport::TestCase
     release << true if release
     worker&.value
   end
+
+  test "current and fixed input readers hold the corpus lock from aggregate checks through complete loading" do
+    build_discovery_corpus
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 2)
+    fixed_ids = analysis.corpus_analysis_inputs.pluck(:corpus_item_id).sort
+    readers = [ -> { CorpusAnalysis.current_inputs(corpus: @corpus) }, -> { analysis.fixed_inputs } ]
+    release = worker = nil
+    readers.each do |reader|
+      entered, release = Queue.new, Queue.new
+      worker = Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          owner = Thread.current
+          observer = ->(event) do
+            if Thread.current == owner && event.payload[:sql].match?(/SELECT COUNT\(\*\).*"corpus_items"/)
+              entered << true
+              release.pop
+            end
+          end
+          ActiveSupport::Notifications.subscribed(observer, "sql.active_record") { reader.call }
+        end
+      end
+      Timeout.timeout(5) { entered.pop }
+      assert_raises(ActiveRecord::LockWaitTimeout) do
+        ApplicationRecord.transaction(requires_new: true) do
+          ApplicationRecord.connection.execute("SELECT id FROM corpora WHERE id = #{@corpus.id} FOR UPDATE NOWAIT")
+        end
+      end
+      release << true
+      assert_equal fixed_ids, worker.value.map(&:id).sort
+      ApplicationRecord.transaction { @corpus.lock! }
+    end
+  ensure
+    release << true if release
+    worker&.value
+  end
 end

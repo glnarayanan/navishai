@@ -66,7 +66,7 @@ class BatchCorpusDiscovery
     end
     return response unless response["decision"] == "proposal"
     composed = compose(response.except("elapsed_ms", "usage_and_cost", "disclosed_input_digest"), receipts)
-    ModelCorpusDiscovery.validate_response!(composed, analysis:, input: ModelCorpusDiscovery.input(analysis.corpus_items.includes(source_snapshot: :source).order(:id).to_a, bounded: false))
+    ModelCorpusDiscovery.validate_response!(composed, analysis:, input: ModelCorpusDiscovery.input(analysis.fixed_inputs, bounded: false))
     composed.merge(response.slice("elapsed_ms", "usage_and_cost"))
   end
 
@@ -80,7 +80,7 @@ class BatchCorpusDiscovery
         refs = analysis.corpus_discovery_batches.where(phase: "discovery").order(:position).pluck(:request_key).map(&:to_s)
         raise CorpusIntake::Invalid, "Fixed reducer dependencies changed." unless batch.input_refs == refs && batch.input_digest == ModelCorpusDiscovery.digest(analysis.call_plan.fetch("batches").pluck("input_digest"))
       end
-      input ||= ModelCorpusDiscovery.input(analysis.corpus_items.includes(source_snapshot: :source).order(:id).select { |item| batch.input_refs.include?("corpus-item-#{item.id}") })
+      input ||= ModelCorpusDiscovery.input(analysis.fixed_inputs.select { |item| batch.input_refs.include?("corpus-item-#{item.id}") })
       raise CorpusIntake::Invalid, "Fixed batch allocation changed." if batch.phase == "discovery" && ModelCorpusDiscovery.digest(input) != batch.input_digest
       batch.update!(state: "running", started_at: Time.current)
     end
