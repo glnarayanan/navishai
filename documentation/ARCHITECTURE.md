@@ -371,6 +371,13 @@ can suggest a review but cannot establish the same issue, diagnosis or expectati
 no semantic accuracy, probability or coverage follows from it. Hide expired derived
 content. Do not use imported corrections as labels or send data to a provider.
 
+Count current unmerged version IDs in SQL before loading candidate definitions
+or evidence associations. Refuse above 2000; never take the first 2000 as a sample.
+Hold the corpus lock through count and loading so normal scenario writes/purge
+cannot change membership between them. Load that collection once for the page's
+traces. This version-count preflight does not yet move the searched-text byte
+check before association loading or bound every retained field.
+
 Experts may append match/different/uncertain decisions with a reason on an exact
 trace item and current scenario version. Retain each author's history; later
 corrections append rather than rewrite it. Same-corpus foreign keys, immutability,

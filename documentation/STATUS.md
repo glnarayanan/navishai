@@ -1299,6 +1299,38 @@ occurred. Earlier #155/#158 failures remain failed. Local green checks cannot
 replace exact-head remote evidence. No merge, release, deployment, customer data,
 live provider, dependency, spend or authoritative expert label was introduced.
 
+## Trace-match count preflight (slice 52)
+
+A real 2000/2001-version test reproduced candidate definitions and source
+associations loading before refusal: 2001 versions, scenarios and evidence entries,
+then source objects. The matcher now counts bounded IDs first and holds the corpus
+lock through checks/loading. At 2000 it searches the whole collection with stable
+top-five rank; at 2001 it loads no candidate definitions/associations and writes
+no decisions, reviews or audits. The requested trace still refreshes its own
+source metadata for lifetime validation. Multi-trace pages do one scalar count
+and one candidate collection load, not one search per trace.
+
+Focused native checks pass: 14 matching/decision/access tests / 132 assertions,
+with native style clean. Eligibility, rank, reported facts, expert decisions,
+source history and the 10-MiB searched-text rule stay unchanged. Full native
+`CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 9m5.30s: native style/security/eager
+loading clean, 431 Rails tests / 5982 assertions and 44 browser tests / 2023
+assertions, no failures/errors/skips. The byte check still follows association loading; avoiding unused
+retained payloads and stronger byte-read preflight remain independent engineering
+work, not customer pilot gates. No schema, provider, data, dependency or label.
+
+Slices 48–51 are pushed as open stacked PRs
+[#188](https://github.com/glnarayanan/navishai/pull/188),
+[#189](https://github.com/glnarayanan/navishai/pull/189),
+[#190](https://github.com/glnarayanan/navishai/pull/190) and
+[#191](https://github.com/glnarayanan/navishai/pull/191). At 15:44 UTC on 1 October,
+#190 passed exact-head run
+[36884566317](https://github.com/glnarayanan/navishai/actions/runs/36884566317),
+completed 15:42:35 UTC. #188/#189/#191 and #187 still ran `bin/ci` with no conclusion.
+Running-job log requests were unavailable (CLI refused; API returned BlobNotFound).
+No internal step or cause is established. Failed #155/#158 runs remain failed. No PR was merged,
+released or deployed; the owner-owned lockfile stays unstaged and unchanged.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

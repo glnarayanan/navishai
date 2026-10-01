@@ -17,7 +17,7 @@ class TraceScenarioMatching
     if corpus.eval_definitions_expired?
       return items.to_h { |item| [ item.id, Result.new([], 0, 0, "Matches hidden because a corpus source has expired.") ] }
     end
-    inputs, bytes, message = searchable_versions(corpus)
+    inputs, bytes, message = corpus.with_lock { searchable_versions(corpus) }
     items.to_h do |item|
       trace = SupportTrace.payload(item)
       if trace["observed_failure"].blank?
@@ -42,9 +42,11 @@ class TraceScenarioMatching
 
   def self.searchable_versions(corpus)
     versions = ScenarioVersion.where(corpus:, id: corpus.scenarios.where(merged_into_id: nil).select(:current_version_id))
+    return [ [], 0, "Candidate corpus exceeds 2000 current versions; no text searched. Narrow the corpus." ] if versions.limit(MAX_VERSIONS + 1).count > MAX_VERSIONS
+
+    versions = versions
       .includes(:scenario_reviews, scenario: { corpus_item: { source_snapshot: :source } }, scenario_evidence: { corpus_item: { source_snapshot: :source } })
       .order(:id).limit(MAX_VERSIONS + 1).to_a
-    return [ [], 0, "Candidate corpus exceeds 2000 current versions; no text searched. Narrow the corpus." ] if versions.size > MAX_VERSIONS
     bytes = 0
     inputs = []
     versions.select { |version| eligible?(version, refresh: false) }.each do |version|
