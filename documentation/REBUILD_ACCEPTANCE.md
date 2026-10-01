@@ -28,7 +28,7 @@ The owner's example counts and percentages are illustrations, not measured claim
 | E — Remove the old product and its unused dependencies | [lab_baseline_test](../test/integration/lab_baseline_test.rb) checks old routes/tables are gone. Inbox, tickets/assignment, customer drafts/sends, SLAs, account-health/renewals, crews, broad memory/Supermemory, process runners and old deployment machinery do not remain behind flags. Git preserves history. |
 | E — Re-derived tenant/source/eval domain and safe fresh setup | [database_preflight_test](../test/services/database_preflight_test.rb), [security_baseline_test](../test/integration/security_baseline_test.rb). Setup refuses obsolete databases and never resets customer data. |
 | E — Atomic Conventional Commits and stacked PRs | [STATUS delivered stack](./STATUS.md#delivered-stack). Implementation branches use the rebuild predecessor, not obsolete main. The owner lockfile checksum remains unstaged and unchanged. |
-| M — Final combined handoff | Tracked-image/runtime proofs pass. Full native `bin/ci` found two stale mining-prefix expectations; corrected focused checks are running. Combined browser tests pass. See the executed evidence below; no green CI claim yet. |
+| M — Final combined handoff | Tracked-image/runtime proofs pass. Full native `bin/ci` found two stale mining-prefix expectations; corrected scale/draft tests pass 13/818. Combined browser tests pass. Fresh full CI follows the remaining relationship slice; no green CI claim yet. |
 
 ## B — Corpus and scenario foundation (all P0)
 
@@ -148,7 +148,10 @@ Rails tests / 10133 assertions, two stale prefix-excerpt failures, zero errors/s
 then 69 system tests / 3454 assertions with no failures/errors/skips. The joined
 source-review contract intentionally chooses cue-rich late evidence. Corrected
 scale tests assert exact late quotes, historical identity, empty known facts and
-empty expert expectations; their focused run is in progress. No green CI claim yet.
+empty expert expectations. Their native focused run, including draft quality and
+both actual 100,000-input proofs, passed 13 tests / 818 assertions with no
+failures/errors/skips at seed 64405. Fresh full CI follows the relationship slice;
+no full green CI claim yet.
 Ponytail Audit/CE Code Review tools were unavailable; direct risk review and native
 checks were used. No static warning exclusions were added.
 

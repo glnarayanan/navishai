@@ -1986,8 +1986,11 @@ The first joined `bin/ci` run completed 630 Rails tests / 10133 assertions with
 two failures, zero errors/skips, then 69 browser tests / 3454 assertions with no
 failures/errors/skips. Both Rails failures expected the old prefix mining excerpt,
 not the joined cue-rich source-review contract. Strengthened scale assertions now
-check late evidence without copied expert facts/expectations; their focused run
-is in progress. No full green CI result is claimed yet. See
+check late evidence without copied expert facts/expectations. Native focused scale
+and draft-quality tests passed 13 tests / 818 assertions with no failures/errors/skips
+at seed 64405, including both actual 100,000-input proofs. This fixes the two
+integration assertions; a fresh full CI follows the remaining relationship slice.
+No full green CI result is claimed yet. See
 [OPERATIONS_ACCEPTANCE](./OPERATIONS_ACCEPTANCE.md).
 
 ## Next and limits
@@ -2032,8 +2035,8 @@ runtime DML/immutability, no resend, expiry and purge. Tracked-image Compose pas
 in 434.17 seconds before exact cleanup: separate native jobs refuse unapproved
 matching/impact/discovery before/after restart, local analyses finish, and IPv4/IPv6
 kernel deny, hook priority, simulated TLS/control/loopback and host-state checks pass.
-Combined browser checks pass; the two stale scale assertions need a green rerun
-before claiming full application CI.
+Combined browser checks and the corrected scale assertions pass; fresh full
+application CI follows the remaining relationship slice.
 
 The landing page now describes built Support-eval capabilities, real next actions
 and limits in inspected desktop/mobile/light/dark states. The complete
