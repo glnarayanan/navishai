@@ -25,6 +25,12 @@ Snapshots and items reject updates in Ruby and SQL. HTML remains escaped evidenc
 never browser instructions. Bounded UTF-8/JSON parsing and atomic inserts reject
 malformed batches. Request logs filter uploaded data and company-content fields.
 
+Corpus search binds escaped literal phrases and scopes source/record links to the
+same corpus and retained snapshots. Viewers may search without writes or jobs.
+Queries are capped at 200 characters and filtered from Rails parameter/path logs.
+The no-referrer policy prevents outbound referrers, not browser URL/history storage.
+Do not put secrets in a search phrase.
+
 Email masking covers record text/context and replaces email record IDs with
 digests. It does not detect all PII or secrets. Source names and input digests are
 still retained; files are not. Expiry hides content at read time and a native hourly
