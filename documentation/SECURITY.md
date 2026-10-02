@@ -32,14 +32,16 @@ job deletes source snapshots/items. Explicit source deletion needs a managing ro
 and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
-There is no source export, evaluation execution or external disclosure yet.
+There is no source export or external evaluation disclosure yet.
 Scenario versions, exact-source evidence and expert decisions are immutable
 in Ruby and SQL, with composite workspace/corpus relationships. Current-version
 pointers cannot refer to another scenario. All writes recheck a locked membership;
 version tokens block stale edits/reviews. Variants retain fixed parent versions and
 cannot inherit approval. Source expiry hides their content at read time, and purge
 also deletes all corpus scenarios through analysis relationships. Request logs
-filter scenario text, decisions, excerpts and mutations. No target receives any data.
+filter scenario text, decisions, excerpts and mutations. Local scripted targets
+receive only approved visible context and permitted knowledge, not hidden facts
+or expectation evidence. Experts must keep answers out of the starting context.
 
 Compiled cases/check bindings and grader versions reject updates in Ruby and SQL.
 Composite relationships bind evidence and approval to the exact scenario version
@@ -57,6 +59,17 @@ stale-write tokens and cannot overwrite another expert. First-label UI hides mac
 and other expert decisions; this is not a security or double-blind boundary. Viewers
 can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
 output and rationale copies, and parameter logs filter both. No external judge runs.
+
+Scripted target definitions cannot execute code or external requests. Managing
+roles version them with stale-write tokens; writers start bounded runs. Composite
+keys bind run items/results to their exact corpus and case. SQL prevents run
+definition rebinding; target versions, inputs, results and regression admissions
+reject updates in Ruby and SQL. Jobs claim once and recheck locked access, approval
+and evidence per case. An unknown outcome never retries automatically. Result
+pages escape content; regression admission needs a reported failure and human
+reason, not an execution error. Source purge clears corpus targets/runs and their
+derived copies; expiry hides them and suite history before purge. These guarantees
+do not prove target quality, calibration accuracy or attested tool execution.
 
 Analysis inputs and cluster members have workspace/corpus foreign keys and
 immutable updates. Jobs recheck the requester's membership. Source deletion also

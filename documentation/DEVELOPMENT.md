@@ -2,7 +2,8 @@
 
 The lab runs Rails 8.1, Ruby 4.0.6 and PostgreSQL 16. No Go source, process runner,
 Supermemory, vector extension, document converters or provider services remain.
-Go can return with a bounded HTTP evaluation worker when Phase D earns it.
+Solid Queue owns bounded evaluation batches; HTTP will use the Ruby standard library.
+A separate worker language needs measured workload or isolation evidence.
 
 ## Fresh baseline
 
@@ -72,8 +73,9 @@ taxonomy revisions. Refresh queued results; production needs the jobs service.
 Deleting any source clears corpus analyses and taxonomy revisions because they
 describe the full input collection. It also deletes their scenarios, variants,
 versions, evidence, reviews, compiled cases and graders. Grader text may contain
-company evidence, so purge clears the corpus-wide library too. Suite names remain
-without cases. Source records from other sources remain. Expiry blocks definition
+company evidence, so purge clears the corpus-wide library too, including calibration
+outputs/labels, targets, runs, results and regression admissions. Suite names remain
+without cases. Source records from other sources remain. Expiry blocks derived
 reads and writes before the hourly purge.
 
 ## Scenario review
@@ -140,8 +142,41 @@ The target-visible preview contains only situation, known facts and permitted
 knowledge excerpts with corpus-item references. It omits title, hidden facts and
 expectation fields. Experts must remove answers from the starting context.
 Suites group up to 50 fixed cases; adding a case rechecks approval, evidence,
-current scenario version and check completeness. Runs do not exist yet.
+current scenario version and check completeness.
 Compiler desktop/mobile/error captures live under `.amp/in/artifacts/compiler/`.
+
+## Scripted evaluation and regression
+
+Managing roles define a target with `rules` and `default_output` JSON. Up to 20
+ordered rules compare one named visible known fact with an exact scalar value and
+return a support-output-v1 fixture. Missing is not null; false is not absent. The
+first match wins. A target cannot run code, call a model or send data externally.
+Target edits create versions with fixed configuration and processing version;
+stale forms need a reload. This adapter proves machinery, not support-agent quality.
+
+A writer starts a suite run against one target version. The transaction freezes
+membership, target-visible input, exact cases/graders and processing version.
+Bounds: 50 cases and 100 checks. `EvaluationRunJob` uses the `evaluations` queue;
+development can execute a deliberately requested run with
+`bin/rails runner 'EvaluationRunJob.perform_now(RUN_ID)'`. Production needs `bin/jobs`.
+Repeated/concurrent job delivery claims once, never repeats execution. A worker
+crash leaves an unknown/interrupted run; it does not justify an automatic retry.
+An expert can interrupt a queued run or one started over ten minutes ago, then
+deliberately start a separate run. Access, approval and source lifetime are checked
+before each case. Unavailable processing versions stop rather than reinterpret history.
+
+Results retain output and each exact check's pass, fail or abstention, reason and
+confidence. Rubrics without a judge abstain. A case fails on any failed check,
+passes only when all pass, otherwise stays incomplete. Schema/worker errors are
+not behavioural failures. Groups share exact grader versions; they are not semantic
+failure clusters or coverage measures. Trace checks do not attest tool execution.
+
+Experts can add a failed result to a regression suite with a reason. Each fixed
+admission retains the result, case, human and rationale; repeat submissions reuse
+it. Removing membership leaves the admission history. The next target version
+tests the same fixed case. Purge removes target/output/rationale copies; expiry
+hides them, including suite history, before purge. Inspected browser captures live
+under `.amp/in/artifacts/evaluation/`. HTTP targets and model judges are not built yet.
 
 ## Expert calibration
 

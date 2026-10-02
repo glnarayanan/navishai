@@ -1,0 +1,15 @@
+<% content_for :title, "Evaluation targets — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Evaluation targets</h1><p>Systems under test, not support teammates. This first adapter runs local fixtures; HTTP follows the scripted proof.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "targets" %>
+  <% if @targets.empty? %><p class="empty-state">No targets yet. A Manager, Admin or Owner can define a scripted fixture below.</p><% end %>
+  <ul class="workspace-list" role="list"><% @targets.each do |target| %><li class="workspace-card"><%= link_to target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %><span>Scripted fixture · v<%= target.current_version.number %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_manage_work? %><section class="section-block config-panel"><h2>Create scripted target</h2><p>A rule checks one visible known fact. The first matching rule returns its fixture output; otherwise default_output applies. This proves the evaluation machinery, not agent quality.</p>
+    <details><summary>Scripted schema</summary><pre class="evidence-text">{
+  "rules": [{"fact": "plan", "equals": "enterprise", "output": {…support-output-v1…}}],
+  "default_output": {…support-output-v1…}
+}</pre><p>Replace each output placeholder with the six-field <%= link_to "support-output-v1 contract", workspace_corpus_graders_path(Current.workspace, @corpus) %>. Configuration must be valid JSON.</p></details>
+    <%= render "form", url: workspace_corpus_evaluation_targets_path(Current.workspace, @corpus), method: :post %>
+  </section><% end %>
+</main>

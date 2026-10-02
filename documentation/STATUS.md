@@ -19,8 +19,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   edits/review/merge, fixed versions, document knowledge and controlled variants.
 - [#146](https://github.com/glnarayanan/navishai/pull/146), based on #145: fixed contracts, exact check/evidence
   bindings, versioned deterministic/rubric definitions and bounded suite membership.
-- `rebuild/07-calibration`, based on #146: fixed output samples, authoritative expert
+- [#147](https://github.com/glnarayanan/navishai/pull/147), based on #146: fixed output samples, authoritative expert
   label history, held-out/development reports and measured disagreement.
+- `rebuild/08-evaluation-loop`, based on #147: scripted targets, fixed runs/results,
+  explained failures and human-reviewed regression admissions.
 
 ## Built and checked
 
@@ -35,7 +37,7 @@ processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
 links. Local term analysis, expert labels, versioned scenarios, controlled variants,
 fixed eval definitions, deterministic checks and expert calibration are built;
-evaluation execution is not built yet.
+local scripted evaluation and regression are built. HTTP and judge execution are next.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -100,15 +102,35 @@ content. Email masking is not complete PII removal; original files are not kept.
   and corrected full-page capture width rather than changing the app layout.
   Impeccable detector found no new issues; direct risk review and native audits used.
 
+Scripted evaluation `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 1m39.48s;
+190 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors,
+eager load passes. 182 Rails tests / 1359 assertions and 8 browser tests / 224
+assertions, no failures/errors/skips. Focused tests distinguish first matching
+rules, null/false/absent facts, fixed target/input/membership, missing judge abstention,
+schema errors, access/approval/expiry changes, partial worker failures, concurrent
+delivery (one actual target call), immutable Ruby/SQL records, foreign/mismatched
+links, the 100-check bound, purge, and regression → corrected target on the same case.
+Browser checks exercise retained JSON errors, queued refresh, evidence-backed
+failures, human admission and fixed older results after a later target passes.
+Desktop/mobile failure, regression, pass and error captures were inspected; native
+controls have clear prompts, no horizontal overflow or CSP violations. The detector
+reported no new issues. Direct risk review covered disclosure, claims, immutability
+and deletion. Stale target forms retain their original version token. Full CI first
+exposed committed test-corpus/audit pollution from the concurrent-delivery test;
+its teardown now removes its own records without changing production controls.
+Final focused browser check: 1 test / 43 assertions. The expanded source-deletion
+warning and updated home copy were also rendered and inspected on mobile.
+
 ## Next and limits
 
-Next: generic target/judge execution, failure inspection and
-regressions. Scenario mining is a title/context/sentence baseline, not model-based
+Next: bounded generic HTTP target and versioned judge execution/calibration.
+Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
 and descendants because their analysis depends on the full corpus. Purge also
-clears fixed cases and corpus graders; suite names remain without cases. Judge
+clears fixed cases, corpus graders/calibration, targets, runs/results and regressions;
+suite names remain without cases. Judge
 definitions are versioned but do not yet execute or establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.

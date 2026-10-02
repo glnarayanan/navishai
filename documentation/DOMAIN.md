@@ -52,3 +52,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
 - Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
 - Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.
+- A run freezes membership and visible inputs at request time. Target, suite and grader edits never rewrite its definitions or results.
+- A claimed run does not retry after an unknown outcome. Another execution requires a deliberate new run.
+- A result passes only when every check passes. An abstention cannot become a pass; an execution error cannot become a support failure.
+- A regression admission retains an exact failed result, fixed case, human and reason. Later membership removal does not erase that decision.

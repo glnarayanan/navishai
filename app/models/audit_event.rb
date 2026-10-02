@@ -27,6 +27,11 @@ class AuditEvent < ApplicationRecord
     "calibration.created" => {},
     "calibration.sample_added" => {},
     "calibration.labelled" => {},
+    "target.version_created" => { "version" => Integer },
+    "evaluation.requested" => {},
+    "evaluation.completed" => {},
+    "evaluation.interrupted" => {},
+    "regression.reviewed" => {},
     "workspace.created" => { "organization_id" => Integer },
     "workspace.updated" => {
       "previous_name" => String, "previous_slug" => String, "name" => String, "slug" => String

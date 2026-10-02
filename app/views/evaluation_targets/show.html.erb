@@ -1,0 +1,8 @@
+<% content_for :title, "#{@target.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Evaluation targets", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @target.name %></h1><p>Scripted fixture · version <%= @version.number %>. Not a live agent.</p></div></div>
+  <nav class="workspace-tabs" aria-label="Target versions"><% @versions.each do |version| %><%= link_to "Version #{version.number}", workspace_corpus_evaluation_target_path(Current.workspace, @corpus, @target, version: version.number), aria: { current: version.id == @version.id ? "page" : nil } %><% end %></nav>
+  <section class="section-block"><h2>Fixed configuration</h2><pre class="evidence-text"><%= JSON.pretty_generate(@version.configuration) %></pre><p><%= link_to "Choose a suite to run", workspace_corpus_eval_suites_path(Current.workspace, @corpus) %>. A run freezes the selected target version and case inputs.</p></section>
+  <% if Current.require_membership!.can_manage_work? && @version.id == @target.current_version_id %><section class="section-block config-panel"><h2>Revise target</h2><p>A change creates a new version, leaving previous runs untouched.</p><%= render "form", url: workspace_corpus_evaluation_target_path(Current.workspace, @corpus, @target), method: :patch %></section><% end %>
+</main>

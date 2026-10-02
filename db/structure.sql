@@ -23,6 +23,23 @@ $$;
 
 
 --
+-- Name: prevent_evaluation_run_rebind(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.prevent_evaluation_run_rebind() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF ROW(NEW.workspace_id, NEW.corpus_id, NEW.eval_suite_id, NEW.evaluation_target_version_id, NEW.requested_by_id, NEW.processing_version, NEW.created_at)
+     IS DISTINCT FROM ROW(OLD.workspace_id, OLD.corpus_id, OLD.eval_suite_id, OLD.evaluation_target_version_id, OLD.requested_by_id, OLD.processing_version, OLD.created_at) THEN
+    RAISE EXCEPTION 'evaluation run definition is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_lab_version_update(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -143,7 +160,7 @@ CREATE TABLE public.calibration_samples (
     output_digest character varying NOT NULL,
     output jsonb NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY ((ARRAY['development'::character varying, 'held_out'::character varying])::text[])) AND (jsonb_typeof(output) = 'object'::text)))
+    CONSTRAINT chk_rails_223ca5464b CHECK ((((cohort)::text = ANY (ARRAY[('development'::character varying)::text, ('held_out'::character varying)::text])) AND (jsonb_typeof(output) = 'object'::text)))
 );
 
 
@@ -518,6 +535,190 @@ ALTER SEQUENCE public.eval_suites_id_seq OWNED BY public.eval_suites.id;
 
 
 --
+-- Name: evaluation_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evaluation_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    evaluation_run_item_id bigint NOT NULL,
+    eval_case_id bigint NOT NULL,
+    status character varying NOT NULL,
+    output jsonb,
+    decisions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    error text,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_e1bb064cfc CHECK ((((status)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'incomplete'::character varying, 'error'::character varying])::text[])) AND (jsonb_typeof(decisions) = 'array'::text)))
+);
+
+
+--
+-- Name: evaluation_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.evaluation_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: evaluation_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.evaluation_results_id_seq OWNED BY public.evaluation_results.id;
+
+
+--
+-- Name: evaluation_run_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evaluation_run_items (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    evaluation_run_id bigint NOT NULL,
+    eval_case_id bigint NOT NULL,
+    target_input jsonb NOT NULL,
+    CONSTRAINT chk_rails_9070c2469e CHECK ((jsonb_typeof(target_input) = 'object'::text))
+);
+
+
+--
+-- Name: evaluation_run_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.evaluation_run_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: evaluation_run_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.evaluation_run_items_id_seq OWNED BY public.evaluation_run_items.id;
+
+
+--
+-- Name: evaluation_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evaluation_runs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    eval_suite_id bigint NOT NULL,
+    evaluation_target_version_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    processing_version character varying NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_306154c3a8 CHECK (((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])))
+);
+
+
+--
+-- Name: evaluation_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.evaluation_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: evaluation_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.evaluation_runs_id_seq OWNED BY public.evaluation_runs.id;
+
+
+--
+-- Name: evaluation_target_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evaluation_target_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    evaluation_target_id bigint NOT NULL,
+    created_by_id bigint NOT NULL,
+    number integer NOT NULL,
+    adapter character varying NOT NULL,
+    processing_version character varying NOT NULL,
+    configuration jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_775d9f7766 CHECK (((number > 0) AND ((adapter)::text = 'scripted'::text) AND (jsonb_typeof(configuration) = 'object'::text)))
+);
+
+
+--
+-- Name: evaluation_target_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.evaluation_target_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: evaluation_target_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.evaluation_target_versions_id_seq OWNED BY public.evaluation_target_versions.id;
+
+
+--
+-- Name: evaluation_targets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evaluation_targets (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    name character varying NOT NULL,
+    current_version_id bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: evaluation_targets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.evaluation_targets_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: evaluation_targets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.evaluation_targets_id_seq OWNED BY public.evaluation_targets.id;
+
+
+--
 -- Name: grader_versions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -602,7 +803,7 @@ CREATE TABLE public.human_labels (
     decision character varying NOT NULL,
     rationale text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY ((ARRAY['pass'::character varying, 'fail'::character varying, 'uncertain'::character varying])::text[])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
+    CONSTRAINT chk_rails_e87f64985c CHECK ((((decision)::text = ANY (ARRAY[('pass'::character varying)::text, ('fail'::character varying)::text, ('uncertain'::character varying)::text])) AND ((length(rationale) >= 1) AND (length(rationale) <= 2000))))
 );
 
 
@@ -789,6 +990,43 @@ CREATE SEQUENCE public.organizations_id_seq
 --
 
 ALTER SEQUENCE public.organizations_id_seq OWNED BY public.organizations.id;
+
+
+--
+-- Name: regression_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.regression_cases (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    eval_suite_id bigint NOT NULL,
+    eval_case_id bigint NOT NULL,
+    evaluation_result_id bigint NOT NULL,
+    reviewed_by_id bigint NOT NULL,
+    rationale text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_327f2bc2ad CHECK (((length(rationale) >= 1) AND (length(rationale) <= 2000)))
+);
+
+
+--
+-- Name: regression_cases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.regression_cases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: regression_cases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.regression_cases_id_seq OWNED BY public.regression_cases.id;
 
 
 --
@@ -1301,6 +1539,41 @@ ALTER TABLE ONLY public.eval_suites ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: evaluation_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_results ALTER COLUMN id SET DEFAULT nextval('public.evaluation_results_id_seq'::regclass);
+
+
+--
+-- Name: evaluation_run_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_run_items ALTER COLUMN id SET DEFAULT nextval('public.evaluation_run_items_id_seq'::regclass);
+
+
+--
+-- Name: evaluation_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_runs ALTER COLUMN id SET DEFAULT nextval('public.evaluation_runs_id_seq'::regclass);
+
+
+--
+-- Name: evaluation_target_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_target_versions ALTER COLUMN id SET DEFAULT nextval('public.evaluation_target_versions_id_seq'::regclass);
+
+
+--
+-- Name: evaluation_targets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_targets ALTER COLUMN id SET DEFAULT nextval('public.evaluation_targets_id_seq'::regclass);
+
+
+--
 -- Name: grader_versions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1354,6 +1627,13 @@ ALTER TABLE ONLY public.oidc_identities ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.organizations ALTER COLUMN id SET DEFAULT nextval('public.organizations_id_seq'::regclass);
+
+
+--
+-- Name: regression_cases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regression_cases ALTER COLUMN id SET DEFAULT nextval('public.regression_cases_id_seq'::regclass);
 
 
 --
@@ -1546,6 +1826,46 @@ ALTER TABLE ONLY public.eval_suites
 
 
 --
+-- Name: evaluation_results evaluation_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_results
+    ADD CONSTRAINT evaluation_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: evaluation_run_items evaluation_run_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_run_items
+    ADD CONSTRAINT evaluation_run_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: evaluation_runs evaluation_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_runs
+    ADD CONSTRAINT evaluation_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: evaluation_target_versions evaluation_target_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_target_versions
+    ADD CONSTRAINT evaluation_target_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: evaluation_targets evaluation_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_targets
+    ADD CONSTRAINT evaluation_targets_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: grader_versions grader_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1607,6 +1927,14 @@ ALTER TABLE ONLY public.oidc_identities
 
 ALTER TABLE ONLY public.organizations
     ADD CONSTRAINT organizations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: regression_cases regression_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regression_cases
+    ADD CONSTRAINT regression_cases_pkey PRIMARY KEY (id);
 
 
 --
@@ -1734,6 +2062,27 @@ CREATE UNIQUE INDEX idx_on_eval_case_id_requirement_kind_requirement_in_8a3502f1
 
 
 --
+-- Name: idx_on_eval_suite_id_evaluation_result_id_6f695d58f9; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_eval_suite_id_evaluation_result_id_6f695d58f9 ON public.regression_cases USING btree (eval_suite_id, evaluation_result_id);
+
+
+--
+-- Name: idx_on_evaluation_run_id_eval_case_id_1f97109920; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_evaluation_run_id_eval_case_id_1f97109920 ON public.evaluation_run_items USING btree (evaluation_run_id, eval_case_id);
+
+
+--
+-- Name: idx_on_evaluation_target_id_number_9d515c6581; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_evaluation_target_id_number_9d515c6581 ON public.evaluation_target_versions USING btree (evaluation_target_id, number);
+
+
+--
 -- Name: idx_on_scenario_version_id_corpus_item_id_kind_455675656f; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1741,10 +2090,38 @@ CREATE UNIQUE INDEX idx_on_scenario_version_id_corpus_item_id_kind_455675656f ON
 
 
 --
+-- Name: idx_on_workspace_id_corpus_id_evaluation_target_id__d962945b79; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_evaluation_target_id__d962945b79 ON public.evaluation_target_versions USING btree (workspace_id, corpus_id, evaluation_target_id, id);
+
+
+--
 -- Name: idx_on_workspace_id_corpus_id_grader_id_id_69031213be; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_grader_id_id_69031213be ON public.grader_versions USING btree (workspace_id, corpus_id, grader_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_a4ab285c61; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_a4ab285c61 ON public.evaluation_target_versions USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_eval_case_id_512aa167ec; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_eval_case_id_512aa167ec ON public.evaluation_results USING btree (workspace_id, corpus_id, id, eval_case_id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_eval_case_id_d1064dd5d1; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_eval_case_id_d1064dd5d1 ON public.evaluation_run_items USING btree (workspace_id, corpus_id, id, eval_case_id);
 
 
 --
@@ -1965,6 +2342,41 @@ CREATE UNIQUE INDEX index_eval_suites_on_workspace_id_and_corpus_id_and_id ON pu
 
 
 --
+-- Name: index_evaluation_results_on_evaluation_run_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_evaluation_results_on_evaluation_run_item_id ON public.evaluation_results USING btree (evaluation_run_item_id);
+
+
+--
+-- Name: index_evaluation_runs_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_evaluation_runs_on_requested_by_id ON public.evaluation_runs USING btree (requested_by_id);
+
+
+--
+-- Name: index_evaluation_runs_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_evaluation_runs_on_workspace_id_and_corpus_id_and_id ON public.evaluation_runs USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: index_evaluation_target_versions_on_created_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_evaluation_target_versions_on_created_by_id ON public.evaluation_target_versions USING btree (created_by_id);
+
+
+--
+-- Name: index_evaluation_targets_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_evaluation_targets_on_workspace_id_and_corpus_id_and_id ON public.evaluation_targets USING btree (workspace_id, corpus_id, id);
+
+
+--
 -- Name: index_grader_versions_on_created_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2067,6 +2479,13 @@ CREATE UNIQUE INDEX index_organizations_on_slug ON public.organizations USING bt
 --
 
 CREATE UNIQUE INDEX index_pending_workspace_invitations_on_email ON public.workspace_invitations USING btree (workspace_id, lower((email_address)::text)) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: index_regression_cases_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_regression_cases_on_reviewed_by_id ON public.regression_cases USING btree (reviewed_by_id);
 
 
 --
@@ -2315,6 +2734,34 @@ CREATE TRIGGER eval_cases_immutable BEFORE UPDATE ON public.eval_cases FOR EACH 
 
 
 --
+-- Name: evaluation_results evaluation_results_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER evaluation_results_immutable BEFORE UPDATE ON public.evaluation_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: evaluation_runs evaluation_run_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER evaluation_run_definition_immutable BEFORE UPDATE ON public.evaluation_runs FOR EACH ROW EXECUTE FUNCTION public.prevent_evaluation_run_rebind();
+
+
+--
+-- Name: evaluation_run_items evaluation_run_items_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER evaluation_run_items_immutable BEFORE UPDATE ON public.evaluation_run_items FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: evaluation_target_versions evaluation_target_versions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER evaluation_target_versions_immutable BEFORE UPDATE ON public.evaluation_target_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: grader_versions grader_versions_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2333,6 +2780,13 @@ CREATE TRIGGER human_labels_immutable BEFORE UPDATE ON public.human_labels FOR E
 --
 
 CREATE TRIGGER issue_clusters_immutable BEFORE UPDATE ON public.issue_clusters FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: regression_cases regression_cases_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER regression_cases_immutable BEFORE UPDATE ON public.regression_cases FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
 
 
 --
@@ -2376,6 +2830,22 @@ CREATE TRIGGER taxonomy_versions_immutable BEFORE UPDATE ON public.taxonomy_vers
 
 ALTER TABLE ONLY public.calibration_sets
     ADD CONSTRAINT fk_rails_03578f8e6c FOREIGN KEY (created_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: evaluation_runs fk_rails_03e98e1f22; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_runs
+    ADD CONSTRAINT fk_rails_03e98e1f22 FOREIGN KEY (workspace_id, corpus_id, eval_suite_id) REFERENCES public.eval_suites(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: regression_cases fk_rails_05ccce48ad; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regression_cases
+    ADD CONSTRAINT fk_rails_05ccce48ad FOREIGN KEY (workspace_id, corpus_id, eval_suite_id) REFERENCES public.eval_suites(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -2475,6 +2945,22 @@ ALTER TABLE ONLY public.scenario_evidence
 
 
 --
+-- Name: evaluation_targets fk_rails_4d9b12f815; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_targets
+    ADD CONSTRAINT fk_rails_4d9b12f815 FOREIGN KEY (workspace_id, corpus_id, id, current_version_id) REFERENCES public.evaluation_target_versions(workspace_id, corpus_id, evaluation_target_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: evaluation_run_items fk_rails_4dcbbf54ce; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_run_items
+    ADD CONSTRAINT fk_rails_4dcbbf54ce FOREIGN KEY (workspace_id, corpus_id, eval_case_id) REFERENCES public.eval_cases(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: eval_case_checks fk_rails_57be130586; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2488,6 +2974,14 @@ ALTER TABLE ONLY public.eval_case_checks
 
 ALTER TABLE ONLY public.corpus_analysis_inputs
     ADD CONSTRAINT fk_rails_5940e5b0b1 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: evaluation_target_versions fk_rails_5adcd6eb69; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_target_versions
+    ADD CONSTRAINT fk_rails_5adcd6eb69 FOREIGN KEY (created_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2595,6 +3089,14 @@ ALTER TABLE ONLY public.issue_clusters
 
 
 --
+-- Name: evaluation_targets fk_rails_8192e2edfb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_targets
+    ADD CONSTRAINT fk_rails_8192e2edfb FOREIGN KEY (workspace_id, corpus_id) REFERENCES public.corpora(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: scenarios fk_rails_8690adf9aa; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2635,11 +3137,27 @@ ALTER TABLE ONLY public.eval_suite_cases
 
 
 --
+-- Name: regression_cases fk_rails_9869803d3b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regression_cases
+    ADD CONSTRAINT fk_rails_9869803d3b FOREIGN KEY (reviewed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: memberships fk_rails_99326fb65d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.memberships
     ADD CONSTRAINT fk_rails_99326fb65d FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: evaluation_results fk_rails_9e3a97f7cb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_results
+    ADD CONSTRAINT fk_rails_9e3a97f7cb FOREIGN KEY (workspace_id, corpus_id, evaluation_run_item_id, eval_case_id) REFERENCES public.evaluation_run_items(workspace_id, corpus_id, id, eval_case_id) ON DELETE CASCADE;
 
 
 --
@@ -2707,6 +3225,14 @@ ALTER TABLE ONLY public.grader_versions
 
 
 --
+-- Name: evaluation_run_items fk_rails_aff0dcc99c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_run_items
+    ADD CONSTRAINT fk_rails_aff0dcc99c FOREIGN KEY (workspace_id, corpus_id, evaluation_run_id) REFERENCES public.evaluation_runs(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: human_labels fk_rails_c25eaef411; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2720,6 +3246,14 @@ ALTER TABLE ONLY public.human_labels
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT fk_rails_cdb00c0cbd FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: evaluation_target_versions fk_rails_cf312dcb8e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_target_versions
+    ADD CONSTRAINT fk_rails_cf312dcb8e FOREIGN KEY (workspace_id, corpus_id, evaluation_target_id) REFERENCES public.evaluation_targets(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -2755,11 +3289,27 @@ ALTER TABLE ONLY public.scenarios
 
 
 --
+-- Name: regression_cases fk_rails_dd0f089eb7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regression_cases
+    ADD CONSTRAINT fk_rails_dd0f089eb7 FOREIGN KEY (workspace_id, corpus_id, evaluation_result_id, eval_case_id) REFERENCES public.evaluation_results(workspace_id, corpus_id, id, eval_case_id) ON DELETE CASCADE;
+
+
+--
 -- Name: audit_events fk_rails_dd1f3a471a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT fk_rails_dd1f3a471a FOREIGN KEY (actor_id) REFERENCES public.users(id);
+
+
+--
+-- Name: evaluation_runs fk_rails_df70446887; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_runs
+    ADD CONSTRAINT fk_rails_df70446887 FOREIGN KEY (workspace_id, corpus_id, evaluation_target_version_id) REFERENCES public.evaluation_target_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -2776,6 +3326,14 @@ ALTER TABLE ONLY public.eval_cases
 
 ALTER TABLE ONLY public.memberships
     ADD CONSTRAINT fk_rails_e7b442f67c FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: evaluation_runs fk_rails_e9a13729c6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evaluation_runs
+    ADD CONSTRAINT fk_rails_e9a13729c6 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -2841,6 +3399,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930060000'),
 ('20260930050000'),
 ('20260930040000'),
 ('20260930030000'),
