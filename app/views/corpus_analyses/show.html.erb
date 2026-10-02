@@ -1,22 +1,38 @@
 <% content_for :title, "Corpus analysis — NavishAI" %>
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
-  <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", request.path, class: "button" %></div>
-  <p>Local term clustering, not semantic diagnosis. It uses titles and the first 4000 characters of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
+  <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.model? && @model_result ? "#{@model_result.fetch('decision').humanize} · attempt complete" : @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", request.path, class: "button" %></div>
+  <% if @analysis.model? %>
+    <p>Model-proposed issue families and scenarios from your fixed source records. Exact quotes prove source links, not correct classification or expectations. No expert label or scenario approval comes from this analysis.</p>
+    <% if @analysis.stale? %><p role="status">Company documentation changed after this request. Inspect the fixed history here; review current evidence before compiling scenarios.</p><% end %>
+    <details><summary>Fixed model settings and attempt</summary><pre class="evidence-text"><%= JSON.pretty_generate(@analysis.configuration.merge("request_key" => @analysis.request_key, "input_digest" => @analysis.input_digest)) %></pre></details>
+    <details><summary>Disclosed source records</summary><pre class="evidence-text"><%= JSON.pretty_generate(ModelCorpusDiscovery.input(@model_items.values)) %></pre></details>
+    <% if @model_result %>
+      <h2><%= @model_result.fetch("decision").humanize %></h2><p><%= @model_result.fetch("reason") %></p>
+      <details><summary>Fixed model response and reported cost</summary><p>Missing usage/cost stays unknown. Endpoint reports are not verified charges or quality evidence.</p><pre class="evidence-text"><%= JSON.pretty_generate(@model_result) %></pre></details>
+    <% end %>
+  <% else %>
+    <p>Local term clustering, not semantic diagnosis. It uses titles and the first 4000 characters of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
+  <% end %>
   <% if @analysis.state == "failed" %><p role="alert" class="inline-error"><%= @analysis.error %></p><% end %>
-  <% if @analysis.state == "queued" %><p role="status">Waiting for the local processing job. No data leaves this deployment.</p><% end %>
+  <% if @analysis.state.in?(%w[queued running]) %>
+    <p role="status"><%= @analysis.model? ? "One fixed model attempt; it may send the disclosed records to the approved endpoint. No automatic retry." : "Waiting for the local processing job. No data leaves this deployment." %></p>
+    <% if Current.require_membership!.can_write? && (@analysis.state == "queued" || @analysis.started_at < 10.minutes.ago) %><%= button_to "Interrupt analysis attempt", interrupt_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "button" %><% end %>
+  <% end %>
   <% if @analysis.state == "complete" %>
-    <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> term clusters represented. This measures this method's selection, not verified issue-family coverage.</p>
-    <p>Taxonomy: <%= @taxonomy ? "expert revision #{@taxonomy.number}" : "unreviewed proposals" %>. A possible documentation gap means no overlap between three cluster terms and the uploaded documents; experts must check it.</p>
-    <% if Current.require_membership!.can_write? %><%= button_to "Create selected scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { analysis_id: @analysis.id }, class: "button button-primary" %><% end %>
+    <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> <%= @analysis.model? ? "proposed families" : "term clusters" %> represented. This measures this method's selection, not verified issue-family coverage.</p>
+    <p>Taxonomy: <%= @taxonomy ? "expert revision #{@taxonomy.number}" : "unreviewed proposals" %>. <%= @analysis.model? ? "Possible documentation gaps and importance are model proposals; experts must check them." : "A possible documentation gap means no overlap between three cluster terms and the uploaded documents; experts must check it." %></p>
+    <% if Current.require_membership!.can_write? && @analysis.summary["selected"].to_i.positive? %><%= button_to "Create selected scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { analysis_id: @analysis.id }, class: "button button-primary" %><% end %>
     <% @clusters.each do |cluster| %>
       <section class="section-block" aria-labelledby="cluster-<%= cluster.id %>">
         <h2 id="cluster-<%= cluster.id %>"><%= @taxonomy&.labels&.fetch(cluster.id.to_s, nil) || cluster.proposed_label %></h2>
         <p><%= pluralize(cluster.signals["count"], "conversation") %> · <%= @taxonomy&.labels&.key?(cluster.id.to_s) ? "Expert-reviewed label" : "Proposed label" %><% if cluster.signals["possible_documentation_gap"] %> · possible documentation gap<% end %></p>
+        <% if @analysis.model? %><p><%= cluster.signals.fetch("proposal_reason") %></p><% end %>
         <% cluster.cluster_members.sort_by { |member| member.selection_reason ? 0 : 1 }.first(10).each do |member| %>
           <details class="source-record"><summary><%= member.corpus_item.title %><%= member.selection_reason ? " — selected candidate" : "" %></summary>
             <p><%= member.signals.join(" · ") %></p><% if member.selection_reason %><p><%= member.selection_reason %></p><% end %>
             <%= link_to "Inspect source snapshot", source_evidence_path(member.corpus_item) %>
+            <% if @analysis.model? %><h3>Membership quote</h3><pre class="evidence-text"><%= cluster.signals.fetch("evidence").find { |quote| quote.fetch("reference") == "corpus-item-#{member.corpus_item_id}" }.fetch("quote") %></pre><% end %>
             <pre class="evidence-text"><%= member.corpus_item.content %></pre>
           </details>
         <% end %>

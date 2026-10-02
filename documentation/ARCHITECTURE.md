@@ -124,6 +124,33 @@ Deletion cascades from source-backed scenarios through these request/results.
 This is a bounded extraction interface, not semantic corpus clustering or proof
 of model quality. It adds no vendor SDK, training or production dependency.
 
+## Model-assisted corpus discovery
+
+Keep local discovery and add an explicit model method to the same analysis domain.
+Freeze all current conversation/document item IDs, their exact input digest,
+model/settings, protocol and request UUID. The first model request accepts at most
+100 complete records, 256 KiB and 20 candidates; it neither samples nor truncates
+silently. Larger batch discovery remains a separate engineering step.
+
+Corpus disclosure needs `NAVISHAI_CORPUS_ENDPOINTS` and consent bound to the exact
+preview digest. Neither target/judge nor single-scenario approval covers full source
+records. Send source titles, text and retained context only; omit scenario
+expectations, expert labels, traces and other workspaces. Reuse the guarded transport.
+
+The response proposes company-specific families, an explained partition of every
+disclosed conversation and bounded scenario definitions. Every member and proposed
+requirement needs an exact disclosed quote. References, duplicates, omissions and
+invented quotes fail atomically. Counts come from actual membership, not model
+coverage claims. A documentation-gap proposal remains a proposal.
+
+Claim once, release locks while processing and recheck membership, source lifetime,
+document freshness and purpose approval before saving immutable results/clusters.
+Unknown outcomes never retry. Experts may interrupt old attempts and deliberately
+request a new analysis. Taxonomy review and scenario mining reuse their existing
+human gates. Mining copies proposed definitions and exact expectation evidence;
+it grants neither approval nor target-visible knowledge. No classifier or new
+dependency follows from this method; fixture responses cannot prove its quality.
+
 ## Production failures
 
 Treat uploaded production traces as source records, not a tracing service. The

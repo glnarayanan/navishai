@@ -31,23 +31,26 @@ class ScenarioExtractor
       valid &&= response["scenario"].nil? && response["evidence_links"] == []
     elsif valid
       definition = response["scenario"]
-      valid &&= definition.is_a?(Hash) && definition.keys.sort == ScenarioVersion::EDITABLE.sort &&
-        %w[title situation taxonomy_label importance].all? { |key| definition[key].is_a?(String) }
-      if valid
-        candidate = ScenarioVersion.new(definition.merge(workspace: version.workspace, corpus: version.corpus, scenario: version.scenario, created_by: version.created_by,
-          number: 1, origin: "expert", selection_reason: "Machine proposal; no expert approval."))
-        valid &&= candidate.valid? && definition.fetch("requirements").fetch("outcomes").present?
-      end
-      links = response["evidence_links"]
-      requirements = valid ? definition.fetch("requirements").flat_map { |kind, statements| statements.each_index.map { |index| [ kind, index ] } } : []
+      valid &&= valid_definition?(definition, version:) && definition.fetch("requirements").fetch("outcomes").present?
       sources = evidence.to_h { |item| [ item.fetch("reference"), item.fetch("content") ] }
-      valid &&= links.is_a?(Array) && links.size == requirements.size && links.all? do |link|
-        link.is_a?(Hash) && link.keys.sort == %w[index kind quote reference] && requirements.include?([ link["kind"], link["index"] ]) && link["index"].is_a?(Integer) &&
-          link["quote"].is_a?(String) && link["quote"].strip.length.between?(1, 2000) && sources[link["reference"]]&.include?(link["quote"])
-      end
-      valid &&= links.map { |link| [ link["kind"], link["index"] ] }.uniq.size == requirements.size
+      valid &&= valid_evidence_links?(response["evidence_links"], definition:, sources:)
     end
     raise SupportOutput::Invalid, "Model response does not match source-scenario-v1 and its exact evidence." unless valid
     response
+  end
+
+  def self.valid_definition?(definition, version:)
+    return false unless definition.is_a?(Hash) && definition.keys.sort == ScenarioVersion::EDITABLE.sort &&
+      %w[title situation taxonomy_label importance].all? { |key| definition[key].is_a?(String) }
+    ScenarioVersion.new(definition.merge(workspace: version.workspace, corpus: version.corpus, scenario: version.scenario, created_by: version.created_by,
+      number: 1, origin: "mined", selection_reason: "Machine proposal; no expert approval.")).valid?
+  end
+
+  def self.valid_evidence_links?(links, definition:, sources:)
+    requirements = definition.fetch("requirements").flat_map { |kind, statements| statements.each_index.map { |index| [ kind, index ] } }
+    links.is_a?(Array) && links.size == requirements.size && links.all? do |link|
+      link.is_a?(Hash) && link.keys.sort == %w[index kind quote reference] && requirements.include?([ link["kind"], link["index"] ]) && link["index"].is_a?(Integer) &&
+        link["quote"].is_a?(String) && link["quote"].strip.length.between?(1, 2000) && sources[link["reference"]]&.include?(link["quote"])
+    end && links.map { |link| [ link["kind"], link["index"] ] }.uniq.size == requirements.size
   end
 end

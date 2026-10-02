@@ -42,8 +42,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
 - [#157](https://github.com/glnarayanan/navishai/pull/157), based on #156: personal expert review focus,
   exact calibration provenance and native corpus exploration navigation.
 - [#158](https://github.com/glnarayanan/navishai/pull/158), based on #157: isolated synthetic backup/restore proof.
-- `rebuild/19-scenario-proposals`, based on #158: fixed source-backed model proposals,
+- [#159](https://github.com/glnarayanan/navishai/pull/159), based on #158: fixed source-backed model proposals,
   separate source-processing approval and the corpus navigation regression fix.
+- `rebuild/20-model-discovery`, based on #159: fixed model corpus discovery,
+  complete source disclosure, source-backed families/scenarios and connected proof.
 
 ## Built and checked
 
@@ -345,6 +347,35 @@ The backup/restore proof and its focused RuboCop check passed against the new
 schema too; both provider registries stay empty in that proof. Direct risk review
 and native audits used; no live model, customer data or new dependency.
 
+GitHub CI for #159 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36799951558)).
+The earlier failed #155 and #158 runs remain failed, not retroactively green.
+
+Model corpus discovery `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 3m16.36s:
+249 Ruby files clean, native audits clean, Brakeman zero warnings/errors and eager
+loading passed; 278 Rails tests / 2729 assertions and 21 browser tests / 763
+assertions, no failures/errors/skips. Checks cover separate purpose/consent,
+changed preview, fixed historic inputs, byte/record bounds, complete partitions,
+exact requirement quotes, source windows, malformed/model/cost rejection,
+abstention, authority/expiry/document changes, concurrent delivery/purge,
+immutable SQL records, foreign reads and viewer restrictions. The connected
+model fixture reaches expert taxonomy/expectation correction, mixed checks,
+held-out labels, a deliberately missed failure, HTTP failure and the same fixed
+case passing its later regression. Eight distinct fixture requests occur once
+despite duplicate delivery. Hidden facts stay local; targets receive no expectations.
+
+The browser checks malformed JSON retention, keyboard consent, exact preview,
+queued refresh, human taxonomy review and unapproved scenario mining. Nine final
+desktop/390px captures were inspected without overflow or CSP failures. The first
+pass found a misleading completion heading and unclear blocked-consent notice;
+final captures distinguish the outcome from attempt completion and say the prior
+request did not start. The bounded independent UI finish review returned `ship`;
+the detector returned no findings. Its verdict covers these synthetic states, not
+model quality or customer acceptance. Native backup/restore and its focused style
+check passed against this schema; all three endpoint registries stay empty there.
+Direct risk review/native audits used; Ponytail Audit and CE Code Review remain
+unavailable. No live provider, customer data or new dependency.
+
 The orb has Docker 29.8.1 but no local daemon socket, Compose or Buildx plugin.
 An explicit local-only probe failed before any build. YAML parses; image execution,
 non-root runtime, compiled image assets and clean-host/TLS acceptance remain
@@ -361,10 +392,12 @@ exact input compatibility among 100 cases, not semantic failure matching. Record
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge/source-processing endpoints.
-The endpoint registries have no configured entries. Analysis remains bounded to
-2000 records and 10 MiB. Local scenario mining still uses titles/context/sentences;
-bounded source-backed model proposals now support expert revision, not automatic
-approval or semantic corpus discovery. Experts supply source-backed outcomes. Controlled variants
+The endpoint registries have no configured entries. Local analysis remains bounded
+to 2000 records and 10 MiB. Model corpus discovery proposes company families and
+structured source-backed scenarios from 100 complete records within 256 KiB;
+it does not silently sample larger inputs. Local mining still uses titles/context/
+sentences. Neither model discovery nor single-scenario proposals grant approval.
+Experts check source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
 and descendants because their analysis depends on the full corpus. Purge also
@@ -375,11 +408,11 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering still includes stronger support-specific corpus/scenario
-analysis beyond the term/title baseline, larger bounded intake/processing and
-clean-host/image/TLS proof. The isolated backup/restore fixture proof now passes.
-The current UI/report slices do not finish
-those tasks. Keep the full product scope; these are not owner-approval blockers.
+Independent engineering still includes larger bounded corpus processing,
+source-backed failure matching beyond exact input compatibility and clean-host/
+image/TLS proof. The model discovery interface and isolated backup/restore fixture
+proof now pass, but do not finish those tasks. Keep the full product scope;
+engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. Clean-host/Compose image/TLS and production backup acceptance are unverified.
@@ -398,8 +431,8 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
    pilot corpus. No customer data has been imported or disclosed.
 2. Name the authoritative pilot experts and obtain their expectations/held-out
    labels. Fixture judgments cannot establish taxonomy quality or grader accuracy.
-3. Approve exact target/judge/scenario-processing endpoints, disclosure scope and
-   cost limits before live execution. The private registries still have zero entries.
+3. Approve exact target/judge/scenario/corpus-processing endpoints, disclosure scope
+   and cost limits before live execution. The private registries still have zero entries.
 
 Classifier work remains gated by enough labelled data and measured economics.
 Independent local engineering and fixture checks can continue without these gates.

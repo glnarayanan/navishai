@@ -16,6 +16,16 @@ theme control. Navigation uses a keyboard-accessible disclosure at every viewpor
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
 
+Model corpus discovery places the fixed model request beside complete source
+previews on desktop and stacks them on mobile. Consent names exact records and
+retained context, with separate corpus-purpose approval and PII limits. Invalid
+JSON stays in the field; changed previews clear consent. A blocked attempt says it
+did not start. Empty/oversize input has a corpus recovery link, not a partial form.
+The analysis shows proposal/abstention/error separately from attempt completion,
+with fixed settings/input/result disclosures and exact member quotes. Selection
+counts are not verified coverage. Experts use existing taxonomy and scenario review
+controls; machine output cannot approve them. No new tokens, assets or controls.
+
 Corpus exploration uses a labelled phrase/source GET form with a count of observed
 matches, not semantic coverage. Desktop places fields side by side; mobile stacks
 them. Native disclosures show retained text/context and exact source/snapshot links.

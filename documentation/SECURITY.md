@@ -92,6 +92,23 @@ Unknown outcomes never retry automatically; purge cascades through local copies.
 Proposals cannot advance a scenario, create labels, approve or compile an eval.
 Experts keep the existing revision/review gates. No live scenario endpoint ran.
 
+Model corpus discovery has a third, separate exact workspace/URL registry and
+consent bound to the displayed source digest. Conversation/document records alone
+enter its bounded payload; unrelated corpora, traces, scenarios and labels stay
+local. Frozen input IDs, settings, protocol and UUID cannot be rewritten in SQL.
+Results stay immutable and same-corpus; terminal summaries cannot change either.
+Every conversation must occur exactly once in the proposed partition. Member and
+requirement quotes must exist in the disclosed text; those checks cannot prove
+correctness or prevent model injection. The gateway must enforce the data boundary.
+
+The once-claimed job releases locks for transport, then rechecks membership,
+source lifetime, current documents, fixed digest and purpose approval before
+atomic retention. Revocation/purge during a call discards its returning response;
+it cannot recall data already sent. No unknown outcome retries. Mining creates
+unapproved versions, grants no target-visible knowledge and creates no labels.
+Viewer reads write/queue nothing, and expired inputs hide the derived result.
+Configuration is filtered from logs. No live corpus endpoint or customer data ran.
+
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
 prior cases or labels. Suite consent binds its displayed case list, rejecting stale
