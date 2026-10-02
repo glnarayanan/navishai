@@ -173,7 +173,12 @@ then version ID. This is literal retrieval, not semantic accuracy or probability
 
 Bounds are 2000 current versions and 10 MiB of complete candidate text. Exceeding
 either bound searches nothing rather than truncating. Candidate inputs load once
-per source page, not once per trace. Expired, merged, rejected or stale-document
+per source page, not once per trace. A bounded SQL count now refuses version
+overflow before candidate definitions and associations load. The corpus lock spans
+that count and loading; it prevents scenario writes/purge changing the collection
+between them. The requested trace still validates its own source lifetime.
+The searched-text byte check still follows association loading; it is not a
+complete retained-field preflight. Expired, merged, rejected or stale-document
 versions cannot appear. Exact links, shared terms and equal/conflicting/missing
 facts help experts compare evidence; null, false, zero and absence differ.
 

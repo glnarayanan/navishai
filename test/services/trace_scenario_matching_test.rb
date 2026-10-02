@@ -6,6 +6,35 @@ class TraceScenarioMatchingTest < ActiveSupport::TestCase
   include ActiveSupport::Testing::ConstantStubbing
   setup { build_failure_matching_fixture }
 
+  test "real version ceiling refuses before candidate definitions and source associations load" do
+    1999.times { matching_version }
+    complete = TraceScenarioMatching.call(item: @item)
+    assert_equal 2000, complete.searched_versions
+    assert_equal 5, complete.candidates.size
+    assert_equal @version.id, complete.candidates.first.version.id
+    assert_nil complete.message
+    matching_version
+    SupportTrace.payload(@item)
+    loaded = []
+    observer = ->(event) do
+      if %w[ScenarioVersion Scenario ScenarioReview ScenarioEvidence CorpusItem SourceSnapshot Source].include?(event.payload[:class_name])
+        loaded << [ event.payload[:class_name], event.payload[:record_count] ]
+      end
+    end
+    refused = nil
+    assert_no_difference [ "TraceScenarioDecision.count", "ScenarioReview.count", "AuditEvent.count" ] do
+      ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+        refused = TraceScenarioMatching.call(item: @item)
+      end
+    end
+    # Validating the requested trace still refreshes its own source metadata.
+    assert_equal [ [ "Source", 1 ] ], loaded
+    assert_empty refused.candidates
+    assert_equal 0, refused.searched_versions
+    assert_equal 0, refused.searched_bytes
+    assert_match(/2000 current versions; no text searched/, refused.message)
+  end
+
   test "multiple asymmetric traces load the candidate corpus once and retain distinct results" do
     trace = SupportTrace.payload(@item).deep_dup
     trace.merge!("id" => "invoice-trace", "title" => "Invoice failure", "observed_failure" => "Invoice billing contact was omitted.")
@@ -16,7 +45,8 @@ class TraceScenarioMatchingTest < ActiveSupport::TestCase
     queries = []
     observer = ->(_name, _start, _finish, _id, payload) { queries << payload.fetch(:sql) if payload.fetch(:sql).include?('FROM "scenario_versions"') }
     results = ActiveSupport::Notifications.subscribed(observer, "sql.active_record") { TraceScenarioMatching.call_all(items: [ @item, other ]) }
-    assert_equal 1, queries.size
+    assert_equal 2, queries.size
+    assert_equal 1, queries.count { |sql| sql.include?("COUNT(*)") }
     assert_equal @version, results.fetch(@item.id).candidates.sole.version
     assert_equal invoice, results.fetch(other.id).candidates.sole.version
     assert_equal 2, results.fetch(@item.id).searched_versions
