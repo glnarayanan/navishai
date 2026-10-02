@@ -44,8 +44,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
 - [#158](https://github.com/glnarayanan/navishai/pull/158), based on #157: isolated synthetic backup/restore proof.
 - [#159](https://github.com/glnarayanan/navishai/pull/159), based on #158: fixed source-backed model proposals,
   separate source-processing approval and the corpus navigation regression fix.
-- `rebuild/20-model-discovery`, based on #159: fixed model corpus discovery,
+- [#160](https://github.com/glnarayanan/navishai/pull/160), based on #159: fixed model corpus discovery,
   complete source disclosure, source-backed families/scenarios and connected proof.
+- `rebuild/21-build-context`, based on #160: pinned PostgreSQL index, private/generated
+  build-context exclusions and exact runtime-directory markers.
 
 ## Built and checked
 
@@ -376,10 +378,29 @@ check passed against this schema; all three endpoint registries stay empty there
 Direct risk review/native audits used; Ponytail Audit and CE Code Review remain
 unavailable. No live provider, customer data or new dependency.
 
+GitHub CI for #160 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36803288571)).
+The hosting config check parses Compose YAML, checks its exact PostgreSQL pin and
+default-deny corpus registry forwarding. An immutable public OCI index fetch
+matches the configured SHA-256 and includes Linux amd64/arm64 entries. Static
+matcher review found that `!.keep` never restored nested runtime markers; explicit
+paths now do. Bundler config, nested Rails keys and generated assets stay outside
+the context. RuboCop passes; 8 focused preflight/setup tests / 38 assertions pass.
+The preceding full application CI remains the broader evidence; no app code changed.
+
+A disposable tracked checkout, empty inherited environment, production-only bundle,
+dummy secret and unused database URL passed native production `assets:precompile`
+and `zeitwerk:check` as UID 1000. All 30 manifest entries resolve to files, including
+local fonts/CSS. The first inspection assumed an old manifest shape and failed;
+the corrected check reads `digested_path`. Rails still warns about unused image
+variants and non-eager-loaded test mail previews; no dependency was added to hide
+them. This checks native production build/eager loading, not an image or clean host.
+
 The orb has Docker 29.8.1 but no local daemon socket, Compose or Buildx plugin.
 An explicit local-only probe failed before any build. YAML parses; image execution,
 non-root runtime, compiled image assets and clean-host/TLS acceptance remain
-unverified. Static Dockerfile declarations do not prove them.
+unverified. No live runner is connected. Static Dockerfile declarations and native
+production asset checks do not prove image execution.
 
 ## Next and limits
 
@@ -416,7 +437,7 @@ engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. Clean-host/Compose image/TLS and production backup acceptance are unverified.
-Current Compose PostgreSQL tag is not digest-pinned. Database administrators can
+Compose PostgreSQL now has a verified manifest pin, not runtime acceptance. Database administrators can
 bypass triggers; last-Owner protection is application-side. Backups need their own
 retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
 [deployment](./DEPLOYMENT.md) and [design](./DESIGN.md).

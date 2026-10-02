@@ -24,13 +24,37 @@ Network policy must deny private/special-use destinations even on the edge netwo
 the application also validates DNS and pins public addresses. No live endpoint is
 configured or tested by default. Local deletion cannot recall remote copies.
 
+Compose pins the public PostgreSQL 16 multi-platform index by digest. On 1 October
+2026, the registry returned that digest for `postgres:16`; fetching the immutable
+index produced the same SHA-256 and included Linux amd64/arm64 entries. This checks
+manifest identity, not image execution or release security. Review and test a new
+digest before changing it; do not leave security updates unreviewed indefinitely.
+
+The Docker context excludes local Bundler config, all `config/**/*.key` files,
+private environment files, runtime content and generated `public/assets`. Assets
+compile inside the build. Only `log/.keep`, `storage/.keep` and `tmp/.keep` restore
+their root runtime directories. A bare `!.keep` cannot match those nested paths;
+Docker uses complete paths and parent prefixes, not recursive basename matching
+([matcher source](https://github.com/moby/patternmatcher/blob/main/patternmatcher.go#L122-L163)).
+This static rule review is not proof that an image contains no secrets. Build only
+from a reviewed checkout and inspect the final image before deployment.
+
+Native production checks passed in a disposable `git archive HEAD` checkout as
+UID 1000, with an empty inherited environment, production-only frozen bundle,
+`SECRET_KEY_BASE_DUMMY=1`, `NAVISHAI_APP_HOST=example.invalid` and an unused
+database URL. `bin/rails assets:precompile` and `bin/rails zeitwerk:check` passed;
+all 30 asset manifest entries resolved to files, including local CSS/fonts.
+These commands did not create a database, start services or contact a provider.
+They do not prove a Docker build, image permissions or clean-host acceptance.
+The orb has no local Docker daemon, Compose or Buildx; image execution remains
+unchecked. Keep the native proof separate from deployment acceptance.
+
 Before claiming deployment readiness, independently verify a clean host, image
-build, pinned PostgreSQL image digest, non-superuser database roles, HTTPS/proxy
+build, pinned image execution, non-superuser database roles, HTTPS/proxy
 configuration, mail/OIDC delivery, backup and restore, retention/deletion policy,
-network boundaries and upgrades. Compose's PostgreSQL tag currently tracks 16;
-this is a known reproducibility gap, not a certified release. Database owners and
-superusers can bypass triggers; application roles must not be superusers or have
-privileges to disable audit protections.
+network boundaries and upgrades. A pinned manifest is not a certified release.
+Database owners and superusers can bypass triggers; application roles must not be
+superusers or have privileges to disable audit protections.
 
 ## Disposable backup/restore fixture proof
 
@@ -67,6 +91,6 @@ Local orb execution on 1 October 2026 passed this fixture proof. This covers the
 primary lab schema, not separate production queue/cache/cable databases, backup
 encryption/retention, PITR, role/ACL restoration (owner and ACL data are omitted),
 RLS, all possible composite relationships, live targets or model quality. Owners
-and superusers still can bypass triggers. Clean-host, Compose image build/digest,
+and superusers still can bypass triggers. Clean-host, Compose image execution,
 HTTPS/proxy and production network/role acceptance remain unverified; this local
 socket proof supplies none of those claims.
