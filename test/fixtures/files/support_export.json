@@ -1,0 +1,4 @@
+[
+  {"id":"sso-7","title":"SAML certificate expiry","content":"After rotating the IdP certificate, SAML login fails. Ask admin@example.org for metadata and certificate expiry. Never claim to change the configuration.","context":{"plan":"enterprise","reopened":true}},
+  {"id":"api-29","title":"Webhook replay duplicates invoices","content":"A repeated delivery creates duplicate invoices. Request delivery IDs and logs. Engineering escalation required for confirmed duplicate writes.","context":{"impact":"critical"}}
+]

@@ -1,6 +1,6 @@
 # Evaluation-lab development
 
-Phase A runs Rails 8.1, Ruby 4.0.6 and PostgreSQL 16. No Go source, process runner,
+The lab runs Rails 8.1, Ruby 4.0.6 and PostgreSQL 16. No Go source, process runner,
 Supermemory, vector extension, document converters or provider services remain.
 Go can return with a bounded HTTP evaluation worker when Phase D earns it.
 
@@ -17,9 +17,9 @@ and choose a fresh name. Database task preflight checks effective configuration
 default names and legacy tables even after renaming. Boot rejects old default names.
 There is no legacy-data migration or compatibility layer.
 
-`db/structure.sql` is the fresh auth/tenancy baseline generated from the retained
-auth migrations, with PostgreSQL foreign keys, role/status checks, uniqueness, and
-append-only audit update/delete/truncate triggers. Solid Queue/cache/cable schemas
+`db/structure.sql` includes auth/tenancy and corpus migrations, with PostgreSQL
+composite workspace foreign keys, checks, uniqueness, immutable snapshot/item
+updates and append-only audit triggers. Solid Queue/cache/cable schemas
 remain separate Rails-native production databases. No RLS is installed.
 
 ## Run and check
@@ -32,7 +32,30 @@ remain separate Rails-native production databases. No RLS is installed.
 - `bin/ci` runs setup, RuboCop, gem/importmap audits, Brakeman, eager-load checks,
   full Rails tests and system tests. No checks reference deleted Go code.
 - `CAPTURE_LAB_SCREENSHOTS=1 bin/rails test:system` records lab/auth/error states at
-  1280, 390 and 320px under `.amp/in/artifacts/phase-a/`.
+  1280, 390 and 320px under `.amp/in/artifacts/phase-a/` and intake/evidence states
+  under `.amp/in/artifacts/corpus/`.
+
+## Corpus intake
+
+Create a corpus inside a workspace. Upload a JSON array with `id`, `title`,
+`content` and optional object `context`, an Intercom `conversations` array with
+source/parts, or a Zendesk `tickets` array with description/comments. These narrow
+shapes are not every vendor export format. Plain UTF-8 text and Markdown also work;
+PDF, attachments and live connectors do not. Limits: 10 MiB, 2000 records per upload,
+100,000 characters per record. Bad batches roll back as a whole.
+
+The same source name/type and input digest/redaction reuse a snapshot. Changed
+input or redaction adds a version; re-uploading an old version selects it again.
+Current corpus views use only current, unexpired snapshots. Original files are not
+retained: normalised records, SHA-256 input digest and processing version are.
+Email masking is the default, not complete PII removal; review other sensitive data
+before upload. Email IDs become distinct digest-based record IDs.
+
+Retention is 1–3650 days from the latest import, including a repeat. Expired content
+leaves exploration immediately; `SourceRetentionJob` deletes it hourly through
+Solid Queue in production. Managers/Admins/Owners can delete a source by typing its
+name. In development run `bin/rails runner 'SourceRetentionJob.perform_now'` to
+enforce expiry. No export route or external processing exists in this slice.
 
 For first-Owner setup configure a random 32+ byte `NAVISHAI_BOOTSTRAP_TOKEN` and a
 future ISO 8601 `NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT`; use `/setup`. Remove them after

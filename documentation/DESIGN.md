@@ -5,9 +5,11 @@ Local Geist/Geist Mono, neutral canvas, thin dividers, restrained blue actions,
 plain repository path and text navigation. No customer preview, fake totals,
 disabled feature buttons or invented evaluation results.
 
-The workspace overview states exactly what exists: access and identity management,
-with no evaluation content or target processing. All feature language is truthful
-about unbuilt corpus/scenario/run workflows. Light and dark modes retain the native
+The workspace overview links to corpus intake and source evidence. Import forms
+name supported formats, bounds, email masking limits and retention. Source pages
+show the fixed snapshot, input digest, processing version and historical versions;
+record lists paginate. Errors state the rejected input and recovery path. No target
+processing or scenario/eval actions exist yet. Light and dark modes retain the native
 theme control. Navigation uses a keyboard-accessible disclosure at every viewport;
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.

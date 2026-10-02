@@ -4,7 +4,7 @@ class WorkspaceTest < ActiveSupport::TestCase
   test "workspace has no old domain configuration or runner key" do
     workspace = workspaces(:acme_support)
     assert_not workspace.has_attribute?(:runner_key)
-    assert_equal %i[organization memberships users workspace_invitations audit_events], Workspace.reflect_on_all_associations.map(&:name)
+    assert_empty Workspace.reflect_on_all_associations.map(&:name) & %i[support_cases accounts crew_tasks memory_records interventions]
   end
 
   test "allows the same slug in different organizations" do

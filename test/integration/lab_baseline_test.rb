@@ -29,9 +29,10 @@ class LabBaselineTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "database baseline contains only retained tables" do
-    expected = %w[ar_internal_metadata audit_events installation_states memberships oidc_identities organizations schema_migrations sessions users workspace_invitations workspaces]
-    assert_equal expected.sort, ApplicationRecord.connection.tables.sort
+  test "database baseline excludes obsolete tables" do
+    tables = ApplicationRecord.connection.tables
+    assert_includes tables, "memberships"
+    assert_empty tables & %w[support_cases crew_tasks execution_runs memory_records accounts sla_policies interventions]
     assert_empty ApplicationRecord.connection.select_values("SELECT extname FROM pg_extension WHERE extname = 'vector'")
   end
 

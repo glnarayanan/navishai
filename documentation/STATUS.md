@@ -1,79 +1,64 @@
 # Rebuild status
 
-Updated 30 September 2026. The [product authority](./PRODUCT.md) supersedes the old
-helpdesk milestones. This is **Phase A only**, built and tested on
-`rebuild/02-domain-demolition` from local `rebuild/01-product-authority`.
-The four authorities are unchanged. This is not the complete evaluation product.
+Updated 30 September 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
+milestones. The rebuild is not complete. Nothing has merged, released or deployed.
 
-## Built locally
+## Delivered stack
 
-- Removed helpdesk/customer messaging, SLA, account-health/intervention, crews and
-  personas, broad memory/Supermemory, operational policy, runtime administration,
-  coupled execution ledger, connectors, attachments/converters and old fixtures,
-  journeys and documentation. Removed the Go process runner, module/toolchain pins,
-  installer/Helm/native topology, release/archive/SBOM helpers and obsolete CI work.
-- Detached retained auth/tenancy associations and callbacks. Local sign-in,
-  verification/reset, invitations, OIDC, first Owner, break-glass, workspace
-  authorization and last-Owner protection remain. Audit is append-only in Ruby and
-  PostgreSQL; no notification/retention mutation exceptions remain. No RLS exists.
-- Fresh auth migrations and regenerated `db/structure.sql`: 9 application tables,
-  2 Rails metadata tables, 10 foreign keys, 10 checks, 1 append-only trigger function
-  and 2 audit triggers. Only plpgsql is enabled, not vector. Separate native Solid
-  Queue/cache/cable schemas remain. Existing `navishai_development` and
-  `navishai_test` were not written, dropped or used for tests.
-- New `navishai_lab_development` / `navishai_lab_test` databases; preflight rejects
-  old names and every old-domain table before database tasks. Setup refuses reset.
-  Unit tests and a renamed disposable legacy database prove rejection before
-  schema replacement. That temporary database was removed.
-- Server-rendered lab shell with local Geist, restrained blue, light/dark themes,
-  native disclosures, keyboard focus and honest empty/access/error states. No fake
-  metrics, disabled feature actions or corpus/scenario/eval implementations.
-- Orb service is Rails web only; production Compose is web/jobs/PostgreSQL only.
-  Setup no longer installs Go, vector, Supermemory, LibreOffice or image machinery.
+- [#141](https://github.com/glnarayanan/navishai/pull/141): product, architecture,
+  domain and rebuild authorities, written before new domain code.
+- [#142](https://github.com/glnarayanan/navishai/pull/142), based on #141: Phase A
+  demolition. Removed 820 tracked files, about 135,000 lines, including helpdesk,
+  messaging, SLAs, CS workflows, crews, Supermemory, process runner, obsolete tests,
+  installers and docs. Kept auth, workspace access, audit and relevant security.
+- `rebuild/03-corpus-provenance`, based on #142: first Phase B slice. Corpus intake,
+  snapshots, source evidence, pagination, email masking, retention and deletion.
 
-## Verification
+## Built and checked
 
-- `bin/rails db:create db:migrate`: new development baseline passes.
-- `RAILS_ENV=test bin/rails db:schema:load`: fresh test baseline passes.
-- Focused audit/Owner/workspace/preflight/demolition tests: **32 runs, 143 assertions,
-  0 failures/errors/skips**.
-- Parent integration rerun of `bin/ci`: **passed (41.41s)**; RuboCop **105 files, no offenses**; gem audit **no
-  vulnerabilities**; importmap audit **no vulnerable packages**; Brakeman **11
-  controllers, 11 models, 26 templates, 0 errors, 0 warnings**; eager load passes;
-  Rails **120 runs, 642 assertions, 0 failures/errors/skips**; browser/system **2
-  runs, 49 assertions, 0 failures/errors/skips**.
-- Eager-load's optional mailer-preview warning was checked directly: retained
-  PasswordsMailerPreview loads. No old application model eager-loads.
-- System tests exercised auth failure/success, lab, theme controls, keyboard skip,
-  permission denial, CSP and no page overflow at 1280/390/320px. Representative
-  auth/error/lab screenshots under `.amp/in/artifacts/phase-a/` were inspected with
-  explicit expectations. Narrow tab clipping found in the first review was fixed
-  by wrapping links; second screenshots confirmed all links readable.
-- Orb setup repeated successfully (2.97s / 4.21s), resume 0.08s; supervised web
-  responds HTTP 200. Native browser screenshots sufficed; no agent-browser needed.
-- Direct risk-based review checked removed routes/constants, membership-based
-  access (including sibling organisation workspace denial), SQL FK/role failures,
-  audit mutation/truncate failures and preflight. Ponytail Audit and CE Code Review
-  were unavailable. `git diff --check` passes.
+Rails/Hotwire/PostgreSQL with native jobs, local fonts and no new production
+dependency. Fresh lab databases leave the old development/test databases alone.
+Preflight rejects old names and old-domain tables; setup refuses reset. Local
+auth, verification/reset, invitations, OIDC, first Owner, break-glass, last-Owner
+locking, CSP, headers, log filters and append-only audit remain. No PostgreSQL RLS.
 
-## Dependency and delivery notes
+Bounded JSON conversation exports and text/Markdown intake retain input digest,
+processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
+changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
+links. Machine proposals, scenarios and evaluation execution are not built yet.
+Expiry hides source content immediately; an hourly job deletes snapshots/items.
+Managing roles can delete sources with typed confirmation. Audit retains no source
+content. Email masking is not complete PII removal; original files are not kept.
 
-Removed pdf-reader, image_processing, ruby-vips and orphaned Ascii85/afm/hashery/
-ttfunk/ffi. Removed the direct BigDecimal pin; Rails still requires BigDecimal.
-The old JSON `<4` cap admitted incompatible JSON 3: initial tests failed tokens,
-sessions and JSONB reads. Corrected to `<3`, resolved **2.21.2**, and retained all
-relevant auth/security tests. No new production dependency was added. The existing
-user-owned `bundler (4.0.20)` checksum line in Gemfile.lock remains; exclude that
-addition when staging this slice's lockfile hunks.
+- Phase A `bin/ci`: 120 Rails tests / 642 assertions; 2 browser tests / 49 assertions.
+- Corpus `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 48.01s; RuboCop 119 files
+  clean; gem/importmap audits clean; Brakeman 0 warnings/errors; eager load passes;
+  129 Rails tests / 758 assertions; 3 browser tests / 66 assertions; no failures,
+  errors or skips. An exact Phase A association-list test initially failed and now
+  checks absence of obsolete associations without blocking new domain records.
+- Intake tests cover changed/repeated versions, redaction choices and email IDs,
+  both supported vendor shapes, malformed/oversize/partial batches, foreign links,
+  viewers, immutable updates, escaping and deletion/expiry. Desktop/mobile source
+  and error captures under `.amp/in/artifacts/corpus/` were inspected; expanded
+  captures confirm both records and all recovery controls. No horizontal overflow
+  or CSP violations. `git diff --check` passes.
+- Direct risk-based review used; Ponytail Audit and CE Code Review are unavailable.
 
-## Not built or verified
+## Next and limits
 
-Corpus/scenario foundations (next Phase B), compiler/calibration, HTTP evaluation
-worker/target execution, failures and regression suites are not built. No release,
-deployment, live provider, real SMTP/OIDC, customer dataset or customer validation
-was attempted. Fresh clean-host package installation and Compose/image/TLS/
-backup/restore acceptance remain unverified; current Compose PostgreSQL tag is not
-digest-pinned. Last-Owner protection is application-side, not a SQL trigger.
-Database owners/superusers can bypass audit triggers and need deployment role
-review. See [development](./DEVELOPMENT.md), [hosting](./DEPLOYMENT.md),
-[security](./SECURITY.md) and [design](./DESIGN.md) for the retained boundaries.
+Next: disclosed local taxonomy/clustering and representative/risk scenario mining,
+then expert review/versioning and controlled variants. Compiler/calibration,
+generic target execution, failure inspection and regressions follow those checks.
+Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
+and economics. Fixture checks do not establish discovery quality or judge accuracy.
+
+No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
+validation ran. Clean-host/Compose image/TLS/backup/restore acceptance is unverified.
+Current Compose PostgreSQL tag is not digest-pinned. Database administrators can
+bypass triggers; last-Owner protection is application-side. Backups need their own
+retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
+[deployment](./DEPLOYMENT.md) and [design](./DESIGN.md).
+
+The user-owned Bundler checksum in Gemfile.lock remains unstaged and outside the
+rebuild commits. Phase A removed obsolete gems and capped JSON below 3 after tests
+proved JSON 3 incompatible with this Rails version. No new dependency was added.
