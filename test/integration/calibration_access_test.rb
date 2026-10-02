@@ -46,12 +46,75 @@ class CalibrationAccessTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filter.filter("rationale" => "company evidence").fetch("rationale")
   end
 
+  test "calibration evidence reaches its exact document snapshot rather than its database ID" do
+    @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+      evidence_item_id: @knowledge.id, evidence_kind: "expectation", excerpt: "Request the certificate expiry date.")
+    @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "approve")
+    evidence = @scenario.current_version.scenario_evidence.find_by!(kind: "expectation", corpus_item: @knowledge)
+    fixed = compile_case(checks: @checks.map { |check| check.merge("scenario_evidence_id" => evidence.id) })
+    @sample = @set.add_sample!(membership: @membership, check_id: fixed.eval_case_checks.find_by!(requirement_kind: "actions").id,
+      cohort: "held_out", output: support_output(text: "Inspect our current playbook."))
+    snapshot = @knowledge.source_snapshot
+    assert_not_equal snapshot.id, snapshot.number
+    get sample_path
+    assert_response :success
+    path = workspace_corpus_source_path(@workspace, @corpus, snapshot.source, snapshot: 1, page: 1, anchor: "record-#{@knowledge.id}")
+    assert_select "a[href='#{path}']", text: "Supporting source snapshot"
+    get path
+    assert_response :success
+    assert_select "article#record-#{@knowledge.id}", text: /Request the certificate expiry date/
+  end
+
+  test "review filters preserve full cohort counts and personal blindness without writes or jobs" do
+    other = Membership.create!(workspace: @workspace, user: users(:teammate), role: :member)
+    @sample.label!(membership: other, previous_id: nil, decision: "pass", rationale: "Another expert's interpretation stays off the queue.")
+    differing = @set.add_sample!(membership: @membership, check_id: @check.id, cohort: "held_out", output: support_output(text: "Disagreement example"))
+    differing.label!(membership: @membership, previous_id: nil, decision: "pass", rationale: "The answer satisfies the request without a reported tool.")
+    aligned = @set.add_sample!(membership: @membership, check_id: @check.id, cohort: "held_out", output: support_output(text: "Agreed example", tools: [ "collect_expiry" ]))
+    aligned.label!(membership: @membership, previous_id: nil, decision: "pass", rationale: "The required step appears.")
+    @set.add_sample!(membership: @membership, check_id: @check.id, cohort: "development", output: support_output(text: "Separate development example"))
+    path = workspace_corpus_calibration_set_path(@workspace, @corpus, @set)
+    assert_no_difference [ "HumanLabel.count", "CalibrationPrediction.count", "CalibrationJudgeRun.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        get path
+        assert_response :success
+        assert_select "#review-samples li" do |entries|
+          assert_equal %w[unlabelled disagreement aligned], entries.map { |entry| entry["data-review-state"] }
+        end
+        assert_select "#review-samples li[data-review-state=unlabelled] a", text: "Sample #{@sample.id}"
+        assert_select "#review-samples", text: /Another expert's interpretation/, count: 0
+        get path, params: { review_state: "disagreement", cohort: "held_out" }
+        assert_response :success
+        assert_select "#review-samples li", count: 1
+        assert_select "#review-samples li a", text: "Sample #{differing.id}"
+        assert_select "#review-samples [role=status]", text: "1 of 3 cohort samples shown."
+        assert_select "section > p", text: /3 samples · 3 labelled · 3 compared/
+        assert_select "input[name=cohort][value=held_out]"
+        get path, params: { review_state: "disputed" }
+        assert_response :success
+        assert_select "#review-samples li", count: 0
+        assert_select "#review-samples", text: /No samples need this review focus/
+        get path, params: { review_state: "<script>wrong()</script>", cohort: "development" }
+        assert_response :success
+        assert_select "#review-samples li", count: 1
+        assert_select "select[name=review_state] option[selected]", count: 0
+        assert_select "script", text: /wrong\(\)/, count: 0
+        assert_select "section > p", text: /1 samples · 0 labelled · 0 compared/
+      end
+    end
+  end
+
   test "viewer reads but cannot label or upload and foreign and expired records are hidden" do
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
     sign_in_as users(:teammate)
     get sample_path
     assert_response :success
     assert_select "input[type=submit]", count: 0
+    get workspace_corpus_calibration_set_path(@workspace, @corpus, @set), params: { review_state: "aligned" }
+    assert_response :success
+    assert_select "#review-samples li", count: 1
+    assert_select "#review-samples form", count: 0
+    assert_select "#review-samples li[data-review-state='']", count: 1
     post label_workspace_corpus_calibration_set_calibration_sample_path(@workspace, @corpus, @set, @sample), params: {}
     assert_response :forbidden
     post workspace_corpus_calibration_set_calibration_samples_path(@workspace, @corpus, @set), params: {}

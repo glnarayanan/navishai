@@ -28,6 +28,13 @@ class CalibrationJourneyTest < ApplicationSystemTestCase
     assert_selector "h2", text: "Expert judgment"
     assert_no_selector "h2", text: "Machine prediction"
     capture("blind-390")
+    sample_path = page.current_path
+    click_link "Supporting source snapshot"
+    assert_selector "h1", text: "Support export"
+    assert_includes page.current_url, "#record-"
+    assert_text "Request the expiry date before changing configuration."
+    visit sample_path
+    assert_no_selector "h2", text: "Machine prediction"
     select "Pass — meets the requirement", from: "Your decision"
     fill_in "Evidence for your decision", with: "Initial judgment; I overlooked the missing diagnostic request."
     click_button "Save expert label"

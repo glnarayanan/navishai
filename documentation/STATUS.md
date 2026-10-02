@@ -37,8 +37,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   targets, fixed replay results and human failure-to-regression admission.
 - [#155](https://github.com/glnarayanan/navishai/pull/155), based on #154: source-backed change impact and
   saved-run comparisons that retain exact case/input identity.
-- `rebuild/16-corpus-exploration`, based on #155: local literal corpus search,
+- [#156](https://github.com/glnarayanan/navishai/pull/156), based on #155: local literal corpus search,
   source filters, retained context and exact paginated provenance.
+- `rebuild/17-calibration-review`, based on #156: personal expert review focus,
+  exact calibration provenance and native corpus exploration navigation.
 
 ## Built and checked
 
@@ -280,14 +282,36 @@ Impeccable found no new issues; direct risk review/native audits used. No schema
 provider or dependency change. Ponytail Audit and CE Code Review remain unavailable.
 GitHub CI on #155 passed the Rails checks but failed an existing calibration browser
 test that navigated before label-save completion. A separate test fix now waits for
-the saved-label notice; the full local checks above include it. Remote revalidation
-belongs to the next stacked branch, not a claim that the failed #155 run passed.
+the saved-label notice; the full local checks above include it. GitHub CI for #156
+passed; the earlier failed #155 run remains failed.
+
+Calibration review `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 2m18.57s;
+228 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors
+and eager loading passes. 252 Rails tests / 2433 assertions and 16 browser tests /
+606 assertions, no failures/errors/skips. The queue uses latest expert labels,
+keeps first-label states blind, distinguishes disputes/uncertainty/disagreement
+from missing predictions and reflects appended corrections. Cohort filters never
+narrow report denominators; read-only requests write/queue nothing. Viewers retain
+the sample list without review controls. The browser filters with Enter, retains
+the filter on refresh, opens a blind next review, saves one human label and recovers
+from an empty focus. Four desktop/390px captures were inspected, with no page
+overflow or CSP violations. Impeccable found no new issues. Direct risk review/native
+audits used; Ponytail Audit and CE Code Review remain unavailable.
+
+Separate fixes reuse exact source/snapshot/record provenance for calibration and
+make the same-page corpus jump native. An asymmetric evidence-link test failed
+before the snapshot fix. Full CI then caught Turbo clearing a fast search phrase
+during its same-page reload; a focused browser check now proves the jump fetches
+nothing and preserves Enter search. Both regressions failed before their fixes and
+pass in the final full checks above. No schema, provider, training or dependency
+change; no real data or live endpoint ran.
 
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
 regression, exact source-change impact and fixed-case target-version comparison.
 Corpus exploration now has bounded, source-backed literal search.
+Expert calibration now has a personal read-only review queue.
 This does not finish the full rebuild or establish customer value. Trace matching currently means
 exact input compatibility among 100 cases, not semantic failure matching. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
@@ -305,6 +329,11 @@ the gateway must enforce model/settings and separate data from instructions.
 Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
+
+Independent engineering still includes stronger support-specific corpus/scenario
+analysis beyond the term/title baseline, larger bounded intake/processing and
+clean-host/backup/restore fixture proof. The current UI/report slices do not finish
+those tasks. Keep the full product scope; these are not owner-approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. Clean-host/Compose image/TLS/backup/restore acceptance is unverified.

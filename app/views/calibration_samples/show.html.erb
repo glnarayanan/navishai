@@ -5,7 +5,7 @@
   <div class="review-layout">
     <section><h2>Behaviour to judge</h2><p><%= @check.requirement %></p><p><%= link_to "Fixed contract", workspace_corpus_eval_case_path(Current.workspace, @corpus, @check.eval_case) %></p>
       <details><summary>Fixed grader definition</summary><pre class="evidence-text"><%= JSON.pretty_generate(@sample.grader_version.definition) %></pre></details>
-      <h3>Company evidence</h3><%= link_to "Supporting source snapshot", workspace_corpus_source_path(Current.workspace, @corpus, @check.scenario_evidence.corpus_item.source_snapshot.source_id, snapshot: @check.scenario_evidence.corpus_item.source_snapshot_id) %><pre class="evidence-text"><%= @check.scenario_evidence.excerpt %></pre>
+      <h3>Company evidence</h3><%= link_to "Supporting source snapshot", source_evidence_path(@check.scenario_evidence.corpus_item) %><pre class="evidence-text"><%= @check.scenario_evidence.excerpt %></pre>
       <h3>Recorded output</h3><pre class="evidence-text"><%= JSON.pretty_generate(@sample.output) %></pre>
     </section>
     <section><h2>Expert judgment</h2>

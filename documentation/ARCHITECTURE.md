@@ -47,6 +47,14 @@ is needed for the current intake bounds.
 
 Machine proposals never approve themselves. Experts correct taxonomy and scenario expectations before compilation. Calibration binds labels to exact grader/output versions and separates held-out examples. Store individual decisions, not an opaque score.
 
+Calibration review uses the same latest-per-expert labels and fixed predictions as
+its cohort report. Show missing personal labels first, then expert disputes,
+uncertainty, machine/expert disagreement and missing usable predictions. Before an
+expert's first label, every sample has the same unlabelled state regardless of other
+labels or predictions. Filters change only the review list, never the report's
+denominator. This read-only queue asks for review; it cannot settle a dispute,
+relabel, tune a grader, select an error cost or call a provider.
+
 ## External execution
 
 Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.
