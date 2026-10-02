@@ -88,6 +88,20 @@ CREATE FUNCTION public.prevent_lab_version_update() RETURNS trigger
 BEGIN RAISE EXCEPTION 'lab versions are immutable'; END; $$;
 
 
+--
+-- Name: purge_model_matching_copy(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.purge_model_matching_copy() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  DELETE FROM model_failure_matchings WHERE id = OLD.model_failure_matching_id;
+  RETURN OLD;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -1101,6 +1115,115 @@ ALTER SEQUENCE public.memberships_id_seq OWNED BY public.memberships.id;
 
 
 --
+-- Name: model_failure_matching_candidates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_failure_matching_candidates (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    model_failure_matching_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL
+);
+
+
+--
+-- Name: model_failure_matching_candidates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.model_failure_matching_candidates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: model_failure_matching_candidates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.model_failure_matching_candidates_id_seq OWNED BY public.model_failure_matching_candidates.id;
+
+
+--
+-- Name: model_failure_matching_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_failure_matching_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    model_failure_matching_id bigint NOT NULL,
+    result jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT model_matching_result_decision CHECK (((jsonb_typeof(result) = 'object'::text) AND (COALESCE((result ->> 'decision'::text), ''::text) = ANY (ARRAY['suggestions'::text, 'error'::text]))))
+);
+
+
+--
+-- Name: model_failure_matching_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.model_failure_matching_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: model_failure_matching_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.model_failure_matching_results_id_seq OWNED BY public.model_failure_matching_results.id;
+
+
+--
+-- Name: model_failure_matchings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.model_failure_matchings (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    configuration jsonb NOT NULL,
+    input jsonb NOT NULL,
+    input_digest character varying NOT NULL,
+    processing_version character varying NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_4970aac3ac CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text) AND ((input_digest)::text ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: model_failure_matchings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.model_failure_matchings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: model_failure_matchings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.model_failure_matchings_id_seq OWNED BY public.model_failure_matchings.id;
+
+
+--
 -- Name: oidc_identities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1931,6 +2054,27 @@ ALTER TABLE ONLY public.memberships ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: model_failure_matching_candidates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_candidates ALTER COLUMN id SET DEFAULT nextval('public.model_failure_matching_candidates_id_seq'::regclass);
+
+
+--
+-- Name: model_failure_matching_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_results ALTER COLUMN id SET DEFAULT nextval('public.model_failure_matching_results_id_seq'::regclass);
+
+
+--
+-- Name: model_failure_matchings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matchings ALTER COLUMN id SET DEFAULT nextval('public.model_failure_matchings_id_seq'::regclass);
+
+
+--
 -- Name: oidc_identities id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2274,6 +2418,30 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: model_failure_matching_candidates model_failure_matching_candidates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_candidates
+    ADD CONSTRAINT model_failure_matching_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: model_failure_matching_results model_failure_matching_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_results
+    ADD CONSTRAINT model_failure_matching_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: model_failure_matchings model_failure_matchings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matchings
+    ADD CONSTRAINT model_failure_matchings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: oidc_identities oidc_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2481,6 +2649,13 @@ CREATE UNIQUE INDEX idx_on_evaluation_target_id_number_9d515c6581 ON public.eval
 
 
 --
+-- Name: idx_on_model_failure_matching_id_80f74e3dad; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_model_failure_matching_id_80f74e3dad ON public.model_failure_matching_results USING btree (model_failure_matching_id);
+
+
+--
 -- Name: idx_on_scenario_version_id_corpus_item_id_kind_455675656f; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2499,6 +2674,13 @@ CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_evaluation_target_id__d962945b
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_grader_id_id_69031213be ON public.grader_versions USING btree (workspace_id, corpus_id, grader_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_64c83596d2; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_64c83596d2 ON public.model_failure_matchings USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -2908,6 +3090,20 @@ CREATE UNIQUE INDEX index_memberships_on_workspace_id_and_user_id ON public.memb
 
 
 --
+-- Name: index_model_failure_matchings_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_model_failure_matchings_on_request_key ON public.model_failure_matchings USING btree (request_key);
+
+
+--
+-- Name: index_model_failure_matchings_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_model_failure_matchings_on_requested_by_id ON public.model_failure_matchings USING btree (requested_by_id);
+
+
+--
 -- Name: index_oidc_identities_on_issuer_and_subject; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3160,6 +3356,20 @@ CREATE UNIQUE INDEX index_workspaces_on_organization_id_and_slug ON public.works
 
 
 --
+-- Name: model_matching_fixed_candidate; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX model_matching_fixed_candidate ON public.model_failure_matching_candidates USING btree (model_failure_matching_id, scenario_version_id);
+
+
+--
+-- Name: model_matching_fixed_request; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX model_matching_fixed_request ON public.model_failure_matchings USING btree (corpus_item_id, input_digest, configuration);
+
+
+--
 -- Name: trace_decision_history; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3314,6 +3524,34 @@ CREATE TRIGGER issue_clusters_immutable BEFORE UPDATE ON public.issue_clusters F
 
 
 --
+-- Name: model_failure_matching_candidates model_failure_matching_candidates_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER model_failure_matching_candidates_immutable BEFORE UPDATE ON public.model_failure_matching_candidates FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: model_failure_matching_results model_failure_matching_results_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER model_failure_matching_results_immutable BEFORE UPDATE ON public.model_failure_matching_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: model_failure_matching_candidates model_matching_candidate_purge; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER model_matching_candidate_purge AFTER DELETE ON public.model_failure_matching_candidates FOR EACH ROW EXECUTE FUNCTION public.purge_model_matching_copy();
+
+
+--
+-- Name: model_failure_matchings model_matching_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER model_matching_definition_immutable BEFORE UPDATE ON public.model_failure_matchings FOR EACH ROW EXECUTE FUNCTION public.prevent_evaluation_run_rebind();
+
+
+--
 -- Name: regression_cases regression_cases_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3440,6 +3678,14 @@ ALTER TABLE ONLY public.calibration_samples
 
 
 --
+-- Name: model_failure_matching_candidates fk_rails_13a04666e6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_candidates
+    ADD CONSTRAINT fk_rails_13a04666e6 FOREIGN KEY (workspace_id, corpus_id, model_failure_matching_id) REFERENCES public.model_failure_matchings(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: trace_scenario_decisions fk_rails_14082b44a9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3453,6 +3699,14 @@ ALTER TABLE ONLY public.trace_scenario_decisions
 
 ALTER TABLE ONLY public.evaluation_target_versions
     ADD CONSTRAINT fk_rails_1a3b9e6b69 FOREIGN KEY (workspace_id, corpus_id, trace_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: model_failure_matching_results fk_rails_1a65fc666e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_results
+    ADD CONSTRAINT fk_rails_1a65fc666e FOREIGN KEY (workspace_id, corpus_id, model_failure_matching_id) REFERENCES public.model_failure_matchings(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -3645,6 +3899,14 @@ ALTER TABLE ONLY public.sessions
 
 ALTER TABLE ONLY public.workspace_invitations
     ADD CONSTRAINT fk_rails_759aefbfd2 FOREIGN KEY (invited_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: model_failure_matching_candidates fk_rails_7615a9d05a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matching_candidates
+    ADD CONSTRAINT fk_rails_7615a9d05a FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -3864,11 +4126,27 @@ ALTER TABLE ONLY public.evaluation_run_items
 
 
 --
+-- Name: model_failure_matchings fk_rails_b2b8747e1c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matchings
+    ADD CONSTRAINT fk_rails_b2b8747e1c FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: corpus_analysis_results fk_rails_b83ebff142; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.corpus_analysis_results
     ADD CONSTRAINT fk_rails_b83ebff142 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: model_failure_matchings fk_rails_b9a604262e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.model_failure_matchings
+    ADD CONSTRAINT fk_rails_b9a604262e FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -4064,6 +4342,7 @@ SET search_path TO "$user", public;
 INSERT INTO "schema_migrations" (version) VALUES
 ('20261001220000'),
 ('20261001210000'),
+('20261001200000'),
 ('20261001150000'),
 ('20261001140000'),
 ('20261001130000'),
@@ -4095,3 +4374,4 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195259'),
 ('20260823195258'),
 ('20260823195257');
+

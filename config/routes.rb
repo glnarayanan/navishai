@@ -6,6 +6,9 @@ Rails.application.routes.draw do
       resources :sources, only: %i[create show destroy] do
         post :decide_trace, on: :member
         post :download_snapshot, on: :member
+        post :preview_model_matching, on: :member
+        post :request_model_matching, on: :member
+        post :interrupt_model_matching, on: :member
       end
       resources :corpus_analyses, only: %i[new create show update] do
         post :interrupt, on: :member

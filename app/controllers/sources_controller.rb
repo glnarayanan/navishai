@@ -1,7 +1,7 @@
 class SourcesController < ApplicationController
   include WorkspaceAuthorization
   before_action :require_workspace
-  before_action -> { require_role(:owner, :admin, :manager, :member) }, only: %i[create decide_trace]
+  before_action -> { require_role(:owner, :admin, :manager, :member) }, only: %i[create decide_trace preview_model_matching request_model_matching interrupt_model_matching]
   before_action -> { require_role(:owner, :admin, :manager) }, only: %i[destroy download_snapshot]
   before_action :load_corpus
 
@@ -89,7 +89,50 @@ class SourcesController < ApplicationController
           end
         end
       end
+      load_matching_preview if params[:model_matching_item_id].present?
     end
+  end
+
+  def preview_model_matching
+    load_matching_item
+    @matching_configuration_text = params[:configuration]
+    raise Scenario::Invalid, "Use at most 8 KiB of endpoint/model/settings JSON; never include credentials." unless @matching_configuration_text.is_a?(String) && @matching_configuration_text.bytesize <= 8.kilobytes
+    @matching_configuration = JSON.parse(@matching_configuration_text)
+    raise Scenario::Invalid, "Use endpoint, model and fixed settings only; never include credentials." unless ModelGateway.valid_configuration?(@matching_configuration)
+    render_matching_source
+  rescue JSON::ParserError
+    @matching_error = "Configuration is not valid JSON. Repair it and preview again; no request started."
+    render_matching_source(status: :unprocessable_content)
+  rescue Scenario::Invalid => error
+    @matching_configuration = nil
+    @matching_error = error.message
+    render_matching_source(status: :unprocessable_content)
+  end
+
+  def request_model_matching
+    load_matching_item
+    @matching_configuration_text = params[:configuration]
+    raise Scenario::Invalid, "Use at most 8 KiB of endpoint/model/settings JSON; never include credentials." unless @matching_configuration_text.is_a?(String) && @matching_configuration_text.bytesize <= 8.kilobytes
+    configuration = JSON.parse(@matching_configuration_text)
+    request = ModelFailureMatching.request!(item: @model_matching_item, membership: Current.require_membership!, configuration:,
+      input_digest: params[:input_digest], request_digest: params[:request_digest], disclose: params[:disclose] == "1", endpoint_confirmation: params[:endpoint_confirmation])
+    redirect_to matching_source_path(request_id: request.id), notice: "Matching attempt retained. No expert decision, expectation or regression changed.", status: :see_other
+  rescue JSON::ParserError
+    @matching_error = "Configuration is not valid JSON. Preview the repaired request and confirm again; no request started."
+    render_matching_source(status: :unprocessable_content)
+  rescue Scenario::Invalid, CorpusIntake::Invalid, SupportOutput::Invalid, EvaluationHttp::Error => error
+    @matching_error = error.message
+    render_matching_source(status: :unprocessable_content)
+  end
+
+  def interrupt_model_matching
+    load_matching_item
+    request = ModelFailureMatching.where(corpus: @corpus, corpus_item: @model_matching_item).find(params[:matching_request_id])
+    request.interrupt!(membership: Current.require_membership!)
+    redirect_to matching_source_path(request_id: request.id), notice: "Matching stopped. This attempt will not retry.", status: :see_other
+  rescue Scenario::Invalid => error
+    @matching_error = error.message
+    render_matching_source(status: :unprocessable_content)
   end
 
   def decide_trace
@@ -136,5 +179,45 @@ class SourcesController < ApplicationController
   private
     def load_corpus
       @corpus = Current.workspace.corpora.find(params[:corpus_id])
+    end
+
+    def load_matching_item
+      @source = @corpus.sources.where(kind: "traces").where("expires_at > ?", Time.current).find(params[:id])
+      @model_matching_item = @corpus.corpus_items.joins(:source_snapshot).where(source_snapshots: { source_id: @source.id }).find(params[:corpus_item_id])
+    end
+
+    def matching_source_path(request_id: nil)
+      workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @model_matching_item.source_snapshot.number,
+        page: @model_matching_item.source_snapshot.corpus_items.where("id < ?", @model_matching_item.id).count / 50 + 1,
+        model_matching_item_id: @model_matching_item.id, matching_request_id: request_id, anchor: "model-matching-#{@model_matching_item.id}")
+    end
+
+    def render_matching_source(status: :ok)
+      params[:snapshot] = @model_matching_item.source_snapshot.number
+      params[:page] = @model_matching_item.source_snapshot.corpus_items.where("id < ?", @model_matching_item.id).count / 50 + 1
+      params[:model_matching_item_id] = @model_matching_item.id
+      show
+      render :show, status:
+    end
+
+    def load_matching_preview
+      @model_matching_item = @items.find { |item| item.id.to_s == params[:model_matching_item_id].to_s }
+      raise ActiveRecord::RecordNotFound unless @model_matching_item
+      response.headers["Cache-Control"] = "no-store"
+      return if @corpus.eval_definitions_expired?
+      requests = ModelFailureMatching.where(corpus: @corpus, corpus_item: @model_matching_item)
+      @matching_history = requests.order(id: :desc).limit(5).pluck(:id, :state)
+      @matching_request = if params[:matching_request_id].present?
+        requests.find(params[:matching_request_id])
+      else
+        requests.order(id: :desc).first
+      end
+      @corpus.with_lock do
+        @matching_input = ModelFailureMatcher.input(@model_matching_item)
+        @matching_input_digest = ModelFailureMatcher.digest(@matching_input)
+        @matching_payload = ModelFailureMatcher.payload(@matching_input, @matching_configuration) if @matching_configuration
+      end
+    rescue Scenario::Invalid, CorpusIntake::Invalid => error
+      @matching_error ||= error.message
     end
 end

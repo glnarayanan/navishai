@@ -184,6 +184,17 @@ unapproved versions, grants no target-visible knowledge and creates no labels.
 Viewer reads write/queue nothing, and expired inputs hide the derived result.
 Configuration is filtered from logs. No live corpus endpoint or customer data ran.
 
+Optional model failure matching requires its own `NAVISHAI_MATCHING_ENDPOINTS`
+registry; target, judge, scenario and corpus grants cannot authorise it. A writer
+previews one fixed trace and every eligible candidate within strict record/byte
+bounds, then confirms the exact endpoint and request digest. Hidden facts, labels,
+review history and the separate imported correction stay local. Exact source
+quotes do not establish a sound match. Once-only jobs recheck access, lifetime,
+candidate freshness and this purpose before/after transport. Copies purge with
+the source/scenarios; expired or stale previews hide them. Matching pages use
+no-store/no-cache. No association, expectation, label or regression changes.
+See [MODEL_FAILURE_MATCHING.md](./MODEL_FAILURE_MATCHING.md).
+
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
 prior cases or labels. Suite consent binds its displayed case list, rejecting stale

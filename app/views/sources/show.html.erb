@@ -1,4 +1,5 @@
 <% content_for :title, "#{@source.name} — NavishAI" %>
+<% if @model_matching_item %><% content_for :head do %><meta name="turbo-cache-control" content="no-cache"><% end %><% end %>
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1><%= @source.name %></h1><p>Snapshot <%= @snapshot.number %> · <%= @snapshot.created_at.to_fs(:long) %> · <%= { "email" => "Email addresses masked", "exact" => "Exact text masked", "none" => "Original text" }.fetch(@snapshot.redaction) %></p></div></div>
@@ -44,6 +45,15 @@
           <% end %>
           <p>Proposals keep the situation and known facts, with no approved requirements. Experts choose current documentation and permitted knowledge.</p>
           <%= render "sources/failure_matching", item: item %>
+          <details id="model-matching-<%= item.id %>" class="section-block" <%= "open" if @model_matching_item == item %>>
+            <summary>Optional model failure matching</summary>
+            <p>Literal matching above stays local and unchanged. This separate workflow sends one fixed trace and every eligible current version in this corpus only after an exact preview, purpose approval and your confirmation. Suggestions cannot write expert decisions, labels, expectations or regressions.</p>
+            <% if @model_matching_item == item %>
+              <%= render "sources/model_failure_matching", item: item %>
+            <% else %>
+              <%= link_to "Preview optional model matching", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, model_matching_item_id: item.id, anchor: "model-matching-#{item.id}") %>
+            <% end %>
+          </details>
           <% matching_page = @matching_item_id == item.id.to_s ? @matching_page : 1 %>
           <% matching_params = { snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page, matching_item_id: item.id, anchor: "replay-cases-#{item.id}" } %>
           <details id="replay-cases-<%= item.id %>" <%= "open" if @matching_item_id == item.id.to_s %>><summary>Cases with identical visible input<% unless @trace_matching_blocked %> (<%= @trace_match_counts[item.id] %>)<% end %></summary><p>Searches all fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
