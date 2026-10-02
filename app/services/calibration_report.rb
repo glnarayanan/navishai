@@ -2,7 +2,13 @@ class CalibrationReport
   REVIEW_STATES = { "unlabelled" => "Needs your label", "disputed" => "Experts disagree", "uncertain" => "Expert uncertainty",
     "disagreement" => "Machine / expert disagreement", "uncompared" => "No usable prediction", "aligned" => "Machine / experts agree" }.freeze
 
-  def self.call(set:, cohort: "held_out", reviewer: nil)
+  def self.call(set:, cohort: "held_out", reviewer: nil, candidate: nil)
+    if candidate
+      raise EvalCase::Invalid, "Revised-grader previews use development samples only. Do not tune on held-out data." unless cohort == "development"
+      unless candidate.workspace_id == set.workspace_id && candidate.corpus_id == set.corpus_id && candidate.grader_id == set.grader_version.grader_id && candidate.number > set.grader_version.number && candidate.kind == "deterministic"
+        raise EvalCase::Invalid, "Choose a newer deterministic version of this same grader. This preview never calls a judge."
+      end
+    end
     samples = set.calibration_samples.where(cohort:).includes(:calibration_prediction).order(:id)
     reviews = []
     counts = { samples: samples.size, labelled: 0, disputed: 0, uncertain: 0, unpredicted: 0, abstained: 0,
@@ -10,7 +16,12 @@ class CalibrationReport
     samples.each do |sample|
       latest = sample.latest_labels.to_a
       labels = latest.map(&:decision)
-      prediction = sample.calibration_prediction&.result&.fetch("decision")
+      prediction = if candidate
+        sample.eval_case.eligible!
+        DeterministicGrader.call(definition: candidate.definition, output: sample.output, knowledge: sample.eval_case.scenario_version.target_input.fetch("knowledge")).fetch("decision")
+      else
+        sample.calibration_prediction&.result&.fetch("decision")
+      end
       state = if labels.empty?
         "unlabelled"
       elsif labels.include?("pass") && labels.include?("fail")

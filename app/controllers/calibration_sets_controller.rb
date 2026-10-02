@@ -3,7 +3,7 @@ class CalibrationSetsController < ApplicationController
   before_action :require_workspace
   before_action -> { require_role(:owner, :admin, :manager, :member) }, only: :create
   before_action :load_corpus
-  rescue_from EvalCase::Invalid, ActiveRecord::RecordInvalid, with: :invalid_input
+  rescue_from EvalCase::Invalid, SupportOutput::Invalid, ActiveRecord::RecordInvalid, with: :invalid_input
 
   def index
     @sets = @corpus.calibration_sets.includes(grader_version: :grader).order(id: :desc).limit(100)
@@ -20,6 +20,12 @@ class CalibrationSetsController < ApplicationController
     @set = @corpus.calibration_sets.find(params[:id])
     @cohort = %w[development held_out].include?(params[:cohort]) ? params[:cohort] : "held_out"
     @report = CalibrationReport.call(set: @set, cohort: @cohort, reviewer: Current.user)
+    @candidates = @set.grader_version.grader.grader_versions.where(kind: "deterministic").where("number > ?", @set.grader_version.number).order(number: :desc).limit(100)
+    @candidate = @candidate_report = nil
+    if params[:candidate_version_id].present? && !@preview_error
+      @candidate = @corpus.grader_versions.find(params[:candidate_version_id])
+      @candidate_report = CalibrationReport.call(set: @set, cohort: @cohort, candidate: @candidate, reviewer: Current.user)
+    end
     @reviews = @report.fetch(:reviews)
     if Current.require_membership!.can_write?
       @review_state = params[:review_state] if CalibrationReport::REVIEW_STATES.key?(params[:review_state])
@@ -36,8 +42,14 @@ class CalibrationSetsController < ApplicationController
     end
 
     def invalid_input(error)
-      index
       flash.now[:alert] = error.message
-      render :index, status: :unprocessable_content
+      if action_name == "show"
+        @preview_error = true
+        show
+        render :show, status: :unprocessable_content
+      else
+        index
+        render :index, status: :unprocessable_content
+      end
     end
 end
