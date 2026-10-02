@@ -13,7 +13,7 @@ class PrivateLoggingTest < ActionDispatch::IntegrationTest
     buffer = StringIO.new
     Rails.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
     ActionController::Base.logger = Rails.logger
-    private_values = %w[title requirements follow_ups mutation proposed_label signals input result target_input decisions].index_with { |field| "private68-request-#{field}" }
+    private_values = %w[name external_id title requirements follow_ups mutation proposed_label signals input result target_input decisions].index_with { |field| "private68-request-#{field}" }
     private_values["label"] = "private68-request-label"
     cluster_id = @scenario.cluster_member.issue_cluster_id
     patch workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis), params: private_values.merge(cluster_id:, sample_count: 7)
@@ -55,11 +55,32 @@ class PrivateLoggingTest < ActionDispatch::IntegrationTest
     ActiveRecord::Base.logger = previous_logger
   end
 
+  test "source intake and record lookup keep private identities out of native DEBUG binds" do
+    membership = memberships(:owner_support)
+    corpus = membership.workspace.corpora.create!(name: "Private source log proof")
+    previous_logger = ActiveRecord::Base.logger
+    buffer = StringIO.new
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    snapshot = CorpusIntake.call(corpus:, membership:, name: "private71-source-name", kind: "conversations",
+      bytes: JSON.generate([ { id: "private71-record-id", title: "private71-title", content: "private71-body" } ]))
+    assert_equal "private71-source-name", snapshot.source.reload.name
+    item = snapshot.corpus_items.find_by!(external_id: "private71-record-id")
+    assert_equal "private71-record-id", item.external_id
+    assert_equal "private71-body", item.content
+    assert_includes buffer.string, '["name", "[FILTERED]"]'
+    assert_includes buffer.string, '["external_id", "[FILTERED]"]'
+    assert_not_includes buffer.string, "private71-"
+    assert_equal 1, AuditEvent.where(subject_type: "Corpus", subject_id: corpus.id, action: "corpus.imported").sole.metadata.fetch("record_count")
+    assert_includes buffer.string, '["action", "corpus.imported"]'
+  ensure
+    ActiveRecord::Base.logger = previous_logger
+  end
+
   test "private corpus proposal calibration and result field types filter native SQL binds and request fields" do
     previous_logger = ActiveRecord::Base.logger
     buffer = StringIO.new
     ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
-    fields = [ [ CorpusItem, "title" ], [ ScenarioVersion, "requirements" ], [ ScenarioVersion, "follow_ups" ],
+    fields = [ [ Source, "name" ], [ CorpusItem, "external_id" ], [ CorpusItem, "title" ], [ ScenarioVersion, "requirements" ], [ ScenarioVersion, "follow_ups" ],
       [ ScenarioVersion, "mutation" ], [ IssueCluster, "proposed_label" ], [ IssueCluster, "signals" ],
       [ TaxonomyVersion, "labels" ], [ ScenarioProposal, "input" ], [ ScenarioProposalResult, "result" ],
       [ CorpusAnalysisResult, "result" ], [ CorpusDiscoveryBatch, "result" ], [ CalibrationPrediction, "result" ],

@@ -1793,6 +1793,23 @@ anchors, focus, auth and CSP. Worker captures also cover signed-in and expanded
 FAQ states. See [LANDING.md](./LANDING.md). Direct review used; named review tools
 remain unavailable. No merge, release, deployment, provider or customer action ran.
 
+## Private source identities (slice 71)
+
+Real DEBUG intake and lookup tests reproduced source-name and external-record-ID
+disclosure. The shared field filter now hides both in request parameters and SQL
+binds without changing stored identities or content. Actual intake, lookup, typed
+bind and ignored-root-parameter tests retain exact values; public method/count
+metadata and content-free audit actions stay visible.
+
+`PARALLEL_WORKERS=1 bin/rails test test/integration test/controllers
+test/services/corpus_intake_test.rb` passes 191 tests / 3593 assertions, no failures,
+errors or skips. Ruby style passes 305 files, eager loading passes and Brakeman
+reports zero warnings/errors. A test-only audit lookup initially used a nonexistent
+association; the final test uses the stored subject type/ID. Direct risk review
+used; named review tools remain unavailable. The owner lockfile stays untouched.
+These filters do not cover SQL literals or database/proxy/operator logs. No UI,
+provider, dependency, live data, expert decision or deployment changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
