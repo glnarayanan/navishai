@@ -156,6 +156,29 @@ class TraceScenarioMatchingTest < ActiveSupport::TestCase
     assert_equal "scenario", missing["d"]["missing_from"]
   end
 
+  test "nested numeric types survive source storage and favor exact facts rather than older conflicting facts" do
+    integers = { "limits" => { "steps" => [ 0, { "budget" => 2 } ], "zone" => "west" } }
+    floats = { "limits" => { "zone" => "west", "steps" => [ 0.0, { "budget" => 2 } ] } }
+    @version = @version.scenario.revise!(membership: @membership, base_version_id: @version.id, attributes: { known_facts: integers })
+    exact = matching_version(facts: floats)
+    record = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    record["input"]["known_facts"] = floats
+    trace = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Typed nested trace", kind: "traces", bytes: [ record ].to_json).corpus_items.sole
+    assert_instance_of Integer, @version.reload.known_facts.dig("limits", "steps", 0)
+    assert_instance_of Float, exact.reload.known_facts.dig("limits", "steps", 0)
+    assert_instance_of Float, SupportTrace.payload(trace).dig("input", "known_facts", "limits", "steps", 0)
+    result = TraceScenarioMatching.call(item: trace)
+    assert_equal [ exact.id, @version.id ], result.candidates.map { |entry| entry.version.id }
+    assert floats.eql?(result.candidates.first.equal_facts)
+    assert_empty result.candidates.first.conflicting_facts
+    assert_empty result.candidates.last.equal_facts
+    conflict = result.candidates.last.conflicting_facts.fetch("limits")
+    assert floats["limits"].eql?(conflict["trace"])
+    assert integers["limits"].eql?(conflict["scenario"])
+    assert_equal result.candidates.first.shared_terms, result.candidates.last.shared_terms
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
+  end
+
   test "beyond first hundred versions searched top five stable and bound refuses instead of samples" do
     101.times { matching_version(title: "Invoice billing", situation: "Billing contact.", excerpt: "Invoices require a billing contact.") }
     later = matching_version(title: "SSO certificate rotation", situation: "SSO stopped after changed certificate configuration.")

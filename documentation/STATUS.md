@@ -1439,6 +1439,22 @@ Slices 54–56 are committed/pushed as open stacked
 [#196](https://github.com/glnarayanan/navishai/pull/196). Remote CI is separate from
 the combined local proof. No merge/release/deployment or live disclosure occurred.
 
+## Typed nested matching facts (slice 58)
+
+A real intake/storage red test exposed recursive numeric coercion: matching
+called a nested integer and float equal, then ranked an older conflicting version
+ahead of exact facts. Recursive `eql?` now retains those types, without changing
+object-key ordering, shared terms, thresholds, evidence or expert authority.
+Browser checks show trace 0.0 versus scenario 0 as a conflict, not an equal fact.
+No association or approval follows retrieval.
+
+Focused matching/retrieval/scenario checks pass 31 tests / 444 assertions and the
+new browser journey passes 1 test / 18 assertions. Desktop/390px conflict captures
+were inspected. Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 9m13.67s:
+449 Rails tests / 6310 assertions, 47 browser tests / 2136 assertions, no failures,
+errors or skips. Native style, audits and eager loading pass. Slices 57–58 remain
+local pending stacked-PR delivery; no merge/release/deployment occurred.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
