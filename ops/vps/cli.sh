@@ -130,6 +130,21 @@ vps_compose() {
   export VPS_IMAGE="navishai-reset:$(cat "$VPS_RELEASE/SOURCE_COMMIT")"
   vps_docker compose --project-name "$VPS_PROJECT" --project-directory "$VPS_RELEASE" --env-file "$VPS_CONFIG/env" "${files[@]}" "$@"
 }
+vps_pull_pins() {
+  local service reference inspected
+  for service in postgres proxy; do
+    reference="$(vps_compose config --format json | jq -er --arg service "$service" '.services[$service].image')" || return 1
+    [[ $reference =~ ^[a-zA-Z0-9][a-zA-Z0-9_./:-]*@sha256:[0-9a-f]{64}$ ]] || { vps_die "Unpinned image: $service"; return 1; }
+    if ! inspected="$(vps_docker image inspect --format '{{.Id}}' "$reference" 2>&1)"; then
+      # Compose 2.39.4's missing policy still pulls cached name:tag@digest refs.
+      # Only a real NotFound permits a pull; daemon/API failures stop the operation.
+      [[ $inspected == *"No such image: $reference" ]] || { vps_die "Cannot inspect pinned image: $service"; return 1; }
+      vps_docker pull "$reference" || return 1
+      inspected="$(vps_docker image inspect --format '{{.Id}}' "$reference")" || return 1
+    fi
+    [[ $inspected =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  done
+}
 vps_load() {
   vps_directory "$VPS_PREFIX" && vps_directory "$VPS_CONFIG" && vps_directory "$VPS_STATE" || return 1
   vps_private "$VPS_STATE/install.json" || return 1
@@ -164,7 +179,9 @@ vps_archive() {
   mkdir -m 755 -- "$release" || return 1
   git -c safe.directory="$source" -C "$source" archive "$sha" | tar -x -C "$release" || return 1
   printf '%s\n' "$sha" > "$release/SOURCE_COMMIT" || return 1
-  chmod -R a+rX -- "$release" || return 1
+  # Root tar preserves Git's 0664/0775 headers despite umask; recovery requires
+  # code to be readable by containers but writable only by its root owner.
+  chmod -R a+rX,go-w -- "$release" || return 1
   local file
   for file in bin/navishai-vps ops/vps/cli.sh ops/vps/compose.yaml ops/vps/policy.sh ops/vps/recovery.sh ops/vps/initialize_roles.sh; do
     [[ -f $release/$file && ! -L $release/$file ]] || { vps_die "Incomplete VPS release: $file"; return 1; }
@@ -211,7 +228,7 @@ vps_guard() {
 }
 vps_prepare() {
   # Compose keeps the extra secret out of persistent runtime environments.
-  vps_compose run --rm --no-deps -e NAVISHAI_PREPARE_PASSWORD web sh -ec '
+  vps_compose run --pull never --rm --no-deps -e NAVISHAI_PREPARE_PASSWORD web sh -ec '
     export NAVISHAI_DATABASE_USERNAME=navishai_setup
     export NAVISHAI_DATABASE_PASSWORD="$NAVISHAI_PREPARE_PASSWORD"
     unset NAVISHAI_PREPARE_PASSWORD
@@ -219,9 +236,9 @@ vps_prepare() {
   '
 }
 vps_validate() {
-  vps_compose run --rm --no-deps web bin/rails zeitwerk:check &&
-    vps_compose run --rm --no-deps web bin/rails db:abort_if_pending_migrations &&
-    vps_compose run --rm --no-deps web bin/rails runner 'abort "Elevated runtime" if ActiveRecord::Base.connection.select_value("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = current_user"); ActiveRecord::Base.configurations.configs_for(env_name: "production").each { |c| ActiveRecord::Base.establish_connection(c); abort "Wrong runtime" unless ActiveRecord::Base.connection.select_value("SELECT current_user") == "navishai"; ActiveRecord::Base.connection.execute("SELECT 1") }'
+  vps_compose run --pull never --rm --no-deps web bin/rails zeitwerk:check &&
+    vps_compose run --pull never --rm --no-deps web bin/rails db:abort_if_pending_migrations &&
+    vps_compose run --pull never --rm --no-deps web bin/rails runner 'abort "Elevated runtime" if ActiveRecord::Base.connection.select_value("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = current_user"); ActiveRecord::Base.configurations.configs_for(env_name: "production").each { |c| ActiveRecord::Base.establish_connection(c); abort "Wrong runtime" unless ActiveRecord::Base.connection.select_value("SELECT current_user") == "navishai"; ActiveRecord::Base.connection.execute("SELECT 1") }'
 }
 vps_runtime_check() {
   local holder id service metadata
@@ -239,13 +256,13 @@ vps_https() {
 }
 vps_start() {
   vps_stop || return 1
-  vps_compose up -d --no-deps --wait postgres || return 1
+  vps_compose up -d --pull never --no-build --no-deps --wait postgres || return 1
   # Fresh namespace avoids stale/partial rules after replacement or interrupted apply.
-  vps_compose up -d --no-deps --force-recreate --wait app-net || return 1
+  vps_compose up -d --pull never --no-build --no-deps --force-recreate --wait app-net || return 1
   vps_guard || return 1
   vps_validate || return 1
   # Verify attachment BEFORE a runtime process can send, not after `up -d`.
-  vps_compose create --no-deps --force-recreate web jobs && vps_runtime_check && vps_policy_check || return 1
+  vps_compose create --pull never --no-build --no-deps --force-recreate web jobs && vps_runtime_check && vps_policy_check || return 1
   VPS_WRITERS_STARTED=true
   vps_compose start web jobs || { vps_stop; return 1; }
   local attempt ready=false
@@ -255,7 +272,7 @@ vps_start() {
   done
   $ready || { vps_stop; vps_die 'Web readiness failed.'; return 1; }
   vps_policy_check || { vps_stop; return 1; }
-  vps_compose up -d --no-deps proxy || { vps_stop; return 1; }
+  vps_compose up -d --pull never --no-build --no-deps proxy || { vps_stop; return 1; }
   ready=false
   for attempt in {1..60}; do
     if vps_https; then ready=true; break; fi
@@ -348,8 +365,8 @@ vps_install() {
     return 1
   fi
   vps_compose build web jobs || return 1
-  vps_compose pull --policy missing postgres proxy || return 1
-  vps_compose up -d --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate || return 1
+  vps_pull_pins || return 1
+  vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate || return 1
   vps_units || return 1
   # The systemd child must take the same lock, not collide with this installer.
   flock -u "$VPS_LOCK" || return 1
@@ -359,8 +376,8 @@ vps_install() {
 vps_candidate() {
   vps_switch "$commit" upgrading && vps_load || return 1
   rm -f -- "$VPS_STATE/recovery-images.yaml"
-  vps_compose build web jobs && vps_compose pull --policy missing postgres proxy || return 1
-  vps_compose up -d --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate && vps_start
+  vps_compose build web jobs && vps_pull_pins || return 1
+  vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate && vps_start
 }
 vps_upgrade() {
   [[ -n $source && -n $commit && -n $backup ]] || { vps_die 'Upgrade needs --source, --commit and --backup.'; return 1; }

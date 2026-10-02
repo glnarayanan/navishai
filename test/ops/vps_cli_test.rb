@@ -69,6 +69,34 @@ class VpsCliTest < Minitest::Test
     refute File.symlink?("#{@root}/usr/local/bin/navishai-reset")
   end
 
+  def test_real_root_git_archive_normalizes_modes_and_is_recoverable
+    output, status = shell(<<~SH)
+      fixture=#{Shellwords.escape("#{@directory}/source")}
+      mkdir -p "$fixture/bin" "$fixture/ops/vps" "$fixture/raw"
+      for file in bin/navishai-vps ops/vps/cli.sh ops/vps/compose.yaml ops/vps/policy.sh ops/vps/recovery.sh ops/vps/initialize_roles.sh Gemfile; do
+        printf 'archive fixture\n' > "$fixture/$file"
+      done
+      chmod 755 "$fixture/bin/navishai-vps"
+      git -C "$fixture" init -q
+      git -C "$fixture" config user.name 'Archive fixture'
+      git -C "$fixture" config user.email 'fixture@example.invalid'
+      git -C "$fixture" config tar.umask 0002
+      git -C "$fixture" add .
+      git -C "$fixture" commit -qm fixture
+      sha=$(git -C "$fixture" rev-parse HEAD)
+      git -C "$fixture" archive "$sha" | tar -x -C "$fixture/raw"
+      [[ $(stat -c %a "$fixture/raw/Gemfile") == 664 ]]
+      vps_archive "$fixture" "$sha" >/dev/null
+      release="$VPS_PREFIX/releases/$sha"
+      printf '%s\n' "$(stat -c %a "$release/Gemfile")" "$(stat -c %a "$release/bin/navishai-vps")" "$(stat -c %a "$release/ops")"
+      source ops/vps/recovery.sh
+      tar --format=ustar --hard-dereference -cf #{Shellwords.escape("#{@directory}/release.tar")} -C "$release" .
+      vps_recovery_tar_check #{Shellwords.escape("#{@directory}/release.tar")} root
+    SH
+    assert status.success?, output
+    assert_equal "644\n755\n755\n", output
+  end
+
   def test_literal_env_never_runs_shell_and_clears_old_exports
     @env["NAVISHAI_SYSTEM_SMTP_PASSWORD"] = "$(touch #{@directory}/executed)"
     write_env
@@ -137,7 +165,7 @@ class VpsCliTest < Minitest::Test
     SH
     output, status = shell(script)
     assert status.success?, output
-    assert_equal [ "STOP", "COMPOSE up -d --no-deps --wait postgres", "COMPOSE up -d --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE create --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --no-deps proxy", "TLS", "READY" ], output.lines.map(&:strip)
+    assert_equal [ "STOP", "COMPOSE up -d --pull never --no-build --no-deps --wait postgres", "COMPOSE up -d --pull never --no-build --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE create --pull never --no-build --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --pull never --no-build --no-deps proxy", "TLS", "READY" ], output.lines.map(&:strip)
     output, status = shell(script.sub("echo CHECK;", "echo CHECK; return 7;"))
     refute status.success?, output
     refute_includes output, "VALIDATE"
@@ -147,6 +175,42 @@ class VpsCliTest < Minitest::Test
     refute status.success?, output
     refute_includes output, "READY"
     assert_includes output, "Verified local HTTPS failed"
+  end
+
+  def test_pinned_images_use_exact_cache_and_pull_only_a_missing_reference
+    postgres = "postgres:16@sha256:#{'1' * 64}"
+    proxy = "caddy:2@sha256:#{'2' * 64}"
+    configuration = { services: { postgres: { image: postgres }, proxy: { image: proxy } } }
+    output, status = shell(<<~SH)
+      vps_compose() { echo '#{JSON.generate(configuration)}'; }
+      vps_docker() {
+        if [[ $1 == pull ]]; then echo "PULL $2"; cached=true
+        elif [[ ${!#} == #{Shellwords.escape(postgres)} || ${cached:-false} == true ]]; then echo sha256:#{'9' * 64}
+        else echo "Error response from daemon: No such image: ${!#}" >&2; return 1; fi
+      }
+      vps_pull_pins
+    SH
+    assert status.success?, output
+    assert_equal "PULL #{proxy}\n", output
+    # API/daemon failure must not turn into a network attempt.
+    output, status = shell(<<~SH)
+      vps_compose() { echo '#{JSON.generate(configuration)}'; }
+      vps_docker() { if [[ $1 == pull ]]; then echo MUST-NOT-PULL; else echo 'Cannot connect to Docker daemon' >&2; return 1; fi; }
+      vps_pull_pins
+    SH
+    refute status.success?, output
+    refute_includes output, "MUST-NOT-PULL"
+  end
+
+  def test_pinned_image_pull_failure_stops_before_next_service_without_retry
+    configuration = { services: { postgres: { image: "postgres:16@sha256:#{'1' * 64}" }, proxy: { image: "caddy:2@sha256:#{'2' * 64}" } } }
+    output, status = shell(<<~SH)
+      vps_compose() { echo '#{JSON.generate(configuration)}'; }
+      vps_docker() { if [[ $1 == pull ]]; then echo "PULL $2"; return 7; else echo "No such image: ${!#}" >&2; return 1; fi; }
+      vps_pull_pins
+    SH
+    refute status.success?, output
+    assert_equal "PULL postgres:16@sha256:#{'1' * 64}\n", output
   end
 
   def test_runtime_check_refuses_old_namespace_elevated_flags_and_preparation_secrets

@@ -49,6 +49,13 @@ policy. Do not publish PostgreSQL. A host with a shared existing proxy or blocke
 ports needs a separate reviewed topology; this CLI does not replace that proxy or
 change its firewall. No host package or network setup command is guessed here.
 
+Install/upgrade inspect the exact configured PostgreSQL/Caddy digest references
+and pull only a missing image. Docker/API inspection errors stop the operation.
+Startup and maintenance use `--pull never`; builds run only in install/upgrade.
+Compose 2.39.4's `pull --policy missing` does not skip cached tag-plus-digest refs,
+so the CLI does not use it. Pins stay unchanged. A cold build or missing pin still
+needs downloads; cached operation is not a general offline-install guarantee.
+
 Before deletion/install, collect only read-only host facts (no env/secret dump):
 
 ```sh
@@ -157,7 +164,7 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Core command tests pass 16 tests / 145 assertions, recovery tests 10 / 30 and
+Core command tests pass 19 tests / 154 assertions, recovery tests 10 / 30 and
 namespace-policy tests 8 / 155, with no failures, errors or skips. They test command
 ordering, both startup guards, literal env parsing, distinct secrets, lock/restore
 contracts, writable-root/startup-path and shared-resource/partial-install cleanup
@@ -165,8 +172,12 @@ refusal. Bash syntax and native Ruby style pass. The real namespace-policy and P
 their scope and limits remain in [policy](./VPS_POLICY.md) and
 [recovery](./VPS_RECOVERY.md). Full `bin/ci` passed in 19m24.83s: 684 Rails tests /
 10,947 assertions and 71 browser tests / 3,561 assertions, no failures/errors/skips.
-That run includes 14 core command tests; the final fresh 16 / 145 run also covers
-the two added ownership-boundary fixtures. Style, audits, Brakeman and eager loading
+That run includes 14 core command tests; the fresh 19 / 154 run also covers
+two added ownership-boundary fixtures, actual root Git-archive recovery and
+cache/missing/API-failure pin handling with no retry.
+Root tar kept Git's group-write headers, causing recovery to refuse the CLI's own
+release. Release extraction now strips group/other write, retains executable bits
+and passes the real archive validator. Style, audits, Brakeman and eager loading
 passed. Combined real CLI proof remains pending; no public-host acceptance follows.
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.
 Native fixture/unit tests alone cannot certify public ingress, ACME/DNS, SMTP/OIDC,
