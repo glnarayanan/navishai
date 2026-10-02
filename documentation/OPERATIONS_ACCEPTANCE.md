@@ -249,8 +249,12 @@ The GitHub job supplies PostgreSQL over TCP, not the orb's peer socket. A separa
 password-only PostgreSQL 16 instance, with a different administrator name and port
 56282, exposed a test gap: ops ignored the declared test connection and used
 `/var/run/postgresql`. The new administrator/port regression failed before the fix
-with one test, two assertions and one host mismatch. That is a local reproduction,
-not attribution of a remote CI failure.
+with one test, two assertions and one host mismatch. The completed
+[#222 run](https://github.com/glnarayanan/navishai/actions/runs/36943573897)
+also confirms this failure: its four operations tests could not find the Unix
+socket during setup. Rails returned 640 tests / 10499 assertions, zero failures,
+four errors and zero skips; browser checks passed 71 / 3561. That run predates
+the transport fix. It is not evidence that current remote CI passes.
 
 Ops tests now take only host, port, username and password from the prior Rails
 test configuration, or its native `DATABASE_URL` parser when no pool exists.

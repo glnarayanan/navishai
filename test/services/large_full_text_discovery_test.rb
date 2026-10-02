@@ -64,12 +64,12 @@ class LargeFullTextDiscoveryTest < ActiveSupport::TestCase
     assert_equal "complete", analysis.reload.state, analysis.error
     assert_equal({ "conversations" => 2202, "documents" => 2, "clusters" => 6, "selected" => 6,
       "represented_clusters" => 4, "risk_mentions" => 2, "text_window" => "complete", "similarity_threshold" => 0.3 }, analysis.summary)
-    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).joins(:corpus_item)
+    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).with_corpus_item
     assert_equal expected.sort, members.order("corpus_items.external_id").pluck("corpus_items.external_id")
     assert_equal [ snapshot.id ], members.distinct.pluck("corpus_items.source_snapshot_id")
     FAMILIES.each do |prefix, (count, _)|
       cluster = members.find_by!(corpus_items: { external_id: "#{prefix}-0000" }).issue_cluster
-      assert_equal count.times.map { |index| format("%s-%04d", prefix, index) }, cluster.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+      assert_equal count.times.map { |index| format("%s-%04d", prefix, index) }, cluster.cluster_members.with_corpus_item.order("corpus_items.external_id").pluck("corpus_items.external_id")
       assert_equal({ "count" => count, "possible_documentation_gap" => !%w[a d].include?(prefix) }, cluster.signals)
     end
     selected_ids = %w[a-0000 a-0718 a-0719 b-0000 c-0000 d-0000]
@@ -126,8 +126,8 @@ class LargeFullTextDiscoveryTest < ActiveSupport::TestCase
     # one each. Shared cosine is about 0.04, below 0.3. In only the first batch,
     # Nimbus occurs in 2/100 and the two records would wrongly join (about 0.42).
     assert_equal [ [ "a" ], [ "b" ], 98.times.map { |i| format("c-%03d", i) }, 100.times.map { |i| format("z-%03d", i) } ],
-      analysis.issue_clusters.map { |cluster| cluster.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id") }.sort
-    assert_equal %w[a b c-000 z-000], ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+      analysis.issue_clusters.map { |cluster| cluster.cluster_members.with_corpus_item.order("corpus_items.external_id").pluck("corpus_items.external_id") }.sort
+    assert_equal %w[a b c-000 z-000], ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).with_corpus_item.order("corpus_items.external_id").pluck("corpus_items.external_id")
   end
 
   test "every work cap accepts its exact boundary and atomically refuses one below including late terms" do
@@ -173,7 +173,7 @@ class LargeFullTextDiscoveryTest < ActiveSupport::TestCase
     assert_equal 100_000, analysis.summary.fetch("conversations")
     assert_equal "complete", analysis.summary.fetch("text_window")
     assert_equal [ 1, 99_999 ], analysis.issue_clusters.pluck(:signals).map { |signals| signals.fetch("count") }.sort
-    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).joins(:corpus_item)
+    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).with_corpus_item
     assert_equal 100_000, members.count
     assert_equal %w[000000 099999], members.selected.order("corpus_items.external_id").pluck("corpus_items.external_id")
     CorpusItem.insert_all!([ { workspace_id: @workspace.id, corpus_id: @corpus.id, source_snapshot_id: snapshot.id,

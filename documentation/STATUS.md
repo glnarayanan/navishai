@@ -2043,23 +2043,46 @@ purpose, authority, live call or training was added. See
 Relationships use only retained observation anchors, not unseen evidence or
 exhaustive company understanding. Fixtures do not establish semantic quality.
 
+### Slices 82–83 — TCP operations and complete family queries
+
+Operations tests now honor the declared local test administrator host, port and
+credentials rather than assuming a peer socket. Peer and password-only TCP each
+pass 7 tests / 42 assertions, with exact pool restoration and privilege checks.
+The completed old #222 CI log confirms four socket setup errors; those results
+predate this fix. No production transport or privilege changed. See
+[OPERATIONS_ACCEPTANCE](./OPERATIONS_ACCEPTANCE.md).
+
+Retained empty statistics also stalled a raw full-family source join. The native
+20,000-record regression fails the old family COUNT at five seconds. A shared
+tenant-FK-key LATERAL lookup now serves full counts, bytes, signal scans and scale
+assertions without changing their expected values. Focused model/access checks
+pass 21 / 252. Committed native count/signals/history/final-page checks pass; the
+old COUNT still times out at one second on the same data/statistics, while the
+fixed count returns exactly 20,000. See [CI_TIMEOUT](./CI_TIMEOUT.md).
+No index, migration, grant, dependency, guard removal or timeout increase follows.
+
 ### Final combined engineering evidence
 
 ```sh
-DATABASE_URL=postgresql:///navishai_lab_ci81_test CHROME_ARGS=--no-sandbox \
-  BUNDLE_FROZEN=true bin/ci
+RAILS_ENV=test DATABASE_URL="$DISPOSABLE_TCP_TEST_URL" \
+  CHROME_ARGS=--no-sandbox BUNDLE_FROZEN=true bin/ci
 ```
 
-Passed in 17m48.72s on the
-[implementation head](https://github.com/glnarayanan/navishai/commit/1563e52):
-Ruby style 375 files clean, gem/importmap audits clean, Brakeman zero errors/warnings,
-eager loading passed; Rails 640 tests / 10520 assertions (seed 31409, two native
-processes) and system 71 / 3561 (seed 52776), no failures, errors or skips.
+Passed on 2 October in 40m32.01s with the
+[complete family query fix](https://github.com/glnarayanan/navishai/commit/d037b49)
+and TCP operations fix, against owned password-only PostgreSQL 16:
+Ruby style 376 files clean, gem/importmap audits clean, Brakeman zero errors/warnings,
+eager loading passed; Rails 644 tests / 10552 assertions (seed 12974, two native
+processes) and system 71 / 3561 (seed 48910), no failures, errors or skips.
 The fresh disposable worker databases were distinct. Read-only catalogs show zero
 remaining operations-proof databases/roles. Temporary prompt exports were removed.
+Two obsolete local diagnostic runs stopped with recorded slow queries, not passes;
+the final run initially overlapped them, so its time is not a throughput benchmark.
 
-The stack through #222 is committed, pushed and open for review, not merged,
-released or deployed. Remote PR CI remains distinct from this executed local run.
+The stack through [#223](https://github.com/glnarayanan/navishai/pull/223) is committed,
+pushed and open for review, not merged, released or deployed. Existing #221/#222
+carry the TCP fix through normal published-history-preserving updates. Current
+remote PR CI remains pending and distinct from this executed local run.
 The original acceptance map has 41 engineering-evidence groups, zero missing
 engineering groups and four owner-authority acceptance groups still unproved.
 Those are 41/45 checklist groups (91.1%), not a product-quality score. All 41

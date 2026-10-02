@@ -298,3 +298,56 @@ all Ruby thread stacks, child-process state, PostgreSQL wait/blocking snapshots 
 runner memory/OOM evidence. Those facts would distinguish a blocked native child,
 queue/row-lock wait, lost worker or progressing scale test. Current logs cannot do
 so. This investigation adds no remote instrumentation and changes no active run.
+
+## Joined family-evidence query follow-up — 2 October 2026
+
+Fresh password-only TCP CI found another stalled join in the 100,000-record
+partition assertions: full membership joined to source items for DISTINCT tenant
+IDs. One such statement stayed active for over twenty minutes without a lock wait.
+The production `IssueCluster#source_groups` also uses this join for its complete
+family count and retained-byte guard, so changing only the test query is insufficient.
+
+The native regression creates a 200-record family through intake/request/job,
+purges its source, refreshes the empty tables' statistics, then creates a
+20,000-record family through the same path. It refreshes no populated statistics.
+The old `source_groups` COUNT fails its five-second statement bound: one test,
+four assertions, one `PG::QueryCanceled` error. Later intake cannot replace that
+fixed family. The regression checks all member IDs, historical snapshot, tenant,
+exact boolean counts, late full-text risk, critical report and the last fifty rows.
+
+`ClusterMember.with_corpus_item` now keeps an INNER LATERAL source lookup with
+`OFFSET 0`, binding all three existing tenant-FK keys: workspace, corpus and item.
+The complete keys matter: an ID-only correlated lookup still failed because
+PostgreSQL chose the three-column source index with only its third key bound.
+The final plan uses all three index conditions. It preserves inner-join rows and
+existing tenant lineage; it adds no index, grant, migration or authority.
+Family text scans use that same relation in 100-member scalar batches, not an
+optimizable ID subquery. Full counts, bytes, expiry, frozen membership and the
+50-record/10-MiB page guard remain. The large partition assertions now use this
+shared production relation without changing any expectation or assertion.
+
+Focused native regression/model/access checks passed 21 tests / 252 assertions
+at seed 1, with zero failures/errors/skips. A separate committed native replay
+also passes complete counts/signals, tenant, snapshot and the last fifty rows
+under five seconds per statement. It uses only the owned disposable database;
+automatic statistics refresh was disabled on its two generated tables to keep
+the empty-statistics case fixed. Neither the app nor the regression changes that
+setting. On the same native data/statistics, the original COUNT times out at one
+second; the fixed COUNT returns exactly 20,000 within that same bound.
+
+Two obsolete local full checks were stopped after recording their slow queries:
+the original assertion join and the insufficient ID-only lateral version. Neither
+is a passing check. Final joined password-only TCP `bin/ci` passed in 40m32.01s
+on the complete-key fix: Ruby style 376 files, clean gem/importmap audits, Brakeman
+zero errors/warnings, eager loading, Rails 644 tests / 10552 assertions (seed 12974)
+and browser 71 / 3561 (seed 48910), zero failures/errors/skips. It retained two
+native workers and every scale assertion, including both 100,000-record proofs.
+The run initially overlapped the obsolete checks; their time is not a throughput
+benchmark. No remote workflow was cancelled. Historical #187 remains unattributed.
+
+Executed against the owned password-only PostgreSQL 16 instance:
+
+```sh
+RAILS_ENV=test DATABASE_URL="$DISPOSABLE_TCP_TEST_URL" \
+  CHROME_ARGS=--no-sandbox BUNDLE_FROZEN=true bin/ci
+```

@@ -71,7 +71,7 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     assert_equal({ "conversations" => 99_998, "documents" => 2, "clusters" => 20,
       "selected" => 22, "represented_clusters" => 20, "risk_mentions" => 2,
       "text_window" => 4000, "similarity_threshold" => 0.3 }, analysis.summary)
-    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).joins(:corpus_item)
+    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).with_corpus_item
     assert_equal expected_ids, members.order("corpus_items.external_id").pluck("corpus_items.external_id")
     assert_equal snapshot.corpus_items.order(:id).pluck(:id), members.order(:corpus_item_id).pluck(:corpus_item_id)
     assert_equal [ snapshot.id ], members.distinct.pluck("corpus_items.source_snapshot_id")
@@ -81,7 +81,7 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     assert_equal LARGE_RISK_IDS, members.where("cluster_members.signals <> '[]'::jsonb").order("corpus_items.external_id").pluck("corpus_items.external_id")
     LARGE_FAMILIES.each do |prefix, (count, _)|
       cluster = members.find_by!(corpus_items: { external_id: "#{prefix}-0000" }).issue_cluster
-      assert_equal family_ids(prefix, count).sort, cluster.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+      assert_equal family_ids(prefix, count).sort, cluster.cluster_members.with_corpus_item.order("corpus_items.external_id").pluck("corpus_items.external_id")
       assert_equal({ "count" => count, "possible_documentation_gap" => !%w[a d].include?(prefix) }, cluster.signals)
     end
     members.selected.includes(:corpus_item).each do |member|
@@ -157,7 +157,7 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     assert_equal({ "conversations" => 2202, "documents" => 2, "clusters" => 6,
       "selected" => 6, "represented_clusters" => 4, "risk_mentions" => 2,
       "text_window" => 4000, "similarity_threshold" => 0.3 }, analysis.summary)
-    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).joins(:corpus_item)
+    members = ClusterMember.where(issue_cluster: analysis.issue_clusters).with_corpus_item
     assert_equal expected_ids.sort, members.order("corpus_items.external_id").pluck("corpus_items.external_id")
     assert_equal [ snapshot.id ], members.distinct.pluck("corpus_items.source_snapshot_id")
     assert_equal SELECTED_IDS, members.selected.order("corpus_items.external_id").pluck("corpus_items.external_id")
@@ -165,13 +165,13 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
 
     FAMILIES.each do |prefix, (count, _terms, gap)|
       cluster = members.find_by!(corpus_items: { external_id: "#{prefix}-0000" }).issue_cluster
-      assert_equal family_ids(prefix, count), cluster.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+      assert_equal family_ids(prefix, count), cluster.cluster_members.with_corpus_item.order("corpus_items.external_id").pluck("corpus_items.external_id")
       assert_equal({ "count" => count, "possible_documentation_gap" => gap }, cluster.signals)
       assert_family_reports(cluster, prefix, count)
     end
     %w[z-0000 z-0001].each do |external_id|
       cluster = members.find_by!(corpus_items: { external_id: }).issue_cluster
-      assert_equal [ external_id ], cluster.cluster_members.joins(:corpus_item).pluck("corpus_items.external_id")
+      assert_equal [ external_id ], cluster.cluster_members.with_corpus_item.pluck("corpus_items.external_id")
       assert_equal({ "count" => 1, "possible_documentation_gap" => true }, cluster.signals)
       assert_empty cluster.cluster_members.selected
     end
@@ -207,7 +207,7 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     # the lower external ID wins, not the latest record or insertion position.
     assert_no_corpus_item_materialization { CorpusAnalysisJob.perform_now(tied.id) }
     assert_equal "complete", tied.reload.state, tied.error
-    assert_equal [ "a-0718" ], ClusterMember.selected.where(issue_cluster: tied.issue_clusters).joins(:corpus_item).pluck("corpus_items.external_id")
+    assert_equal [ "a-0718" ], ClusterMember.selected.where(issue_cluster: tied.issue_clusters).with_corpus_item.pluck("corpus_items.external_id")
     assert_equal 1, tied.summary.fetch("represented_clusters")
   end
 
