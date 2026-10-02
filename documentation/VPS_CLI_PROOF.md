@@ -103,36 +103,45 @@ this proves neither backup storage policy nor PITR. Root and Docker admins
 can bypass namespace policy and SQL guards. Shared-host reboot and public
 network/TLS acceptance need a separately authorised host.
 
-## Run evidence and open checks
+## Run evidence
 
 Ruby syntax, four embedded Ruby blocks, four embedded Bash blocks and native
-RuboCop pass. The full CLI proof has not passed yet. The latest completed run
-used CLI SHA-256
+RuboCop pass. On 2 October 2026, the full joined CLI proof returned exit 0 with
+CLI SHA-256
 `76ac2119bf2912d346a77de071901b26dfc9276593f02081d4bfac8ec43b33aa`
 and recovery SHA-256
-`56dbe2c80f382dff280da9dab407a7759fc63a5c7b4fa8d7ef02c6dcf0c1d275`.
-It passed real install, child lock handoff, trusted internal-CA HTTPS, restricted
-roles across four databases, native jobs and privilege denials, stable stopped
-workload creation, fail-closed policy and replacement, and kernel IPv4/IPv6
-rejection from web/jobs. Backup returned exit 1 without publishing its directory.
-Every recorded Docker maintenance command returned 0. Tar listed the release,
-config, state and Rails storage, then Caddy data successfully; the next archive
-listing never ran. The failing guard is the Caddy data root-archive check.
+`e793c033171998d5affb2e5fac054b3188c75e030ef7a714c017d8af524d5202`.
+The executed proof script SHA-256 is
+`11331ea0d6ccdd72a401c5b7081c0610e6cb7759f8a2edab46d0443c25e44736`.
+The log records all seven production file hashes and the synthetic release.
 
-A smaller real-image run reproduced that guard failure with the same pinned
-Caddy and PostgreSQL images, real named volumes and the unchanged GNU-tar dump.
-Both Caddy data and config contain root-owned `./caddy/` mode 1777, shown as
-`drwxrwxrwt 0/0`. Both unchanged root-archive checks return 1. The validator rejects
-the sticky bit and group/other write permissions. The other members have modes
-0600/0700; the volume root has mode 0755. This is product failure evidence, not
-a harness assertion or a green joined-proof result. The parent owns the fix.
+The completed run passed all checks above, including:
 
-Joined restore, successful upgrade, failed-candidate full rollback, final
-maintenance-window totals and daemon restart remain unproved. The final failure
-fixture commits changed checkpoint rows and sequence state before raising;
-it has not executed yet. An earlier snapshot error used a nonexistent composite
-sequence type. The corrected snapshot reads `last_value` and `is_called` directly;
-a temporary-sequence transaction checked 47/false and rolled back.
+- Actual install, startup-child lock handoff, trusted internal-CA HTTPS,
+  restricted roles across four databases, native jobs and privilege denials.
+- Holder/PostgreSQL replacement, fail-closed shadowed policy checks and
+  kernel IPv4/IPv6 rejection from web/jobs after reachable-before probes.
+- CHECKSUMS-consented restore with exact checkpoint rows, 47/false sequence
+  states, object/schema owners, ACL/default ACL, private env and Rails storage.
+- A successful upgrade and a failed migration that committed changed rows
+  and sequence state 97/true before raising. Full rollback restored the prior
+  source/image/config/four-DB point and left writers stopped until explicit start.
+- Four-DB runtime DDL denial and fixed native history after restore, rollback
+  and daemon restart, without resending refused work.
+- 14 actual pre-start inspections and 142 maintenance windows checked before
+  the final daemon restart. Holder/PostgreSQL IDs stayed fixed and running while
+  web/jobs stayed stopped until explicit start. No workload-start event fell
+  inside those windows. The final startup used the same state-checking wrappers.
+- An actual daemon restart with no automatic workload startup, then explicit
+  namespace-policy reapplication and checks.
+- Complete disposal of private assets and unchanged host IPv4/IPv6 firewall
+  and all four checked sysctls.
+
+Before the joined run, a real-image probe archived both Caddy named volumes
+without rewriting metadata. Each root-owned `./caddy/` directory retained mode
+1777. Both `root` guards returned 1 and both `caddy` guards returned 0. The probe
+also removed its assets and matched host firewall/sysctl snapshots. These checks
+do not remove the host, public-network or TLS limits stated above.
 
 The proof has caught these boundary failures:
 
@@ -157,9 +166,12 @@ The proof has caught these boundary failures:
   Actual pre-start inspections verified unchanged running holder/PostgreSQL
   IDs and stopped web/jobs before explicit start.
 - Pinned Caddy retains root-owned sticky, world-writable `caddy` directories in
-  both named volumes. The generic root-archive validator rejects them. Any fix
-  must keep checks for ownership, links, special nodes and unrelated writable
-  paths; the proof does not change permissions or bypass the guard.
+  both named volumes. Backup failed at the generic root-archive validator after
+  real Docker dumps and tar listings succeeded. The parent added a `caddy` kind
+  that accepts only the exact root-owned, root-level directory mode 1777.
+  Other members retain the root rules; generic root/storage/image checks did
+  not change. The real-image probe and joined restore passed without changing
+  archive permissions or bypassing the validator.
 
 Every completed failed run removed its disposable assets and matched the
 before/after host IPv4/IPv6 firewall and checked sysctls. No failed run counts
