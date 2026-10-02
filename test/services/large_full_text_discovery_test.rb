@@ -92,7 +92,18 @@ class LargeFullTextDiscoveryTest < ActiveSupport::TestCase
     scenarios.each do |scenario|
       assert_not scenario.current_version.approved?
       assert_empty scenario.current_version.scenario_reviews
-      assert_equal scenario.corpus_item.content.first(4000), scenario.current_version.scenario_evidence.sole.excerpt
+      text = scenario.corpus_item.content
+      excerpt = scenario.current_version.scenario_evidence.sole.excerpt
+      if %w[a-0718 a-0719].include?(scenario.corpus_item.external_id)
+        assert_equal text.last(4000), excerpt
+        assert_equal [ text.length - 4000, 4000 ], scenario.current_version.draft_notes.fetch("evidence")
+        assert_includes excerpt, "data loss engineering unresolved logs"
+        assert_not_includes text.first(4000), "data loss engineering unresolved logs"
+      else
+        assert_equal text.first(4000), excerpt
+      end
+      assert_empty scenario.current_version.known_facts
+      assert_equal ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }, scenario.current_version.requirements
     end
     assert_empty analysis.taxonomy_versions
     assert_no_difference [ "IssueCluster.count", "ClusterMember.count", "Scenario.count", "ScenarioVersion.count", "AuditEvent.count" ] do

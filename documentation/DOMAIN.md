@@ -12,8 +12,12 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Corpus item | One historical conversation, document or recorded production trace, not a live ticket. |
 | Corpus analysis | One fixed-input discovery method proposing company-specific families and scenario candidates. Model output has no expert authority. |
 | Discovery batch | Fixed source allocation, digest, request UUID and once-only receipt within one consented analysis. The reducer groups existing proposals; it cannot invent definitions or approve them. |
+| Support observation | Proposed support distinction with a summary, explicit uncertainty and every exact source anchor. It is neither a company issue label nor an expert decision. |
 | Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
 | Trace association | An expert's match, different or uncertain decision on an exact trace and scenario version, with append-only reasons. It is neither scenario approval nor a calibration label. |
+| Model matching suggestion | A proposed match, no-match or uncertain comparison of one fixed trace with every disclosed eligible scenario version. It cannot create a trace association. |
+| Trace failure discovery | A proposed failure account for every fixed trace, with emerging families and gaps against the disclosed definitions and cases. No finding is not a verified pass. |
+| Trace failure review | An expert's acceptance, rejection or uncertainty about one proposed trace failure. Acceptance permits an empty-expectation draft, not scenario approval or regression admission. |
 | Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
 | Follow-up plan | Expert-authored immutable ordered literal conditions and user messages. Separate from hidden facts; a new plan needs ordinary source-backed approval. |
 | Conversation turn receipt | Content-free request key, input digest, elapsed time and reported attempt outcome. Not proof of remote execution or tool use. |
@@ -24,7 +28,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Scenario version | Fixed context, facts, expected behaviour, importance, and source evidence at one revision. |
 | Model scenario proposal | Non-authoritative structured suggestion on one fixed scenario version, with exact source quotes, model/settings and a separate disclosure purpose. It cannot change a scenario or human decision. |
 | Scenario family | Real-source scenario and its controlled variants. |
-| Variant | Child scenario with named variable changes, reason, and changed expectations bound to a parent version. |
+| Variant | Child scenario with exact named-fact changes, reason and proposed behavioural difference bound to one parent version. Fresh expectations and review remain separate. |
 | Evidence | Link to an exact source snapshot/item and the excerpt that supports a claim. |
 | Review | Expert decision on an exact proposed version: approve, reject, amend, or merge. |
 | Eval contract | Structured requirements and prohibitions compiled from a reviewed scenario version. |
@@ -42,7 +46,8 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Evaluation target | System under test, not a NavishAI support persona. |
 | Evaluation run | One attributable execution against frozen target settings, cases, and graders. |
 | Evaluation result | Retained target output and individual grader decisions, evidence, uncertainty, and execution errors. |
-| Failure cluster | Results grouped by shared behavioural failure, not a universal support score. |
+| Failure pattern | Failed results grouped by the same contract requirement kind and check type across grader versions. Exact definitions, individual thresholds and nearby uncertainty remain separate. |
+| Source-assumption impact | A proposed affected expectation or assumption from two complete same-source snapshots and explicit fixed scenario versions, including unlinked assumptions. It is not an automatic stale flag or expert revision. |
 | Regression case | Reviewed failed case retained in a suite to test future target versions. |
 | Classifier | Later, a cheaper learned check for a stable repeated judgment, validated against held-out expert labels. |
 
@@ -53,6 +58,8 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Exact-text masks come from an explicit author-supplied list, not inferred PII or disclosure policy. Snapshots retain its fixed fingerprint/count, not the list. Prior snapshots and approvals stay unchanged.
 - A changed source never changes a prior scenario, case, label, or run. A dependent definition may need a new version.
 - Evidence links cannot cross workspaces. A variant must retain both its original evidence and its explicit counterfactual changes.
+- Local source review retains bounded literal questions and exact source offsets, not diagnoses or copied account truth. Experts supply starting facts and supported expectations; draft notes are never target input.
+- A controlled variant changes one to five existing known facts, freezes their typed before/after values and parent, and clears expectations, hidden facts and follow-ups. The proposed difference cannot approve the child.
 - Scenario revisions and variants compare retained JSON values with types intact, including nested numbers. Integer 0 differs from float 0.0; object-key order alone changes nothing, while array order matters. Each changed version still needs expert review.
 - Trace matching uses the same recursive typed comparison for equal and conflicting known facts. Equal literal terms cannot hide nested numeric differences or turn a hint into an expert decision.
 - Merging preserves the rejected/merged identity and provenance; it does not erase why a case entered the corpus.
@@ -76,12 +83,16 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A result passes only when every check passes. An abstention cannot become a pass; an execution error cannot become a support failure.
 - A regression admission retains an exact failed result, fixed case, human and reason. Later membership removal does not erase that decision.
 - Source impact follows exact evidence through all retained snapshots into current and historical versions, fixed cases and current suite membership. It cannot find unlinked assumptions or decide that changed prose has the same meaning.
+- Separate source-assumption analysis may inspect explicit unlinked versions under impact-only approval and endpoint/body consent. It cannot change exact-evidence dependencies, find every affected case or rewrite a prior decision.
 - Run comparisons require the same fixed case and identical frozen visible input. Pass → fail is a reported regression; fail → pass is recovery. Unknown results stay unresolved and changed definitions or inputs stay unmatched.
 - A model proposal quotes only the fixed excerpts disclosed for its version. Quotes do not prove correct expectations. Existing target/judge approval cannot authorise source processing; proposals never inherit expert approval or change human labels.
 - Model corpus discovery needs consent for its exact complete source preview and its own operator purpose. Proposed families must account for every disclosed conversation once. Mining may copy source-backed definitions but grants neither approval nor target-visible knowledge. Abstention and execution error cannot become discovered families or authoritative labels.
 - Batch consent fixes source allocation and the maximum call plan. Stopped or unknown attempts cannot resume, retry or publish partial global families. A later conversation import cannot replace already disclosed historical inputs; changed company documents still block processing.
+- V2 observations retain every anchor and uncertainty even when candidate selection omits their records. Reduction preserves and orders all fixed observations exactly once; it cannot invent relationships between records disclosed in separate batches.
 - Family source counts use complete fixed members and full-family denominators. Exact uploaded booleans, missing/nonboolean values, reported critical impact and literal text mentions stay separate. None verifies risk, an outcome, model importance or an expert label.
 - Expert nomination adds a local unapproved draft from one fixed member, with its source and author's reason. It never changes the analysis's selection or supplies an authoritative expectation or calibration label. Existing scenarios and decisions remain unchanged.
 - Literal failure retrieval suggests current versions for review. Each expert keeps their own association history; a match cannot settle agreement, revise expectations, permit recorded replay with changed input or admit a regression.
+- Model matching, source-assumption impact and trace discovery each need their own operator purpose and exact disclosure consent. Approval of another purpose grants none of them; each fixed claimed attempt never retries after an unknown outcome.
+- Proposed trace failures may come from traces with no uploader report. A reviewed finding may open a source-backed draft with empty expectations, but an expert must still author, review, compile and deliberately admit a failed case to regression.
 - A selected trace opens an existing version for explicit expert revision; it never copies a reported correction into expectations. Distinct trace/conversation records add evidence. Only current documents replace same-source, same-use evidence. Retained historical traces stay eligible until expiry. Saving changes needs fresh review; prior cases and associations stay fixed.
 - An expert may replace the expectation quote on the scenario's own fixed conversation with another exact excerpt from that record. It stays hidden from the target, leaves other evidence and prior versions fixed, and needs fresh review when changed. Blank or identical quotes cannot reset approval; newer exports cannot supply a substitute quote.

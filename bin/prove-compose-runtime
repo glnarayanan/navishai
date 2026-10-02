@@ -7,6 +7,7 @@ require "open3"
 require "securerandom"
 require "shellwords"
 require "tmpdir"
+require_relative "../ops/edge_policy"
 
 abort "Usage: bin/prove-compose-runtime (no arguments)" unless ARGV.empty?
 # Preserve readable tracked files and public test certificates across caller masks.
@@ -51,6 +52,7 @@ end
 docker = nil
 compose = nil
 begin
+  host_rules = %w[iptables-save ip6tables-save].map { |tool| run.call("sudo", "-n", tool).lines.reject { |line| line.start_with?("#") }.join }
   commit = run.call("git", "-C", root, "rev-parse", "HEAD").strip
   puts "BUILD: tracked Git archive #{commit}; project #{prefix}; private directory #{directory}"
   archive = File.join(directory, "source.tar")
@@ -96,7 +98,7 @@ begin
   run.call(*builder, "pull", postgres)
   postgres_id = run.call(*builder, "image", "inspect", "--format", "{{.Id}}", postgres).strip
   run.call(*builder, "tag", postgres, "#{prefix}-postgres:local")
-  puts run.call(*builder, "build", "--network=host", "--tag", "#{prefix}:local", source)
+  puts run.call(*builder, "build", "--network=host", "--memory=1g", "--cpu-period=100000", "--cpu-quota=200000", "--tag", "#{prefix}:local", source)
   images = File.join(directory, "images.tar")
   run.call(*builder, "save", "--output", images, "#{prefix}:local", "#{prefix}-postgres:local")
   # Persist only the owned namespace, not any host route/firewall/sysctl changes.
@@ -133,10 +135,16 @@ begin
   puts "PASS: production /up HTTP 200 through namespace loopback publication."
   puts run.call(*docker, "exec", "-i", web, "bin/rails", "runner", "-",
     input: File.read(File.join(root, "test/support/container_runtime_proof.rb")))
-  wait.call("two-family native analysis") do
+  analysis_complete = lambda do
     state = run.call(*docker, "exec", web, "bin/rails", "runner", 'a = CorpusAnalysis.find(File.read(Rails.root.join("tmp/proof-analysis-id"))); raise a.error.to_s if a.state == "failed"; raise "Wrong analysis" if a.state == "complete" && (a.summary.fetch("conversations") != 2 || a.summary.fetch("clusters") != 2); puts a.state')
     state.lines.any? { |line| line.strip == "complete" }
   end
+  wait.call("two-family native analysis", &analysis_complete)
+  optional_complete = lambda do
+    state = run.call(*docker, "exec", web, "bin/rails", "runner", 'require Rails.root.join("ops/current_workflows_proof"); puts Operations::CurrentWorkflowsProof.verify_queued(JSON.parse(File.read(Rails.root.join("tmp/proof-optional-requests.json"))))')
+    state.lines.any? { |line| line.strip == "true" }
+  end
+  wait.call("native matching/impact/discovery disclosure refusal", &optional_complete)
   inspect = JSON.parse(run.call(*docker, "inspect", web, pg, jobs))
   web_info, pg_info, jobs_info = inspect
   [ web_info, jobs_info ].each do |info|
@@ -177,7 +185,106 @@ begin
       "--resolve", "peer.invalid:8443:#{peer_ip}", "https://peer.invalid:8443").include?("s_server")
   end
   puts run.call(*docker, "exec", pg, "bash", "-ec", "set +e; result=$(timeout 5 bash -c 'echo >/dev/tcp/#{peer_ip}/8443' 2>&1); status=$?; set -e; test $status -ne 0; test $status -ne 124; [[ $result == *'Network is unreachable'* ]]; echo 'PASS: edge-only trusted TLS reachable from web; PostgreSQL gets ENETUNREACH.'")
-  puts "PASS: separate native jobs completed two-family analysis; local Compose proof in #{(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)}s."
+  edge_id = run.call(*docker, "network", "inspect", "--format", "{{.Id}}", "#{prefix}_edge").strip
+  bridge = "br-#{edge_id[0, 12]}"
+  namespace = [ "sudo", "-n", "nsenter", "--net=#{directory}/netns" ]
+  # Simulated destinations exist ONLY on this namespace's loopback. No public
+  # route, paid endpoint, DNS exception or shared-host address is introduced.
+  public_ip = "93.184.216.34"
+  private_ips = %w[169.254.169.254 100.64.1.2 198.18.0.1]
+  [ public_ip, *private_ips ].each { |ip| run.call(*namespace, "ip", "addr", "add", "#{ip}/32", "dev", "lo") }
+  start.call("destinations", namespace + [ "openssl", "s_server", "-accept", "9443", "-cert", cert,
+    "-key", File.join(peer_directory, "peer.key"), "-www", "-quiet" ])
+  probe = lambda do |container, ip, allowed|
+    result = run.call(*docker, "exec", container, "ruby", "-rsocket", "-rtimeout", "-e", <<~'RUBY', ip, "9443", allowed.to_s)
+      ip, port, expected = ARGV
+      begin
+        Timeout.timeout(3) { TCPSocket.open(ip, Integer(port)) { |socket| socket.close } }
+        abort "Denied destination connected: #{ip}" unless expected == "true"
+        puts "reachable"
+      rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+        abort "Allowed destination failed: #{error.class}" unless expected == "false"
+        puts "denied: #{error.class}"
+      end
+    RUBY
+    result
+  end
+  wait.call("simulated destinations") { probe.call(web, public_ip, true).include?("reachable") }
+  private_ips.each { |ip| probe.call(web, ip, true) }
+  # The tracked Docker edge defaults to IPv4. Enable IPv6 only in these disposable
+  # namespaces to exercise the policy against a real IPv6 bypass, not just text.
+  web_namespace = [ "sudo", "-n", "nsenter", "--net=/proc/#{web_info.fetch('State').fetch('Pid')}/ns/net" ]
+  edge_ip = web_info.fetch("NetworkSettings").fetch("Networks").fetch("#{prefix}_edge").fetch("IPAddress")
+  addresses = JSON.parse(run.call(*web_namespace, "ip", "-j", "addr", "show"))
+  edge_interface = addresses.find { |link| link.fetch("addr_info").any? { |address| address["local"] == edge_ip } }.fetch("ifname")
+  public_ipv6 = "2001:4860:feed::1"
+  private_ipv6 = %w[fd00:feed::1 2001:db8::1]
+  run.call(*namespace, "sysctl", "-w", "net.ipv6.conf.#{bridge}.disable_ipv6=0")
+  run.call(*web_namespace, "sysctl", "-w", "net.ipv6.conf.#{edge_interface}.disable_ipv6=0")
+  run.call(*namespace, "ip", "-6", "addr", "add", "#{public_ipv6}/64", "dev", bridge, "nodad")
+  private_ipv6.each { |ip| run.call(*namespace, "ip", "-6", "addr", "add", "#{ip}/128", "dev", "lo", "nodad") }
+  run.call(*web_namespace, "ip", "-6", "addr", "add", "2001:4860:feed::2/64", "dev", edge_interface, "nodad")
+  run.call(*web_namespace, "ip", "-6", "route", "add", "default", "via", public_ipv6, "dev", edge_interface)
+  [ public_ipv6, *private_ipv6 ].each { |ip| probe.call(web, ip, true) }
+  Operations::EdgePolicy.apply!(File.join(directory, "netns"), bridge)
+  Operations::EdgePolicy.apply!(File.join(directory, "netns"), bridge)
+  %w[iptables ip6tables].each do |binary|
+    %w[INPUT FORWARD].each do |hook|
+      run.call(*namespace, binary, "-w", "5", "-I", hook, "1", "-i", bridge, "-j", "ACCEPT")
+      begin
+        begin
+          Operations::EdgePolicy.apply!(File.join(directory, "netns"), bridge)
+          raise "Shadowed deny policy accepted"
+        rescue RuntimeError => error
+          raise unless error.message.include?("policy priority")
+        end
+      ensure
+        run.call(*namespace, binary, "-w", "5", "-D", hook, "-i", bridge, "-j", "ACCEPT")
+      end
+    end
+  end
+  Operations::EdgePolicy.apply!(File.join(directory, "netns"), bridge)
+  puts "PASS: policy recheck rejects shadowed INPUT/FORWARD rules in both address families."
+  [ web, jobs ].each do |container|
+    run.call(*docker, "cp", cert, "#{container}:/rails/tmp/peer.crt")
+    run.call(*docker, "exec", container, "curl", "--fail", "--silent", "--max-time", "5", "--noproxy", "*", "--cacert", "/rails/tmp/peer.crt",
+      "--resolve", "peer.invalid:9443:#{public_ip}", "https://peer.invalid:9443")
+    private_ips.each { |ip| probe.call(container, ip, false) }
+    # A same-edge peer was reachable before policy; it must now be rejected too.
+    run.call(*docker, "exec", container, "ruby", "-rsocket", "-rtimeout", "-e",
+      'begin; Timeout.timeout(3) { TCPSocket.open(ARGV[0], 8443) { |s| s.close } }; abort "Private edge peer connected"; rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH; puts "denied private edge peer"; end', peer_ip)
+    run.call(*docker, "exec", container, "bin/rails", "runner", 'raise "Control DB denied" unless ActiveRecord::Base.connection.select_value("SELECT current_user") == "navishai"')
+  end
+  chain = Operations::EdgePolicy.rules(bridge).first
+  counters = run.call(*namespace, "iptables", "-w", "5", "-L", chain, "-n", "-v", "-x")
+  raise "No kernel REJECT counters" unless counters.lines.any? { |line| line.include?("REJECT") && line.split.first.to_i.positive? }
+  run.call(*docker, "exec", web, "curl", "--fail", "--silent", "--max-time", "5", "--noproxy", "*", "--cacert", "/rails/tmp/peer.crt",
+    "--resolve", "peer.invalid:9443:[#{public_ipv6}]", "https://peer.invalid:9443")
+  private_ipv6.each { |ip| probe.call(web, ip, false) }
+  ipv6_counters = run.call(*namespace, "ip6tables", "-w", "5", "-L", Operations::EdgePolicy.rules(bridge, ipv6: true).first, "-n", "-v", "-x")
+  raise "No IPv6 kernel REJECT counters" unless ipv6_counters.lines.any? { |line| line.include?("REJECT") && line.split.first.to_i.positive? }
+  run.call(*compose, "restart", "web", "jobs")
+  wait.call("production /up after restart") do
+    run.call(*namespace, "curl", "--fail", "--silent", "--max-time", "5", "--output", "/dev/null", "--write-out", "%{http_code}",
+      "--header", "Host: example.invalid", "http://127.0.0.1:3000/up") == "200"
+  end
+  Operations::EdgePolicy.apply!(File.join(directory, "netns"), bridge)
+  [ web, jobs ].each { |container| private_ips.each { |ip| probe.call(container, ip, false) } }
+  puts run.call(*docker, "exec", web, "bin/rails", "runner", <<~'RUBY')
+    original = CorpusAnalysis.find(File.read(Rails.root.join("tmp/proof-analysis-id")))
+    raise "Original analysis lost on restart" unless original.state == "complete"
+    membership = Membership.find_by!(workspace_id: original.workspace_id, user_id: original.requested_by_id)
+    analysis = CorpusAnalysis.request!(corpus: original.corpus, membership:, scenario_limit: 2)
+    File.write(Rails.root.join("tmp/proof-analysis-id"), analysis.id)
+    require Rails.root.join("ops/current_workflows_proof")
+    requests = Operations::CurrentWorkflowsProof.seed(execute: false, membership:)
+    File.write(Rails.root.join("tmp/proof-optional-requests.json"), JSON.generate(requests), perm: 0o600)
+    puts "PASS: runtime queued fresh work after web/jobs restart without changing original history."
+  RUBY
+  wait.call("post-restart two-family native analysis", &analysis_complete)
+  wait.call("post-restart native matching/impact/discovery disclosure refusal", &optional_complete)
+  puts "PASS: kernel-counted IPv4/IPv6 edge deny for previously reachable metadata/CGNAT/benchmark/private peers and ULA/documentation IPv6; trusted simulated public TLS, control DB and loopback ingress survive policy and web/jobs restart."
+  puts "PASS: separate native jobs completed two-family analysis and interrupted matching/impact/trace discovery without approval or results before and after restart; local Compose proof in #{(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)}s."
 rescue StandardError
   if compose
     output, status = Open3.capture2e(environment, *compose, "logs", "--no-color", "--tail", "40", stdin_data: "", unsetenv_others: true)
@@ -212,5 +319,6 @@ ensure
   warn "Cleanup incomplete: exact services #{services.join(', ')}, project #{prefix}, directory #{directory}: #{cleanup_errors.join('; ')}" unless cleanup_errors.empty?
 end
 abort "Cleanup failed" unless cleanup_errors.empty?
+raise "Shared-host firewall changed" unless host_rules == %w[iptables-save ip6tables-save].map { |tool| run.call("sudo", "-n", tool).lines.reject { |line| line.start_with?("#") }.join }
 puts "CLEAN: exact private daemons/project/namespace/images/volumes/secrets/archive removed; shared state untouched."
-puts "LIMIT: local reachability only; not public egress, endpoint policy, clean-host, public TLS or deployment acceptance."
+puts "LIMIT: isolated local IPv4/IPv6 destination-deny/lifecycle proof only; no public egress, public TLS, clean-host or deployment acceptance."

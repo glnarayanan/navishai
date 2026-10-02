@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+# Customer/operator namespace policy, never an implicit host firewall client.
+require_relative "../ops/edge_policy"
+
+abort "Usage: bin/apply-compose-egress ABSOLUTE_PRIVATE_NETNS_PATH br-EDGE_NETWORK_ID" unless ARGV.size == 2
+Operations::EdgePolicy.apply!(*ARGV)

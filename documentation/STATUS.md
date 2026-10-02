@@ -1966,78 +1966,90 @@ purge and separate-purpose guidance are integrated. Combined operations/CI follo
 See [TRACE_FAILURE_DISCOVERY.md](./TRACE_FAILURE_DISCOVERY.md). No live model,
 accuracy, customer-value or commercial-cost proof follows from these fixtures.
 
+### Slice 80 — joined recovery, upgrade and private runtime proof
+
+Four-database native backup/restore and genuine pre-mask checkpoint upgrade plus
+backup rollback passed/CLEAN with the joined schema and twelve added receipt
+tables. Exact owner/ACL/default ACL/sequence restoration, current/old-code runtime
+DML and trigger denials, tenant lineage, no resend, expiry/purge and minimal audits
+passed. Mixed Rails/operations tests passed 12 tests / 107 assertions. Style passed
+371 files; eager loading, dependency/importmap audits and Brakeman passed with zero
+warnings/errors. No warning exclusion, new dependency or hosting policy was added.
+
+`umask 077; bin/prove-compose-runtime` passed/CLEAN in 434.17 seconds before cleanup
+on the tracked image: local analyses finish and separate native jobs refuse all
+three new optional disclosures before/after restart. Kernel IPv4/IPv6 deny,
+hook-priority refusal, simulated TLS/control/loopback and unchanged host firewall
+checks passed. Read-only catalogs showed no remaining proof databases/roles.
+
+The first joined `bin/ci` run completed 630 Rails tests / 10133 assertions with
+two failures, zero errors/skips, then 69 browser tests / 3454 assertions with no
+failures/errors/skips. Both Rails failures expected the old prefix mining excerpt,
+not the joined cue-rich source-review contract. Strengthened scale assertions now
+check late evidence without copied expert facts/expectations. Native focused scale
+and draft-quality tests passed 13 tests / 818 assertions with no failures/errors/skips
+at seed 64405, including both actual 100,000-input proofs. This fixes the two
+integration assertions; a fresh full CI follows the remaining relationship slice.
+No full green CI result is claimed yet. See
+[OPERATIONS_ACCEPTANCE](./OPERATIONS_ACCEPTANCE.md).
+
 ## Next and limits
 
-The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
-regression, exact source-change impact and fixed-case target-version comparison.
-Corpus exploration now has bounded, source-backed literal search.
-The scenario list offers private current-definition lookup for expert selection.
-Company-document lookup now reaches beyond the initial evidence-picker window.
-Expert calibration now has a personal read-only review queue.
-This does not finish the full rebuild or establish customer value. Trace failure
-matching now suggests five local literal candidates from up to 2000 current
-versions using corpus-relative term rarity, with explicit expert associations;
-it is not semantic matching. Negation and zero-overlap paraphrases remain unresolved.
-Replay compatibility now searches all fixed cases and paginates exact matches. Recorded
-replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
-privacy-approved, previously unseen technical-Support dataset,
-authoritative expert corrections and approved target/judge/source-processing endpoints.
-The endpoint registries have no configured entries. Original local analysis keeps
-2000 records / 10 MiB; explicit streaming local accepts 100,000 / 1 GiB within
-its resource budgets, with complete reads still bounded to 10 MiB.
-Explicit full-text local covers complete conversations within 2000 / 10 MiB and
-the same computation budgets; the older methods keep their 4000-character window.
-Model corpus discovery proposes company families and
-structured source-backed scenarios from complete fixed records: one request within
-100 records / 256 KiB, or bounded multi-request discovery within 2000 records /
-10 MiB and 31 total calls. It does not silently sample larger inputs. Local mining still uses titles/context/
-sentences. Neither model discovery nor single-scenario proposals grant approval.
-Experts check source-backed outcomes. Controlled variants
-need an expert revision before approval. Changed documents flag stale evidence;
-new snapshots replace evidence only in new versions. Source purge deletes scenarios
-and descendants because their analysis depends on the full corpus. Purge also
-clears fixed cases, corpus graders/calibration, targets, runs/results and regressions;
-suite names remain without cases. Judges execute through a generic gateway;
-the gateway must enforce model/settings and separate data from instructions.
-Fixture responses do not establish grader accuracy.
-Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
-and economics. Fixture checks do not establish discovery quality or judge accuracy.
+The source → expert → compiler → calibrated checks → target failure → corrected
+fixed-case regression engineering loop passes with fixtures. P1 now includes
+complete-trace proposed failures without uploader reports, emerging families and
+fixed-set gaps, local and optional model matching, explicit existing-version
+revision, exact source dependencies, optional unlinked-assumption change proposals,
+coupled variants and fixed-input target comparisons. Every model suggestion remains
+a proposal; expert expectations, associations, labels and regression admission
+remain separate. Fixtures do not establish customer value or semantic accuracy.
 
-Connected fresh revised-judge calibration, matched-trace → existing-scenario
-evidence revision, family-level source-signal counts/drill-down and private Compose
-ingress/control/edge proof now pass. Optional expert-supplied calibration error-cost
-assumptions and report-local judge-threshold disclosure also pass.
-Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
-authorised host; private namespace probes cannot establish them.
-Reviewable failure matching, bounded multi-request discovery, image execution and
-isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
-quality need further evidence, not a coverage claim. Keep the full product scope;
-engineering gaps are not customer-data or expert-label approval blockers.
-Intake now refuses recursive masking-key collisions without losing data and binds
-processing version and explicit rule fingerprints in snapshot reuse identity.
-Exact-text masking and larger local processing work within their stated limits.
-Normalized conversation JSONL accepts 100,000 records / 60 MiB per file; other
-formats stay at 2000 / 10 MiB. Varied-workload and larger-file checks now supplement
-the repetitive scale proof, including a heterogeneous 100,000-input journey.
-Broader workload evidence and retrieval quality still
-need engineering work; these checks do not finish the owner's full acceptance demo.
-Local scenario context extraction remains title/context/action based, with bounded
-first-source excerpts. Experts can now replace their own fixed conversation quote
-with later diagnostics, but this does not fix automatic draft-quality gaps.
-New mined labels now respect the 500-character limit without changing full source
-proposals or saved expert decisions. Private definition/result fields now pass
-actual native request/SQL log-filter checks; storage remains unchanged.
-Larger complete-text workloads also need bounded engineering work and evidence,
-not a silent increase of existing limits or a semantic-quality claim.
+Current local methods retain their frozen windows. Explicit large complete-text v4
+accepts complete 100,000 records / 1 GiB within fixed fail-atomic work caps; full
+evidence/mining reads remain at most 10 MiB. JSONL intake accepts 100,000 records /
+60 MiB wire with two-pass atomic validation. Vendor-shaped/ordinary intake stays
+2000 / 10 MiB. Actual upper/over-bound, varied 100,000-input and late-diagnostic
+tests pass; they do not guarantee arbitrary-corpus throughput or memory usage.
 
-No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
-validation ran. The partial Compose trial and later passing private-namespace proof
-do not establish clean-host, public ingress/useful-egress, public TLS or production
-backup acceptance.
-Pinned-image execution and isolated runtime roles pass, not deployment acceptance. Database administrators can
-bypass triggers; last-Owner protection is application-side. Backups need their own
-retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
-[deployment](./DEPLOYMENT.md) and [design](./DESIGN.md).
+Model discovery stays 100 complete records / 256 KiB per discovery, or at most
+2000 / 10 MiB and 31 calls across a fixed batch plan. Explicit v2 observations
+retain every summary, uncertainty and exact source anchor independent of candidate
+selection. The reducer preserves/orders existing observations, not new relationships
+between split records. General cross-batch relationship discovery remains missing
+engineering, reserved in this integration thread after active combined checks;
+no duplicate worker is assigned. V1/v2 stay frozen and any new mode must use the
+existing call plan and already-disclosed anchors, not more calls or authority.
+
+Local scenario mining now offers bounded opening/cue-rich source review questions,
+not copied raw account facts or action-derived expectations. Experts write starting
+facts and supported outcomes. Structured extraction preserves supplied typed facts.
+Controlled variants change one to five named facts and clear expectations, hidden
+facts and follow-ups before fresh revision/review. English cues and exact quotes
+are evidence aids, not causal or policy judgments.
+
+New receipts, schema, routes, nav, audit/purge hooks and all six empty approval
+registries are joined. Native real request/DEBUG SQL tests filter private copies
+without changing retained content. Combined four-database recovery and real
+checkpoint upgrade/backup rollback pass with current receipts, owner/ACL/sequences,
+runtime DML/immutability, no resend, expiry and purge. Tracked-image Compose passed
+in 434.17 seconds before exact cleanup: separate native jobs refuse unapproved
+matching/impact/discovery before/after restart, local analyses finish, and IPv4/IPv6
+kernel deny, hook priority, simulated TLS/control/loopback and host-state checks pass.
+Combined browser checks and the corrected scale assertions pass; fresh full
+application CI follows the remaining relationship slice.
+
+The landing page now describes built Support-eval capabilities, real next actions
+and limits in inspected desktop/mobile/light/dark states. The complete
+[original acceptance map](./REBUILD_ACCEPTANCE.md) distinguishes engineering,
+missing cross-batch relationships, live-quality gates and conditional P2. No real
+customer dataset, live model/target, SMTP/OIDC provider, training or customer
+validation ran. All registries remain empty. Public-host ingress/useful-egress,
+public TLS/proxy and live recovery still need an authorized host; private proofs
+cannot establish them. Backups need separate encryption/retention, PITR and
+storage-volume policy. Administrators can bypass SQL triggers; last-Owner protection
+is application-side. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
+[deployment](./DEPLOYMENT.md), [operations](./OPERATIONS_ACCEPTANCE.md) and
+[design](./DESIGN.md).
 
 The user-owned Bundler checksum in Gemfile.lock remains unstaged and outside the
 rebuild commits. Phase A removed obsolete gems and capped JSON below 3 after tests
@@ -2049,8 +2061,9 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
    pilot corpus. No customer data has been imported or disclosed.
 2. Name the authoritative pilot experts and obtain their expectations/held-out
    labels. Fixture judgments cannot establish taxonomy quality or grader accuracy.
-3. Approve exact target/judge/scenario/corpus-processing endpoints, disclosure scope
-   and cost limits before live execution. The private registries still have zero entries.
+3. Approve exact target/judge, scenario, corpus, matching, impact and trace-discovery
+   endpoints, disclosure scope and cost limits before live execution. All six
+   registries still have zero entries; approval of one cannot grant another.
 4. Provide or authorise a disposable clean host with authority over proxy/network
    testing if no runner can supply it. The runner list remains empty at the slice-63
    check on 1 October. Private Compose ingress now passes; public ingress, useful-egress

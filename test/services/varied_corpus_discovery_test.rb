@@ -109,7 +109,17 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     scenarios.each do |scenario|
       evidence = scenario.current_version.scenario_evidence.sole
       assert_equal scenario.corpus_item_id, evidence.corpus_item_id
-      assert_equal scenario.corpus_item.content.first(4000), evidence.excerpt
+      text = scenario.corpus_item.content
+      if LARGE_RISK_IDS.include?(scenario.corpus_item.external_id)
+        assert_equal text.last(4000), evidence.excerpt
+        assert_equal [ text.length - 4000, 4000 ], scenario.current_version.draft_notes.fetch("evidence")
+        assert_includes evidence.excerpt, "data loss engineering unresolved logs"
+        assert_not_includes text.first(4000), "data loss engineering unresolved logs"
+      else
+        assert_equal text.first(4000), evidence.excerpt
+      end
+      assert_empty scenario.current_version.known_facts
+      assert_equal ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }, scenario.current_version.requirements
       assert_equal "expectation", evidence.kind
     end
     assert_no_difference [ "IssueCluster.count", "ClusterMember.count", "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
