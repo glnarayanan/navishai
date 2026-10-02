@@ -14,7 +14,7 @@ class IssueCluster < ImmutableRecord
     analysis = corpus_analysis
     corpus.with_lock do
       raise ActiveRecord::RecordNotFound if analysis.workspace_id != workspace_id || analysis.corpus_id != corpus_id || analysis.expired?
-      members = cluster_members.joins(:corpus_item).order(:corpus_item_id, :id)
+      members = cluster_members.with_corpus_item.order(:corpus_item_id, :id)
       limit, byte_limit = analysis.input_limits
       raise ActiveRecord::RecordNotFound if members.count > limit || members.sum(CorpusAnalysis::RECORD_BYTES_SQL) > byte_limit
       raise ActiveRecord::RecordNotFound if members.where.not(workspace_id:, corpus_id:).exists? || members.where.not(corpus_item_id: analysis.corpus_items.select(:id)).exists?
@@ -27,8 +27,8 @@ class IssueCluster < ImmutableRecord
       end
       groups["reported critical impact"] = members.where("corpus_items.context -> 'impact' = '\"critical\"'::jsonb")
       mentions = CorpusDiscovery::SIGNALS.transform_values { [] }
-      CorpusItem.where(id: members.select(:corpus_item_id)).in_batches(of: 100) do |batch|
-        batch.pluck(:id, :content).each do |id, content|
+      members.reorder(nil).in_batches(of: 100) do |batch|
+        batch.pluck("corpus_items.id", "corpus_items.content").each do |id, content|
           CorpusDiscovery::SIGNALS.each { |name, pattern| mentions.fetch(name) << id if content.match?(pattern) }
         end
       end
