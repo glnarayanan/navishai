@@ -1361,6 +1361,24 @@ At 16:04 UTC, #187/#188/#189/#191/#192 remained in progress at their exact heads
 #190 remained green. Earlier failed #155/#158 runs remain failed. No remote
 rerun/cancellation, merge, release, deployment or live disclosure/spend occurred.
 
+## Typed scenario mutations (slice 54)
+
+Real red tests reproduced a refused integer-to-float variant and a type-only
+revision silently treated as unchanged. PostgreSQL retains both JSON types,
+including nested facts and mutation evidence. Two native `eql?` comparisons now
+preserve those changes, unordered objects, ordered arrays and null/false values.
+Parents, sources, reasons and prior approvals stay fixed. Variants still require
+expert revision and explicit review; no expected behaviour is inferred.
+
+Native style and eager loading pass. Scenario/compiler/evaluation checks pass
+29 tests / 428 assertions. These checks prove retained definitions, not whether a
+numeric type change matters to a customer's support policy. No dependency changed.
+
+Slice 53 is committed/pushed as open
+[#193](https://github.com/glnarayanan/navishai/pull/193), stacked on #192.
+At 16:14 UTC, #193 and #187–189/#191–192 remained in progress; #190 was green.
+Earlier failed #155/#158 runs remain failed. No merge/release/deployment occurred.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

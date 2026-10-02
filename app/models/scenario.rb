@@ -20,7 +20,7 @@ class Scenario < ApplicationRecord
       values = previous.attributes.slice(*ScenarioVersion::EDITABLE).merge(attributes.stringify_keys.slice(*ScenarioVersion::EDITABLE))
       item = corpus.evidence_items.find(evidence_item_id) if evidence_item_id.present?
       raise Invalid, "This record already supports the version with that evidence kind." if item && previous.scenario_evidence.exists?(corpus_item: item, kind: evidence_kind)
-      return previous if !item && values == previous.attributes.slice(*ScenarioVersion::EDITABLE)
+      return previous if !item && values.eql?(previous.attributes.slice(*ScenarioVersion::EDITABLE))
 
       version = scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
@@ -66,7 +66,7 @@ class Scenario < ApplicationRecord
       reload
       parent = current_version
       raise Invalid, "Create a variant from the current approved version." unless parent.id.to_s == version_id.to_s && parent.approved? && !parent.expired?
-      raise Invalid, "Choose one existing fact and a different JSON value." unless parent.known_facts.key?(variable) && parent.known_facts[variable] != after
+      raise Invalid, "Choose one existing fact and a different JSON value." unless parent.known_facts.key?(variable) && !parent.known_facts[variable].eql?(after)
       raise Invalid, "Explain the mutation and its expected behaviour change (1–2000 characters each)." unless [ reason, expected_difference ].all? { |text| text.is_a?(String) && text.strip.length.between?(1, 2000) }
       child = corpus.scenarios.create!(workspace:, corpus_item:, parent_version: parent)
       values = parent.attributes.slice(*ScenarioVersion::EDITABLE)
