@@ -194,6 +194,29 @@ class SourceExportTest < ActionDispatch::IntegrationTest
     Source.const_set(:EXPORT_MAX_BYTES, original)
   end
 
+  test "download preflight does not mistake JSON spacing or expanded numbers for exported bytes" do
+    context = { "typed" => 200.times.map { { "number" => 1.25e-100, "flag" => false, "missing" => nil } },
+      "雪 \"key\"" => [ "many spaces   stay", "quoted \" and \\ escaped\n\t", "雪 café" ] }
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Numeric context fixture", kind: "conversations",
+      bytes: [ { id: "numeric", title: "Numeric record", content: "Exact context", context: } ].to_json)
+    @source = snapshot.source
+    json = @source.download_snapshot!(snapshot_id: snapshot.id, membership: @membership, confirmation: @source.name)
+    database_bytes = snapshot.corpus_items.sum(Arel.sql("octet_length(context::text)"))
+    assert_operator database_bytes, :>, json.bytesize
+    original = Source::EXPORT_MAX_BYTES
+    Source.send(:remove_const, :EXPORT_MAX_BYTES)
+    Source.const_set(:EXPORT_MAX_BYTES, json.bytesize)
+    download(snapshot)
+    assert_response :success
+    assert_equal context, JSON.parse(response.body).fetch("records").sole.fetch("context")
+    assert_equal json, response.body
+  ensure
+    if original
+      Source.send(:remove_const, :EXPORT_MAX_BYTES)
+      Source.const_set(:EXPORT_MAX_BYTES, original)
+    end
+  end
+
   test "record ceiling refuses complete snapshot rather than paginating" do
     original = Source::EXPORT_MAX_RECORDS
     Source.send(:remove_const, :EXPORT_MAX_RECORDS)
@@ -206,6 +229,25 @@ class SourceExportTest < ActionDispatch::IntegrationTest
   ensure
     Source.send(:remove_const, :EXPORT_MAX_RECORDS)
     Source.const_set(:EXPORT_MAX_RECORDS, original)
+  end
+
+  test "mask expansion refuses oversized retained context before materializing a download" do
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Expanded context fixture", kind: "conversations",
+      bytes: [ { id: "expanded", title: "Small record", content: "Small retained text", context: { details: "aaa" * 1.megabyte } } ].to_json,
+      redaction: "exact", redaction_values: "aaa")
+    source = snapshot.source
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    assert_no_difference "AuditEvent.count" do
+      ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+        error = assert_raises(CorpusIntake::Invalid) { source.download_snapshot!(snapshot_id: snapshot.id, membership: @membership, confirmation: source.name) }
+        assert_includes error.message, "10 MiB"
+        assert_includes error.message, "no partial file"
+      end
+    end
+    assert_empty loaded
+    assert_equal 1, snapshot.corpus_items.count
+    assert_equal "[text redacted]" * 1.megabyte, snapshot.corpus_items.sole.context.fetch("details")
   end
 
   test "production byte and record ceilings refuse real oversized retained records" do

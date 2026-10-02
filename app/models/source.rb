@@ -21,6 +21,13 @@ class Source < ApplicationRecord
 
       items = snapshot.corpus_items.where(workspace_id: workspace_id, corpus_id: corpus_id)
       raise CorpusIntake::Invalid, "Download exceeds 2000 records; no partial file was created." if items.count > EXPORT_MAX_RECORDS
+      # A lower bound avoids loading expanded masked strings. Ignore numbers and
+      # JSON spacing: PostgreSQL can render them longer than the exported JSON.
+      check_export_bytes!(items.sum(Arel.sql(<<~'SQL')))
+        octet_length(to_json(external_id)::text) + octet_length(to_json(title)::text) + octet_length(to_json(content)::text) +
+          (SELECT COALESCE(SUM(octet_length(fragment[1])), 0)
+           FROM regexp_matches(context::text, $json$"(?:[^"\\]|\\.)*"$json$, 'g') AS fragments(fragment))
+      SQL
       envelope = { format: "navishai-retained-source-v1", workspace_id:, corpus_id:,
         source: { id: id, name: name, kind: kind },
         snapshot: { id: snapshot.id, number: snapshot.number, digest: snapshot.digest,
