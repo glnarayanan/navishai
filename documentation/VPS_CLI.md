@@ -142,6 +142,11 @@ their actual identities/addresses, apply/check both families, then start writers
 and HTTPS. A changed or partial guard must leave writers stopped. An operator with
 host root/Docker control can still bypass these rules; this is not a root sandbox.
 
+Web/jobs use `up --no-start --no-deps --force-recreate` before inspection. This
+creates stopped replacements without reconciling the guarded PostgreSQL/holder
+dependencies. Compose 2.39.4 does not support `create --no-deps`. Runtime namespace,
+privilege and policy checks still precede the separate `start web jobs` command.
+
 Only PostgreSQL receives the fixed local bootstrap administrator `navishai_admin`.
 It creates all four lab databases owned by `navishai_setup`. Preparation and runtime
 roles both have no superuser/create-database/create-role/replication/bypass-RLS
@@ -164,7 +169,7 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Core command tests pass 19 tests / 154 assertions, recovery tests 10 / 30 and
+Core command tests pass 19 tests / 159 assertions, recovery tests 10 / 30 and
 namespace-policy tests 8 / 155, with no failures, errors or skips. They test command
 ordering, both startup guards, literal env parsing, distinct secrets, lock/restore
 contracts, writable-root/startup-path and shared-resource/partial-install cleanup
@@ -172,9 +177,10 @@ refusal. Bash syntax and native Ruby style pass. The real namespace-policy and P
 their scope and limits remain in [policy](./VPS_POLICY.md) and
 [recovery](./VPS_RECOVERY.md). Full `bin/ci` passed in 19m24.83s: 684 Rails tests /
 10,947 assertions and 71 browser tests / 3,561 assertions, no failures/errors/skips.
-That run includes 14 core command tests; the fresh 19 / 154 run also covers
+That run includes 14 core command tests; the fresh 19 / 159 run also covers
 two added ownership-boundary fixtures, actual root Git-archive recovery and
-cache/missing/API-failure pin handling with no retry.
+cache/missing/API-failure pin handling with no retry, and refusal to start writers
+after a failed runtime check. A new full run is in progress for these fixes.
 Root tar kept Git's group-write headers, causing recovery to refuse the CLI's own
 release. Release extraction now strips group/other write, retains executable bits
 and passes the real archive validator. Style, audits, Brakeman and eager loading

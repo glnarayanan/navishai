@@ -262,7 +262,7 @@ vps_start() {
   vps_guard || return 1
   vps_validate || return 1
   # Verify attachment BEFORE a runtime process can send, not after `up -d`.
-  vps_compose create --pull never --no-build --no-deps --force-recreate web jobs && vps_runtime_check && vps_policy_check || return 1
+  vps_compose up --no-start --pull never --no-build --no-deps --force-recreate web jobs && vps_runtime_check && vps_policy_check || return 1
   VPS_WRITERS_STARTED=true
   vps_compose start web jobs || { vps_stop; return 1; }
   local attempt ready=false

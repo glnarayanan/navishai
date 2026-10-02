@@ -165,7 +165,11 @@ class VpsCliTest < Minitest::Test
     SH
     output, status = shell(script)
     assert status.success?, output
-    assert_equal [ "STOP", "COMPOSE up -d --pull never --no-build --no-deps --wait postgres", "COMPOSE up -d --pull never --no-build --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE create --pull never --no-build --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --pull never --no-build --no-deps proxy", "TLS", "READY" ], output.lines.map(&:strip)
+    assert_equal [ "STOP", "COMPOSE up -d --pull never --no-build --no-deps --wait postgres", "COMPOSE up -d --pull never --no-build --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE up --no-start --pull never --no-build --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --pull never --no-build --no-deps proxy", "TLS", "READY" ], output.lines.map(&:strip)
+    output, status = shell(script.sub("echo RUNTIME;", "echo RUNTIME; return 7;"))
+    refute status.success?, output
+    refute_includes output, "COMPOSE start web jobs"
+    refute_includes output, "READY"
     output, status = shell(script.sub("echo CHECK;", "echo CHECK; return 7;"))
     refute status.success?, output
     refute_includes output, "VALIDATE"
