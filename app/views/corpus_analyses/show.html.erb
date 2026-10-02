@@ -6,18 +6,28 @@
     <p>Model-proposed issue families and scenarios from your fixed source records. Exact quotes prove source links, not correct classification or expectations. No expert label or scenario approval comes from this analysis.</p>
     <% if @analysis.stale? %><p role="status">Company documentation changed after this request. Inspect the fixed history here; review current evidence before compiling scenarios.</p><% end %>
     <details><summary>Fixed model settings and attempt</summary><pre class="evidence-text"><%= JSON.pretty_generate(@analysis.configuration.merge("request_key" => @analysis.request_key, "input_digest" => @analysis.input_digest)) %></pre></details>
-    <details><summary>Disclosed source records</summary><pre class="evidence-text"><%= JSON.pretty_generate(ModelCorpusDiscovery.input(@model_items.values)) %></pre></details>
+    <details><summary>Disclosed source records</summary><pre class="evidence-text"><%= JSON.pretty_generate(ModelCorpusDiscovery.input(@model_items.values, bounded: !@analysis.batch?)) %></pre></details>
+    <% if @analysis.batch? %>
+      <h2>Batch progress and receipts</h2><p>Maximum <%= @analysis.call_plan.fetch("maximum_calls") %> once-only calls to the fixed endpoint/model/settings. Retained batch proposals are not partial global families or approved scenarios.</p>
+      <p>Discovery digests bind exact records. The reducer definition binds ordered batch UUIDs and their input digests; its receipt also records the exact derived proposal-input digest. Full membership quotes remain local; the reducer receives one exact representative quote per cluster and all candidate definitions/evidence.</p>
+      <details><summary>Frozen allocation and call plan</summary><pre class="evidence-text"><%= JSON.pretty_generate(@analysis.call_plan) %></pre></details>
+      <% @analysis.corpus_discovery_batches.order(:position).each do |batch| %>
+        <details class="source-record"><summary><%= batch.phase.humanize %> <%= batch.position %> · <%= batch.state == "queued" && @analysis.state.in?(%w[complete failed]) ? "Not sent — attempt stopped" : batch.state.humanize %></summary>
+          <pre class="evidence-text"><%= JSON.pretty_generate(batch.attributes.slice("request_key", "input_refs", "input_digest", "started_at", "finished_at", "result")) %></pre>
+        </details>
+      <% end %>
+    <% end %>
     <% if @model_result %>
       <h2><%= @model_result.fetch("decision").humanize %></h2><p><%= @model_result.fetch("reason") %></p>
-      <details><summary>Fixed model response and reported cost</summary><p>Missing usage/cost stays unknown. Endpoint reports are not verified charges or quality evidence.</p><pre class="evidence-text"><%= JSON.pretty_generate(@model_result) %></pre></details>
+      <details><summary>Fixed model response and reported cost</summary><p>Missing usage/cost stays unknown. Endpoint reports are not verified charges or quality evidence.<% if @analysis.batch? %> This response reports only the final call, not the total. Inspect each batch receipt for its own reported usage/cost; unknown reports prevent a known total.<% end %></p><pre class="evidence-text"><%= JSON.pretty_generate(@model_result) %></pre></details>
     <% end %>
   <% else %>
     <p>Local term clustering, not semantic diagnosis. It uses titles and the first 4000 characters of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
   <% end %>
   <% if @analysis.state == "failed" %><p role="alert" class="inline-error"><%= @analysis.error %></p><% end %>
   <% if @analysis.state.in?(%w[queued running]) %>
-    <p role="status"><%= @analysis.model? ? "One fixed model attempt; it may send the disclosed records to the approved endpoint. No automatic retry." : "Waiting for the local processing job. No data leaves this deployment." %></p>
-    <% if Current.require_membership!.can_write? && (@analysis.state == "queued" || @analysis.started_at < 10.minutes.ago) %><%= button_to "Interrupt analysis attempt", interrupt_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "button" %><% end %>
+    <p role="status"><%= @analysis.batch? ? "Fixed batches execute in order, followed by at most one reducer. Refresh sends nothing. Errors and interruptions block later calls; no automatic retry or continuation." : (@analysis.model? ? "One fixed model attempt; it may send the disclosed records to the approved endpoint. No automatic retry." : "Waiting for the local processing job. No data leaves this deployment.") %></p>
+    <% if Current.require_membership!.can_write? && (@analysis.batch? || @analysis.state == "queued" || @analysis.started_at < 10.minutes.ago) %><%= button_to "Interrupt analysis attempt", interrupt_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "button" %><% end %>
   <% end %>
   <% if @analysis.state == "complete" %>
     <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> <%= @analysis.model? ? "proposed families" : "term clusters" %> represented. This measures this method's selection, not verified issue-family coverage.</p>

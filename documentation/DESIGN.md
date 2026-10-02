@@ -26,6 +26,14 @@ with fixed settings/input/result disclosures and exact member quotes. Selection
 counts are not verified coverage. Experts use existing taxonomy and scenario review
 controls; machine output cannot approve them. No new tokens, assets or controls.
 
+Multi-request discovery shows the complete preview and actual call ceiling before
+consent in document/mobile order; desktop keeps preview and request side by side.
+A native disclosure contains the full record list without forcing a long mobile
+scroll before the form. Receipts distinguish active queued work from stopped,
+unsent calls. Each fixed batch keeps its own digest, response and reported cost;
+the composed response cannot imply a known total. No partial proposal grants
+mining or expert approval.
+
 Corpus exploration uses a labelled phrase/source GET form with a count of observed
 matches, not semantic coverage. Desktop places fields side by side; mobile stacks
 them. Native disclosures show retained text/context and exact source/snapshot links.

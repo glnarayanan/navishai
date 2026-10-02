@@ -121,8 +121,8 @@ grant corpus disclosure. Never enter credentials in a form or tracked file.
 
 `support-corpus-v1` accepts 1–100 complete conversation/document records within
 256 KiB and 1–20 candidates. Nothing is silently sampled or truncated. Existing
-scenarios, labels, traces and other corpora stay local. Larger batch discovery is
-not built yet. Email masking does not remove every kind of PII; approval must
+scenarios, labels, traces and other corpora stay local. For larger inputs, use
+**Bounded multi-request discovery** below. Email masking is not full PII removal; approval must
 cover the displayed titles, text and retained context.
 
 The request contains exactly `schema`, `instructions`, `model`, `settings`,
@@ -163,6 +163,51 @@ discovery → expert correction → mixed checks → held-out calibration → fa
 HTTP fixture → same-case regression loop. Fixture calls and labels do not prove
 live discovery or judge quality. Desktop/mobile states are captured under
 `.amp/in/artifacts/model-discovery/`.
+
+### Bounded multi-request discovery
+
+Follow **Bounded multi-request discovery** from a corpus. The complete source
+preview and actual maximum call plan precede consent. Records expand in a native
+disclosure. Consent binds both the source digest and allocation/call-plan digest;
+it cannot approve later source changes. The same separate corpus-purpose registry
+and fixed endpoint/model/settings govern every call.
+
+Bounds: 2000 complete records / 10 MiB, at most 30 discovery requests and one
+reducer. Each ordered conversation batch repeats all current documents and fits
+100 records / 256 KiB of encoded record JSON. An unfit complete record/document
+set fails before queueing. No sampling, truncation or dropped families.
+
+Each discovery uses `support-corpus-v1` and its own fixed UUID. The reducer uses
+`support-corpus-merge-v1`, with exactly schema, instructions, model, settings,
+candidate_limit, clusters and candidates. Clusters have reference
+(`BATCH-UUID/cluster/INDEX`), label, reason, possible_documentation_gap and one
+exact first-member evidence quote. Candidates have reference
+(`BATCH-UUID/candidate/INDEX`) and their complete fixed definition. Full membership
+quotes stay local; all selected expectations and evidence reach the reducer.
+More than 200 intermediate clusters or a request over 1 MiB stops the attempt.
+
+The reducer response has exactly schema, model, decision, reason, usage, cost,
+families and candidate_refs. A proposal's families contain label, reason,
+possible_documentation_gap and cluster_refs, partitioning every supplied cluster
+exactly once. Unique candidate_refs select existing candidates within the requested
+1–20 limit. Abstention has empty families/candidate_refs. The reducer cannot invent
+members, quotes or definitions; local composition changes only candidate taxonomy
+labels. The response/usage/cost bounds remain those of the shared transport.
+
+Before and after each call, the job checks source lifetime, fixed historical inputs,
+document freshness, membership and purpose approval. Later conversation intake
+does not replace frozen inputs. Any abstention, malformed output, interruption,
+revocation or unknown outcome blocks later calls and global proposals. A claimed
+analysis cannot resume after a crash. Writers may interrupt batch work immediately;
+another analysis requires a deliberate new request and consent.
+
+Receipts show each immutable definition, UUID, disclosed-input digest, result and
+reported usage/cost. The composed response reports the final call, not a total;
+missing reports remain unknown. Stopped unsent calls say **Not sent — attempt
+stopped** even though their retained internal definition state is queued. Partial
+receipts cannot be mined. Purge cascades through these local copies; it cannot
+recall transmitted data. Synthetic captures live under
+`.amp/in/artifacts/batch-discovery/`; they do not establish discovery quality.
 
 Deleting any source clears corpus analyses and taxonomy revisions because they
 describe the full input collection. It also deletes all scenarios, including trace

@@ -46,8 +46,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   separate source-processing approval and the corpus navigation regression fix.
 - [#160](https://github.com/glnarayanan/navishai/pull/160), based on #159: fixed model corpus discovery,
   complete source disclosure, source-backed families/scenarios and connected proof.
-- `rebuild/21-build-context`, based on #160: pinned PostgreSQL index, private/generated
+- [#161](https://github.com/glnarayanan/navishai/pull/161), based on #160: pinned PostgreSQL index, private/generated
   build-context exclusions and exact runtime-directory markers.
+- `rebuild/22-batch-discovery`, based on #161: frozen multi-request corpus discovery,
+  once-only receipts, strict proposal reduction and explicit allocation/call consent.
 
 ## Built and checked
 
@@ -396,11 +398,49 @@ the corrected check reads `digested_path`. Rails still warns about unused image
 variants and non-eager-loaded test mail previews; no dependency was added to hide
 them. This checks native production build/eager loading, not an image or clean host.
 
-The orb has Docker 29.8.1 but no local daemon socket, Compose or Buildx plugin.
-An explicit local-only probe failed before any build. YAML parses; image execution,
-non-root runtime, compiled image assets and clean-host/TLS acceptance remain
-unverified. No live runner is connected. Static Dockerfile declarations and native
-production asset checks do not prove image execution.
+The initial orb had Docker 29.8.1 but no daemon socket, Compose or Buildx plugin;
+its local-only probe failed before any build. A follow-up starts a private local
+daemon with no bridge/iptables changes and builds the tracked #161 tree with the
+existing legacy builder. The pinned Ruby image, production-only bundle and asset
+build pass. A network-disabled, capability-free image executes eager loading as
+UID 1000, resolves all 30 compiled assets, writes its runtime directories and has
+no Git data, Rails keys or local Bundler config. This is image execution evidence,
+not Compose, a clean host, TLS or production acceptance. No live runner is connected.
+
+GitHub CI for #161 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36804432565)).
+
+Batch discovery's focused native checks pass: 14 tests / 208 assertions. The
+106-conversation fixture puts the destructive minority beyond the first batch;
+all members, exact quotes and candidate definitions survive reduction. Tests
+reject omitted/duplicate/foreign references and invented quotes, stop later calls
+on failure/abstention/revocation, prevent claimed-work continuation, enforce SQL
+receipt immutability and preserve fixed inputs after later conversation intake.
+Exact Unicode/escaped JSON checks distinguish 256 KiB from two bytes over it.
+
+Combined working-tree `bin/ci` passed in 3m17.02s: 265 Ruby files clean, native
+audits clean, Brakeman zero warnings/errors, eager loading passed, 305 Rails tests /
+3053 assertions and 24 browser tests / 897 assertions, no failures/errors/skips.
+That run also includes the parallel failure-matching slice. The first combined
+run failed a test that tried to sign out with navigation closed; it now follows
+the existing navigation path. No product guard changed for that test.
+
+The bounded UI finish review found consent before the mobile preview and misleading
+queued labels on stopped calls. The preview/call ceiling now precede consent;
+the full record list expands without a long forced scroll. Unsent stopped calls
+say so without rewriting their ledger. Four affected browser journeys then pass
+with 179 assertions, including exact-source inspection, keyboard consent, mobile
+geometry and terminal labels. Desktop/390px recaptures were inspected with no
+overflow/CSP failures; the scoring pass returned `ship` for those two fixes.
+Selection remains unreviewed. Final-call cost is not a batch total.
+
+`bin/prove-backup-restore` now retains batch membership, UUIDs, terminal receipts
+and model results. Exact table fingerprints, 15 populated immutable tables,
+no resend after restore and prior regression/calibration protections pass. It
+uses synthetic approval and stubbed transport, then returns the registry to empty.
+Existing lab/legacy data stays untouched. Direct risk review/native audits used;
+Ponytail Audit and CE Code Review remain unavailable. No real data, live provider
+or new production dependency.
 
 ## Next and limits
 
@@ -415,8 +455,9 @@ privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge/source-processing endpoints.
 The endpoint registries have no configured entries. Local analysis remains bounded
 to 2000 records and 10 MiB. Model corpus discovery proposes company families and
-structured source-backed scenarios from 100 complete records within 256 KiB;
-it does not silently sample larger inputs. Local mining still uses titles/context/
+structured source-backed scenarios from complete fixed records: one request within
+100 records / 256 KiB, or bounded multi-request discovery within 2000 records /
+10 MiB and 31 total calls. It does not silently sample larger inputs. Local mining still uses titles/context/
 sentences. Neither model discovery nor single-scenario proposals grant approval.
 Experts check source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
@@ -429,10 +470,10 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Independent engineering still includes larger bounded corpus processing,
-source-backed failure matching beyond exact input compatibility and clean-host/
-image/TLS proof. The model discovery interface and isolated backup/restore fixture
-proof now pass, but do not finish those tasks. Keep the full product scope;
+Independent engineering still includes completing the parallel source-backed
+failure-matching slice and clean-host/image/TLS proof. Bounded multi-request
+discovery and isolated backup/restore pass; inputs beyond those bounds and retrieval
+quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
