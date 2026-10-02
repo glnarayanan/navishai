@@ -696,6 +696,24 @@ obtain labels; this screen neither copies them nor proves population accuracy.
 Desktop/mobile preview, held-out refusal and empty states are captured under
 `.amp/in/artifacts/calibration-preview/`.
 
+For a revised rubric judge, use the existing fixed-version workflow, not that local
+preview. Review development disagreements, save the new rubric/settings, then
+compile a new case binding those grader versions. If the requirement changed,
+revise and approve its source-backed scenario first. Old cases keep old graders.
+Create a separate calibration set for the new version and explicitly choose each
+sample's cohort. Do not move tuning examples into held-out measurement or copy
+expert labels/predictions from the old version. Saved-result intake still requires
+the exact new case; manual outputs retain their stated manual origin.
+
+Each fresh sample needs its own judge disclosure consent and expert label. A judge
+attempt can complete while its prediction stays hidden before that first label.
+Inspect false alarms and missed failures, not just self-reported confidence.
+Revised definitions do not inherit old accuracy or approval. The connected fixture
+journey leaves original development evidence unchanged and exposes a high-confidence
+false positive in fresh held-out evidence. It proves the workflow, not a real
+judge's quality. Inspected 2x desktop/mobile empty, blind and disagreement captures
+live under `.amp/in/artifacts/judge/revision-*`.
+
 Calibration sets, samples, predictions and labels reject Ruby/SQL updates and use
 composite same-corpus/grader relationships. Expiry hides them before purge; source
 purge removes them through case and grader relationships. Audit keeps no outputs

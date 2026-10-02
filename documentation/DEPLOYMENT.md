@@ -178,9 +178,10 @@ It creates two unique `navishai_lab_restore_<pid>_<random>` databases from
 recorded-evaluation/batch-discovery fixtures only into its source database, then creates a custom
 format archive and restores it transactionally to the fresh destination. It never
 dumps development, test, production or legacy data and changes no shared service.
-Recorded/scripted evaluations run locally. Batch discovery uses test-only approval
-and stubbed transport; it sends no request to a real endpoint. The approval returns
-to empty before backup. All other purpose registries stay empty.
+Recorded/scripted evaluations run locally. A source-reviewed two-turn conversation
+and batch discovery use test-only approval and stubbed transport; neither sends a
+request to a real endpoint. Both approvals return to empty before backup. All other
+purpose registries stay empty.
 
 After restore it compares canonical SHA-256 fingerprints of every public table's
 complete rows, checks recorded failure and corrected success on the same fixed
@@ -188,7 +189,9 @@ case, exact trace/approval provenance and held-out expert label/correction histo
 Trace association/correction history retains its exact trace, scenario version and
 author without changing approval or labels.
 It retains complete batch membership, fixed UUIDs and terminal receipts; duplicate
-delivery after restore must not send. Raw SQL rejects updates to 16 populated
+delivery after restore must not send. It also retains the approved conversation
+plan, actual released transcript and fixed turn keys/receipts. Completed conversation
+delivery after restore must not call the target again. Raw SQL rejects updates to 16
 immutable definition/result/label tables, batch definition/terminal-state rewrites,
 run/item rebinding, foreign-workspace and same-workspace foreign-corpus
 evidence/association inserts, and audit update/delete/truncate. A new audit append checks the
