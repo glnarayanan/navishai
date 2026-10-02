@@ -46,6 +46,35 @@ class ScenarioTest < ActiveSupport::TestCase
     end
   end
 
+  test "retained historical traces add distinct evidence without replacing records or inheriting approval" do
+    approve_scenario
+    approved = @scenario.current_version
+    trace = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    first = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Recurring failures", kind: "traces", bytes: [ trace ].to_json).corpus_items.sole
+    second_trace = trace.deep_dup.merge("id" => "production-sso-74", "title" => "A later certificate failure")
+    second_trace["input"]["known_facts"]["plan"] = "starter"
+    refreshed = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Recurring failures", kind: "traces", bytes: [ trace, second_trace ].to_json)
+    second = refreshed.corpus_items.find_by!(external_id: "production-sso-74")
+    assert_not @corpus.current_items.exists?(first.id)
+    assert_no_difference "Scenario.count" do
+      revision = @scenario.revise!(membership: @membership, base_version_id: approved.id, attributes: {},
+        evidence_item_id: first.id, evidence_kind: "expectation", excerpt: "The agent claimed a configuration change without collecting certificate evidence.")
+      later = @scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {},
+        evidence_item_id: second.id, evidence_kind: "expectation", excerpt: "Request the certificate expiry date first.")
+      assert_equal [ @scenario.corpus_item_id, first.id, second.id ].sort, later.scenario_evidence.pluck(:corpus_item_id).sort
+      assert_equal [ @scenario.corpus_item_id, first.id ].sort, revision.reload.scenario_evidence.pluck(:corpus_item_id).sort
+      assert_equal approved.requirements, later.requirements
+      assert_not later.approved?
+      assert approved.reload.approved?
+      assert_equal [ @scenario.corpus_item_id ], approved.scenario_evidence.pluck(:corpus_item_id)
+    end
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "SSO playbook", kind: "document", bytes: "Current certificate guidance.")
+    assert_raises(ActiveRecord::RecordNotFound) do
+      @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: {},
+        evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+    end
+  end
+
   test "variants change one fact retain exact parent and cannot inherit approval" do
     approve_scenario
     parent = @scenario.current_version

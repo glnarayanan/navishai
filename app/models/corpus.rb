@@ -19,6 +19,10 @@ class Corpus < ApplicationRecord
     corpus_items.joins(source_snapshot: :source).where("sources.current_snapshot_id = source_snapshots.id AND sources.expires_at > ?", Time.current)
   end
 
+  def evidence_items
+    corpus_items.joins(source_snapshot: :source).where("sources.expires_at > ? AND (sources.current_snapshot_id = source_snapshots.id OR sources.kind = ?)", Time.current, "traces")
+  end
+
   def eval_definitions_expired?
     sources.where("expires_at <= ?", Time.current).exists?
   end

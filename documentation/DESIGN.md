@@ -126,6 +126,13 @@ even across pages. No-match states offer a separate scenario proposal, not a fal
 match. Viewers inspect without decision controls. Mobile stacks the same evidence;
 copy keeps association separate from approval, replay, labels and regressions.
 
+"Revise with this trace" opens that exact scenario version's evidence disclosure.
+The selected record/snapshot and full linked trace title remain visible outside the
+native single-line picker. The excerpt starts empty; copy warns that imported
+corrections are reports. The expert edits and reviews a new version. Invalid quotes
+retain the selected trace and typed excerpt, with an adjacent repair alert linked
+to the invalid field. No imported facts, expectations or approval copy themselves.
+
 Conversation editors use retained labelled JSON textareas and specific repair
 errors. Fixed case and suite previews name conditional messages and maximum calls
 before consent; transcript forwarding is explicit. These are expert-authored plans,

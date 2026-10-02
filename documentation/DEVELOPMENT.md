@@ -137,9 +137,17 @@ version and reason; changed evidence or access blocks writes. Purge removes the
 associations through their source-backed records.
 
 Association does not approve or edit a scenario, grant knowledge, label a
-calibration sample, compile, execute or admit a regression. Experts follow the
-existing scenario review or propose a separate scenario. Recorded replay still
-requires identical visible input. No provider call or automatic consensus occurs.
+calibration sample, compile, execute or admit a regression. Writers can open the
+exact scenario version through "Revise with this trace". The evidence disclosure
+selects that exact retained trace, without copying starting facts, corrections,
+requirements or an excerpt. The expert edits, pastes a literal source excerpt,
+saves a new version and approves it separately before compilation. Invalid quotes
+retain the edit and show an adjacent repair message. Current documents can replace
+their prior same-use evidence; distinct trace/conversation records remain additive.
+Historical trace snapshots remain eligible until expiry. Old versions, compiled
+cases and association decisions stay fixed. Experts may also propose a separate
+scenario. Recorded replay still requires identical visible input. No provider call
+or automatic consensus occurs.
 Synthetic desktop/mobile captures live under `.amp/in/artifacts/failure-matching/`.
 
 Retention is 1–3650 days from the latest import, including a repeat. Expired content

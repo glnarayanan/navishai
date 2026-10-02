@@ -250,6 +250,16 @@ regression. The expert can open the existing scenario or propose a separate one;
 changed input still cannot replay an old output. Meaningful retrieval quality
 remains a pilot question, not a fixture claim.
 
+An expert can open that exact version with a retained trace selected as additional
+evidence. This is a read-only entry into the existing revision form, not an update
+or approval. Starting facts, requirements and excerpts never copy imported
+corrections automatically. The expert chooses an exact excerpt, edits behaviour,
+saves a new version, reviews it and compiles it separately. Current documents and
+all unexpired fixed trace snapshots may supply evidence; a later trace export does
+not erase a historical failure. Distinct conversation/trace records remain additive
+even within one source. Replacing prior same-use evidence by source applies only
+to current documents. Prior versions, cases and association decisions stay fixed.
+
 ## Source impact and run comparisons
 
 Keep impact queries on `Source`: follow exact snapshot/item evidence into fixed

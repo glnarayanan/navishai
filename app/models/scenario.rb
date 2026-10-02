@@ -18,7 +18,7 @@ class Scenario < ApplicationRecord
       raise Invalid, "Source evidence expired." if current_version.expired?
       previous = current_version
       values = previous.attributes.slice(*ScenarioVersion::EDITABLE).merge(attributes.stringify_keys.slice(*ScenarioVersion::EDITABLE))
-      item = corpus.current_items.find(evidence_item_id) if evidence_item_id.present?
+      item = corpus.evidence_items.find(evidence_item_id) if evidence_item_id.present?
       raise Invalid, "This record already supports the version with that evidence kind." if item && previous.scenario_evidence.exists?(corpus_item: item, kind: evidence_kind)
       return previous if !item && values == previous.attributes.slice(*ScenarioVersion::EDITABLE)
 
@@ -26,7 +26,7 @@ class Scenario < ApplicationRecord
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
         mutation: previous.mutation, created_at: Time.current))
       previous.scenario_evidence.each do |evidence|
-        next if item && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
+        next if item && item.source_snapshot.source.kind == "document" && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
 
         version.scenario_evidence.create!(workspace:, corpus:, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt)
       end

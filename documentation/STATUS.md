@@ -69,8 +69,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   conversations, expert plans, conditional disclosure and fixed turn receipts.
 - [#171](https://github.com/glnarayanan/navishai/pull/171), based on #170: connected revised-judge
   calibration and restored conversation/no-resend proof.
-- `rebuild/32-compose-proof`, based on #171: repeatable private-namespace
+- [#172](https://github.com/glnarayanan/navishai/pull/172), based on #171: repeatable private-namespace
   Compose preparation/runtime, published ingress and control/edge proof.
+- `rebuild/33-trace-scenario-revision`, based on #172: matched-trace evidence
+  revision, fresh expert review/compilation and fixed-case regression proof.
 
 ## Built and checked
 
@@ -747,6 +749,37 @@ failure diagnostics are bounded and redact generated secrets before cleanup.
 cleanup, including exact HTTP 200, and printed CLEAN. All private daemons/mounts
 were removed; existing web/portal services remain. No app control was weakened.
 
+GitHub CI for #172 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36829152089), completed
+07:17:46 UTC on 1 October). The PR remains open and unmerged; earlier failed
+#155/#158 runs remain failed.
+
+The matched-trace journey now opens the exact existing version with the retained
+trace selected, but no copied facts, correction, requirements, quote or approval.
+Experts explicitly edit, attach an exact excerpt, save, review and compile. Old
+versions/cases/associations stay fixed; distinct same-source trace records retain
+their evidence. Historical trace snapshots remain eligible until expiry, while
+outdated document attachments are refused. Invalid quotes roll back, retain input
+and expose an adjacent repair alert with aria-invalid/describedby.
+
+Focused checks pass: 13 model/access tests / 157 assertions and three affected
+browser journeys / 139 assertions. The connected journey grades the exact recorded
+failure, records expert regression admission, then passes a corrected scripted
+target on the same new fixed case. No new root scenario or human label is fabricated.
+Desktop/390px selected/error/regression captures were inspected. Initial targeted
+crops clipped intact controls; viewport captures avoid that capture error. Full
+trace titles remain readable outside native single-line pickers. Direct risk review
+covers lifetime/scope, rollback, unchanged history and target-hidden facts. Named
+review tools remain unavailable; native audits provide the executable checks.
+
+Final `bin/ci` passed in 3m56.73s: 286 Ruby files clean, gem/importmap audits
+clean, Brakeman zero warnings/errors and eager loading passed; 352 Rails tests /
+3878 assertions and 31 browser tests / 1351 assertions, no failures/errors/skips.
+`bin/prove-backup-restore` passed with PASS/CLEAN: exact table fingerprints,
+16 immutable tables, calibration/association history, fixed conversation/batch
+receipts and no resend survived restore. Only its disposable databases/archive
+were removed. No customer data, provider, dependency, merge, release or deployment.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -777,10 +810,10 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Connected fresh revised-judge calibration and private Compose ingress/control/edge
-proof now pass. The expert UI still lacks a matched-trace → existing-scenario
-evidence revision path, though its explicit-ID update API already supports it.
-That connected expert journey is independent engineering, not a pilot-data gate.
+Connected fresh revised-judge calibration, matched-trace → existing-scenario
+evidence revision and private Compose ingress/control/edge proof now pass.
+Family-level source-signal counts/drill-down and optional expert-supplied calibration
+error-cost assumptions remain independent engineering, not pilot-data gates.
 Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
 authorised host; private namespace probes cannot establish them.
 Reviewable failure matching, bounded multi-request discovery, image execution and

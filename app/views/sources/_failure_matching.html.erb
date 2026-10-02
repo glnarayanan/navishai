@@ -24,6 +24,7 @@
           <% candidate.evidence.each do |entry| %><p><%= link_to "Source record #{entry.corpus_item.external_id} · snapshot #{entry.corpus_item.source_snapshot.number}", source_evidence_path(entry.corpus_item) %></p><pre class="evidence-text"><%= entry.excerpt %></pre><% end %>
         </details>
         <% if Current.require_membership!.can_write? %>
+          <p><%= link_to "Revise with this trace", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario, version: version.number, trace_item_id: item.id, anchor: "scenario-evidence") %>. Opens the exact version with this trace selected. Nothing copies, changes or gains approval until you make a separate expert revision.</p>
           <% retained = @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && @decision_form["scenario_version_id"] == version.id.to_s ? @decision_form : {} %>
           <%= form_with url: decide_trace_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel" do |form| %>
             <%= form.hidden_field :corpus_item_id, value: item.id %><%= form.hidden_field :scenario_version_id, value: version.id %>

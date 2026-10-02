@@ -31,7 +31,11 @@ class ScenariosController < ApplicationController
     @versions = @scenario.scenario_versions.order(number: :desc)
     @version = params[:version] ? @versions.find_by!(number: params[:version]) : @scenario.current_version
     raise ActiveRecord::RecordNotFound if @version.expired?
-    @knowledge_items = @corpus.current_items.joins(source_snapshot: :source).where(sources: { kind: "document" }).order(:id).limit(100)
+    @evidence_items = @corpus.evidence_items.where(sources: { kind: "document" }).order(:id).limit(100).to_a
+    if params[:trace_item_id].present?
+      @trace_item = @corpus.evidence_items.where(sources: { kind: "traces" }).find(params.expect(:trace_item_id))
+      @evidence_items.unshift(@trace_item)
+    end
     @proposal = @version.scenario_proposal
     begin
       @proposal_input = ScenarioExtractor.input(@version) unless @proposal
@@ -96,6 +100,7 @@ class ScenariosController < ApplicationController
       end
       if params[:id]
         show
+        @evidence_error = error.record.errors.full_messages.to_sentence if error.is_a?(ActiveRecord::RecordInvalid) && error.record.is_a?(ScenarioEvidence)
         flash.now[:alert] = message
         render :show, status: :unprocessable_content
       else

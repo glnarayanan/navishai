@@ -1,8 +1,108 @@
 require "application_system_test_case"
 require_relative "../support/failure_matching_fixture"
+require_relative "../test_helpers/evaluation_test_helper"
 
 class FailureMatchingJourneyTest < ApplicationSystemTestCase
   include FailureMatchingFixture
+  include EvaluationTestHelper
+
+  test "a matched trace revises the existing scenario through expert review compilation and regression" do
+    build_failure_matching_fixture
+    @workspace = @corpus.workspace
+    @scenario = @version.scenario
+    requirements = ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "Request expiry evidence before changing configuration." ])
+    original = @scenario.revise!(membership: @membership, base_version_id: @version.id,
+      attributes: { requirements:, hidden_facts: { "actual_cause" => "private diagnostic answer" } })
+    @scenario.review!(membership: @membership, version_id: original.id, decision: "approve", note: "Synthetic expert checked the certificate policy.")
+    @outcome_grader = Grader.define!(corpus: @corpus, membership: @membership, name: "Request expiry", kind: "deterministic", definition: { "type" => "text_contains", "value" => "expiry date" })
+    @action_grader = Grader.define!(corpus: @corpus, membership: @membership, name: "Collect expiry", kind: "deterministic", definition: { "type" => "tool_called", "value" => "collect_expiry" })
+    old_case = EvalCompiler.call(scenario: @scenario, membership: @membership, version_id: original.id, checks: [ {
+      "requirement_kind" => "outcomes", "requirement_index" => 0, "grader_version_id" => @outcome_grader.current_version_id,
+      "scenario_evidence_id" => original.scenario_evidence.sole.id } ])
+    sign_in users(:owner)
+    visit source_path
+    select "Match", from: "Decision for scenario #{@scenario.id} v#{original.number}"
+    fill_in "Reason for this association", with: "Synthetic expert: same certificate workflow; update its entitlement and required evidence."
+    click_button "Append trace decision"
+    assert_text "Trace decision appended"
+    association = TraceScenarioDecision.where(corpus_item: @item).sole
+    click_link "Revise with this trace", match: :first
+    assert_field "Customer starting situation", with: original.situation
+    assert_equal original.known_facts, JSON.parse(find_field("Known facts (JSON object)", visible: :all).value)
+    assert_field "Exact source excerpt", with: ""
+    assert_equal @item.id.to_s, find_field("Source record").value
+    assert_link "Inspect selected trace: #{@item.title}", href: workspace_corpus_source_path(@workspace, @corpus, @item.source_snapshot.source,
+      snapshot: 1, page: 1, anchor: "record-#{@item.id}")
+    [ 1280, 390 ].each { |width| capture("selected-trace-#{width}", width, selector: "#scenario-evidence") }
+    trace = SupportTrace.payload(@item)
+    fill_in "Customer starting situation", with: trace.fetch("input").fetch("situation")
+    find("summary", text: "Known and hidden facts").click
+    fill_in "Known facts (JSON object)", with: trace.fetch("input").fetch("known_facts").to_json
+    fill_in "Actions — one requirement per line", with: "Collect the certificate expiry date."
+    fill_in "Exact source excerpt", with: "Keep my invalid source quote"
+    click_button "Save new version"
+    assert_selector "[role=alert]", text: /must occur in its source record/
+    assert_selector "#evidence-error", text: "No version saved. Read the exact source record, paste a matching excerpt and save again."
+    assert_field "Exact source excerpt", with: "Keep my invalid source quote"
+    assert_equal "true", find_field("Exact source excerpt")["aria-invalid"]
+    assert_equal original.id, @scenario.reload.current_version_id
+    [ 1280, 390 ].each do |width|
+      capture("trace-error-#{width}", width, selector: "#scenario-evidence")
+      capture("trace-error-notice-#{width}", width, selector: "[role=alert]")
+    end
+    fill_in "Exact source excerpt", with: "Request the certificate expiry date first."
+    click_button "Save new version"
+    assert_text "Version 3 · expert · needs review"
+    revised = @scenario.reload.current_version
+    assert_not revised.approved?
+    assert_no_link "Compile eval"
+    assert_equal @item.id, revised.scenario_evidence.find_by!(corpus_item: @item).corpus_item_id
+    assert_empty original.reload.scenario_evidence.where(corpus_item: @item)
+    assert_equal original.id, old_case.reload.scenario_version_id
+    assert_equal original.id, association.reload.scenario_version_id
+    fill_in "Decision note", with: "Synthetic expert checked current company policy and this exact reported correction."
+    click_button "Save expert decision"
+    assert_text "Version 3 · expert · approve"
+    click_link "Compile eval"
+    revised.requirements.each do |kind, statements|
+      statements.each_index do |index|
+        grader = kind == "actions" ? @action_grader : @outcome_grader
+        select "#{grader.name} · v1", from: "Grader for #{kind} #{index + 1}"
+        select "#{@item.title} · expectation", from: "Source for #{kind} #{index + 1}"
+      end
+    end
+    click_button "Compile fixed case"
+    assert_text "Contract compiled with fixed graders"
+    fixed_case = @corpus.eval_cases.order(:id).last
+    assert_equal revised.id, fixed_case.scenario_version_id
+    assert_equal [ @item.id ], fixed_case.eval_case_checks.map { |check| check.scenario_evidence.corpus_item_id }.uniq
+    @suite = @corpus.eval_suites.create!(workspace: @workspace, name: "Updated certificate workflow")
+    @suite.add_case!(membership: @membership, case_id: fixed_case.id)
+    @target = EvaluationTarget.define!(corpus: @corpus, membership: @membership, name: "Matched trace replay", adapter: "recorded", configuration: {}, trace_item_id: @item.id)
+    run = request_run
+    2.times { EvaluationRunJob.perform_now(run.id) }
+    result = run.reload.evaluation_results.sole
+    assert_equal "fail", result.status
+    assert_not result.evaluation_run_item.target_input.to_json.include?("private diagnostic answer")
+    visit workspace_corpus_evaluation_result_path(@workspace, @corpus, result)
+    regression = @corpus.eval_suites.create!(workspace: @workspace, name: "Matched trace regressions", kind: "regression")
+    visit current_url
+    select "Matched trace regressions", from: "Regression suite"
+    fill_in "Why this failure must not return", with: "Synthetic expert: this recorded failure skipped the required certificate evidence."
+    click_button "Review and add regression"
+    assert_selector "h1", text: "Matched trace regressions"
+    assert_equal fixed_case.id, regression.eval_cases.sole.id
+    capture("trace-regression-390", 390)
+    @target.revise!(membership: @membership, version_id: @target.current_version_id, adapter: "scripted",
+      configuration: script_configuration(output: support_output(tools: [ "collect_expiry" ])))
+    corrected = request_run(suite: regression, version: @target.reload.current_version)
+    EvaluationRunJob.perform_now(corrected.id)
+    assert_equal "pass", corrected.reload.evaluation_results.sole.status
+    assert_equal fixed_case.id, corrected.evaluation_results.sole.eval_case_id
+    assert_equal "fail", result.reload.status
+    assert_equal 1, @corpus.scenarios.count
+    assert_empty HumanLabel.where(corpus: @corpus)
+  end
 
   test "expert inspects conflict appends history and sees retained stale error empty and viewer states" do
     build_failure_matching_fixture
@@ -36,6 +136,7 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
     sign_in users(:teammate)
     visit source_path
     assert_no_button "Append trace decision"
+    assert_no_link "Revise with this trace"
     assert_text "Expert associations and history"
     capture("viewer-390", 390)
   end
@@ -45,16 +146,22 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
       workspace_corpus_source_path(@corpus.workspace, @corpus, @item.source_snapshot.source)
     end
 
-    def capture(name, width)
+    def capture(name, width, selector: nil)
       page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width:, height: 1000, deviceScaleFactor: 2, mobile: false)
       assert_no_horizontal_overflow
       assert_no_csp_violations
       return unless ENV["CAPTURE_LAB_SCREENSHOTS"] == "1"
       path = Rails.root.join(".amp/in/artifacts/failure-matching/#{name}.png")
       FileUtils.mkdir_p(path.dirname)
-      page.execute_script("window.scrollTo(0, 0)")
-      size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
-      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: 0, width:, height: size.fetch("height"), scale: 1 })
+      image = if selector
+        page.execute_script("document.querySelector(#{selector.to_json}).scrollIntoView({block: 'start'})")
+        page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: false)
+      else
+        page.execute_script("window.scrollTo(0, 0)")
+        size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
+        page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true,
+          clip: { x: 0, y: 0, width:, height: size.fetch("height"), scale: 1 })
+      end
       File.binwrite(path, Base64.decode64(image.fetch("data")))
     end
 end

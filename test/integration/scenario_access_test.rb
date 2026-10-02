@@ -24,6 +24,59 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "trace entry selects exact evidence without copying input corrections or creating records" do
+    trace = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    trace["input"]["known_facts"]["plan"] = "starter"
+    item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "New production failure", kind: "traces", bytes: [ trace ].to_json).corpus_items.sole
+    original = @scenario.current_version
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioReview.count", "AuditEvent.count", "HumanLabel.count", "ScenarioProposal.count" ] do
+      get workspace_corpus_scenario_path(@workspace, @corpus, @scenario, trace_item_id: item.id, anchor: "scenario-evidence")
+      assert_response :success
+      assert_select "details#scenario-evidence[open]"
+      assert_select "select[name=evidence_item_id] option[selected][value='#{item.id}']"
+      assert_select "input[name=trace_item_id][value='#{item.id}']"
+      assert_select "textarea[name=excerpt]", text: ""
+      assert_select "textarea[name='scenario[situation]']", text: original.situation
+      assert_select "textarea[name='scenario[known_facts]']" do |fields|
+        assert_equal original.known_facts, JSON.parse(fields.sole.text)
+      end
+      assert_select "textarea[name='scenario[outcomes]']", text: ""
+    end
+    patch workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { trace_item_id: item.id,
+      version_id: original.id, evidence_item_id: item.id, evidence_kind: "expectation", excerpt: "Keep my invalid excerpt",
+      scenario: { title: "Keep the expert edit", known_facts: "broken", hidden_facts: "{}" } }
+    assert_response :unprocessable_content
+    assert_select "details#scenario-evidence[open]"
+    assert_select "select[name=evidence_item_id] option[selected][value='#{item.id}']"
+    assert_select "textarea[name=excerpt]", text: "Keep my invalid excerpt"
+    assert_select "input[name='scenario[title]'][value='Keep the expert edit']"
+    assert_equal original.id, @scenario.reload.current_version_id
+    assert_no_difference "ScenarioVersion.count" do
+      patch workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { trace_item_id: item.id,
+        version_id: original.id, evidence_item_id: item.id, evidence_kind: "expectation", excerpt: "Keep my invalid excerpt",
+        scenario: { known_facts: original.known_facts.to_json, hidden_facts: "{}" } }
+      assert_response :unprocessable_content
+      assert_select "#evidence-error[role=alert]", text: /Read the exact source record, paste a matching excerpt and save again/
+      assert_select "textarea[name=excerpt][aria-invalid=true][aria-describedby=evidence-error]", text: "Keep my invalid excerpt"
+    end
+  end
+
+  test "trace entry rejects foreign corpus expired wrong-kind and non-scalar references" do
+    trace = JSON.parse(File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).sole
+    foreign_corpus = @workspace.corpora.create!(name: "Other isolated dataset")
+    foreign = CorpusIntake.call(corpus: foreign_corpus, membership: @membership, name: "Other failure", kind: "traces", bytes: [ trace ].to_json).corpus_items.sole
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario, trace_item_id: foreign.id)
+    assert_response :not_found
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario, trace_item_id: @knowledge.id)
+    assert_response :not_found
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario, trace_item_id: [ @knowledge.id ])
+    assert_response :bad_request
+    item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Expired failure", kind: "traces", bytes: [ trace ].to_json).corpus_items.sole
+    item.source_snapshot.source.update!(expires_at: 1.minute.ago)
+    get workspace_corpus_scenario_path(@workspace, @corpus, @scenario, trace_item_id: item.id)
+    assert_response :not_found
+  end
+
   test "viewer cannot revise review mine or create variants and expiry hides index titles" do
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
     sign_in_as users(:teammate)
