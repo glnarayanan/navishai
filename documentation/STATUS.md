@@ -1504,6 +1504,25 @@ opens the intended version and completes the existing expert workflow. Native
 style, eager loading and Brakeman pass (zero warnings/errors). No appearance,
 labels, approvals, provider calls, schema or dependency changed.
 
+Slice 60 is committed/pushed as open stacked
+[#200](https://github.com/glnarayanan/navishai/pull/200), based on #199.
+
+## Skip unused matching facts (slice 61)
+
+A red test observed unused large fact JSON being tokenized for versions with zero
+or one shared term. Those versions now skip that work: excluding fact words can
+never increase overlap. The second threshold still excludes account-only matches;
+full searched membership, ordering, evidence, refusal bounds and decisions stay
+unchanged. The test checks actual tokenization inputs and one still-required fact
+check, not a timing threshold. Its initial raw-JSON assertion failed on object-key
+ordering; comparing parsed inputs fixes that test without changing production.
+
+Matching, authored retrieval and scenario checks pass 32 tests / 453 assertions.
+Combined `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 10m7.15s: 452 Rails tests /
+6645 assertions and 47 browser tests / 2142 assertions, no failures/errors/skips.
+Native style, audits and eager loading pass; whole-command peak RSS is 534344 KiB.
+No semantic-quality, arbitrary-throughput, label or provider claim follows.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

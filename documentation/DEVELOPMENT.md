@@ -201,6 +201,9 @@ Metadata reads are not a universal process-memory or semantic-quality guarantee.
 Expired, merged, rejected or stale-document
 versions cannot appear. Exact links, shared terms and equal/conflicting/missing
 facts help experts compare evidence; null, false, zero and absence differ.
+Versions with fewer than two raw shared terms skip unused fact tokenization.
+The same threshold still applies after excluding fact words; membership, ranks,
+byte/count bounds and the disclosed literal method stay unchanged.
 Comparisons retain nested numeric types: integer 0 conflicts with float 0.0
 inside objects and arrays too. Object-key order alone does not create a conflict.
 Exact facts break equal-term ties; a match hint never records an expert decision.

@@ -28,8 +28,9 @@ class TraceScenarioMatching
         facts = trace.fetch("input").fetch("known_facts")
         query = terms(trace["input"]["situation"] + "\n" + trace["observed_failure"])
         candidates = inputs.filter_map do |version, evidence, words|
-          fact_terms = terms([ facts, version.known_facts ].to_json)
-          shared = (query & words) - fact_terms
+          shared = query & words
+          next if shared.size < 2
+          shared -= terms([ facts, version.known_facts ].to_json)
           next if shared.size < 2
           equal, conflict, missing = compare_facts(facts, version.known_facts)
           Candidate.new(version, shared.sort, equal, conflict, missing, evidence)

@@ -1,8 +1,10 @@
 require "test_helper"
 require_relative "../support/failure_matching_fixture"
+require_relative "../test_helpers/http_target_test_helper"
 
 class TraceScenarioMatchingTest < ActiveSupport::TestCase
   include FailureMatchingFixture
+  include HttpTargetTestHelper
   include ActiveSupport::Testing::ConstantStubbing
   setup { build_failure_matching_fixture }
 
@@ -133,6 +135,28 @@ class TraceScenarioMatchingTest < ActiveSupport::TestCase
     assert_equal invoice, results.fetch(other.id).candidates.sole.version
     assert_equal 2, results.fetch(@item.id).searched_versions
     assert_equal results.fetch(@item.id).searched_bytes, results.fetch(other.id).searched_bytes
+  end
+
+  test "zero and one shared term skip irrelevant fact tokenization without sampling definitions" do
+    marker = "unused matching facts "
+    %w[Invoice Certificate].each do |title|
+      matching_version(title: "#{title} reconciliation", situation: "Ledger balance differs.",
+        facts: { "unused" => marker * 400 }, excerpt: "Invoices require a billing contact.")
+    end
+    scanned = []
+    original = CorpusDiscovery.method(:terms)
+    result = nil
+    assert_no_difference [ "TraceScenarioDecision.count", "ScenarioReview.count", "AuditEvent.count" ] do
+      with_test_method(CorpusDiscovery, :terms, ->(text) { scanned << text; original.call(text) }) do
+        result = TraceScenarioMatching.call(item: @item)
+      end
+    end
+    assert_nil result.message
+    assert_equal 3, result.searched_versions
+    assert_equal @version.id, result.candidates.sole.version.id
+    assert scanned.none? { |text| text.include?(marker) }, "Ineligible hints must not tokenize unused facts"
+    fact_inputs = scanned.select { |text| text.start_with?("[{") }.map { |text| JSON.parse(text) }
+    assert_equal [ [ SupportTrace.payload(@item).fetch("input").fetch("known_facts"), @version.known_facts ] ], fact_inputs
   end
 
   test "different visible input suggests source terms but never replay and plan conflicts remain" do
