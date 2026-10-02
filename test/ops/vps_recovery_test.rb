@@ -161,6 +161,62 @@ class VpsRecoveryTest < Minitest::Test
     SH
   end
 
+  def test_caddy_sticky_directory_is_scoped_and_retained_through_backup_restore
+    run_shell <<~'SH'
+      mkdir -p "$ROOT/tar-source/caddy"
+      chmod 755 "$ROOT/tar-source"
+      chmod 1777 "$ROOT/tar-source/caddy"
+      echo certificate > "$ROOT/tar-source/caddy/value"
+      tar -cf "$ROOT/tar-caddy" -C "$ROOT/tar-source" .
+      vps_recovery_tar_check "$ROOT/tar-caddy" caddy
+      for kind in root storage image; do
+        if vps_recovery_tar_check "$ROOT/tar-caddy" "$kind"; then exit 1; fi
+      done
+      for mode in 777 3777 4777; do
+        chmod "$mode" "$ROOT/tar-source/caddy"
+        tar -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+        if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+      done
+      chmod 1777 "$ROOT/tar-source/caddy"
+      for ownership in --owner=1000 --group=1000; do
+        tar "$ownership" -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+        if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+      done
+      chmod 666 "$ROOT/tar-source/caddy/value"
+      tar -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+      if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+      chmod 600 "$ROOT/tar-source/caddy/value"
+      mkdir -m 1777 "$ROOT/tar-source/caddy/nested"
+      tar -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+      if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+      rmdir "$ROOT/tar-source/caddy/nested"
+      mv "$ROOT/tar-source/caddy" "$ROOT/tar-source/other"
+      tar -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+      if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+      rm -rf "$ROOT/tar-source/other"
+      for node in link fifo file; do
+        case "$node" in
+          link) ln -s /etc "$ROOT/tar-source/caddy" ;;
+          fifo) mkfifo "$ROOT/tar-source/caddy" ;;
+          file) touch "$ROOT/tar-source/caddy"; chmod 1777 "$ROOT/tar-source/caddy" ;;
+        esac
+        tar -cf "$ROOT/tar-bad" -C "$ROOT/tar-source" .
+        if vps_recovery_tar_check "$ROOT/tar-bad" caddy; then exit 1; fi
+        rm "$ROOT/tar-source/caddy"
+      done
+      for key in caddy_data caddy_config; do
+        mkdir -m 1777 "$ROOT/volumes/$key/caddy"
+      done
+      good_backup
+      for key in caddy_data caddy_config; do chmod 755 "$ROOT/volumes/$key/caddy"; done
+      vps_restore "$ROOT/backups/good"
+      for key in caddy_data caddy_config; do
+        [[ "$(stat -c '%u:%g:%a' "$ROOT/volumes/$key/caddy")" == 0:0:1777 ]]
+      done
+      assert_stopped
+    SH
+  end
+
   def test_untrusted_backup_ownership_permissions_links_and_immutable_collision
     run_shell <<~'SH'
       good_backup

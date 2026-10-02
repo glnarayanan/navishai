@@ -2189,7 +2189,7 @@ The separate [VPS CLI](./VPS_CLI.md) now implements reviewed Git install, upgrad
 full backup, explicit restore, status, gated start/check/stop and scoped cleanup.
 It adds Caddy, systemd ordering, dual-family namespace guards and separate restricted
 setup/runtime roles without changing the manual Compose baseline. Core tests pass
-19 / 159, recovery 10 / 30 and namespace policy 8 / 155, with no failures/errors/skips.
+19 / 159, recovery 11 / 33 and namespace policy 8 / 155, with no failures/errors/skips.
 Native Bash syntax and Ruby style pass. Real standalone namespace denial/replacement
 and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
 and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
@@ -2211,6 +2211,15 @@ supported `up --no-start --no-deps --force-recreate` to create stopped web/jobs
 without reconciling guarded dependencies. Runtime and policy inspection still
 precede start; the failed-runtime regression proves that refusal. The corrected
 joined proof is in progress. No combined recovery/rollback pass is claimed.
+
+The next real run passed install, trusted internal-CA Caddy HTTPS, native jobs,
+role/privilege checks and replacement/kernel-denial checks, then backup validation
+refused Caddy's root-owned `caddy/` mode 1777. The pinned-image metadata reproduction
+confirmed both Caddy volumes. Only those two archive kinds now accept that exact
+directory/owner/mode; all generic ownership, path, link and special-mode rules
+remain strict. The full operations suite passes 57 / 540 after the red-to-green
+backup/restore regression and unsafe near cases. The full CI above predates this
+last fix. Corrected joined recovery/upgrade/rollback still needs its final run.
 
 This work is committed/pushed as draft
 [#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not

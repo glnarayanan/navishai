@@ -86,6 +86,14 @@ use UID/GID 1000. The four PG config files must use UID/GID 999 and mode 0600.
 Names use ASCII letters, digits and `_./@+:=-`; unsupported names fail, not change.
 The library uses the pinned Debian PostgreSQL 16 UID/tool contract.
 
+The pinned Caddy image uses mode 1777 for the root-owned `caddy/` directory in
+both data/config volumes. Only those two archives accept that exact directory,
+owner and mode. Every other member must stay root-owned with no group or other
+write bits. Generic code/storage/image validators still reject this sticky
+directory. Links, special nodes, set-id modes, writable children, foreign owners
+and other sticky directories remain refused. Restore keeps Caddy's original mode;
+it does not rewrite volume data to make a backup pass.
+
 Restore loads retained images and checks their saved IDs. It writes a root-owned
 0600 JSON Compose overlay containing only the five service image IDs. Docker
 save/load does not preserve upstream RepoDigest aliases; this overlay permits
@@ -139,8 +147,8 @@ code/writer/proxy stand-ins. Cleanup stops only its generated resources.
 ### Executed orb evidence, 2 October 2026
 
 The Bash syntax check and focused RuboCop command above passed. The unit suite
-passed with 10 tests, 30 assertions and no failures, errors or skips. The real
-proof passed with Docker 29.8.1, Compose 2.39.4 and PostgreSQL 16.15. It checked:
+initially passed with 10 tests, 30 assertions and no failures, errors or skips.
+The real proof passed with Docker 29.8.1, Compose 2.39.4 and PostgreSQL 16.15:
 
 - Foreign ACL/elevated-role backup refusal, and stopped shared-volume/live-client
   restore refusal without changing the database contents.
@@ -154,6 +162,14 @@ proof passed with Docker 29.8.1, Compose 2.39.4 and PostgreSQL 16.15. It checked
 
 The proof reported `CLEAN`: it removed its exact daemon, containers, volumes,
 images, archives and generated secrets. No orb service remained running.
+
+The joined Rails/Caddy proof then found a real archive refusal: both actual Caddy
+volumes contain root-owned `caddy/` mode 1777. A real-image metadata probe reproduced
+both refusals under the generic root validator. The narrow Caddy archive rule above
+has a red-to-green native regression for full backup/restore and unsafe near cases.
+The updated unit suite has 11 tests / 33 assertions; the full operations suite
+passes 57 / 540, with no failures/errors/skips. The corrected joined run remains
+pending; the earlier standalone proof does not establish real Caddy recovery.
 
 Relevant existing ops checks also passed:
 

@@ -72,26 +72,30 @@ vps_recovery_image_ref() {
 # GNU tar lists every member without extraction. Links, special nodes, duplicate
 # paths, control characters, set-id bits and foreign ownership fail closed.
 vps_recovery_tar_check() {
-  local archive="$1" kind="$2" listing mode owner size day time name normalized
+  local archive="$1" kind="$2" listing mode owner size day time name normalized sticky_caddy
   local -A seen=()
   listing="$(tar --list --verbose --numeric-owner --quoting-style=escape --quote-chars=' ' --file "$archive")" || return 1
   [[ -n "$listing" ]] || return 1
   while read -r mode owner size day time name; do
-    [[ "$mode" =~ ^[-d][rwx-]{9}$ && "$size" =~ ^[0-9]+$ ]] || return 1
     [[ "$name" =~ ^[a-zA-Z0-9_./@+:=-]+$ && "$name" != /* ]] || return 1
     normalized="${name#./}"; normalized="${normalized%/}"
     [[ "$name" != ./ ]] || normalized=.
     [[ "$normalized" == . || ( -n "$normalized" && "/$normalized/" != *'/../'* && "/$normalized/" != *'/./'* && "$normalized" != *'//'* ) ]] || return 1
     [[ ! -v 'seen[$normalized]' ]] || return 1
     seen["$normalized"]=1
+    # Pinned Caddy uses a root-owned 1777 app directory in both private volumes.
+    # Preserve that directory only; no other archive, member or mode gets this rule.
+    sticky_caddy=false
+    if [[ "$kind:$mode:$owner:$normalized" == caddy:drwxrwxrwt:0/0:caddy ]]; then sticky_caddy=true; fi
+    [[ ( "$mode" =~ ^[-d][rwx-]{9}$ || "$sticky_caddy" == true ) && "$size" =~ ^[0-9]+$ ]] || return 1
     case "$kind:$owner" in
-      storage:0/0|storage:1000/1000|root:0/0|private:0/0|postgres:999/999|image:0/0) ;;
+      storage:0/0|storage:1000/1000|root:0/0|caddy:0/0|private:0/0|postgres:999/999|image:0/0) ;;
       *) return 1 ;;
     esac
     if [[ "$kind" == private ]]; then
       [[ "$mode" == -rw------- || "$mode" == drwx------ ]] || return 1
-    elif [[ "$kind" == root ]]; then
-      [[ "${mode:5:1}${mode:8:1}" == -- ]] || return 1
+    elif [[ "$kind" == root || "$kind" == caddy ]]; then
+      [[ "$sticky_caddy" == true || "${mode:5:1}${mode:8:1}" == -- ]] || return 1
     elif [[ "$kind" == postgres ]]; then
       [[ "$mode" == -rw------- && "$normalized" =~ ^(postgresql\.conf|postgresql\.auto\.conf|pg_hba\.conf|pg_ident\.conf)$ ]] || return 1
     fi
@@ -290,8 +294,8 @@ vps_recovery_backup_check() {
   vps_recovery_tar_check "$directory/config.tar" private || return 1
   vps_recovery_tar_check "$directory/state.tar" private || return 1
   vps_recovery_tar_check "$directory/rails_storage.tar" storage || return 1
-  vps_recovery_tar_check "$directory/caddy_data.tar" root || return 1
-  vps_recovery_tar_check "$directory/caddy_config.tar" root || return 1
+  vps_recovery_tar_check "$directory/caddy_data.tar" caddy || return 1
+  vps_recovery_tar_check "$directory/caddy_config.tar" caddy || return 1
   # Docker's OCI layer blobs use 0666 headers. They remain opaque to Docker load,
   # never filesystem extraction; the enclosing image archive is still root 0600.
   vps_recovery_tar_check "$directory/images.tar" image || return 1

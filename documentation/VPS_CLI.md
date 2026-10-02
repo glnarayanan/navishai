@@ -169,7 +169,7 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Core command tests pass 19 tests / 159 assertions, recovery tests 10 / 30 and
+Core command tests pass 19 tests / 159 assertions, recovery tests 11 / 33 and
 namespace-policy tests 8 / 155, with no failures, errors or skips. They test command
 ordering, both startup guards, literal env parsing, distinct secrets, lock/restore
 contracts, writable-root/startup-path and shared-resource/partial-install cleanup
@@ -185,6 +185,11 @@ Root tar kept Git's group-write headers, causing recovery to refuse the CLI's ow
 release. Release extraction now strips group/other write, retains executable bits
 and passes the real archive validator. Style, audits, Brakeman and eager loading
 passed. Combined real CLI proof remains pending; no public-host acceptance follows.
+The joined proof also found Caddy's root-owned `caddy/` mode 1777 in both volumes.
+Only those two archives accept that exact directory/owner/mode; generic root and
+other archive rules stay unchanged. The red-to-green full backup/restore regression
+also refuses unsafe near cases. All operations tests pass 57 / 540 after this fix;
+the full CI above predates it. See [recovery](./VPS_RECOVERY.md).
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.
 Native fixture/unit tests alone cannot certify public ingress, ACME/DNS, SMTP/OIDC,
 the owner's firewall or storage, live recovery or customer/model quality.
