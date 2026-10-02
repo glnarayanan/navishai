@@ -1,0 +1,216 @@
+#!/usr/bin/env ruby
+# Disposable orb operations test, never a deployment or a shared-daemon client.
+require "digest"
+require "etc"
+require "json"
+require "open3"
+require "securerandom"
+require "shellwords"
+require "tmpdir"
+
+abort "Usage: bin/prove-compose-runtime (no arguments)" unless ARGV.empty?
+# Preserve readable tracked files and public test certificates across caller masks.
+# The private directory and generated secrets have explicit 0700/0600 modes.
+File.umask(0o022)
+root = File.expand_path("..", __dir__)
+started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+# Short paths are required by containerd's Unix socket length limit.
+directory = Dir.mktmpdir("cp-")
+File.chmod(0o700, directory)
+prefix = "cp-#{SecureRandom.hex(4)}"
+services = []
+cleanup_errors = []
+secret_values = []
+redact = ->(output) { secret_values.reduce(output) { |text, value| text.gsub(value, "<REDACTED>") } }
+# Do not inherit provider, Compose, Docker or application configuration.
+environment = { "PATH" => ENV.fetch("PATH"), "HOME" => ENV.fetch("HOME"),
+  "USER" => Etc.getpwuid.name, "LOGNAME" => Etc.getpwuid.name, "DOCKER_BUILDKIT" => "0" }
+run = lambda do |*command, input: nil|
+  output, status = Open3.capture2e(environment, *command, stdin_data: input.to_s, unsetenv_others: true)
+  raise "Command failed (#{command.first}):\n#{redact.call(output)}" unless status.success?
+  output
+end
+start = lambda do |suffix, command|
+  name = "#{prefix}-#{suffix}"
+  services << name
+  run.call("amp", "orb", "service", "start", name, "--command", Shellwords.join(command))
+end
+wait = lambda do |label, &probe|
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120
+  last = nil
+  loop do
+    begin
+      break if probe.call
+    rescue RuntimeError => error
+      last = error
+    end
+    raise "#{label} timed out: #{last}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    sleep 1
+  end
+end
+docker = nil
+compose = nil
+begin
+  commit = run.call("git", "-C", root, "rev-parse", "HEAD").strip
+  puts "BUILD: tracked Git archive #{commit}; project #{prefix}; private directory #{directory}"
+  archive = File.join(directory, "source.tar")
+  source = File.join(directory, "source")
+  Dir.mkdir(source)
+  run.call("git", "-C", root, "archive", "--format=tar", "--output=#{archive}", commit)
+  run.call("tar", "-xf", archive, "-C", source)
+  # The only composition substitution is its test image name; --project-name is unique.
+  composition = File.read(File.join(source, "compose.yaml"))
+  raise "Unexpected image definition" unless composition.scan("image: navishai-lab:local").length == 1
+  postgres = "postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54"
+  raise "Unexpected PostgreSQL pin" unless composition.scan("image: #{postgres}").length == 1
+  # Docker save/load retains image identity but not the upstream index RepoDigest.
+  # Give that exact pinned image a disposable alias and verify its ID after load.
+  proof_composition = File.join(directory, "compose.yaml")
+  File.write(proof_composition, composition.sub("image: navishai-lab:local", "image: #{prefix}:local")
+    .sub("image: #{postgres}", "image: #{prefix}-postgres:local"))
+  cli = File.join(directory, "compose")
+  url = "https://github.com/docker/compose/releases/download/v2.39.4/docker-compose-linux-x86_64"
+  run.call("curl", "--fail", "--location", "--silent", "--show-error", url, "--output", cli)
+  checksum = run.call("curl", "--fail", "--location", "--silent", "--show-error", "#{url}.sha256").split.first
+  raise "Compose checksum mismatch" unless checksum.match?(/\A[0-9a-f]{64}\z/) && Digest::SHA256.file(cli).hexdigest == checksum
+  File.chmod(0o700, cli)
+  puts "PASS: private official Compose v2.39.4 checksum verified."
+  daemon = lambda do |suffix, isolated|
+    home = File.join(directory, suffix)
+    Dir.mkdir(home)
+    socket = File.join(home, "docker.sock")
+    config = File.join(home, "daemon.json")
+    File.write(config, "{}")
+    command = [ "sudo", "-n" ]
+    command += [ "nsenter", "--net=#{directory}/netns" ] if isolated
+    command += [ "dockerd", "--config-file=#{config}", "--host=unix://#{socket}", "--data-root=#{home}/data", "--exec-root=#{home}/exec",
+      "--pidfile=#{home}/pid", "--storage-driver=vfs", "--bridge=none", "--userland-proxy=#{isolated}",
+      "--iptables=#{isolated}", "--ip-masq=#{isolated}", "--ip-forward=#{isolated}" ]
+    start.call(suffix, command)
+    client = [ "sudo", "-n", "docker", "--config", home, "--host", "unix://#{socket}" ]
+    wait.call("#{suffix} daemon") { run.call(*client, "info", "--format", "{{.DockerRootDir}}").strip == "#{home}/data" }
+    client
+  end
+  # The download/build daemon never creates a bridge or publishes a port.
+  builder = daemon.call("build", false)
+  run.call(*builder, "pull", postgres)
+  postgres_id = run.call(*builder, "image", "inspect", "--format", "{{.Id}}", postgres).strip
+  run.call(*builder, "tag", postgres, "#{prefix}-postgres:local")
+  puts run.call(*builder, "build", "--network=host", "--tag", "#{prefix}:local", source)
+  images = File.join(directory, "images.tar")
+  run.call(*builder, "save", "--output", images, "#{prefix}:local", "#{prefix}-postgres:local")
+  # Persist only the owned namespace, not any host route/firewall/sysctl changes.
+  File.write(File.join(directory, "netns"), "")
+  start.call("net", [ "sudo", "-n", "unshare", "--net", "sh", "-ec",
+    "mount --bind /proc/self/ns/net #{Shellwords.escape(directory)}/netns; ip link set lo up; exec sleep infinity" ])
+  wait.call("private namespace") { run.call("sudo", "-n", "nsenter", "--net=#{directory}/netns", "ip", "link", "show", "lo").include?("UP") }
+  raise "Shared network namespace refused" if run.call("stat", "-Lc", "%i", "/proc/self/ns/net").strip == run.call("stat", "-Lc", "%i", File.join(directory, "netns")).strip
+  docker = daemon.call("run", true)
+  run.call(*docker, "load", "--input", images)
+  raise "Pinned PostgreSQL identity changed during transfer" unless run.call(*docker, "image", "inspect", "--format", "{{.Id}}", "#{prefix}-postgres:local").strip == postgres_id
+  puts "PASS: exact pinned PostgreSQL #{postgres} transferred as #{postgres_id}."
+  secrets = { "NAVISHAI_APP_HOST" => "example.invalid", "NAVISHAI_DATABASE_PASSWORD" => SecureRandom.hex(32),
+    "NAVISHAI_POSTGRES_PASSWORD" => SecureRandom.hex(32), "NAVISHAI_SECRET_KEY_BASE" => SecureRandom.hex(64) }
+  secret_values = secrets.values_at("NAVISHAI_DATABASE_PASSWORD", "NAVISHAI_POSTGRES_PASSWORD", "NAVISHAI_SECRET_KEY_BASE")
+  envfile = File.join(directory, "proof.env")
+  File.write(envfile, secrets.map { |key, value| "#{key}=#{value}\n" }.join, perm: 0o600)
+  compose = [ "sudo", "-n", "--preserve-env=NAVISHAI_PREPARE_PASSWORD", cli, "--host", docker.last, "--env-file", envfile,
+    "--project-name", prefix, "--project-directory", source, "--file", proof_composition ]
+  run.call(*compose, "up", "--detach", "--no-build", "--pull", "never", "--wait", "postgres")
+  # Passing the generated preparation secret by environment keeps it out of argv.
+  environment["NAVISHAI_PREPARE_PASSWORD"] = secrets.fetch("NAVISHAI_POSTGRES_PASSWORD")
+  puts run.call(*compose, "run", "--rm", "--no-deps", "-e", "NAVISHAI_PREPARE_PASSWORD", "web", "sh", "-ec",
+    'export NAVISHAI_DATABASE_USERNAME=navishai_setup NAVISHAI_DATABASE_PASSWORD="$NAVISHAI_PREPARE_PASSWORD"; unset NAVISHAI_PREPARE_PASSWORD; exec bin/rails db:prepare db:grant_runtime')
+  environment.delete("NAVISHAI_PREPARE_PASSWORD")
+  run.call(*compose, "up", "--detach", "--no-build", "web", "jobs")
+  web = run.call(*compose, "ps", "--quiet", "web").strip
+  jobs = run.call(*compose, "ps", "--quiet", "jobs").strip
+  pg = run.call(*compose, "ps", "--quiet", "postgres").strip
+  wait.call("published production /up") do
+    run.call("sudo", "-n", "nsenter", "--net=#{directory}/netns", "curl", "--fail", "--silent", "--max-time", "5",
+      "--output", "/dev/null", "--write-out", "%{http_code}", "--header", "Host: example.invalid", "http://127.0.0.1:3000/up") == "200"
+  end
+  puts "PASS: production /up HTTP 200 through namespace loopback publication."
+  puts run.call(*docker, "exec", "-i", web, "bin/rails", "runner", "-",
+    input: File.read(File.join(root, "test/support/container_runtime_proof.rb")))
+  wait.call("two-family native analysis") do
+    state = run.call(*docker, "exec", web, "bin/rails", "runner", 'a = CorpusAnalysis.find(File.read(Rails.root.join("tmp/proof-analysis-id"))); raise a.error.to_s if a.state == "failed"; raise "Wrong analysis" if a.state == "complete" && (a.summary.fetch("conversations") != 2 || a.summary.fetch("clusters") != 2); puts a.state')
+    state.lines.any? { |line| line.strip == "complete" }
+  end
+  inspect = JSON.parse(run.call(*docker, "inspect", web, pg, jobs))
+  web_info, pg_info, jobs_info = inspect
+  [ web_info, jobs_info ].each do |info|
+    raise "Runtime UID configuration" unless info.fetch("Config").fetch("User") == "1000:1000"
+    raise "Capability controls" unless info.fetch("HostConfig").fetch("CapDrop") == [ "ALL" ]
+    raise "Privilege controls" unless info.fetch("HostConfig").fetch("SecurityOpt").include?("no-new-privileges:true")
+    raise "Runtime topology" unless info.fetch("NetworkSettings").fetch("Networks").keys.sort == [ "#{prefix}_control", "#{prefix}_edge" ]
+  end
+  puts run.call(*docker, "exec", jobs, "ruby", "-e", 's = File.read("/proc/self/status"); abort "Jobs UID/privileges" unless Process.uid == 1000 && s[/^CapEff:\s+(\w+)/, 1].to_i(16).zero? && s[/^NoNewPrivs:\s+(\d+)/, 1] == "1"; abort "Jobs admin secret" if %w[POSTGRES_PASSWORD NAVISHAI_POSTGRES_PASSWORD NAVISHAI_DATABASE_USERNAME NAVISHAI_PREPARE_PASSWORD].any? { |k| ENV.key?(k) }; puts "PASS: jobs UID/capabilities/no-new-privileges and no preparation secret."')
+  raise "Web loopback publication" unless web_info.fetch("HostConfig").fetch("PortBindings") == { "3000/tcp" => [ { "HostIp" => "127.0.0.1", "HostPort" => "3000" } ] }
+  raise "PostgreSQL published" unless pg_info.fetch("HostConfig").fetch("PortBindings").to_h.empty?
+  raise "PostgreSQL topology" unless pg_info.fetch("NetworkSettings").fetch("Networks").keys == [ "#{prefix}_control" ]
+  raise "Web topology" unless web_info.fetch("NetworkSettings").fetch("Networks").keys.sort == [ "#{prefix}_control", "#{prefix}_edge" ]
+  control_ip = web_info.fetch("NetworkSettings").fetch("Networks").fetch("#{prefix}_control").fetch("IPAddress")
+  puts run.call(*docker, "exec", pg, "bash", "-ec", "awk 'NR>1 && $2 == \"00000000\" {found=1} END {exit found}' /proc/net/route; timeout 5 bash -c 'echo >/dev/tcp/#{control_ip}/3000'; echo 'PASS: PostgreSQL has no default route/publication and reaches web over control.'")
+  # A generated trusted local TLS peer exercises reachability, not application transport policy.
+  key = File.join(directory, "peer.key")
+  cert = File.join(directory, "peer.crt")
+  run.call("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+    "-days", "1", "-subj", "/CN=peer.invalid", "-addext", "subjectAltName=DNS:peer.invalid")
+  File.chmod(0o600, key)
+  peer = "#{prefix}-peer"
+  # Only the test peer receives its generated certificate/key, never the proof secrets.
+  peer_directory = File.join(directory, "peer")
+  Dir.mkdir(peer_directory)
+  File.rename(key, File.join(peer_directory, "peer.key"))
+  File.rename(cert, File.join(peer_directory, "peer.crt"))
+  cert = File.join(peer_directory, "peer.crt")
+  run.call("sudo", "-n", "chown", "1000:1000", File.join(peer_directory, "peer.key"))
+  start.call("peer", docker + [ "run", "--rm", "--name", peer, "--network", "#{prefix}_edge", "--cap-drop", "ALL",
+    "--security-opt", "no-new-privileges", "--volume", "#{peer_directory}:/proof:ro", "--entrypoint", "openssl", "#{prefix}:local",
+    "s_server", "-accept", "8443", "-cert", "/proof/peer.crt", "-key", "/proof/peer.key", "-www", "-quiet" ])
+  wait.call("peer container") { run.call(*docker, "inspect", "--format", "{{.State.Running}}", peer).strip == "true" }
+  peer_ip = JSON.parse(run.call(*docker, "inspect", peer)).first.fetch("NetworkSettings").fetch("Networks").fetch("#{prefix}_edge").fetch("IPAddress")
+  run.call(*docker, "cp", cert, "#{web}:/rails/tmp/peer.crt")
+  wait.call("edge TLS peer") do
+    run.call(*docker, "exec", web, "curl", "--fail", "--silent", "--max-time", "5", "--noproxy", "*", "--cacert", "/rails/tmp/peer.crt",
+      "--resolve", "peer.invalid:8443:#{peer_ip}", "https://peer.invalid:8443").include?("s_server")
+  end
+  puts run.call(*docker, "exec", pg, "bash", "-ec", "set +e; result=$(timeout 5 bash -c 'echo >/dev/tcp/#{peer_ip}/8443' 2>&1); status=$?; set -e; test $status -ne 0; test $status -ne 124; [[ $result == *'Network is unreachable'* ]]; echo 'PASS: edge-only trusted TLS reachable from web; PostgreSQL gets ENETUNREACH.'")
+  puts "PASS: separate native jobs completed two-family analysis; local Compose proof in #{(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started).round(2)}s."
+rescue StandardError
+  if compose
+    output, status = Open3.capture2e(environment, *compose, "logs", "--no-color", "--tail", "40", stdin_data: "", unsetenv_others: true)
+    warn "Synthetic Compose startup diagnostics:\n#{redact.call(output)}" if status.success?
+  end
+  raise
+ensure
+  # Attempt every exact cleanup even if an earlier cleanup fails.
+  clean = lambda do |*command|
+    run.call(*command)
+  rescue StandardError => error
+    cleanup_errors << error.message
+    nil
+  end
+  if services.include?("#{prefix}-peer")
+    clean.call("amp", "orb", "service", "stop", "#{prefix}-peer")
+    remaining = clean.call(*docker, "ps", "--all", "--filter", "name=^/#{prefix}-peer$", "--format", "{{.Names}}")
+    clean.call(*docker, "rm", "--force", "#{prefix}-peer") if remaining.to_s.strip == "#{prefix}-peer"
+  end
+  clean.call(*compose, "down", "--volumes", "--remove-orphans", "--rmi", "local") if compose
+  services.reverse_each do |name|
+    next if name == "#{prefix}-peer" # Already stopped before checking its exact container.
+    clean.call("amp", "orb", "service", "stop", name)
+  end
+  mounts = clean.call("findmnt", "--raw", "--noheadings", "--output", "TARGET").to_s.lines.map(&:strip)
+  mounts.select { |path| path.start_with?("#{directory}/") }.sort_by(&:length).reverse_each do |path|
+    clean.call("sudo", "-n", "umount", path)
+  end
+  if cleanup_errors.empty?
+    clean.call("sudo", "-n", "rm", "-rf", "--", directory)
+  end
+  warn "Cleanup incomplete: exact services #{services.join(', ')}, project #{prefix}, directory #{directory}: #{cleanup_errors.join('; ')}" unless cleanup_errors.empty?
+end
+abort "Cleanup failed" unless cleanup_errors.empty?
+puts "CLEAN: exact private daemons/project/namespace/images/volumes/secrets/archive removed; shared state untouched."
+puts "LIMIT: local reachability only; not public egress, endpoint policy, clean-host, public TLS or deployment acceptance."

@@ -65,6 +65,11 @@ remain separate Rails-native production databases. No RLS is installed.
 - `bin/prove-container-runtime` uses a separately prepared private Docker daemon
   and reviewed image for a disposable production-role, native-jobs and private
   HTTPS proof. It is orb-only, never a deploy command; see [hosting](./DEPLOYMENT.md#disposable-imageruntime-proof).
+- `bin/prove-compose-runtime` builds the tracked commit and tests the unchanged
+  composition with disposable image names inside a private network namespace.
+  It checks runtime roles, native jobs, loopback health and local control/edge
+  reachability, then cleans its exact resources. It is not public-egress,
+  clean-host or deployment acceptance; see [hosting](./DEPLOYMENT.md#disposable-compose-runtime-proof).
 - `bin/rails test test/services/support_lab_acceptance_test.rb` checks one fresh
   technical-Support fixture through intake, discovery, expert taxonomy/scenario
   review, mixed deterministic/judge checks, held-out labels, HTTP execution and

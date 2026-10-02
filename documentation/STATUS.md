@@ -67,8 +67,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   Compose evidence, actual CI state and clean-host proof limits.
 - [#170](https://github.com/glnarayanan/navishai/pull/170), based on #169: bounded incremental HTTP
   conversations, expert plans, conditional disclosure and fixed turn receipts.
-- `rebuild/31-revised-judge-proof`, based on #170: connected revised-judge
+- [#171](https://github.com/glnarayanan/navishai/pull/171), based on #170: connected revised-judge
   calibration and restored conversation/no-resend proof.
+- `rebuild/32-compose-proof`, based on #171: repeatable private-namespace
+  Compose preparation/runtime, published ingress and control/edge proof.
 
 ## Built and checked
 
@@ -704,6 +706,47 @@ still pass. Both fixture approvals return to empty before backup; no live endpoi
 is called. Only disposable databases/archive are removed. Direct risk review and
 native audits used; named reviews remain unavailable. No new production dependency.
 
+GitHub CI for #171 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36822648561), completed
+06:05:20 UTC on 1 October). The PR remains open and unmerged; earlier failed
+#155/#158 runs remain failed.
+
+A controlled private-namespace ingress comparison held the pinned Ruby helper and
+Docker flags constant except userland proxy. Disabled: HTTP 000, curl exit 28,
+5001-ms timeout. Enabled: HTTP 200 in 0.001339s. Direct-container HTTP 200 passed
+in both. This establishes that flag's effect in the reproduction, not the removed
+daemon's exact failure cause. Namespace-local synthetic TLS also distinguished
+edge reachability from internal-control ENETUNREACH. No shared policy changed.
+
+`bin/prove-compose-runtime` then passed against a tracked
+[`f11ae5d`](https://github.com/glnarayanan/navishai/commit/f11ae5d) archive in 355.67s before cleanup.
+The private official Compose checksum, pinned PostgreSQL image identity after
+save/load, separate four-database preparation/runtime roles, web/jobs, loopback
+production health, actual UID/capability/privilege denials, cache/cable/audit and
+completed synthetic two-family analysis pass. PostgreSQL has no publication/default
+route and reaches web over control; web reaches an edge-only trusted local TLS peer
+while PostgreSQL gets ENETUNREACH. Only disposable image/project names differ from
+the composition. Daemons, mounts, images, volumes, secrets and archives were cleaned;
+only existing web/portal services remain. This is local Compose evidence, not public
+egress, endpoint policy, clean-host, public TLS or deployment acceptance.
+
+The shared test-only runtime payload removes duplication from the socket proof and
+adds actual capability/no-new-privileges checks. Combined native CI passed in
+4m32.04s: 286 Ruby files clean, native audits clean, Brakeman zero warnings/errors
+and eager loading passed; 349 Rails tests / 3825 assertions and 30 browser tests /
+1281 assertions, no failures/errors/skips. Three focused proof files pass RuboCop
+and syntax checks. A supplied global-daemon argument is refused before resources
+are created. Direct code/risk review used; named reviews remain unavailable.
+
+The independent rerun first failed PostgreSQL startup under caller `umask 077`.
+A minimal extraction check proved that mask produced initializer mode 600,
+unreadable by PostgreSQL UID 999, and Rails entrypoint mode 700. The proof now sets
+its own file mask while keeping its private directory/secrets explicitly 0700/0600;
+failure diagnostics are bounded and redact generated secrets before cleanup.
+`umask 077; bin/prove-compose-runtime` then passed every check in 371.22s before
+cleanup, including exact HTTP 200, and printed CLEAN. All private daemons/mounts
+were removed; existing web/portal services remain. No app control was weakened.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -734,17 +777,21 @@ Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
-Connected fresh revised-judge calibration proof now passes. Independent engineering
-still includes end-to-end Compose ingress/egress proof; local isolated probes do
-not need pilot data, while clean-host acceptance needs a suitable authorised host.
+Connected fresh revised-judge calibration and private Compose ingress/control/edge
+proof now pass. The expert UI still lacks a matched-trace → existing-scenario
+evidence revision path, though its explicit-ID update API already supports it.
+That connected expert journey is independent engineering, not a pilot-data gate.
+Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
+authorised host; private namespace probes cannot establish them.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
-validation ran. The partial Compose trial does not establish clean-host, host ingress,
-useful-egress, public TLS or production backup acceptance.
+validation ran. The partial Compose trial and later passing private-namespace proof
+do not establish clean-host, public ingress/useful-egress, public TLS or production
+backup acceptance.
 Pinned-image execution and isolated runtime roles pass, not deployment acceptance. Database administrators can
 bypass triggers; last-Owner protection is application-side. Backups need their own
 retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
@@ -764,8 +811,9 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
    and cost limits before live execution. The private registries still have zero entries.
 4. Provide or authorise a disposable clean host with authority over proxy/network
    testing if no runner can supply it. The runner list was empty at 04:46 UTC on
-   1 October. Host ingress and useful-egress/deny-policy proof remain unfinished;
-   the private trial's host-publication failure has no verified cause.
+   1 October. Private Compose ingress now passes; public ingress, useful-egress
+   and deny-policy proof remain unfinished. The removed trial's exact failure
+   cause remains unverified despite the controlled userland-proxy reproduction.
 
 Classifier work remains gated by enough labelled data and measured economics.
 Independent local engineering and fixture checks can continue without these gates.
