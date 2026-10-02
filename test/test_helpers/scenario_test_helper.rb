@@ -16,7 +16,7 @@ module ScenarioTestHelper
 
   def approve_scenario(scenario = @scenario)
     requirements = ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "Identify certificate expiry as a possible cause." ], "actions" => [ "Request the certificate expiry date." ])
-    scenario.revise!(membership: @membership, base_version_id: scenario.current_version_id, attributes: { situation: "SSO stopped after a customer changed the certificate.", requirements: })
+    scenario.revise!(membership: @membership, base_version_id: scenario.current_version_id, attributes: { situation: "SSO stopped after a customer changed the certificate.", known_facts: { "plan" => "enterprise", "idp" => "Okta" }, requirements: })
     scenario.review!(membership: @membership, version_id: scenario.current_version_id, decision: "approve", note: "Checked against our playbook.")
     scenario.reload
   end

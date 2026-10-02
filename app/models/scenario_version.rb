@@ -49,6 +49,7 @@ class ScenarioVersion < ImmutableRecord
       [ known_facts, hidden_facts, mutation ].each do |value|
         errors.add(:base, "Facts and mutation must be JSON objects of at most 10 KiB.") unless value.is_a?(Hash) && value.to_json.bytesize <= 10.kilobytes && !value.to_json.include?("\\u0000")
       end
+      errors.add(:draft_notes, "must be a JSON object of at most 10 KiB") unless draft_notes.is_a?(Hash) && draft_notes.to_json.bytesize <= 10.kilobytes && !draft_notes.to_json.include?("\\u0000")
       valid = requirements.is_a?(Hash) && (requirements.keys - REQUIREMENT_TYPES).empty? &&
         REQUIREMENT_TYPES.all? { |kind| requirements[kind].is_a?(Array) && requirements[kind].size <= 20 && requirements[kind].all? { |text| text.is_a?(String) && text.strip.length.between?(1, 2000) && !text.include?("\0") } }
       errors.add(:requirements, "need outcomes, actions, forbidden, escalation and grounding arrays of short statements") unless valid

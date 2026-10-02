@@ -1374,8 +1374,10 @@ CREATE TABLE public.scenario_versions (
     selection_reason text NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     follow_ups jsonb DEFAULT '[]'::jsonb NOT NULL,
+    draft_notes jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT chk_rails_4d6bffc7f8 CHECK (((number > 0) AND ((origin)::text = ANY (ARRAY[('mined'::character varying)::text, ('expert'::character varying)::text, ('variant'::character varying)::text])) AND ((importance)::text = ANY (ARRAY[('normal'::character varying)::text, ('high'::character varying)::text, ('critical'::character varying)::text])) AND (jsonb_typeof(known_facts) = 'object'::text) AND (jsonb_typeof(hidden_facts) = 'object'::text) AND (jsonb_typeof(requirements) = 'object'::text))),
-    CONSTRAINT chk_rails_995910e18a CHECK (((jsonb_typeof(follow_ups) = 'array'::text) AND (jsonb_array_length(follow_ups) <= 10)))
+    CONSTRAINT chk_rails_995910e18a CHECK (((jsonb_typeof(follow_ups) = 'array'::text) AND (jsonb_array_length(follow_ups) <= 10))),
+    CONSTRAINT scenario_draft_notes_bounded CHECK (((jsonb_typeof(draft_notes) = 'object'::text) AND (octet_length((draft_notes)::text) <= 10240)))
 );
 
 
@@ -1498,8 +1500,8 @@ CREATE TABLE public.source_snapshots (
     created_at timestamp(6) without time zone NOT NULL,
     mask_digest character varying DEFAULT '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::character varying NOT NULL,
     mask_count integer DEFAULT 0 NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying, 'exact'::character varying])::text[])))),
-    CONSTRAINT source_snapshot_mask_policy CHECK ((((mask_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((((redaction)::text = 'exact'::text) AND ((mask_count >= 1) AND (mask_count <= 50)) AND ((mask_digest)::text <> '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)) OR (((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[])) AND (mask_count = 0) AND ((mask_digest)::text = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)))))
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text, ('exact'::character varying)::text])))),
+    CONSTRAINT source_snapshot_mask_policy CHECK ((((mask_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((((redaction)::text = 'exact'::text) AND ((mask_count >= 1) AND (mask_count <= 50)) AND ((mask_digest)::text <> '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)) OR (((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text])) AND (mask_count = 0) AND ((mask_digest)::text = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'::text)))))
 );
 
 
@@ -3326,6 +3328,13 @@ CREATE TRIGGER scenario_evidence_immutable BEFORE UPDATE ON public.scenario_evid
 
 
 --
+-- Name: scenarios scenario_parent_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_parent_immutable BEFORE UPDATE OF parent_version_id ON public.scenarios FOR EACH ROW WHEN ((old.parent_version_id IS DISTINCT FROM new.parent_version_id)) EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: scenario_proposals scenario_proposal_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -4053,6 +4062,8 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001220000'),
+('20261001210000'),
 ('20261001150000'),
 ('20261001140000'),
 ('20261001130000'),
@@ -4084,4 +4095,3 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260823195259'),
 ('20260823195258'),
 ('20260823195257');
-

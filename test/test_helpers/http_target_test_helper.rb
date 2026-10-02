@@ -24,7 +24,8 @@ module HttpTargetTestHelper
   def add_unseen_http_case
     child = @scenario.variant!(membership: @membership, version_id: @scenario.current_version_id, variable: "idp", after: "Entra",
       reason: "Cover a second company-supported IdP.", expected_difference: "Request Entra certificate evidence instead of Okta evidence.")
-    child.revise!(membership: @membership, base_version_id: child.current_version_id, attributes: { situation: "Entra sign-in stopped after certificate rotation." })
+    child.revise!(membership: @membership, base_version_id: child.current_version_id, attributes: { situation: "Entra sign-in stopped after certificate rotation.",
+      requirements: ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "Identify certificate expiry as a possible cause for Entra." ], "actions" => [ "Request the Entra certificate expiry date." ]) })
     child.review!(membership: @membership, version_id: child.current_version_id, decision: "approve")
     checks = @checks.map { |check| check.merge("scenario_evidence_id" => child.current_version.scenario_evidence.find_by!(kind: "expectation").id) }
     item = EvalCompiler.call(scenario: child, membership: @membership, version_id: child.current_version_id, checks:)

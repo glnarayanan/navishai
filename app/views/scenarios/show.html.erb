@@ -9,9 +9,32 @@
   <% if (cluster = @scenario.cluster_member&.issue_cluster) && cluster.proposed_label.length > 500 %>
     <p><%= link_to "Inspect full source issue family", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, cluster.corpus_analysis_id, cluster) %>. The original proposal and source text stay fixed; a shortened draft is not an expert label.</p>
   <% end %>
-  <% if @scenario.parent_version %><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre><% end %>
+  <% if @scenario.parent_version %>
+    <section id="variant-receipt" class="config-panel"><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p>
+      <p>Controlled counterfactual, not observed company truth. The proposed difference is not an approved expectation. Check the situation and permitted knowledge; write fresh source-backed expectations before review.</p>
+      <details open><summary>Exact changes and proposed difference</summary><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre></details>
+    </section>
+  <% end %>
   <% if Current.require_membership!.can_write? && @version.approved? && !@version.stale? && @scenario.current_version_id == @version.id %><p><%= link_to "Compile eval", new_workspace_corpus_eval_case_path(Current.workspace, @corpus, scenario_id: @scenario.id), class: "button button-primary" %></p><% end %>
   <% @version.eval_cases.order(number: :desc).limit(10).each do |item| %><p><%= link_to "Eval case #{item.id} · definition #{item.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %></p><% end %>
+  <% if @version.draft_notes["method"] == ScenarioMining::DRAFT_METHOD %>
+    <% notes = @version.draft_notes %>
+    <details class="section-block config-panel" id="source-review" <%= "open" if @version.origin == "mined" %>>
+      <summary>Source review questions</summary>
+      <p>Literal cues, not diagnosis, policy or proof of resolution. The opening text is only a starting-situation proposal; remove answers and private data before approval. Facts and expectations need your own source-backed edits.</p>
+      <p><%= notes.fetch("method") %> · scanned <%= notes.fetch("source_length") %> characters · original evidence window starts at character <%= notes.fetch("evidence").first + 1 %>, for <%= notes.fetch("evidence").last %> characters. At most the first and last cue per kind appear below; this is not a complete semantic review.</p>
+      <% if notes["context_omitted"] %><p>Raw source context was not copied into known facts. It may contain answers, reported outcomes or private account data.</p><% end %>
+      <p><%= link_to "Inspect full draft source and context", source_evidence_path(@scenario.corpus_item) %>. Notes keep the original mining offsets even after an expert replaces the evidence quote.</p>
+      <% if notes.fetch("review_spans").empty? %><p>No listed literal cue found. This does not establish a simple or resolved issue; inspect the full source.</p><% end %>
+      <% notes.fetch("review_spans").group_by { |span| span.fetch("kind") }.each do |kind, spans| %>
+        <article class="source-record"><h3><%= kind.humanize %> — question, not a finding</h3><p><%= ScenarioMining::REVIEW_CUES.fetch(kind).last %></p>
+          <details><summary>Inspect <%= kind %> cue context</summary><p>Exact bounded source text; windows may overlap and start or end mid-sentence. These quotes stay hidden from targets.</p>
+            <% spans.each do |span| %><p>Source characters <%= span.fetch("start") + 1 %>–<%= span.fetch("start") + span.fetch("length") %></p><pre class="evidence-text"><%= "…" if span.fetch("start") > 0 %><%= @scenario.corpus_item.content[span.fetch("start"), span.fetch("length")] %><%= "…" if span.fetch("start") + span.fetch("length") < notes.fetch("source_length") %></pre><% end %>
+          </details>
+        </article>
+      <% end %>
+    </details>
+  <% end %>
   <details class="section-block config-panel" id="model-proposal" <%= "open" if @proposal || action_name == "propose" %>>
     <summary>Model scenario proposal</summary>
     <p>A suggestion, not an expert decision. Exact source quotes show where a requirement came from, not whether it is correct. Nothing here changes this scenario or its approval.</p>
@@ -45,7 +68,7 @@
       <% end %>
     <% elsif @proposal_input_error %><p role="status"><%= @proposal_input_error %></p>
     <% elsif Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
-      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. Local deletion cannot recall sent data.</p>
+      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. It cannot invent starting facts or hidden truth; quotes do not prove correct expectations. Local deletion cannot recall sent data.</p>
       <details><summary>Preview exact starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal_input) %></pre></details>
       <%= form_with url: propose_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
         <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
@@ -125,14 +148,21 @@
         <%= form.submit "Save expert decision", class: "button" %>
       <% end %>
     </section>
-    <% if @version.approved? %><details class="section-block config-panel"><summary>Create a controlled variant</summary><p>Change one named fact. The variant retains its parent, evidence and exact change; it must be reviewed separately.</p>
+    <% if @version.approved? || @variant_error %><details id="controlled-variant" class="section-block config-panel" <%= "open" if @variant_error %>><summary>Create a controlled variant</summary>
+      <p>Change 1–5 existing named facts as one controlled set. Keep JSON types, including quotes for text. The child retains this exact parent and evidence; it clears all expectations, hidden facts and follow-ups. No approval carries over.</p>
+      <% if @version.stale? && !@variant_error %><p role="status">Revise and review current company evidence before creating a variant.</p>
+      <% elsif @version.known_facts.empty? && !@variant_error %><p role="status">Add and review named known facts before creating a controlled variant.</p>
+      <% else %>
+      <details><summary>Inspect this version's named known facts</summary><pre class="evidence-text"><%= JSON.pretty_generate(@version.known_facts) %></pre></details>
       <%= form_with url: variant_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
-        <%= form.hidden_field :version_id, value: @version.id %>
-        <div class="field"><%= form.label :variable, "Fact to change" %><%= form.select :variable, @version.known_facts.keys, selected: params[:variable] %></div>
-        <div class="field"><%= form.label :after, "New value (JSON, including quotes for text)" %><%= form.text_field :after, value: params[:after], required: true %></div>
+        <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
+        <div class="field"><%= form.label :mutation, "Named fact changes (JSON object)" %><%= form.text_area :mutation, value: params[:mutation], required: true, rows: 5, maxlength: 10240, aria: { invalid: @variant_error.present?, describedby: @variant_error ? "variant-help variant-error" : "variant-help" } %><p id="variant-help">At most 10 KiB. Include only existing keys and their new values, not before/after wrappers. Each value must differ; no duplicate keys or new facts. Exact before/after and your reason stay local, not in target input.</p>
+          <% if @variant_error %><p id="variant-error" class="inline-error" role="alert"><%= @variant_error %> No variant saved. Correct the named changes and try again. A changed parent needs a fresh review and reload; this form keeps the submitted version.</p><% end %>
+        </div>
         <div class="field"><%= form.label :reason, "Why this change matters" %><%= form.text_area :reason, value: params[:reason], required: true, rows: 2, maxlength: 2000 %></div>
         <div class="field"><%= form.label :expected_difference, "Expected behaviour difference" %><%= form.text_area :expected_difference, value: params[:expected_difference], required: true, rows: 2, maxlength: 2000 %></div>
         <%= form.submit "Create variant", class: "button" %>
+      <% end %>
       <% end %>
     </details><% end %>
   <% end %>

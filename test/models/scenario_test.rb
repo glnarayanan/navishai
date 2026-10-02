@@ -13,7 +13,9 @@ class ScenarioTest < ActiveSupport::TestCase
     version = @scenario.current_version
     assert_equal "mined", version.origin
     assert_empty version.requirements["outcomes"]
-    assert_includes version.requirements["actions"], "Request the expiry date before changing configuration."
+    assert_empty version.requirements["actions"]
+    assert_empty version.known_facts
+    assert_equal "Customer cannot sign in after certificate rotation.", version.situation
     assert_equal @scenario.cluster_member.selection_reason, version.selection_reason
     assert_equal @scenario.corpus_item, version.scenario_evidence.sole.corpus_item
     assert_equal "critical", @scenarios.find { |scenario| scenario.corpus_item.external_id == "api" }.current_version.importance
@@ -204,7 +206,7 @@ class ScenarioTest < ActiveSupport::TestCase
     assert_empty revision.scenario_reviews
     assert approved.reload.approved?
     assert_equal original_quote, approved.scenario_evidence.find_by!(kind: "expectation").excerpt
-    assert_not_includes original_quote, quote
+    assert_includes original_quote, quote
     assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
       assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: quote)
       assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: "")
@@ -335,12 +337,13 @@ class ScenarioTest < ActiveSupport::TestCase
       assert after.eql?(version.mutation["after"])
       assert_equal "Author's mutation reason", version.mutation["reason"]
       assert_equal "Author's expected difference, not an approved expectation", version.mutation["expected_difference"]
-      assert_equal parent.requirements, version.requirements
+      assert_equal ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }, version.requirements
       assert_equal evidence, version.scenario_evidence.order(:id).pluck(:corpus_item_id, :kind, :excerpt)
       assert_empty version.scenario_reviews
       assert_not version.approved?
       assert_raises(Scenario::Invalid) { child.review!(membership: @membership, version_id: version.id, decision: "approve") }
-      revision = child.revise!(membership: @membership, base_version_id: version.id, attributes: { situation: "Expert checked this counterfactual starting situation." }).reload
+      revision = child.revise!(membership: @membership, base_version_id: version.id, attributes: { situation: "Expert checked this counterfactual starting situation.",
+        requirements: ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "Request current certificate evidence for this counterfactual." ]) }).reload
       assert_equal "expert", revision.origin
       assert_not revision.approved?
       assert_equal version.mutation, revision.mutation

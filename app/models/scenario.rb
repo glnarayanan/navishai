@@ -8,6 +8,7 @@ class Scenario < ApplicationRecord
   belongs_to :current_version, class_name: "ScenarioVersion", optional: true
   belongs_to :merged_into, class_name: "Scenario", optional: true
   has_many :scenario_versions
+  attr_readonly :parent_version_id
 
   def revise!(membership:, base_version_id:, attributes:, evidence_item_id: nil, excerpt: nil, evidence_kind: nil, conversation_excerpt: nil)
     corpus.with_lock do
@@ -28,7 +29,7 @@ class Scenario < ApplicationRecord
 
       version = scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
-        mutation: previous.mutation, created_at: Time.current))
+        mutation: previous.mutation, draft_notes: previous.draft_notes, created_at: Time.current))
       previous.scenario_evidence.each do |evidence|
         next if conversation_changed && evidence.id == conversation.id
         next if item && item.source_snapshot.source.kind == "document" && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
@@ -66,20 +67,30 @@ class Scenario < ApplicationRecord
     end
   end
 
-  def variant!(membership:, version_id:, variable:, after:, reason:, expected_difference:)
+  def variant!(membership:, version_id:, reason:, expected_difference:, variable: nil, after: nil, changes: nil)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       reload
       parent = current_version
-      raise Invalid, "Create a variant from the current approved version." unless parent.id.to_s == version_id.to_s && parent.approved? && !parent.expired?
-      raise Invalid, "Choose one existing fact and a different JSON value." unless parent.known_facts.key?(variable) && !parent.known_facts[variable].eql?(after)
-      raise Invalid, "Explain the mutation and its expected behaviour change (1–2000 characters each)." unless [ reason, expected_difference ].all? { |text| text.is_a?(String) && text.strip.length.between?(1, 2000) }
+      raise Invalid, "Create a variant from the current approved version with fresh, unexpired evidence." unless parent.id.to_s == version_id.to_s && parent.approved? && !parent.expired? && !parent.stale?
+      multiple = !changes.nil?
+      raise Invalid, "Use named changes or one fact, not both." if multiple && variable
+      changes = { variable => after } unless multiple
+      raise Invalid, "Change 1–5 existing named facts, each to a different JSON value." unless changes.is_a?(Hash) && changes.size.between?(1, 5) &&
+        changes.all? { |key, value| key.is_a?(String) && parent.known_facts.key?(key) && !parent.known_facts[key].eql?(value) }
+      raise Invalid, "Explain the mutation and its expected behaviour change (1–2000 characters each)." unless [ reason, expected_difference ].all? { |text| text.is_a?(String) && text.strip.present? && text.length.between?(1, 2000) && !text.include?("\0") }
+      receipt = if multiple
+        { "changes" => changes.map { |key, value| { "variable" => key, "before" => parent.known_facts[key], "after" => value } } }
+      else
+        { "variable" => variable, "before" => parent.known_facts[variable], "after" => after }
+      end.merge("reason" => reason, "expected_difference" => expected_difference)
       child = corpus.scenarios.create!(workspace:, corpus_item:, parent_version: parent)
       values = parent.attributes.slice(*ScenarioVersion::EDITABLE)
-      values["known_facts"] = parent.known_facts.merge(variable => after)
+      values.merge!("known_facts" => parent.known_facts.merge(changes), "hidden_facts" => {}, "follow_ups" => [],
+        "requirements" => ScenarioVersion::REQUIREMENT_TYPES.index_with { [] })
       version = child.scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: 1, origin: "variant", selection_reason: "Controlled variant of scenario #{id}, version #{parent.number}",
-        mutation: { "variable" => variable, "before" => parent.known_facts[variable], "after" => after, "reason" => reason, "expected_difference" => expected_difference }, created_at: Time.current))
+        mutation: receipt, draft_notes: parent.draft_notes, created_at: Time.current))
       parent.scenario_evidence.each { |evidence| version.scenario_evidence.create!(workspace:, corpus:, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt) }
       child.update!(current_version: version)
       audit!("scenario.variant_created", membership, version)

@@ -8,7 +8,7 @@ module ScenarioProposalTestHelper
   def build_proposal_scenario
     build_scenarios
     @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
-      attributes: { situation: "Enterprise SAML login stopped after a certificate change.", hidden_facts: { actual_cause: "private diagnosis" },
+      attributes: { situation: "Enterprise SAML login stopped after a certificate change.", known_facts: { "plan" => "enterprise", "idp" => "Okta" }, hidden_facts: { actual_cause: "private diagnosis" },
         requirements: ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }.merge("outcomes" => [ "Expert-only prior expectation" ]) })
     @version = @scenario.reload.current_version
   end

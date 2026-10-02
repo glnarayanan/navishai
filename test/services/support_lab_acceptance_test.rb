@@ -40,7 +40,8 @@ class SupportLabAcceptanceTest < ActiveSupport::TestCase
       "outcomes" => [ "Recognise the replay as an integrity risk rather than a confirmed resolution." ],
       "actions" => [ "Collect delivery IDs before assessing the replay." ], "escalation" => [ "Escalate duplicate writes to Engineering." ])
     scenario.revise!(membership: @membership, base_version_id: scenario.current_version_id,
-      attributes: { situation: "A webhook replay produced duplicate writes after an offset reset.", requirements:, hidden_facts: { root_cause: "internal replay defect" } },
+      attributes: { situation: "A webhook replay produced duplicate writes after an offset reset.", known_facts: { component: "delivery replay", impact: "critical" },
+        requirements:, hidden_facts: { root_cause: "internal replay defect" } },
       evidence_item_id: document.id, evidence_kind: "expectation", excerpt: policy)
     scenario.revise!(membership: @membership, base_version_id: scenario.current_version_id, attributes: {},
       evidence_item_id: document.id, evidence_kind: "knowledge", excerpt: policy)
