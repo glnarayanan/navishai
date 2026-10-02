@@ -22,16 +22,17 @@ class EvaluationHttp
     raise SupportOutput::Invalid, "The HTTP endpoint is invalid. Use an HTTPS URL."
   end
 
-  def self.validate!(configuration, workspace_id:)
+  def self.validate!(configuration, workspace_id:, purpose: :evaluation)
     unless configuration.is_a?(Hash) && configuration.keys == [ "endpoint" ]
       raise SupportOutput::Invalid, 'Use HTTP configuration JSON with only an "endpoint" HTTPS URL. Credentials belong in the operator environment, not this form.'
     end
     endpoint(configuration.fetch("endpoint"))
-    approval!(configuration.fetch("endpoint"), workspace_id:)
+    approval!(configuration.fetch("endpoint"), workspace_id:, purpose:)
   end
 
-  def self.approval!(url, workspace_id:)
-    entries = JSON.parse(ENV.fetch("NAVISHAI_EVALUATION_ENDPOINTS", "[]"))
+  def self.approval!(url, workspace_id:, purpose: :evaluation)
+    registry = { evaluation: "NAVISHAI_EVALUATION_ENDPOINTS", scenario: "NAVISHAI_SCENARIO_ENDPOINTS" }.fetch(purpose)
+    entries = JSON.parse(ENV.fetch(registry, "[]"))
     entry = entries.is_a?(Array) && entries.find { |candidate| candidate.is_a?(Hash) && candidate["workspace_id"] == workspace_id && candidate["endpoint"] == url }
     token = entry && entry["bearer_token"]
     unless entry && (token.nil? || (token.is_a?(String) && token.bytesize.between?(1, 8_192) && token.match?(/\A[\x21-\x7e]+\z/)))
@@ -50,8 +51,8 @@ class EvaluationHttp
     false
   end
 
-  def self.call(configuration:, payload:, workspace_id:, request_key:)
-    validate!(configuration, workspace_id:)
+  def self.call(configuration:, payload:, workspace_id:, request_key:, purpose: :evaluation)
+    validate!(configuration, workspace_id:, purpose:)
     uri = endpoint(configuration.fetch("endpoint"))
     body = JSON.generate(payload)
     raise Error, "Target input exceeds 1 MiB. No request was sent." if body.bytesize > MAX_INPUT_BYTES
@@ -60,7 +61,7 @@ class EvaluationHttp
     request["Accept"] = "application/json"
     request["Accept-Encoding"] = "identity"
     request["Idempotency-Key"] = request_key
-    token = approval!(uri.to_s, workspace_id:)
+    token = approval!(uri.to_s, workspace_id:, purpose:)
     request["Authorization"] = "Bearer #{token}" if token
     request.body = body
 

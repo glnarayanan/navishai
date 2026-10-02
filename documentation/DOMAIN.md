@@ -17,6 +17,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Issue cluster | Related corpus items with a proposed issue label, examples, and disclosed selection method. |
 | Scenario | Stable identity of a testable support situation, separate from its evidence and revisions. |
 | Scenario version | Fixed context, facts, expected behaviour, importance, and source evidence at one revision. |
+| Model scenario proposal | Non-authoritative structured suggestion on one fixed scenario version, with exact source quotes, model/settings and a separate disclosure purpose. It cannot change a scenario or human decision. |
 | Scenario family | Real-source scenario and its controlled variants. |
 | Variant | Child scenario with named variable changes, reason, and changed expectations bound to a parent version. |
 | Evidence | Link to an exact source snapshot/item and the excerpt that supports a claim. |
@@ -62,3 +63,4 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A regression admission retains an exact failed result, fixed case, human and reason. Later membership removal does not erase that decision.
 - Source impact follows exact evidence through all retained snapshots into current and historical versions, fixed cases and current suite membership. It cannot find unlinked assumptions or decide that changed prose has the same meaning.
 - Run comparisons require the same fixed case and identical frozen visible input. Pass → fail is a reported regression; fail → pass is recovery. Unknown results stay unresolved and changed definitions or inputs stay unmatched.
+- A model proposal quotes only the fixed excerpts disclosed for its version. Quotes do not prove correct expectations. Existing target/judge approval cannot authorise source processing; proposals never inherit expert approval or change human labels.

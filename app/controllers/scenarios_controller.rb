@@ -3,7 +3,7 @@ class ScenariosController < ApplicationController
   before_action :require_workspace
   before_action -> { require_role(:owner, :admin, :manager, :member) }, except: %i[index show]
   before_action :load_corpus
-  rescue_from Scenario::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
+  rescue_from Scenario::Invalid, EvaluationHttp::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
 
   def index
     @page = params[:page].to_i.clamp(1, 10000)
@@ -32,7 +32,28 @@ class ScenariosController < ApplicationController
     @version = params[:version] ? @versions.find_by!(number: params[:version]) : @scenario.current_version
     raise ActiveRecord::RecordNotFound if @version.expired?
     @knowledge_items = @corpus.current_items.joins(source_snapshot: :source).where(sources: { kind: "document" }).order(:id).limit(100)
+    @proposal = @version.scenario_proposal
+    begin
+      @proposal_input = ScenarioExtractor.input(@version) unless @proposal
+    rescue Scenario::Invalid => error
+      @proposal_input_error = error.message
+    end
     @form_values ||= {}
+  end
+
+  def propose
+    scenario = @corpus.scenarios.find(params[:id])
+    version = scenario.scenario_versions.find(params[:version_id])
+    raise Scenario::Invalid, "Model configuration must be JSON of at most 10 KiB." if params[:configuration].to_s.bytesize > 10.kilobytes
+    ScenarioProposal.request!(version:, membership: Current.require_membership!, configuration: JSON.parse(params[:configuration].to_s), disclose: params[:proposal_disclose] == "1")
+    redirect_to workspace_corpus_scenario_path(Current.workspace, @corpus, scenario, version: version.number), notice: "Model proposal requested for this fixed version. Refresh never sends another request.", status: :see_other
+  end
+
+  def interrupt_proposal
+    scenario = @corpus.scenarios.find(params[:id])
+    version = scenario.scenario_versions.find(params[:version_id])
+    version.scenario_proposal&.interrupt!(membership: Current.require_membership!)
+    redirect_to workspace_corpus_scenario_path(Current.workspace, @corpus, scenario, version: version.number), notice: "Proposal attempt interrupted. It will not retry automatically.", status: :see_other
   end
 
   def update
@@ -67,7 +88,11 @@ class ScenariosController < ApplicationController
     end
 
     def invalid_input(error)
-      message = error.is_a?(JSON::ParserError) ? "Facts and variant values must be valid JSON. Correct the value and save again." : error.message
+      message = if error.is_a?(JSON::ParserError)
+        action_name == "propose" ? "Model configuration must be valid JSON. Correct it and request again." : "Facts and variant values must be valid JSON. Correct the value and save again."
+      else
+        error.message
+      end
       if params[:id]
         show
         flash.now[:alert] = message

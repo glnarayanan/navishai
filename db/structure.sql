@@ -1110,6 +1110,82 @@ ALTER SEQUENCE public.scenario_evidence_id_seq OWNED BY public.scenario_evidence
 
 
 --
+-- Name: scenario_proposal_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenario_proposal_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    scenario_proposal_id bigint NOT NULL,
+    result jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_3f82085132 CHECK (((jsonb_typeof(result) = 'object'::text) AND (result ? 'decision'::text) AND ((result ->> 'decision'::text) = ANY (ARRAY['proposal'::text, 'abstain'::text, 'error'::text]))))
+);
+
+
+--
+-- Name: scenario_proposal_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenario_proposal_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenario_proposal_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenario_proposal_results_id_seq OWNED BY public.scenario_proposal_results.id;
+
+
+--
+-- Name: scenario_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scenario_proposals (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    configuration jsonb NOT NULL,
+    input jsonb NOT NULL,
+    processing_version character varying NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_fccaa58882 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(configuration) = 'object'::text) AND (jsonb_typeof(input) = 'object'::text)))
+);
+
+
+--
+-- Name: scenario_proposals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.scenario_proposals_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: scenario_proposals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.scenario_proposals_id_seq OWNED BY public.scenario_proposals.id;
+
+
+--
 -- Name: scenario_reviews; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1696,6 +1772,20 @@ ALTER TABLE ONLY public.scenario_evidence ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: scenario_proposal_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposal_results ALTER COLUMN id SET DEFAULT nextval('public.scenario_proposal_results_id_seq'::regclass);
+
+
+--
+-- Name: scenario_proposals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposals ALTER COLUMN id SET DEFAULT nextval('public.scenario_proposals_id_seq'::regclass);
+
+
+--
 -- Name: scenario_reviews id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2003,6 +2093,22 @@ ALTER TABLE ONLY public.regression_cases
 
 ALTER TABLE ONLY public.scenario_evidence
     ADD CONSTRAINT scenario_evidence_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scenario_proposal_results scenario_proposal_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposal_results
+    ADD CONSTRAINT scenario_proposal_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scenario_proposals scenario_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposals
+    ADD CONSTRAINT scenario_proposals_pkey PRIMARY KEY (id);
 
 
 --
@@ -2584,6 +2690,41 @@ CREATE INDEX index_regression_cases_on_reviewed_by_id ON public.regression_cases
 
 
 --
+-- Name: index_scenario_proposal_results_on_scenario_proposal_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_proposal_results_on_scenario_proposal_id ON public.scenario_proposal_results USING btree (scenario_proposal_id);
+
+
+--
+-- Name: index_scenario_proposals_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_proposals_on_request_key ON public.scenario_proposals USING btree (request_key);
+
+
+--
+-- Name: index_scenario_proposals_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_scenario_proposals_on_requested_by_id ON public.scenario_proposals USING btree (requested_by_id);
+
+
+--
+-- Name: index_scenario_proposals_on_scenario_version_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_proposals_on_scenario_version_id ON public.scenario_proposals USING btree (scenario_version_id);
+
+
+--
+-- Name: index_scenario_proposals_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_scenario_proposals_on_workspace_id_and_corpus_id_and_id ON public.scenario_proposals USING btree (workspace_id, corpus_id, id);
+
+
+--
 -- Name: index_scenario_reviews_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2896,6 +3037,20 @@ CREATE TRIGGER regression_cases_immutable BEFORE UPDATE ON public.regression_cas
 --
 
 CREATE TRIGGER scenario_evidence_immutable BEFORE UPDATE ON public.scenario_evidence FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: scenario_proposals scenario_proposal_definition_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_proposal_definition_immutable BEFORE UPDATE ON public.scenario_proposals FOR EACH ROW EXECUTE FUNCTION public.prevent_evaluation_run_rebind();
+
+
+--
+-- Name: scenario_proposal_results scenario_proposal_result_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_proposal_result_immutable BEFORE UPDATE ON public.scenario_proposal_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
 
 
 --
@@ -3223,6 +3378,14 @@ ALTER TABLE ONLY public.scenario_evidence
 
 
 --
+-- Name: scenario_proposals fk_rails_8975f21feb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposals
+    ADD CONSTRAINT fk_rails_8975f21feb FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: calibration_judge_runs fk_rails_8cddf9f3e6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3447,6 +3610,14 @@ ALTER TABLE ONLY public.eval_cases
 
 
 --
+-- Name: scenario_proposal_results fk_rails_e0ee4bff2b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposal_results
+    ADD CONSTRAINT fk_rails_e0ee4bff2b FOREIGN KEY (workspace_id, corpus_id, scenario_proposal_id) REFERENCES public.scenario_proposals(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: memberships fk_rails_e7b442f67c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3476,6 +3647,14 @@ ALTER TABLE ONLY public.corpus_analyses
 
 ALTER TABLE ONLY public.scenario_reviews
     ADD CONSTRAINT fk_rails_ee35479abf FOREIGN KEY (workspace_id, corpus_id, merged_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: scenario_proposals fk_rails_f20742ee15; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scenario_proposals
+    ADD CONSTRAINT fk_rails_f20742ee15 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3525,6 +3704,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001000000'),
 ('20260930100000'),
 ('20260930090000'),
 ('20260930080000'),

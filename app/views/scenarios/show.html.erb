@@ -9,6 +9,49 @@
   <% if @scenario.parent_version %><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre><% end %>
   <% if Current.require_membership!.can_write? && @version.approved? && !@version.stale? && @scenario.current_version_id == @version.id %><p><%= link_to "Compile eval", new_workspace_corpus_eval_case_path(Current.workspace, @corpus, scenario_id: @scenario.id), class: "button button-primary" %></p><% end %>
   <% @version.eval_cases.order(number: :desc).limit(10).each do |item| %><p><%= link_to "Eval case #{item.id} · definition #{item.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %></p><% end %>
+  <details class="section-block config-panel" id="model-proposal" <%= "open" if @proposal || action_name == "propose" %>>
+    <summary>Model scenario proposal</summary>
+    <p>A suggestion, not an expert decision. Exact source quotes show where a requirement came from, not whether it is correct. Nothing here changes this scenario or its approval.</p>
+    <% if @proposal %>
+      <p role="status"><%= @proposal.state.humanize %> · fixed version <%= @version.number %> · one attempt, no automatic retry.</p>
+      <p><%= @proposal.configuration.fetch("model") %> · <%= @proposal.configuration.fetch("endpoint") %></p>
+      <details><summary>Fixed settings and attempt</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal.configuration.merge("request_key" => @proposal.request_key, "protocol" => @proposal.processing_version)) %></pre></details>
+      <details><summary>Disclosed starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal.input) %></pre></details>
+      <% if @proposal.error %><p role="alert"><%= @proposal.error %></p><% end %>
+      <% if @proposal.state.in?(%w[queued running]) %>
+        <p><%= link_to "Refresh proposal state", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: @version.number), class: "button" %></p>
+        <% if Current.require_membership!.can_write? && (@proposal.state == "queued" || @proposal.started_at < 10.minutes.ago) %>
+          <%= button_to "Interrupt proposal attempt", interrupt_proposal_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), params: { version_id: @version.id }, class: "button" %>
+        <% end %>
+      <% end %>
+      <% if (result = @proposal.scenario_proposal_result&.result) %>
+        <h2><%= result.fetch("decision").humanize %></h2><p><%= result.fetch("reason") %></p>
+        <% if result["decision"] == "proposal" %>
+          <div class="review-layout">
+            <section aria-labelledby="proposed-definition"><h3 id="proposed-definition">Suggested definition</h3><p>Use the editor below to make your own source-backed revision, then review that exact version.</p><pre class="evidence-text"><%= JSON.pretty_generate(result.fetch("scenario")) %></pre></section>
+            <section aria-labelledby="proposed-evidence"><h3 id="proposed-evidence">Requirement evidence</h3>
+              <% evidence_by_reference = @version.scenario_evidence.index_by { |evidence| "scenario-evidence-#{evidence.id}" } %>
+              <% result.fetch("evidence_links").each do |link| %>
+                <% evidence = evidence_by_reference.fetch(link.fetch("reference")) %>
+                <article class="source-record"><h4><%= link.fetch("kind").humanize %> · requirement <%= link.fetch("index") + 1 %></h4><p><%= result.dig("scenario", "requirements", link.fetch("kind"), link.fetch("index")) %></p><%= link_to "Inspect quoted source", source_evidence_path(evidence.corpus_item) %><pre class="evidence-text"><%= link.fetch("quote") %></pre></article>
+              <% end %>
+            </section>
+          </div>
+        <% end %>
+        <details><summary>Reported usage and cost</summary><p>Endpoint reports are not verified charges. Missing values stay unknown.</p><pre class="evidence-text"><%= JSON.pretty_generate(result.slice("elapsed_ms", "usage", "cost", "usage_and_cost")) %></pre></details>
+      <% end %>
+    <% elsif @proposal_input_error %><p role="status"><%= @proposal_input_error %></p>
+    <% elsif Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. Local deletion cannot recall sent data.</p>
+      <details><summary>Preview exact starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal_input) %></pre></details>
+      <%= form_with url: propose_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
+        <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 5, maxlength: 10240, required: true, aria: { describedby: "proposal-settings-help" } %><p id="proposal-settings-help">Set endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or a non-negative integer. The operator must approve this exact endpoint separately for scenario processing. Do not enter credentials.</p></div>
+        <div class="checkbox-field"><%= form.check_box :proposal_disclose %><%= form.label :proposal_disclose, "I approve sending this fixed version's starting context and linked evidence to the model endpoint above." %></div>
+        <%= form.submit "Request model proposal", class: "button", data: { turbo_submits_with: "Queuing…" } %>
+      <% end %>
+    <% else %><p>No model proposal for this version. Only a writer can request one from the current, active version with current company evidence.</p><% end %>
+  </details>
   <div class="review-layout">
     <section aria-labelledby="definition-title"><h2 id="definition-title">Scenario definition</h2>
       <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>

@@ -23,6 +23,8 @@ Rails.application.routes.draw do
       resources :scenarios, only: %i[index create show update] do
         post :review, on: :member
         post :variant, on: :member
+        post :propose, on: :member
+        post :interrupt_proposal, on: :member
       end
     end
   end

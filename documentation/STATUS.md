@@ -41,7 +41,9 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   source filters, retained context and exact paginated provenance.
 - [#157](https://github.com/glnarayanan/navishai/pull/157), based on #156: personal expert review focus,
   exact calibration provenance and native corpus exploration navigation.
-- `rebuild/18-restore-proof`, based on #157: isolated synthetic backup/restore proof.
+- [#158](https://github.com/glnarayanan/navishai/pull/158), based on #157: isolated synthetic backup/restore proof.
+- `rebuild/19-scenario-proposals`, based on #158: fixed source-backed model proposals,
+  separate source-processing approval and the corpus navigation regression fix.
 
 ## Built and checked
 
@@ -324,6 +326,30 @@ style, native security audits and eager loading passed. The proof script's focus
 RuboCop check passed too. Direct risk review found no new dependency or disclosure;
 Ponytail Audit and CE Code Review remain unavailable.
 
+GitHub CI for #158 failed an existing corpus-search browser test
+([run](https://github.com/glnarayanan/navishai/actions/runs/36797709490)).
+A controlled pending-response test reproduced Turbo replacing a phrase typed into
+a cached preview. Corpus pages now disable those previews; the regression passes.
+That older remote run remains failed; the fix belongs to the next stacked slice.
+
+Source-backed model proposals `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 3m21.03s:
+240 Ruby files clean, native audits clean, Brakeman zero warnings/errors and eager
+loading passed; 264 Rails tests / 2557 assertions and 19 browser tests / 682
+assertions, no failures/errors/skips. Checks cover exact purpose/consent, frozen
+input/settings, once-claimed and concurrent delivery, post-request evidence and
+expert edits, source/access/endpoint revocation, strict schemas/quotes, unknown
+outcomes, immutable SQL records, foreign links and purge. Suggestions never change
+scenarios, approval or labels. Desktop/390px proposal, disclosure, queued, abstain
+and error captures were inspected; browser checks found no overflow or CSP errors.
+The backup/restore proof and its focused RuboCop check passed against the new
+schema too; both provider registries stay empty in that proof. Direct risk review
+and native audits used; no live model, customer data or new dependency.
+
+The orb has Docker 29.8.1 but no local daemon socket, Compose or Buildx plugin.
+An explicit local-only probe failed before any build. YAML parses; image execution,
+non-root runtime, compiled image assets and clean-host/TLS acceptance remain
+unverified. Static Dockerfile declarations do not prove them.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -334,10 +360,11 @@ This does not finish the full rebuild or establish customer value. Trace matchin
 exact input compatibility among 100 cases, not semantic failure matching. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
-authoritative expert corrections and approved target/judge endpoints.
-The endpoint registry has no configured entries. Analysis remains bounded to
-2000 records and 10 MiB. Scenario mining is a title/context/sentence baseline, not model-based
-semantic extraction. Experts supply source-backed outcomes. Controlled variants
+authoritative expert corrections and approved target/judge/source-processing endpoints.
+The endpoint registries have no configured entries. Analysis remains bounded to
+2000 records and 10 MiB. Local scenario mining still uses titles/context/sentences;
+bounded source-backed model proposals now support expert revision, not automatic
+approval or semantic corpus discovery. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
 and descendants because their analysis depends on the full corpus. Purge also
@@ -371,8 +398,8 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
    pilot corpus. No customer data has been imported or disclosed.
 2. Name the authoritative pilot experts and obtain their expectations/held-out
    labels. Fixture judgments cannot establish taxonomy quality or grader accuracy.
-3. Approve exact target/judge endpoints, disclosure scope and cost limits before
-   live execution. The private endpoint registry still has zero entries.
+3. Approve exact target/judge/scenario-processing endpoints, disclosure scope and
+   cost limits before live execution. The private registries still have zero entries.
 
 Classifier work remains gated by enough labelled data and measured economics.
 Independent local engineering and fixture checks can continue without these gates.

@@ -1,4 +1,5 @@
 <% content_for :title, "#{@corpus.name} — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
 <main class="page-shell">
   <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
   <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. No external model calls.</p></div></div>

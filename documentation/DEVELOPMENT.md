@@ -396,6 +396,51 @@ Expiry/purge hide/delete attempts and predictions along with their source-backed
 samples. Fixture/browser captures live under `.amp/in/artifacts/judge/`; they do
 not prove live model behavior, accuracy or cost.
 
+## Source-backed model scenario proposals
+
+Open **Model scenario proposal** on a current, active scenario version. Preview
+its exact starting context and linked excerpts, enter model configuration using
+the same endpoint/model/settings shape as a judge, and confirm disclosure.
+The private `NAVISHAI_SCENARIO_ENDPOINTS` registry must approve that exact URL and
+workspace in both web and jobs. Its entry shape matches the evaluation registry,
+but its purpose is separate: target/judge approval cannot disclose sources for
+scenario processing. Default is empty. Compose forwards it to both processes;
+credentials never belong in model JSON or tracked files.
+
+`source-scenario-v1` uses the existing bounded HTTPS transport. Requests contain
+only schema, fixed instructions, model, settings, starting_context (situation and
+known_facts), and company_evidence (reference/content pairs). The input must have
+1–20 linked excerpts and at most 64 KiB of encoded context/evidence. The shared
+100 KiB response limit and 30-second no-retry deadline still apply. Hidden facts,
+existing expectations, reviews, labels and unrelated corpus data stay local.
+
+Response fields are exactly schema, model, decision, reason, scenario,
+evidence_links, usage and cost. Schema/model must match; decision is proposal or
+abstain, and reason is 1–2000 characters. A proposal's scenario has exactly title,
+situation, taxonomy_label, importance, known_facts, hidden_facts and requirements,
+under the existing scenario text/JSON/statement bounds. Requirements have outcomes,
+actions, forbidden, escalation and grounding arrays, with at least one outcome.
+Each statement needs exactly one evidence link with kind, zero-based index,
+reference and quote (1–2000 characters). References must identify a disclosed
+`scenario-evidence-<id>` excerpt and quotes must occur exactly within it. Duplicate,
+missing, invented or foreign quotes are errors. Abstain requires scenario null and
+evidence_links empty. Usage/cost use the judge's optional report schema; neither
+quotes nor endpoint reports establish correctness, reproducibility or charges.
+
+One attempt binds to the fixed version/model/settings/request UUID. Native jobs
+claim once, send outside locks and recheck membership, source and purpose approval
+before retention. Refresh or duplicate delivery cannot send again. Experts can
+interrupt queued or over-ten-minute running attempts; a new deliberate scenario
+revision is needed for another attempt. Errors may have unknown remote outcome.
+Deletion cannot recall sent data, but purge cascades through all local copies.
+
+The suggestion is read-only. It never advances a scenario, approves a version,
+creates labels or compiles cases. Experts revise source-backed expectations in the
+existing editor and review that exact version themselves. A later edit cannot be
+overwritten by an older proposal completing. This interface does not replace local
+taxonomy/selection or prove semantic extraction quality. Synthetic browser captures
+live under `.amp/in/artifacts/scenario-proposals/`; no live model ran.
+
 ## Expert calibration
 
 Create a set for one exact grader version. Add up to 100 support-output-v1 samples

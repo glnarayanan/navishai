@@ -8,6 +8,7 @@ class ScenarioVersion < ImmutableRecord
   has_many :scenario_evidence, class_name: "ScenarioEvidence"
   has_many :scenario_reviews
   has_many :eval_cases
+  has_one :scenario_proposal
   scope :unexpired, -> { where.not(id: ScenarioEvidence.joins(corpus_item: { source_snapshot: :source }).where("sources.expires_at <= ?", Time.current).select(:scenario_version_id)) }
   validates :title, :situation, :taxonomy_label, :selection_reason, presence: true
   validates :title, :taxonomy_label, length: { maximum: 500 }
