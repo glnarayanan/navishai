@@ -330,6 +330,21 @@ the matching corpus-item reference. Tool order uses the first occurrence of each
 of two distinct names. These checks verify reported traces, not tool execution or
 semantic correctness. Text mentions do not prove a sound diagnosis.
 
+`support-checks-v2` adds `assistant_response_contains` and
+`assistant_response_absent`. Their `value` is a two-string array: a user-message
+phrase and a required/forbidden assistant-reply phrase, each nonblank and at most
+500 characters. In the form, put them on two separate lines. Every matching user
+message checks only the following assistant messages before the next user message.
+Matching ignores case. Missing anchors or blank/missing replies fail both checks;
+earlier mentions, user text and unrelated later replies cannot satisfy them.
+For example, `{"type":"assistant_response_contains","value":["valid metadata returns 500","Engineering"]}`
+checks the reply to that reported evidence, not any Engineering mention in the
+transcript. Existing v1 definitions and records remain usable unchanged. These
+checks grade reported transcripts; they do not prove that a target received facts
+incrementally or that its diagnosis was sound. The target still runs once per case.
+Synthetic desktop/mobile form/error/failure/pass captures live under
+`.amp/in/artifacts/multi-turn-checks/`.
+
 Rubric-judge definitions store a company rubric and a 0–1 abstention threshold.
 Saving does not call a model. Self-reported confidence is not a calibrated
 probability. An optional fixed execution configuration enables the generic judge

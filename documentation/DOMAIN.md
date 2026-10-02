@@ -56,6 +56,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
 - Compilation covers every contract statement exactly once. A case retains its exact approval and bindings; an edit creates a new definition.
 - A deterministic trace check is not proof that an external tool ran or that a response is semantically correct.
+- A response-scoped check examines each assistant reply after a matching user message, not text anywhere in the transcript. It is not an interactive turn simulation or proof that new facts reached a target incrementally.
 - Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
 - Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
 - Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.

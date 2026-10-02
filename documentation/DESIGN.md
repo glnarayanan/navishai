@@ -64,6 +64,9 @@ mobile. Grader edits keep prior definitions visible and preserve invalid input.
 Native labelled fieldsets distinguish deterministic checks from judge rubrics;
 copy names each check's limits. Suites show fixed case membership, not invented
 scores. Approval, source changes and expiry block unsafe compilation and execution.
+Two-phrase transcript checks use the existing two-line value field. Their retained
+error state shows four rows and says exactly how to repair the input. Copy names
+the assistant reply scope and makes no claim of interactive execution or meaning.
 
 Calibration uses the same evidence/review split. The first-label state hides machine
 and other expert decisions; after saving, their disagreement appears below the form.

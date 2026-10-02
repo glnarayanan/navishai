@@ -44,9 +44,12 @@ class GradersController < ApplicationController
     def read_definition
       @values = params.expect(grader: [ :name, :kind, :check_type, :value, :rubric, :confidence_threshold, :judge_configuration ]).to_h
       @definition = if @values["kind"] == "deterministic"
-        { "type" => @values["check_type"], "value" => @values["check_type"] == "tool_before" ? @values["value"].to_s.lines.map(&:strip) : @values["value"].to_s.strip }
+        { "type" => @values["check_type"], "value" => DeterministicGrader::PAIR_TYPES.include?(@values["check_type"]) ? @values["value"].to_s.lines.map(&:strip) : @values["value"].to_s.strip }
       else
         { "rubric" => @values["rubric"].to_s, "confidence_threshold" => Float(@values["confidence_threshold"], exception: false) }
+      end
+      if @values["kind"] == "deterministic" && DeterministicGrader::RESPONSE_TYPES.include?(@values["check_type"]) && !DeterministicGrader.valid_definition?(@definition)
+        raise SupportOutput::Invalid, "Use exactly two nonblank lines, each at most 500 characters: the user phrase, then the required or forbidden reply phrase."
       end
       if @values["kind"] == "rubric_judge" && @values["judge_configuration"].present?
         raise SupportOutput::Invalid, "Judge configuration must be at most 8 KiB." if @values["judge_configuration"].bytesize > 8.kilobytes
