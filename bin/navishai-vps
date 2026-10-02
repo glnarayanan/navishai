@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+# Never source operator environment files or use an inherited Docker endpoint.
+unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES DOCKER_HOST DOCKER_CONTEXT
+unset DOCKER_CONFIG DOCKER_TLS_VERIFY DOCKER_CERT_PATH DOCKER_API_VERSION BUILDX_BUILDER
+source "$(dirname "$(realpath -e -- "$0")")/../ops/vps/cli.sh"
+trap 'status=$?; if (( status != 0 )) && [[ ${VPS_WRITERS_STARTED:-false} == true ]]; then vps_stop >&2 || :; fi' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+vps_main "$@"

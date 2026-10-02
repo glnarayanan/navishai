@@ -2172,6 +2172,118 @@ and bundled JSON 2.21.2. Native preflight/workspace/bootstrap tests passed: 12 t
 gem audit and eager loading passed; eager loading retains its existing optional
 mailer-preview warning. No project snapshot or public-host proof is claimed.
 
+PR [#208](https://github.com/glnarayanan/navishai/pull/208) is now merged. Its exact
+head [GitHub CI](https://github.com/glnarayanan/navishai/actions/runs/36978546129)
+passed on 2 October at 08:45 UTC. The owner's separate
+[Bundler checksum commit](https://github.com/glnarayanan/navishai/commit/440ca0a9be5cf447b54b67e4bb3be885e8c6583e)
+is in main and changes no dependency version.
+
+## Reset VPS CLI follow-up
+
+The owner requested a complete fresh replacement on the same VPS. The
+[old-install uninstall](./LEGACY_UNINSTALL.md) previews exact verified historical
+resources and requires a separate plan digest for deletion; no backup is mandatory
+for disposable old test data. It refuses shared/unknown resources and never prunes.
+
+The separate [VPS CLI](./VPS_CLI.md) now implements reviewed Git install, upgrade,
+full backup, explicit restore, status, gated start/check/stop and scoped cleanup.
+It adds Caddy, systemd ordering, dual-family namespace guards and separate restricted
+setup/runtime roles without changing the manual Compose baseline. Core tests pass
+19 / 159, recovery 11 / 33 and namespace policy 8 / 155, with no failures/errors/skips.
+Native Bash syntax and Ruby style pass. Real standalone namespace denial/replacement
+and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
+and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
+
+Fresh full `bin/ci` passed in 16m42.19s: 689 Rails tests / 10,974 assertions and 71
+browser tests / 3,561 assertions, no failures/errors/skips. Ruby style (384 files),
+native audits, Brakeman and eager loading passed. The run includes all 19 core
+tests for ownership boundaries, archive recovery, image cache/API refusal and
+failed runtime checks. Actual root tar retained group-write headers; recovery refused that
+release. The archive path now strips group/other write and preserves executable
+bits. The actual published release passes the same recovery validator.
+Compose 2.39.4 also pulled cached tag-plus-digest pins despite its missing policy.
+The CLI now inspects each exact pin, pulls only NotFound, rejects API errors and
+uses never-pull startup/maintenance. Pins and network boundaries stay unchanged.
+
+The next joined run passed cached pins, both policy families, four-DB preparation
+and validation, then stopped at unsupported `create --no-deps`. Startup now uses
+supported `up --no-start --no-deps --force-recreate` to create stopped web/jobs
+without reconciling guarded dependencies. Runtime and policy inspection still
+precede start; the failed-runtime regression proves that refusal.
+
+The next real run passed install, trusted internal-CA Caddy HTTPS, native jobs,
+role/privilege checks and replacement/kernel-denial checks, then backup validation
+refused Caddy's root-owned `caddy/` mode 1777. The pinned-image metadata reproduction
+confirmed both Caddy volumes. Only those two archive kinds now accept that exact
+directory/owner/mode; all generic ownership, path, link and special-mode rules
+remain strict. The full operations suite passes 57 / 540 after the red-to-green
+backup/restore regression and unsafe near cases. The full CI above predates this
+last fix.
+
+The corrected [joined proof](./VPS_CLI_PROOF.md) passes/CLEAN on exact CLI `76ac2119`
+and recovery `e793c033`. Actual backup/checksum-consented restore matches all four
+DB rows, 47/false sequences, owners, ACL/default ACL, private env and Rails storage.
+Successful upgrade and failed migration with committed row/97-true sequence changes
+restore the full prior code/image/config/data point; writers remain stopped until
+explicit start. Native complete/interrupted history survives without resend.
+Fourteen pre-start inspections and 142 maintenance windows prove stopped writers,
+stable running dependencies and no workload-start event inside maintenance. Actual
+daemon restart starts nothing automatically; explicit CLI startup reapplies policy.
+All private assets were removed; host IPv4/IPv6 firewall and four checked sysctls
+stay unchanged. Synthetic systemctl dispatch/internal CA do not prove real reboot,
+public ACME/ingress, SMTP/OIDC, VPS recovery or customer quality.
+
+This work is committed/pushed for review as
+[#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not
+merged or deployed. No owner VPS or provider ran. Host packages, DNS/ports and storage policy
+need owner inputs, not guessed installation commands or weaker egress controls.
+
+### CI browser follow-up
+
+[Exact-head CI](https://github.com/glnarayanan/navishai/actions/runs/37002826231)
+passed style, audits, Brakeman, eager loading and 690 Rails tests / 10,977
+assertions, but failed one of 71 system tests with seed 52131. Chrome
+154.0.8037.57 returned `UnknownError`, inspector code -32000, "Node with given
+id does not belong to the document" at the matching preview's text assertion.
+
+A private repeated native repair/preview probe reproduced that exact error twice.
+Its full trace failed in WebDriver's HTML-element text read; a fresh document query
+already found the confirmation heading. The test now waits for that heading's
+unique selector instead of reading the old whole document. It adds no sleep,
+error rescue, dependency or production change. The same probe passed 150 transitions
+with Chrome and ChromeDriver 154.0.8037.57; its scratch code was removed.
+The original focused journey passes 2 tests / 114 assertions with seed 52131.
+Ruby syntax and all 384 files of native RuboCop pass.
+
+The first four-worker full system run stayed red: 71 tests / 3,472 assertions,
+one failure, no errors/skips. The matching journey passed, but the existing
+`AssumptionImpactJourneyTest` failed at line 17 because its snapshot text was hidden
+in a closed disclosure. The same failure occurred before this edit with Chrome
+154.0.8037.92.
+
+The focused follow-up held the selected-source GET at the controller boundary.
+Before its response, the old form had an empty source ID and an open disclosure;
+Enter closed that old disclosure. The response then loaded the selected source
+with its disclosure closed, and the original visible-text assertion failed.
+Waiting for the new form's exact source ID before Enter opens the new disclosure
+and reveals the snapshot text. The delayed-request probe passed all eight checks.
+This is a test navigation mistake, not a broken keyboard control or permission
+to count hidden text as visible. The test adds that source-ID assertion and keeps
+the keyboard action and visible-text check; production code stays unchanged.
+
+One early focused run hit another inspector -32000 visibility read in the
+historical journey. Four isolated traced historical runs and a traced combined
+run passed without more edits; that occurrence does not establish another cause.
+The final uninstrumented combined journeys pass 4 tests / 247 assertions with
+seed 52131 on Chrome/ChromeDriver 154.0.8037.57. All scratch probes/traces were
+removed. The full four-worker `bin/rails test:system --seed 52131` then passed
+71 tests / 3,562 assertions, no failures/errors/skips, in 256.88 seconds with
+that same browser/driver. Native RuboCop passes all 384 files; syntax and diff
+checks pass. Exact pushed-head GitHub checks remain separate from these local
+results and live on [#226](https://github.com/glnarayanan/navishai/pull/226).
+No workflow was blindly rerun or cancelled. The joined VPS proof's production
+hashes and PASS/CLEAN evidence remain unchanged and separate from CI.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support

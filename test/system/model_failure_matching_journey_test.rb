@@ -24,7 +24,7 @@ class ModelFailureMatchingJourneyTest < ApplicationSystemTestCase
     with_matching_response(calls:) do
       fill_in field, with: matching_configuration.to_json
       click_button "Preview exact matching request"
-      assert_text "Confirm this exact matching disclosure"
+      assert_selector "h4#matching-disclosure-#{@item.id}", text: "Confirm this exact matching disclosure"
       assert_text HTTP_ENDPOINT
       assert_unchecked_field "I reviewed every disclosed field and approve sending this exact trace and candidate set to this endpoint for model failure matching."
       within "section[aria-labelledby='matching-disclosure-#{@item.id}']" do

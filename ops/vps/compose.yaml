@@ -1,0 +1,82 @@
+# Managed VPS override. Always use with the base compose.yaml and the gated CLI.
+x-runtime: &runtime
+  image: ${VPS_IMAGE:?set the reviewed image}
+  restart: "no"
+  network_mode: service:app-net
+  labels:
+    com.navishai.owner: navishai-reset
+  depends_on: !override
+    app-net:
+      condition: service_started
+    postgres:
+      condition: service_healthy
+services:
+  postgres:
+    restart: "no"
+    labels:
+      com.navishai.owner: navishai-reset
+    environment:
+      POSTGRES_USER: navishai_admin
+      NAVISHAI_PREPARE_PASSWORD: ${NAVISHAI_PREPARE_PASSWORD:?set a distinct owner password}
+    volumes: !override
+      - lab_postgres_data:/var/lib/postgresql/data
+      - ./ops/vps/initialize_roles.sh:/docker-entrypoint-initdb.d/10-navishai-roles.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U navishai_admin -d navishai_lab_production"]
+  app-net:
+    image: ${VPS_IMAGE:?set the reviewed image}
+    restart: "no"
+    command: [sleep, infinity]
+    user: "1000:1000"
+    environment: !reset {}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    labels:
+      com.navishai.owner: navishai-reset
+    networks: [control, edge]
+    ports: ["127.0.0.1:3000:3000"]
+  web:
+    <<: *runtime
+    networks: !reset null
+    ports: !reset []
+  jobs:
+    <<: *runtime
+    networks: !reset null
+  proxy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: "no"
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    labels:
+      com.navishai.owner: navishai-reset
+    environment:
+      NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set the public host}
+      NAVISHAI_ACME_EMAIL: ${NAVISHAI_ACME_EMAIL:?set the certificate contact}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./ops/vps/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [control, edge]
+volumes:
+  lab_postgres_data:
+    labels:
+      com.navishai.owner: navishai-reset
+  rails_storage:
+    labels:
+      com.navishai.owner: navishai-reset
+  caddy_data:
+    labels:
+      com.navishai.owner: navishai-reset
+  caddy_config:
+    labels:
+      com.navishai.owner: navishai-reset
+networks:
+  control:
+    labels:
+      com.navishai.owner: navishai-reset
+  edge:
+    enable_ipv6: true
+    labels:
+      com.navishai.owner: navishai-reset

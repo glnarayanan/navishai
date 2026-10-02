@@ -1,9 +1,18 @@
 # Evaluation-lab hosting boundary
 
-The current Compose composition contains web, Solid Queue jobs, and PostgreSQL 16.
-It is a small baseline, not deployment acceptance. Old installers, Helm/native
+The manual Compose composition contains web, Solid Queue jobs, and PostgreSQL 16.
+The [reset VPS CLI](./VPS_CLI.md) adds a separate production override with Caddy,
+gated IPv4/IPv6 startup, restricted preparation/runtime roles and full recovery.
+Use that CLI for same-VPS fresh replacement, not the manual commands below.
+Neither private test evidence nor a pinned image proves public-host acceptance.
+Old installers, Helm/native
 topologies, runtime payloads, release scripts, archive tools and their proof have
 been removed. Git history retains them. No release/deploy workflow was run.
+
+For the owner's disposable old CLI-managed install, use the separate
+[preview-first uninstall tool](./LEGACY_UNINSTALL.md). It requires an exact
+destruction plan, refuses shared resources and needs no mandatory backup.
+It neither installs this reset nor converts an old database.
 
 Copy `.env.example` into a private environment file and supply app host, distinct
 runtime/preparation database passwords, and SECRET_KEY_BASE. Compose uses a new project/volume and lab database
@@ -16,7 +25,8 @@ issuer/client configuration and registered callback URLs.
 
 ### Preparation and runtime roles
 
-These commands describe an approved deployment; no deployment ran in this work.
+These commands describe only the manual baseline, not the reset VPS CLI.
+No deployment ran in this work.
 Use a new volume. PostgreSQL's init script creates restricted `navishai`; the
 bootstrap administrator is `navishai_setup`. `NAVISHAI_POSTGRES_PASSWORD` must
 differ from `NAVISHAI_DATABASE_PASSWORD`. Only PostgreSQL and the one-off preparation

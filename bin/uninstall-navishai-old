@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Remove only a verified historical CLI-managed installation. Preview is read-only.
+set -euo pipefail
+umask 077
+die() { printf 'navishai uninstall: %s\n' "$*" >&2; exit 1; }
+matches() {
+  local status
+  if jq -e "$@" >/dev/null; then return 0; else status=$?; fi
+  [[ $status == 1 ]] || die 'Cannot validate inventory; no guessed cleanup.'
+  return 1
+}
+usage() {
+  cat <<'HELP'
+Usage: sudo bash uninstall-navishai-old [--root /] [--project NAME]
+       sudo bash uninstall-navishai-old [same options] --apply --confirm-destroy DIGEST
+       [--delete-volume EXACT_NAME] [--delete-bind EXACT_ABSOLUTE_PATH]
+
+Default: read-only preview with a plan digest. Apply needs that exact digest.
+Supports the historical /opt/navishai, /etc/navishai, /var/lib/navishai,
+/var/backups/navishai and /usr/local/bin/navishai layout, including a managed root.
+No backup is required. Apply deletes the verified old installation and test data.
+External volumes/bind paths stay unless separately named; shared resources refuse.
+Unexpected services/mounts/layouts refuse. Never prunes, removes images/packages,
+changes the firewall, stops Docker, or executes/sources the old CLI/environment.
+HELP
+}
+root=/; project=; apply=false; confirmation=; extra_volumes=(); extra_binds=()
+while (($#)); do
+  case "$1" in
+    --help|-h) usage; exit 0 ;;
+    --root|--project|--confirm-destroy|--delete-volume|--delete-bind)
+      (($# >= 2)) || die "Missing value for $1"
+      case "$1" in
+        --root) root="$2" ;;
+        --project) project="$2" ;;
+        --confirm-destroy) confirmation="$2" ;;
+        --delete-volume) extra_volumes+=("$2") ;;
+        --delete-bind) extra_binds+=("$2") ;;
+      esac
+      shift 2 ;;
+    --apply) apply=true; shift ;;
+    *) die "Unknown argument: $1" ;;
+  esac
+done
+[[ $EUID == 0 ]] || die 'Run with sudo, including preview (private layout inspection).'
+for tool in docker jq realpath stat sha256sum findmnt flock systemctl; do
+  command -v "$tool" >/dev/null || die "Required tool missing: $tool"
+done
+[[ $root =~ ^/[[:alnum:]_./-]*$ && $root != *'/../'* && ! -L $root ]] || die 'Use an absolute, non-symlink managed root without parent traversal.'
+root="$(realpath -e -- "$root")"
+prefix="${root%/}/opt/navishai"; config="${root%/}/etc/navishai"
+state="${root%/}/var/lib/navishai"; backups="${root%/}/var/backups/navishai"
+cli="${root%/}/usr/local/bin/navishai"
+paths=("$prefix" "$config" "$state")
+[[ ! -e $backups ]] || paths+=("$backups")
+for path in "${paths[@]}"; do
+  [[ -d $path && ! -L $path && $(realpath -e -- "$path") == "$path" ]] || die "Not a plain managed directory: $path"
+  [[ $(stat -c %u -- "$path") == 0 ]] || die "Not root-owned: $path"
+  mode=$((8#$(stat -c %a -- "$path")))
+  (( (mode & 0022) == 0 )) || die "Managed directory is writable by another user: $path"
+done
+[[ -L $prefix/current && -L $cli ]] || die 'Historical current/CLI symlinks missing; no guessed cleanup.'
+release="$(realpath -e -- "$prefix/current")"
+[[ $release == "$prefix/releases/"* && $release != "$prefix/releases" ]] || die 'Current release escapes managed releases.'
+[[ $(realpath -e -- "$cli") == "$release/ops/installer/navishai" ]] || die 'CLI does not point to this historical installer.'
+for file in "$release/SOURCE_COMMIT" "$release/compose.yaml" "$release/ops/installer/compose.yaml" "$config/env"; do
+  [[ -f $file && ! -L $file && $(stat -c %u -- "$file") == 0 ]] || die "Unverified managed file: $file"
+done
+source_commit="$(cat "$release/SOURCE_COMMIT")"
+[[ $source_commit =~ ^[0-9a-f]{40}$ ]] || die 'Invalid historical source identity.'
+# Lock an existing historical lock file, without creating/changing files in preview.
+[[ -f $state/install.lock && ! -L $state/install.lock ]] || die 'Historical installer lock missing; inspect the layout before cleanup.'
+exec {lock_fd}<"$state/install.lock"
+flock -n -x "$lock_fd" || die 'Another installer operation is active.'
+units="$(systemctl list-unit-files --no-legend 'navishai*' 2>/dev/null)" || die 'Cannot inspect services.'
+[[ -z $units ]] || die 'Extra navishai systemd units found; the CLI created none. Inspect their ownership first.'
+mount_targets="$(findmnt --json -o TARGET | jq -er '[.. | objects | .target? // empty]')"
+for path in "${paths[@]}"; do
+  if matches --arg p "$path" 'any(.[]; . == $p or startswith($p + "/"))' <<<"$mount_targets"; then die "Mounted filesystem beneath $path; refuse recursive deletion."; fi
+done
+[[ -z ${DOCKER_HOST:-} && -z ${DOCKER_CONTEXT:-} ]] || die 'Unset Docker endpoint overrides; this tool targets the local VPS only.'
+context_host="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+[[ $context_host == unix:///* ]] || die 'Refusing a non-local Docker context.'
+docker info --format '{{.ID}}' >/dev/null 2>&1 || die 'Docker is unavailable; cannot prove resource ownership.'
+inventory() {
+  local ids
+  ids="$(docker ps -aq)" || die 'Cannot list containers.'
+  if [[ -z $ids ]]; then printf '[]\n'; return; fi
+  local -a selected
+  mapfile -t selected <<<"$ids"
+  docker inspect --format '{"id":{{json .Id}},"project":{{json (index .Config.Labels "com.docker.compose.project")}},"service":{{json (index .Config.Labels "com.docker.compose.service")}},"files":{{json (index .Config.Labels "com.docker.compose.project.config_files")}},"mounts":{{json .Mounts}}}' "${selected[@]}" | jq -es .
+}
+all="$(inventory)"
+own_files() {
+  local files="$1" first second other
+  IFS=',' read -r first second other <<<"$files"
+  [[ -n $first && -n $second && -z $other ]] || return 1
+  [[ $(realpath -e -- "$first" 2>/dev/null) == "$release/compose.yaml" && $(realpath -e -- "$second" 2>/dev/null) == "$release/ops/installer/compose.yaml" ]]
+}
+if [[ -z $project ]]; then
+  candidates=()
+  while IFS= read -r row; do
+    if own_files "$(jq -r '.files // ""' <<<"$row")"; then candidates+=("$(jq -r '.project' <<<"$row")"); fi
+  done < <(jq -c '.[]' <<<"$all")
+  ((${#candidates[@]})) || die 'No project can be proved from container config labels; specify --project after inventory.'
+  project="$(printf '%s\n' "${candidates[@]}" | sort -u)"
+fi
+[[ $project =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die 'Ambiguous or invalid Compose project.'
+own="$(jq -c --arg p "$project" '[.[] | select(.project == $p)]' <<<"$all")"
+while IFS= read -r row; do
+  own_files "$(jq -r '.files // ""' <<<"$row")" || die 'Project contains a container from another config; no deletion.'
+  service="$(jq -r '.service' <<<"$row")"
+  case "$service" in postgres|app-net|runner|supermemory|web|jobs|caddy) ;; *) die "Unexpected project service: $service" ;; esac
+done < <(jq -c '.[]' <<<"$own")
+foreign="$(jq -c --arg p "$project" '[.[] | select(.project != $p)]' <<<"$all")"
+shared_path() {
+  matches --arg p "$1" 'any(.[] .mounts[]?; .Type == "bind" and (.Source as $s | $s == "/" or $s == $p or ($s | startswith($p + "/")) or ($p | startswith($s + "/"))))' <<<"$foreign"
+}
+for path in "${paths[@]}" "$cli"; do
+  if shared_path "$path"; then die "Unrelated container shares $path; refuse cleanup."; fi
+done
+volumes=(); networks=()
+volume_names="$(docker volume ls -q --filter "label=com.docker.compose.project=$project")"
+while IFS= read -r name; do
+  [[ -n $name ]] || continue
+  key="$(docker volume inspect --format '{{index .Labels "com.docker.compose.volume"}}' "$name")"
+  case "$key" in postgres_data|rails_storage|runner_data|supermemory_data|caddy_data|caddy_config) ;; *) die "Unexpected project volume: $name" ;; esac
+  volumes+=("$name")
+done <<<"$volume_names"
+for name in "${extra_volumes[@]}"; do
+  [[ $name =~ ^[[:alnum:]][[:alnum:]_.-]*$ ]] || die 'Invalid extra volume name.'
+  jq -e --arg n "$name" 'any(.[] .mounts[]?; .Type == "volume" and .Name == $n)' <<<"$own" >/dev/null || die "Extra volume is not mounted by the verified old project: $name"
+  volumes+=("$name")
+done
+for name in "${volumes[@]}"; do
+  if matches --arg n "$name" 'any(.[] .mounts[]?; .Type == "volume" and .Name == $n)' <<<"$foreign"; then die "Unrelated container shares volume $name."; fi
+done
+network_names="$(docker network ls -q --filter "label=com.docker.compose.project=$project")"
+while IFS= read -r id; do
+  [[ -n $id ]] || continue
+  data="$(docker network inspect --format '{"id":{{json .Id}},"key":{{json (index .Labels "com.docker.compose.network")}},"containers":{{json .Containers}}}' "$id")"
+  case "$(jq -r '.key' <<<"$data")" in control|edge) ;; *) die 'Unexpected project network.' ;; esac
+  jq -e --argjson own "$own" '.containers | keys | all(. as $id | any($own[]; .id == $id))' <<<"$data" >/dev/null || die 'Project network connects an unrelated container.'
+  networks+=("$(jq -r '.id' <<<"$data")")
+done <<<"$network_names"
+for path in "${extra_binds[@]}"; do
+  [[ $path =~ ^/[[:alnum:]_./-]+$ && -e $path && ! -L $path && $(realpath -e -- "$path") == "$path" ]] || die 'Extra bind must be an existing canonical, non-symlink path.'
+  case "$path" in /|/etc|/opt|/var|/var/lib|/var/backups|/home|/root|/usr|/usr/local|/usr/local/bin|/run|/tmp|/mnt|/srv) die 'Refusing a broad filesystem root.' ;; esac
+  jq -e --arg p "$path" 'any(.[] .mounts[]?; .Type == "bind" and .Source == $p)' <<<"$own" >/dev/null || die 'Extra bind is not a mount of the verified old project.'
+  if shared_path "$path"; then die 'Extra bind is shared by an unrelated container.'; fi
+  if matches --arg p "$path" 'any(.[]; . == $p or startswith($p + "/"))' <<<"$mount_targets"; then die 'Extra bind contains a mounted filesystem.'; fi
+  [[ $(stat -c %u -- "$path") == 0 ]] || die 'Extra bind is not root-owned.'
+  paths+=("$path")
+done
+# Plan contains no environment or secrets. Its digest fixes all destructive targets.
+plan="$(jq -cn --arg p "$project" --arg source "$source_commit" --arg release "$release" --arg cli "$cli" --argjson own "$own" \
+  --argjson paths "$(printf '%s\n' "${paths[@]}" | jq -Rsc 'split("\n")[:-1] | sort | unique')" \
+  --argjson volumes "$(printf '%s\n' "${volumes[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort | unique')" \
+  --argjson networks "$(printf '%s\n' "${networks[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | sort | unique')" \
+  '{project:$p,source:$source,release:$release,cli:$cli,containers:($own|sort_by(.id)),paths:$paths,volumes:$volumes,networks:$networks}')"
+digest="$(printf '%s' "$plan" | sha256sum | cut -d' ' -f1)"
+printf '%s\n' "$plan" | jq .
+printf 'Plan digest: %s\n' "$digest"
+printf 'Unlisted external volumes/bind files and all images/packages stay. No backup is required.\n'
+$apply || { printf 'PREVIEW ONLY. Rerun with the same options --apply --confirm-destroy %s\n' "$digest"; exit 0; }
+[[ $confirmation == "$digest" ]] || die 'Plan changed or destruction digest missing; preview again.'
+[[ $(inventory) == "$all" ]] || die 'Container inventory changed; preview again.'
+ids="$(jq -r '.[].id' <<<"$own")"
+if [[ -n $ids ]]; then
+  mapfile -t selected <<<"$ids"
+  docker stop --time 30 "${selected[@]}" >/dev/null
+  docker rm "${selected[@]}" >/dev/null
+fi
+for id in "${networks[@]}"; do docker network rm "$id" >/dev/null; done
+for name in "${volumes[@]}"; do docker volume rm "$name" >/dev/null; done
+rm -- "$cli"
+for path in "${paths[@]}"; do rm -rf --one-file-system -- "$path"; done
+printf 'Removed only the verified old NavishAI installation. External unlisted data stays.\n'

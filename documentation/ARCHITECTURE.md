@@ -558,7 +558,13 @@ web/jobs. Runtime uses a distinct password and a non-superuser, non-owner role w
 table DML, sequence usage and schema usage only. It cannot create databases/roles,
 change schemas, assume the preparation role or disable audit/version triggers.
 Never run migrations from web startup or pass the preparation credential to a
-persistent app process. The three-service topology stays unchanged.
+persistent app process. The manual three-service topology stays unchanged.
+The separate [VPS CLI](./VPS_CLI.md) override adds Caddy and a credential-empty
+namespace holder. Web/jobs share its IPv4/IPv6 guard, applied before startup.
+Systemd and a locked maintenance CLI own restart, preparation and recovery;
+Docker automatic restart stays off. The fixed local PostgreSQL administrator
+is separate from both restricted application roles. Public-host acceptance
+does not follow from private kernel, image or recovery proofs.
 
 ## Alternatives rejected
 

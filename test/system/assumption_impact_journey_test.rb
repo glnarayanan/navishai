@@ -13,6 +13,7 @@ class AssumptionImpactJourneyTest < ApplicationSystemTestCase
     assert_text "No attempts on this page"
     click_link "Preview a document change"
     click_link "Product entitlement · source ##{@source.id}"
+    assert_field "Document source ID", with: @source.id.to_s
     find("summary", text: "Find document source and snapshot IDs").send_keys(:enter)
     assert_text "ID #{@before.id} · snapshot 1"
     fill_in "Before snapshot ID", with: @before.id
