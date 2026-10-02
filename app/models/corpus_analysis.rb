@@ -11,7 +11,6 @@ class CorpusAnalysis < ApplicationRecord
   belongs_to :corpus
   belongs_to :requested_by, class_name: "User"
   has_many :corpus_analysis_inputs
-  has_many :corpus_items, through: :corpus_analysis_inputs
   has_many :issue_clusters
   has_many :taxonomy_versions
   has_one :corpus_analysis_result
@@ -62,6 +61,16 @@ class CorpusAnalysis < ApplicationRecord
       CorpusAnalysisJob.perform_later(analysis.id)
       analysis
     end
+  end
+
+  def corpus_items
+    # Keep membership as an indexed existence check. OFFSET 0 prevents PostgreSQL
+    # from pulling it into a quadratic join when purged tables still have empty
+    # statistics and a new import has not yet received autovacuum ANALYZE.
+    CorpusItem.where(workspace_id:, corpus_id:).where(<<~SQL, id)
+      EXISTS (SELECT 1 FROM corpus_analysis_inputs
+        WHERE corpus_analysis_id = ? AND corpus_item_id = corpus_items.id OFFSET 0)
+    SQL
   end
 
   def self.current_inputs(corpus:, model: false, batch: false, streaming: false, ids_only: false)
