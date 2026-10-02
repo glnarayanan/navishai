@@ -11,7 +11,8 @@ class CalibrationReport
     end
     samples = set.calibration_samples.where(cohort:).includes(:calibration_prediction).order(:id)
     reviews = []
-    counts = { samples: samples.size, labelled: 0, disputed: 0, uncertain: 0, unpredicted: 0, abstained: 0,
+    predictions = { "pass" => 0, "fail" => 0, "abstain" => 0, "error" => 0, "missing" => 0 }
+    counts = { samples: samples.size, labelled: 0, unlabelled: 0, disputed: 0, uncertain: 0, unpredicted: 0, abstained: 0,
       true_positive: 0, false_positive: 0, false_negative: 0, true_negative: 0, compared: 0, pairs: 0, agreeing_pairs: 0 }
     samples.each do |sample|
       latest = sample.latest_labels.to_a
@@ -22,6 +23,7 @@ class CalibrationReport
       else
         sample.calibration_prediction&.result&.fetch("decision")
       end
+      predictions[prediction || "missing"] += 1
       state = if labels.empty?
         "unlabelled"
       elsif labels.include?("pass") && labels.include?("fail")
@@ -50,7 +52,10 @@ class CalibrationReport
         counts[:uncertain] += 1
         next
       end
-      next if labels.empty?
+      if state == "unlabelled"
+        counts[:unlabelled] += 1
+        next
+      end
 
       if state == "uncompared"
         counts[prediction == "abstain" ? :abstained : :unpredicted] += 1
@@ -65,7 +70,7 @@ class CalibrationReport
     assumed_cost = if set.error_costs_supplied? && counts[:compared].positive?
       set.false_positive_cost * counts[:false_positive] + set.false_negative_cost * counts[:false_negative]
     end
-    counts.merge(reviews:, assumed_cost:, precision: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_positive]),
+    counts.merge(reviews:, predictions:, assumed_cost:, precision: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_positive]),
       recall: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_negative]),
       disagreement_rate: ratio.call(counts[:false_positive] + counts[:false_negative], counts[:compared]),
       inter_rater_agreement: ratio.call(counts[:agreeing_pairs], counts[:pairs]))

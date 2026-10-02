@@ -1394,6 +1394,28 @@ semantic retrieval quality, expert truth or customer coverage. No algorithm,
 label, approval, provider call or dependency changed. Meaningful matching remains
 an engineering/quality gap; it is not made complete by these fixture assertions.
 
+## Complete calibration accounting (slice 56)
+
+An overlapping-state red test exposed missing unlabelled accounting. Reports now
+count pass/fail/abstain/error/missing predictions across the whole selected cohort,
+separately from the mutually exclusive reasons that exclude a sample. Compared
+samples plus exclusions equal the cohort size. Disputes and uncertainty still
+cannot supply truth; resolving a label dispute never rewrites a prediction.
+Original and revised development graders have separate tallies and unchanged
+confusion/cost rules, first-label hiding and held-out boundaries.
+
+Focused calibration checks pass 17 tests / 174 assertions before two additional
+preview-tally assertions. `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passes in 9m11.72s:
+445 Rails tests / 6233 assertions and 45 browser tests / 2059 assertions, no
+failures/errors/skips. Native style/audits/eager loading pass.
+The first browser run passed its UI assertions but failed on an unsupported
+Capybara element screenshot method; that run is not green evidence. Initial mobile
+element crops also clipped warnings. Reusing the existing full-viewport Chrome
+capture fixes the artifact; the final capture-only adjustment passes native style
+and the focused browser check (1 test / 36 assertions). Inspected final desktop/
+390px mixed and empty states show complete readable counts, unknowns and warnings.
+No provider, label, approval, schema or dependency changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

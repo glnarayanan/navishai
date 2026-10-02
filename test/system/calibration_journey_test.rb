@@ -69,6 +69,50 @@ class CalibrationJourneyTest < ApplicationSystemTestCase
     assert_text "0 samples · 0 labelled · 0 compared"
   end
 
+  test "cohort accounting shows overlapping prediction states without treating them as ground truth" do
+    build_eval_definitions
+    item = compile_case
+    set = CalibrationSet.define!(corpus: @corpus, membership: @membership, name: "Incomplete judge evidence", grader_version_id: @outcome_grader.current_version_id)
+    other = Membership.create!(workspace: @workspace, user: users(:teammate), role: :member)
+    check = item.eval_case_checks.find_by!(requirement_kind: "outcomes")
+    [ [ "abstain", [ "fail", "pass" ] ], [ nil, [ "uncertain" ] ], [ "error", [] ],
+      [ "abstain", [ "fail" ] ], [ nil, [ "pass" ] ], [ "pass", [ "fail" ] ] ].each_with_index do |(prediction, labels), index|
+      sample = set.add_sample!(membership: @membership, check_id: check.id, cohort: "held_out", output: support_output(text: "Authored overlap #{index}"))
+      sample.create_calibration_prediction!(workspace: @workspace, corpus: @corpus, result: { "decision" => prediction, "reason" => "Authored prediction" }, processing_version: "test-judge-v1", created_at: Time.current) if prediction
+      labels.each_with_index do |decision, author|
+        sample.label!(membership: author.zero? ? @membership : other, previous_id: nil, decision:, rationale: "Authored expert evidence, not a customer label.")
+      end
+    end
+    sign_in users(:owner)
+    [ "held_out", "development" ].each do |cohort|
+      visit workspace_corpus_calibration_set_path(@workspace, @corpus, set, cohort:)
+      within "#fixed-report" do
+        if cohort == "held_out"
+          assert_text "6 samples · 5 labelled · 1 compared"
+          assert_selector ".calibration-exclusions", text: "1 unlabelled, 1 disputed, 1 uncertain; then, among certain labelled samples, 1 abstained and 1 without a usable prediction"
+          assert_selector ".calibration-predictions", text: "1 pass, 0 fail, 2 abstain, 1 error and 2 missing"
+          assert_selector "td", text: "1 false negatives"
+        else
+          assert_text "0 samples · 0 labelled · 0 compared"
+          assert_selector ".calibration-exclusions", text: "0 unlabelled, 0 disputed, 0 uncertain"
+          assert_selector ".calibration-predictions", text: "0 pass, 0 fail, 0 abstain, 0 error and 0 missing"
+          assert_text "Not enough evidence"
+        end
+        assert_text "These totals overlap the exclusion reasons"
+        assert_text "Disputed or uncertain samples cannot supply ground truth"
+      end
+      [ 1280, 390 ].each do |width|
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width:, height: 1000, deviceScaleFactor: 2, mobile: false)
+        assert_no_horizontal_overflow
+        assert_no_csp_violations
+        capture("accounting-#{cohort}-#{width}")
+      end
+    end
+    assert_equal 6, set.calibration_samples.count
+    assert_equal 6, set.calibration_samples.joins(:human_labels).count
+    assert_equal 4, set.calibration_samples.joins(:calibration_prediction).count
+  end
+
   private
     def capture(name)
       return unless ENV["CAPTURE_LAB_SCREENSHOTS"] == "1"

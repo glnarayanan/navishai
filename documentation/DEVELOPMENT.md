@@ -869,6 +869,14 @@ denominators show no evidence, not 0% or 100%. Pairwise agreement uses only cert
 expert-label pairs and is not chance-corrected. Small selected sets do not establish
 population accuracy. Do not tune on held-out samples.
 
+Reports account for each excluded sample once: unlabelled, then disputed, then
+uncertain, then abstained or without a usable prediction among certain labels.
+Compared samples plus those exclusions equal the cohort size. A separate whole-
+cohort tally counts pass/fail/abstain/error/missing predictions regardless of labels.
+It overlaps the exclusion reasons, not the confusion matrix. Resolving a dispute
+changes label eligibility without changing the saved prediction or its tally.
+Development previews compute their own tally; the original report stays fixed.
+
 Each report displays its fixed judge abstention threshold beside the counts.
 Reported confidence below that threshold turns pass/fail into abstention; equality
 does not force abstention. Confidence is an endpoint report, not calibrated
