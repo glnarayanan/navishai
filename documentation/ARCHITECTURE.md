@@ -46,6 +46,13 @@ input digest, redaction, processing version and masking-rule fingerprint in both
 lookup and the unique index.
 Changed processing creates a new version without rewriting prior evidence.
 
+Validate each source item before inserting at most 1000 rows together. Use one
+typed, filtered `content` bind with PostgreSQL `jsonb_to_recordset`, not SQL value
+literals that expose retained text/context in Rails DEBUG logs. Keep source,
+snapshot, items, retention and audit in the same corpus-locked transaction. A late
+invalid item rolls back earlier batches; validation objects never enter the
+snapshot's returned association. This changes writes, not intake limits or identity.
+
 Exact-text masking is a separate, opt-in mode, not an inferred PII policy or an
 addition to automatic email masking. The author supplies 1–50 unique UTF-8 values,
 one per line, 3–200 characters each and at most 8 KiB total. Preserve spaces and

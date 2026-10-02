@@ -247,7 +247,106 @@ class CorpusIntakeTest < ActiveSupport::TestCase
     end
   end
 
+  test "ceiling intake uses two bounded SQL inserts and returns complete persisted evidence" do
+    original = import(@records.to_json)
+    original_state = original.attributes
+    original_items = original.corpus_items.order(:id).map(&:attributes)
+    records = ceiling_records
+    bytes = records.to_json
+    assert_operator bytes.bytesize, :<, CorpusIntake::MAX_BYTES
+    travel_to Time.utc(2026, 10, 1, 14, 33, 45, 123_456), with_usec: true do
+      snapshot = nil
+      inserts = item_inserts { snapshot = import(bytes, retention_days: 7) }
+      assert_equal [ 1_000, 1_000 ], inserts.map(&:size)
+      assert snapshot.persisted?
+      assert_equal 2, snapshot.number
+      assert_equal @membership.user, snapshot.imported_by
+      assert_equal @corpus.workspace, snapshot.workspace
+      assert_equal @corpus, snapshot.corpus
+      assert_equal original.source_id, snapshot.source_id
+      assert_equal Digest::SHA256.hexdigest(bytes), snapshot.digest
+      assert_equal CorpusIntake::PROCESSING_VERSION, snapshot.processing_version
+      assert_equal "email", snapshot.redaction
+      assert_equal Time.current, snapshot.created_at
+      assert_equal 7.days.from_now, snapshot.source.reload.expires_at
+      assert_equal snapshot.id, snapshot.source.current_snapshot_id
+      items = snapshot.corpus_items.to_a
+      assert_equal 2_000, items.size
+      assert items.all?(&:persisted?), "Returned association must contain database records, not validation objects"
+      assert_equal 2_000, items.map(&:id).uniq.size
+      [ 0, 1_999 ].each do |position|
+        item = items.find { |row| row.external_id == "unicode-#{position}" }
+        assert_equal "雪 café #{position}", item.title
+        assert_equal "完整 #{position}\nAsk [email redacted]\n終わり", item.content
+        assert_equal({ "nested" => [ { "contact" => "[email redacted]", "flag" => false, "missing" => nil,
+          "count" => position, "ratio" => 1.25 }, true, "雪" ], "typed" => "false" }, item.context)
+        assert_equal @corpus.workspace_id, item.workspace_id
+        assert_equal @corpus.id, item.corpus_id
+        assert_equal snapshot.id, item.source_snapshot_id
+        assert_equal Time.current, item.created_at
+        assert item.readonly?
+      end
+      event = @corpus.workspace.audit_events.where(action: "corpus.imported").order(:id).last
+      assert_equal({ "record_count" => 2_000 }, event.metadata)
+      assert_empty item_inserts { assert_equal snapshot.id, import(bytes).id }
+      assert_empty item_inserts { assert_equal original.id, import(@records.to_json).id }
+      assert_equal original.id, snapshot.source.reload.current_snapshot_id
+      assert_equal original_state, original.reload.attributes
+      assert_equal original_items, original.corpus_items.order(:id).map(&:attributes)
+      assert_equal 2, snapshot.source.source_snapshots.count
+    end
+  end
+
+  test "late invalid model fields roll back inserted batches source retention and audit" do
+    original = import(@records.to_json)
+    source_state = original.source.reload.attributes
+    original_state = original.attributes
+    original_items = original.corpus_items.order(:id).map(&:attributes)
+    [ { content: "" }, { title: "雪" * 501 }, { content: "雪" * 100_001 },
+      { title: "a@b.co " * 60 }, { id: "雪" * 256 } ].each do |invalid|
+      records = ceiling_records
+      records.last.merge!(invalid)
+      [ "History", "New invalid source" ].each do |name|
+        inserts = item_inserts do
+          assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+            error = assert_raises(ActiveRecord::RecordInvalid) do
+              import(records.to_json, name:, retention_days: 2)
+            end
+            assert_equal @corpus.workspace, error.record.workspace
+            assert_equal @corpus, error.record.corpus
+            assert_equal @corpus, error.record.source_snapshot.corpus
+            assert_equal name, error.record.source_snapshot.source.name
+          end
+        end
+        assert_equal [ 1_000 ], inserts.map(&:size)
+        assert_equal source_state, original.source.reload.attributes
+        assert_equal original_state, original.reload.attributes
+        assert_equal original_items, original.corpus_items.order(:id).map(&:attributes)
+      end
+    end
+  end
+
   private
+    def ceiling_records
+      2_000.times.map do |position|
+        { id: "unicode-#{position}", title: "雪 café #{position}", content: "完整 #{position}\nAsk admin@example.org\n終わり",
+          context: { nested: [ { contact: "security@example.org", flag: false, missing: nil, count: position, ratio: 1.25 }, true, "雪" ], typed: "false" } }
+      end
+    end
+
+    def item_inserts
+      inserts = []
+      subscriber = ->(_name, _start, _finish, _id, payload) do
+        if payload[:sql].match?(/\AINSERT INTO "corpus_items"/)
+          assert_includes payload[:sql], "jsonb_to_recordset($1::jsonb)"
+          assert_equal [ "content" ], payload[:binds].map(&:name)
+          inserts << JSON.parse(payload[:binds].sole.value_for_database)
+        end
+      end
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+      inserts
+    end
+
     def import(bytes, **options)
       CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations", bytes:, **options)
     end
