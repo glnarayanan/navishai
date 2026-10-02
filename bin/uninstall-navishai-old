@@ -72,8 +72,11 @@ source_commit="$(cat "$release/SOURCE_COMMIT")"
 [[ -f $state/install.lock && ! -L $state/install.lock ]] || die 'Historical installer lock missing; inspect the layout before cleanup.'
 exec {lock_fd}<"$state/install.lock"
 flock -n -x "$lock_fd" || die 'Another installer operation is active.'
-units="$(systemctl list-unit-files --no-legend 'navishai*' 2>/dev/null)" || die 'Cannot inspect services.'
-[[ -z $units ]] || die 'Extra navishai systemd units found; the CLI created none. Inspect their ownership first.'
+# systemctl returns failure for a successful glob lookup with no matches.
+units="$(LC_ALL=C SYSTEMD_COLORS=0 systemctl list-unit-files --no-legend --no-pager --full)" || die 'Cannot inspect services.'
+while read -r unit rest; do
+  [[ $unit != navishai* ]] || die 'Extra navishai systemd units found; the CLI created none. Inspect their ownership first.'
+done <<<"$units"
 mount_targets="$(findmnt --json -o TARGET | jq -er '[.. | objects | .target? // empty]')"
 for path in "${paths[@]}"; do
   if matches --arg p "$path" 'any(.[]; . == $p or startswith($p + "/"))' <<<"$mount_targets"; then die "Mounted filesystem beneath $path; refuse recursive deletion."; fi

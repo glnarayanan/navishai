@@ -40,6 +40,28 @@ cleanup. The old CLI created no systemd unit. Resolve uncertain ownership rather
 than disabling these guards. Images and packages stay; this tool never prunes,
 stops Docker, changes firewall rules, sources `.env`, or executes old installer code.
 
+The service check requires a successful, complete unit-file inventory and checks
+its first-column names for `navishai*`. It does not treat an inspection error as
+an empty inventory. `systemctl list-unit-files 'navishai*'` returns status 1 when
+no units match on systemd 249/252/255, so the earlier filtered query falsely
+reported `Cannot inspect services`. The real systemd 252 command reproduced this;
+the unfiltered inventory succeeds on the same orb. Native stderr now stays visible.
+
+If service inspection still refuses, this read-only command shows its exit status
+and only matching unit names/states, without reading environment files:
+
+```sh
+units=$(sudo env LC_ALL=C SYSTEMD_COLORS=0 systemctl list-unit-files --no-legend --no-pager --full)
+rc=$?
+printf 'Full unit-file inventory exit=%s\n' "$rc"
+printf '%s\n' "$units" | awk '$1 ~ /^navishai/ {print}'
+```
+
+Do not apply unless preview completes. `DISPLAYED_PLAN_DIGEST` is a placeholder:
+copy the actual `Plan digest` printed by that preview. A deleted home checkout
+cannot directly produce this service-check message; Docker config-label path
+validation runs later and must still pass. Do not guess or rewrite those paths.
+
 Layouts were checked against the first CLI release
 [`e8dba3a`](https://github.com/glnarayanan/navishai/commit/e8dba3a)
 and the final pre-reset installer
@@ -54,6 +76,11 @@ bash -n bin/uninstall-navishai-old
 bundle exec ruby test/ops/legacy_uninstall_test.rb --seed 208
 bin/rubocop test/ops/legacy_uninstall_test.rb
 ```
+
+The service-query regression first reproduced the exact refusal. After the fix,
+10 tests / 121 assertions pass, including failed/empty enumeration, retained stderr,
+disabled services, static timers and masked targets. All operations tests pass
+59 tests / 583 assertions; no failures/errors/skips. Bash syntax and Ruby style pass.
 
 These are engineering checks, not proof that the owner's unseen host layout matches.
 The safe next step is its read-only preview, without posting secret values.

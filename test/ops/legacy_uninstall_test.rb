@@ -34,7 +34,7 @@ class LegacyUninstallTest < Minitest::Test
         { "id" => "2" * 64, "project" => "other-app", "service" => "web", "files" => "/other/compose.yaml", "mounts" => [] } ],
       "volumes" => { "old-custom_postgres_data" => "postgres_data" },
       "networks" => [ { "id" => "3" * 64, "key" => "control", "containers" => { "1" * 64 => {} } } ],
-      "mounts" => { "filesystems" => [ { "target" => "/" } ] }, "units" => ""
+      "mounts" => { "filesystems" => [ { "target" => "/" } ] }, "units" => "ssh.service enabled enabled\n"
     }
     File.write("#{@bin}/docker", <<~'RUBY')
       #!/usr/bin/env ruby
@@ -67,7 +67,17 @@ class LegacyUninstallTest < Minitest::Test
       end
     RUBY
     File.write("#{@bin}/findmnt", "#!/usr/bin/env ruby\nrequire 'json'\nputs JSON.parse(File.read(ENV.fetch('UNINSTALL_FIXTURE'))).fetch('mounts').to_json\n")
-    File.write("#{@bin}/systemctl", "#!/usr/bin/env ruby\nrequire 'json'\nprint JSON.parse(File.read(ENV.fetch('UNINSTALL_FIXTURE'))).fetch('units')\n")
+    File.write("#{@bin}/systemctl", <<~'RUBY')
+      #!/usr/bin/env ruby
+      require "json"
+      fixture = JSON.parse(File.read(ENV.fetch("UNINSTALL_FIXTURE")))
+      abort "Fixture unit enumeration failed." if fixture["unit_failure"]
+      abort "Unexpected systemctl command" unless ARGV.first == "list-unit-files"
+      units = fixture.fetch("units")
+      units = units.lines.select { |line| line.split.first.start_with?("navishai") }.join if ARGV.include?("navishai*")
+      print units
+      exit(units.empty? ? 1 : 0)
+    RUBY
     FileUtils.chmod(0755, Dir.glob("#{@bin}/*"))
     @fixture_path = "#{@directory}/fixture.json"
     @log = "#{@directory}/mutations.jsonl"
@@ -87,6 +97,31 @@ class LegacyUninstallTest < Minitest::Test
     refute_includes output, "must-not-print-this"
     assert_empty mutations
     assert File.symlink?("#{@root}/usr/local/bin/navishai")
+  end
+
+  def test_failed_or_empty_service_inventory_refuses_preview_and_apply
+    [ { "unit_failure" => true }, { "units" => "" } ].each do |changes|
+      @fixture.merge!(changes)
+      [ [], [ "--apply", "--confirm-destroy", "0" * 64 ] ].each do |args|
+        output, status = run_script(*args)
+        refute status.success?, output
+        assert_includes output, "Cannot inspect services"
+        assert_includes output, "Fixture unit enumeration failed" if @fixture["unit_failure"]
+        assert_empty mutations
+        assert File.exist?(@release)
+      end
+      @fixture.delete("unit_failure")
+    end
+  end
+
+  def test_extra_unit_types_and_states_still_refuse
+    [ "navishai-web.service disabled enabled\n", "navishai-check.timer static -\n", "navishai-extra.target masked enabled\n" ].each do |units|
+      @fixture["units"] = units
+      output, status = run_script
+      refute status.success?, output
+      assert_includes output, "Extra navishai systemd units"
+      assert_empty mutations
+    end
   end
 
   def test_confirmed_apply_targets_only_exact_old_resources
