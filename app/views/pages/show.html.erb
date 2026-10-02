@@ -1,14 +1,203 @@
-<% content_for :title, "Support evaluation lab — NavishAI" %>
-<main class="page-shell introduction">
-  <p class="eyebrow">Support evaluation lab</p>
-  <h1>Company evidence.<br>Tests you can trust.</h1>
-  <p>Turn your company's Support knowledge and history into tests for AI support systems.</p>
-  <%= link_to "Sign in", new_session_path, class: "button button-primary" %>
-  <% if FirstOwnerBootstrap.available? %>
-    <%= link_to "First-time setup", new_setup_path, class: "button button-secondary" %>
-  <% end %>
-  <section class="section-block">
-    <h2>The lab is being rebuilt</h2>
-    <p>Upload company history, review scenarios, compile checks and calibrate them with expert labels. Local scripted runs can retain failures as regressions. HTTP targets need operator approval and your disclosure confirmation. Model judges are next.</p>
+<% content_for :title, "Company-specific AI support evaluation — NavishAI" %>
+<% content_for :head do %>
+  <meta name="description" content="Turn your company's support conversations, policies and expert judgment into source-backed scenarios, calibrated checks and regression tests for AI support systems.">
+<% end %>
+<main class="landing">
+  <nav class="landing-nav" aria-label="On this page" data-turbo="false">
+    <%= link_to "The workflow", "#workflow" %>
+    <%= link_to "An SSO example", "#example" %>
+    <%= link_to "Data boundaries", "#privacy" %>
+  </nav>
+
+  <section class="landing-hero" aria-labelledby="landing-title">
+    <div>
+      <h1 id="landing-title">Test your AI's SSO handoffs, API fixes and billing rules</h1>
+      <p class="landing-lead">Your SSO rules. Your billing policy. Your Engineering handoffs. Define good support with your company's evidence—not a universal benchmark.</p>
+      <p>NavishAI is an evaluation lab for B2B SaaS teams putting AI into technical support. Your experts decide what should happen. Your suite checks what did.</p>
+      <div class="landing-actions">
+        <%= link_to "Sign in to the lab", new_session_path, class: "button button-primary" %>
+        <%= link_to "See how it works", "#workflow", class: "landing-text-link", data: { turbo: false } %>
+      </div>
+      <p class="landing-note">Evaluates your support system. Does not reply to your customers.</p>
+      <% if FirstOwnerBootstrap.available? %>
+        <p class="landing-note">Setting up this deployment? <%= link_to "First-time setup", new_setup_path %> requires the operator's bootstrap token.</p>
+      <% end %>
+    </div>
+
+    <figure class="landing-specimen">
+      <figcaption>Illustrative SSO case · not customer data or a run</figcaption>
+      <h2>When should the agent stop troubleshooting?</h2>
+      <dl>
+        <div>
+          <dt>Company playbook</dt>
+          <dd>“Valid IdP metadata + repeated ACS 500 responses: escalate to Engineering.”</dd>
+        </div>
+        <div>
+          <dt>Expert expectation</dt>
+          <dd>Hand off with the diagnostic evidence. Do not ask the customer to keep changing a valid configuration.</dd>
+        </div>
+        <div>
+          <dt>Executable check</dt>
+          <dd><code>{"type":"escalation",<br>"value":"Engineering"}</code></dd>
+        </div>
+      </dl>
+      <p>The check reads the target's reported escalation. It does not prove that a handoff happened.</p>
+    </figure>
   </section>
+
+  <section class="landing-domain" aria-labelledby="domain-title">
+    <h2 id="domain-title">Technical support needs company-specific tests</h2>
+    <p>Authentication and SSO. API failures. Permissions and plans. Integration dependencies. Incidents and escalation. The right next step depends on your product, not just a polite answer.</p>
+  </section>
+
+  <section class="landing-section landing-split" id="workflow" aria-labelledby="workflow-title">
+    <div>
+      <h2 id="workflow-title">From company corpus to regression suite</h2>
+      <p>A historical answer is evidence, not automatically the right answer. Each step keeps its sources, versions and human decisions.</p>
+    </div>
+    <ol class="landing-workflow" role="list">
+      <li>
+        <h3>Build a source-backed corpus</h3>
+        <p>Upload conversation exports and text or Markdown documentation. Keep fixed source snapshots so a scenario points to the exact record it came from.</p>
+      </li>
+      <li>
+        <h3>Find cases worth testing</h3>
+        <p>Explore proposed issue families, representative examples and risk signals. Inspect why a case was selected. Local term analysis and optional model proposals need expert review; selection counts are not verified coverage.</p>
+      </li>
+      <li>
+        <h3>Let experts define good support</h3>
+        <p>Correct the situation, facts, expected outcome, required steps and escalation rules. Approve an exact scenario version. Controlled variants retain their parent, named changes and expected differences; they need their own review.</p>
+      </li>
+      <li>
+        <h3>Compile the behaviour into checks</h3>
+        <p>The Eval Compiler binds each requirement to a fixed grader and source excerpt. Use deterministic checks for reported fields, actions and citations. Use versioned rubric judges where context matters.</p>
+      </li>
+      <li>
+        <h3>Calibrate against human judgment</h3>
+        <p>Experts label fixed outputs. Compare graders with those labels, inspect false alarms, missed failures and disagreement, and keep development samples separate from held-out evidence. Confidence alone is not accuracy.</p>
+      </li>
+      <li>
+        <h3>Inspect failures. Keep regressions.</h3>
+        <p>Run a suite against a configured target or compatible stored output. Inspect each check beside the response and company evidence. An expert can retain a failed case in a regression suite for the next target version.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="landing-section" id="example" aria-labelledby="example-title">
+    <div class="landing-section-heading">
+      <h2 id="example-title">Test the decision, not just the wording</h2>
+      <p>One SSO incident can test diagnosis, evidence collection and escalation. This authored example shows the method—not a customer result or a prebuilt SSO integration.</p>
+    </div>
+    <div class="landing-case">
+      <section aria-labelledby="case-title">
+        <h3 id="case-title">SAML login fails after an IdP change</h3>
+        <dl class="landing-facts">
+          <div><dt>Starting context</dt><dd>The customer reports a login failure after updating their identity provider.</dd></div>
+          <div><dt>Knowledge for the target</dt><dd>The expert chooses which SSO documentation excerpts the agent may see.</dd></div>
+          <div><dt>Expectation evidence</dt><dd>The company playbook supports the diagnostic steps and handoff rule. Hidden expectations stay out of target input.</dd></div>
+        </dl>
+      </section>
+      <section aria-labelledby="checks-title">
+        <h3 id="checks-title">Checks for this reviewed situation</h3>
+        <dl class="landing-checks">
+          <div><dt>Collect evidence</dt><dd>Request the certificate expiry date before suggesting a configuration change.</dd></div>
+          <div><dt>Respect the boundary</dt><dd>Do not claim to have changed the customer's IdP configuration.</dd></div>
+          <div><dt>Escalate on new facts</dt><dd>When valid metadata still yields repeated ACS 500 responses, hand off to Engineering with the evidence.</dd></div>
+          <div><dt>Grade with the right tool</dt><dd>A field check can inspect a reported expiry value. A calibrated rubric judge can assess the troubleshooting explanation. Neither proves external actions occurred.</dd></div>
+        </dl>
+      </section>
+    </div>
+    <details class="landing-disclosure">
+      <summary>What changes in a controlled variant?</summary>
+      <p>Change one named fact: an expired certificate becomes a valid certificate. Keep the parent scenario and the exact before/after values. An expert explains why the expected behaviour changes, reviews the new version and compiles its checks. A synthetic variant does not replace real company evidence.</p>
+    </details>
+  </section>
+
+  <section class="landing-section landing-split" aria-labelledby="loop-title">
+    <div>
+      <h2 id="loop-title">Make the next failure a test</h2>
+      <p>Support changes. Keep the test history without freezing your assumptions.</p>
+    </div>
+    <dl class="landing-loop">
+      <div>
+        <dt>Bring in a production failure</dt>
+        <dd>Upload a structured trace and its reported correction. Inspect suggested scenario matches or create a draft. A match or imported correction cannot approve the expected behaviour.</dd>
+      </div>
+      <div>
+        <dt>Review, compile, retain</dt>
+        <dd>An expert checks the evidence and approves a version. Grade the output, then deliberately add a failed case to regression. Stored replay grades an existing response; it does not rerun the production agent.</dd>
+      </div>
+      <div>
+        <dt>Compare like with like</dt>
+        <dd>Compare saved runs on the same fixed case and visible input. Changed definitions stay unmatched. Source-change views flag linked evidence; they cannot discover every unrecorded assumption.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="landing-section" id="privacy" aria-labelledby="privacy-title">
+    <div class="landing-section-heading">
+      <h2 id="privacy-title">Your corpus is private input, not training material</h2>
+      <p>Company support data can contain customer details, secrets and internal policies. Know what stays in the deployment and what a requested operation sends.</p>
+    </div>
+    <dl class="landing-boundaries">
+      <div>
+        <dt>Local by default</dt>
+        <dd>Intake, local analysis, review and deterministic grading stay in your deployment. Workspace-scoped access separates company data. NavishAI does not train models on your corpus.</dd>
+      </div>
+      <div>
+        <dt>Explicit external disclosure</dt>
+        <dd>Model-assisted source processing, HTTP targets and rubric judges need operator-approved endpoints and human disclosure confirmation. Targets receive visible context and permitted knowledge—not hidden expectations. Judges receive the fixed requirement, relevant evidence and output.</dd>
+      </div>
+      <div>
+        <dt>Masking has limits</dt>
+        <dd>Email masking or authored exact-text rules do not remove all PII. Review retained titles, text and context before approving disclosure. Masking new input does not rewrite earlier snapshots.</dd>
+      </div>
+      <div>
+        <dt>Retention and deletion</dt>
+        <dd>Source retention limits access. Source deletion also clears local derived scenarios, calibration and run records in that corpus. It cannot recall data already sent to an endpoint; remote retention belongs to that operator.</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="landing-section landing-split" aria-labelledby="questions-title">
+    <div>
+      <h2 id="questions-title">Before you open the lab</h2>
+      <p>A focused evaluation workflow, with clear limits.</p>
+    </div>
+    <div class="landing-questions">
+      <details class="landing-disclosure">
+        <summary>Is NavishAI a helpdesk or support agent?</summary>
+        <p>No. NavishAI evaluates AI support systems. It does not run an inbox, draft customer replies or send customer messages. Historical conversations enter as evidence for tests.</p>
+      </details>
+      <details class="landing-disclosure">
+        <summary>What data can I start with?</summary>
+        <p>Upload supported Intercom or Zendesk JSON conversation exports, the lab's bounded conversation JSONL format, and text or Markdown documents. Structured production traces use the lab's trace schema. These are upload paths, not live vendor connections.</p>
+      </details>
+      <details class="landing-disclosure">
+        <summary>How do I connect the system under test?</summary>
+        <p>Use the lab's generic HTTPS target contract through an operator-approved public endpoint, including the incremental conversation contract when needed. Compatible stored outputs can be graded locally. The scripted adapter tests the machinery; it is not a live support agent. There are no built-in vendor agent integrations.</p>
+      </details>
+      <details class="landing-disclosure">
+        <summary>Does a passing suite mean the agent is safe to ship?</summary>
+        <p>It means the recorded outputs passed those fixed checks. It does not establish coverage of all company issues, grader accuracy or deployment readiness. Check expert disagreement and held-out evidence. Abstentions and execution errors stay distinct from behavioural failures; unknown cost stays unknown.</p>
+      </details>
+      <details class="landing-disclosure">
+        <summary>Where does NavishAI run?</summary>
+        <p>NavishAI supports a self-hosted, customer-controlled deployment. Operators own the database, TLS, secrets, jobs, backups and endpoint policy. Sign in to an existing deployment; first-Owner setup needs an active operator-issued bootstrap token. This page does not offer public account registration or a managed service.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="landing-close" aria-labelledby="close-title">
+    <div>
+      <h2 id="close-title">Start with the support decisions your AI must get right</h2>
+      <p>Bring company evidence. Let experts set the expectations. Keep the failures worth testing again.</p>
+    </div>
+    <%= link_to "Sign in to the lab", new_session_path, class: "button button-secondary" %>
+  </section>
+
+  <footer class="landing-footer">
+    <p>NavishAI · Company-specific support evaluation</p>
+    <%= link_to "Back to top", "#landing-title", data: { turbo: false } %>
+  </footer>
 </main>

@@ -124,8 +124,12 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   fixed historical conversation quotes, hidden from targets and needing fresh review.
 - [#207](https://github.com/glnarayanan/navishai/pull/207), based on #206: bounded new draft labels,
   inspectable full proposals and unchanged source evidence/expert decisions.
-- `rebuild/68-private-definition-logs`, based on #207: private request/SQL bind
+- [#209](https://github.com/glnarayanan/navishai/pull/209), based on #207: private request/SQL bind
   filters for definitions and receipts, without changing stored company text.
+- [#210](https://github.com/glnarayanan/navishai/pull/210), based on #209: original sections
+  0–25 and A–F/P0–P2 mapped to exact-base evidence and remaining requirements.
+- `rebuild/70-support-eval-landing`, based on #210: technical-Support evaluation
+  landing, truthful examples/privacy limits and native responsive/auth checks.
 
 ## Built and checked
 
@@ -1759,6 +1763,35 @@ At 21:05 UTC on 1 October, #190/#195/#199 remain exact-head green and #187 retai
 its confirmed six-hour timeout. The seventeen other heads #188–207 still run;
 #207 is [run 36922246175](https://github.com/glnarayanan/navishai/actions/runs/36922246175).
 No new assertion failure or confirmed code cause was available. No remote run changed.
+
+## Original scope and landing integration (slices 69–70)
+
+[REBUILD_ACCEPTANCE.md](./REBUILD_ACCEPTANCE.md) maps the whole original prompt,
+not a smaller baseline or an agent percentage. Its inspected snapshot is slice 67;
+103 local links resolve. Later integration evidence belongs here until the final
+checklist closes each unblocked row. Phase F/P2 still requires real permitted labels
+and measured economics, as the original prompt states.
+
+The public page now explains company corpus, expert scenarios, compiled checks,
+calibration, failures and regressions. The SSO example is explicitly illustrative.
+Privacy copy states masking, disclosure, deletion, reported-action and quality
+limits. Real sign-in and bootstrap availability remain; signed-in root still opens
+workspaces. No customer claims, pricing, live integrations or domain writes appear.
+
+Integrated native CI passed setup, Ruby style, audits, eager loading and 481 Rails
+tests / 7465 assertions. Its browser stage found one stale logout assertion for the
+old placeholder. The assertion now checks the public sign-in route, not discarded
+copy. The final complete browser run passed 56 tests / 2600 assertions with no
+failures, errors or skips; focused auth checks passed 15 / 150. Ruby style passes
+305 files. The initially failed CI run remains a failed run, not a green command.
+
+Inspected full 2x desktop/light and 390px/dark pages show the complete workflow,
+SSO example, privacy and footer without clipping. Executed DOM checks confirm six
+steps, the real sign-in URL, 16px narrow body text and no horizontal overflow.
+Native browser tests cover 1280/768/390/320px, both themes, keyboard disclosures,
+anchors, focus, auth and CSP. Worker captures also cover signed-in and expanded
+FAQ states. See [LANDING.md](./LANDING.md). Direct review used; named review tools
+remain unavailable. No merge, release, deployment, provider or customer action ran.
 
 ## Next and limits
 
