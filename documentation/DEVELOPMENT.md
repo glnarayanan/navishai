@@ -307,6 +307,12 @@ fixed records, a late rare risk case, snapshot-preserving mining, no complete so
 objects during processing, unchanged original/model refusal and exact budget edges.
 This synthetic workload is not semantic or production-throughput evidence.
 
+`bin/rails test test/services/varied_corpus_discovery_test.rb` adds 2204 fixed
+synthetic inputs across overlapping technical term families, Unicode/HTML and
+zero-term records. It checks complete membership, typed source reports, late risk
+signals, ties, document presence/gaps and historical unapproved mining. Its known
+partitions test this method, not taxonomy quality or real-company coverage.
+
 ## Model-assisted corpus discovery
 
 Follow **Model-assisted corpus discovery** from a corpus. Review the exact source

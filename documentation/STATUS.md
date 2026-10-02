@@ -1240,6 +1240,22 @@ is removed. Fresh historical desktop/mobile captures were inspected for complete
 warnings, confirmation and action. Native style/eager loading and direct risk
 review pass; named reviews remain unavailable. No remote CI yet for this branch.
 
+## Varied local proof (slice 50)
+
+One heterogeneous synthetic workload freezes 2204 inputs: four technical term
+families, two zero-term conversations and two documents. The native request/job
+retains all six exact membership partitions after newer intake. Independent
+expectations check overlapping vocabulary, Unicode/HTML, document presence/gaps,
+true/false/nonboolean reports, late full-text risks, centroid and risk-cutoff ties,
+fixed source identities and unapproved idempotent mining. This complements the
+100,000-row ceiling proof; it does not prove customer taxonomy or retrieval quality.
+
+The focused native test passes with 140 assertions in 5.23s. The first run exposed
+a test query treating an empty JSON array as an SQL value-list; explicit JSONB
+comparison fixes that query without changing discovery or its expectations.
+Style, syntax and eager loading pass. Named reviews remain unavailable; direct
+review used. Full combined checks and remote CI remain separate evidence.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1286,7 +1302,7 @@ Intake now refuses recursive masking-key collisions without losing data and bind
 processing version and explicit rule fingerprints in snapshot reuse identity.
 Exact-text masking and larger local processing work within their stated limits.
 Intake still accepts 2000 records / 10 MiB per file; larger single-file intake,
-varied-workload scale proof and retrieval quality remain engineering work.
+broader varied-workload scale evidence and retrieval quality remain engineering work.
 These checks do not finish that work or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
