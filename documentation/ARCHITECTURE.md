@@ -142,6 +142,13 @@ unexpired filter, then load at most fifty scenario IDs and current list metadata
 in ID order. Facts, requirements, quotes and old versions stay outside search.
 Keep review, merge and source-change states visible; a match grants no authority.
 
+The scenario evidence picker also has a private literal filter over current,
+unexpired document titles, source record IDs and text. Count all same-corpus
+matches under the corpus lock, but load only the first hundred IDs/titles, not
+document bodies/context. Retain the filter on failed revisions and preserve an
+explicitly selected trace separately. Lookup cannot attach evidence, change a
+version or copy a requirement; the existing expert revision owns those actions.
+
 ### Family evidence and error-cost decisions (1 October 2026)
 
 Explore every fixed cluster member through a read-only, scoped and paginated family

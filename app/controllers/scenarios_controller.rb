@@ -48,7 +48,21 @@ class ScenariosController < ApplicationController
     @versions = @scenario.scenario_versions.order(number: :desc)
     @version = params[:version] ? @versions.find_by!(number: params[:version]) : @scenario.current_version
     raise ActiveRecord::RecordNotFound if @version.expired?
-    @evidence_items = @corpus.evidence_items.where(sources: { kind: "document" }).order(:id).limit(100).to_a
+    @document_query = params[:corpus_query].to_s
+    query = @document_query.strip
+    @corpus.with_lock do
+      documents = @corpus.evidence_items.where(sources: { kind: "document" })
+      if query.length > 200 || query.include?("\0")
+        @document_search_error = "Document search needs at most 200 characters and no null bytes. Shorten the phrase and try again."
+        documents = documents.none
+      elsif query.present?
+        pattern = ActiveRecord::Relation::QueryAttribute.new("corpus_query",
+          "%#{ActiveRecord::Base.sanitize_sql_like(query)}%", CorpusItem.type_for_attribute("content"))
+        documents = documents.where("corpus_items.title ILIKE :pattern OR corpus_items.external_id ILIKE :pattern OR corpus_items.content ILIKE :pattern", pattern:)
+      end
+      @document_count = documents.count
+      @evidence_items = documents.select(:id, :title).order(:id).limit(100).to_a
+    end
     if params[:trace_item_id].present?
       @trace_item = @corpus.evidence_items.where(sources: { kind: "traces" }).find(params.expect(:trace_item_id))
       @evidence_items.unshift(@trace_item)
@@ -60,6 +74,7 @@ class ScenariosController < ApplicationController
       @proposal_input_error = error.message
     end
     @form_values ||= {}
+    render :show, status: :unprocessable_content if action_name == "show" && @document_search_error
   end
 
   def propose

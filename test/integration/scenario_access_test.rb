@@ -9,6 +9,139 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "document lookup finds later current evidence and retains it through a failed revision" do
+    100.times do |index|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Earlier document #{index}", kind: "document", bytes: "Earlier company guidance #{index}.")
+    end
+    item = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Signing policy", kind: "document", bytes: "Inspect the private quasar boundary before escalation.").corpus_items.sole
+    original = @scenario.current_version
+    path = workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioReview.count", "AuditEvent.count", "HumanLabel.count", "ScenarioProposal.count" ] do
+      assert_no_enqueued_jobs do
+        get path
+        assert_response :success
+        assert_select "#document-search [role=status]", text: /\A102 matching documents/
+        assert_select "select[name=evidence_item_id] option", count: 101
+        assert_select "select[name=evidence_item_id] option[value='#{item.id}']", count: 0
+        get path, params: { corpus_query: "  QUASAR  " }
+        assert_response :success
+        assert_select "#document-search [role=status]", text: /\A1 matching document/
+        assert_select "select[name=evidence_item_id] option[value='#{item.id}']", text: item.title
+        assert_select "select[name=evidence_item_id] option[value='#{@knowledge.id}']", count: 0
+        assert_select "input[name=corpus_query][type=hidden][value='  QUASAR  ']"
+        assert_select "textarea[name=excerpt]", text: ""
+      end
+      patch path, params: { corpus_query: "  QUASAR  ", version_id: original.id, evidence_item_id: item.id,
+        evidence_kind: "expectation", excerpt: "Keep this invalid excerpt", scenario: { title: "Keep my expert edit", known_facts: "broken", hidden_facts: "{}" } }
+      assert_response :unprocessable_content
+      assert_select "#document-search [role=status]", text: /\A1 matching document/
+      assert_select "select[name=evidence_item_id] option[selected][value='#{item.id}']"
+      assert_select "textarea[name=excerpt]", text: "Keep this invalid excerpt"
+      assert_select "input[name='scenario[title]'][value='Keep my expert edit']"
+      assert_select "input[name=corpus_query][type=search][value='  QUASAR  ']"
+    end
+    assert_difference "ScenarioVersion.count", 1 do
+      patch path, params: { corpus_query: "  QUASAR  ", version_id: original.id, evidence_item_id: item.id,
+        evidence_kind: "expectation", excerpt: item.content, scenario: { title: "Explicit company-backed revision", known_facts: original.known_facts.to_json, hidden_facts: "{}" } }
+      assert_response :see_other
+    end
+    version = @scenario.reload.current_version
+    assert_equal item.content, version.scenario_evidence.find_by!(corpus_item: item).excerpt
+    assert_empty version.scenario_reviews
+    assert_not_equal original.id, version.id
+  end
+
+  test "document lookup excludes foreign stale expired and conversation records" do
+    foreign = @workspace.corpora.create!(name: "Foreign documents")
+    CorpusIntake.call(corpus: foreign, membership: @membership, name: "Private foreign quasar", kind: "document", bytes: "Quasar boundary.")
+    expired = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Expired quasar", kind: "document", bytes: "Quasar boundary.")
+    expired.source.update!(expires_at: 1.minute.ago)
+    stale = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Revised policy", kind: "document", bytes: "Old quasar boundary.")
+    current = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Revised policy", kind: "document", bytes: "Current nebula policy.")
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Unrelated conversations", kind: "conversations", bytes: [ { id: "quasar", title: "Quasar boundary", content: "Not company-document evidence." } ].to_json)
+    path = workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    get path, params: { corpus_query: "quasar" }
+    assert_response :success
+    assert_select "#document-search [role=status]", text: /\A0 matching documents/
+    assert_select "select[name=evidence_item_id] option", count: 1
+    assert_not_includes response.body, "Private foreign quasar"
+    get path, params: { corpus_query: "nebula" }
+    assert_response :success
+    assert_select "select[name=evidence_item_id] option[value='#{current.corpus_items.sole.id}']"
+    assert_select "select[name=evidence_item_id] option[value='#{stale.corpus_items.sole.id}']", count: 0
+  end
+
+  test "document lookup escapes literals bounds input and retains an explicitly selected trace" do
+    document = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Literal %_\\ policy", kind: "document", bytes: "Current Unicode 雪 boundary.").corpus_items.sole
+    path = workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    [ "%", "_", "\\", "雪" ].each do |phrase|
+      get path, params: { corpus_query: phrase }
+      assert_response :success
+      assert_select "#document-search [role=status]", text: /\A1 matching document/
+      assert_select "select[name=evidence_item_id] option[value='#{document.id}']"
+    end
+    [ "' OR 1=1 --", "<script>foreign()</script>" ].each do |phrase|
+      get path, params: { corpus_query: phrase }
+      assert_response :success
+      assert_select "select[name=evidence_item_id] option", count: 1
+      assert_select "script", text: /foreign\(\)/, count: 0
+    end
+    [ "x" * 201, "bad\0phrase" ].each do |phrase|
+      get path, params: { corpus_query: phrase }
+      assert_response :unprocessable_content
+      assert_select "#document-search-error[role=alert]", text: /200 characters and no null bytes/
+      assert_includes response.body, %Q(value="#{ERB::Util.html_escape(phrase)}")
+      assert_select "select[name=evidence_item_id] option", count: 1
+    end
+    assert_no_difference "ScenarioVersion.count" do
+      patch path, params: { corpus_query: "x" * 201, version_id: @scenario.current_version_id,
+        scenario: { known_facts: "broken", hidden_facts: "{}" } }
+      assert_response :unprocessable_content
+      assert_select "#document-search-error[role=alert]", text: /200 characters and no null bytes/
+      assert_select "[role=alert]", text: /Facts, follow-ups and variant values must be valid JSON/
+    end
+    get path, params: { corpus_query: "  " + "雪" * 200 + "  " }
+    assert_response :success
+    trace = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Selected trace", kind: "traces", bytes: File.read(Rails.root.join("test/fixtures/files/production_traces.json"))).corpus_items.sole
+    get path, params: { corpus_query: "No document matches", trace_item_id: trace.id }
+    assert_response :success
+    assert_select "#document-search [role=status]", text: /\A0 matching documents/
+    assert_select "#document-search input[name=trace_item_id][value='#{trace.id}']"
+    assert_select "select[name=evidence_item_id] option[selected][value='#{trace.id}']"
+    clear = css_select("#document-search a").find { |link| link.text == "Clear document search" }
+    assert_equal trace.id.to_s, Rack::Utils.parse_query(URI(clear["href"]).query)["trace_item_id"]
+    get clear["href"]
+    assert_response :success
+    assert_select "select[name=evidence_item_id] option[selected][value='#{trace.id}']"
+  end
+
+  test "document lookup filters debug binds and loads only picker metadata" do
+    buffer = StringIO.new
+    original_logger = ActiveRecord::Base.logger
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    statements = []
+    capture = ->(event) { statements << event.payload if event.payload[:sql].include?("ILIKE") }
+    ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+      get workspace_corpus_scenario_path(@workspace, @corpus, @scenario), params: { corpus_query: "certificate expiry" }
+      assert_response :success
+      assert_select "select[name=evidence_item_id] option[value='#{@knowledge.id}']"
+      assert_select "#document-search form[method=get] label[for=corpus_query]", text: "Company evidence phrase"
+      assert_select "[id=corpus_query]", count: 1
+    end
+    assert_equal 2, statements.size
+    statements.each do |payload|
+      assert_not_includes payload[:sql], "certificate expiry"
+      assert_includes payload[:binds].filter_map { |bind| bind.name if bind.respond_to?(:name) }, "corpus_query"
+    end
+    projection = statements.find { |payload| payload[:sql].include?("LIMIT") }.fetch(:sql).split(/\bFROM\b/, 2).first
+    assert_equal %w[id title], projection.scan(/"corpus_items"\."([^"]+)"/).flatten
+    refute_match(/"corpus_items"\.\*/, projection)
+    assert_includes buffer.string, "[FILTERED]"
+    assert_not_includes buffer.string, "certificate expiry"
+  ensure
+    ActiveRecord::Base.logger = original_logger
+  end
+
   test "local search uses only current title situation and taxonomy literal substrings" do
     @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
       attributes: { title: "Historic aurora", situation: "Old definition", taxonomy_label: "Old category" })
