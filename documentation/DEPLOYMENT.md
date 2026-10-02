@@ -5,6 +5,11 @@ It is a small baseline, not deployment acceptance. Old installers, Helm/native
 topologies, runtime payloads, release scripts, archive tools and their proof have
 been removed. Git history retains them. No release/deploy workflow was run.
 
+For the owner's disposable old CLI-managed install, use the separate
+[preview-first uninstall tool](./LEGACY_UNINSTALL.md). It requires an exact
+destruction plan, refuses shared resources and needs no mandatory backup.
+It neither installs this reset nor converts an old database.
+
 Copy `.env.example` into a private environment file and supply app host, distinct
 runtime/preparation database passwords, and SECRET_KEY_BASE. Compose uses a new project/volume and lab database
 names: do not map an old helpdesk volume into it. Run database preparation once
