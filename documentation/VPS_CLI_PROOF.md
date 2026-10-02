@@ -51,7 +51,10 @@ in Git. Real Caddy terminates HTTPS and forwards through control to the
 holder. This is not public DNS, ACME issuance or public useful-egress evidence.
 The Docker PATH wrapper selects the private socket and checks writer state
 around actual maintenance commands; it does not replace Docker responses.
-No new production dependency or service enters the repository.
+A tar forwarder preserves actual output bytes and exit status while recording
+archive headers, not payloads. Failed backups report the last complete listing
+and recent Docker command statuses. No new production dependency or service
+enters the repository.
 
 ## Checks
 
@@ -60,6 +63,9 @@ backup and consent-bound restore. It checks:
 
 - Installer-to-startup lock handoff, exact shared runtime namespace,
   dropped capabilities, runtime UID and disabled Docker auto-restart.
+- Unchanged holder/PostgreSQL IDs and Running=true across stopped workload
+  creation and the actual pre-start inspections; web/jobs stay Running=false
+  until explicit start. Docker responses remain real.
 - Restricted preparation/runtime roles and ownership of all four databases
   and schemas; native runtime privilege denials and immutable audit writes.
 - Separate native jobs finishing local analysis and refusing optional
@@ -73,7 +79,9 @@ backup and consent-bound restore. It checks:
 - Backup/restore of all four databases, exact checkpoint rows, sequences,
   object/schema owners, ACLs and default ACLs, private env and Rails storage.
 - A successful source upgrade and a real failed candidate migration followed
-  by full rollback; restore and rollback leave writers stopped until start.
+  by full rollback. The failure fixture commits changed rows and sequence state
+  before raising, so a code-only rollback cannot pass. Restore and rollback
+  leave writers stopped until start.
 - No live writers before/after preparation/dump/restore/storage commands and
   no Docker workload-start event inside those audited windows.
 - No Docker auto-start after actual daemon restart, then explicit reapply.
@@ -97,15 +105,36 @@ network/TLS acceptance need a separately authorised host.
 
 ## Run evidence and open checks
 
-Ruby syntax and native RuboCop pass. The full CLI proof has not passed yet.
-The run against CLI SHA-256
-`a0215deaf86f3e04eb6e6d2a87d2675c3b611114f826018c95725f4e44f26f0b`
+Ruby syntax, four embedded Ruby blocks, four embedded Bash blocks and native
+RuboCop pass. The full CLI proof has not passed yet. The latest completed run
+used CLI SHA-256
+`76ac2119bf2912d346a77de071901b26dfc9276593f02081d4bfac8ec43b33aa`
 and recovery SHA-256
-`56dbe2c80f382dff280da9dab407a7759fc63a5c7b4fa8d7ef02c6dcf0c1d275`
-confirmed valid normalized Compose and cached real install builds, then stopped
-at pinned image pulls. Startup and recovery checks remain unproved.
+`56dbe2c80f382dff280da9dab407a7759fc63a5c7b4fa8d7ef02c6dcf0c1d275`.
+It passed real install, child lock handoff, trusted internal-CA HTTPS, restricted
+roles across four databases, native jobs and privilege denials, stable stopped
+workload creation, fail-closed policy and replacement, and kernel IPv4/IPv6
+rejection from web/jobs. Backup returned exit 1 without publishing its directory.
+Every recorded Docker maintenance command returned 0. Tar listed the release,
+config, state and Rails storage, then Caddy data successfully; the next archive
+listing never ran. The failing guard is the Caddy data root-archive check.
 
-Two findings matter for the final source:
+A smaller real-image run reproduced that guard failure with the same pinned
+Caddy and PostgreSQL images, real named volumes and the unchanged GNU-tar dump.
+Both Caddy data and config contain root-owned `./caddy/` mode 1777, shown as
+`drwxrwxrwt 0/0`. Both unchanged root-archive checks return 1. The validator rejects
+the sticky bit and group/other write permissions. The other members have modes
+0600/0700; the volume root has mode 0755. This is product failure evidence, not
+a harness assertion or a green joined-proof result. The parent owns the fix.
+
+Joined restore, successful upgrade, failed-candidate full rollback, final
+maintenance-window totals and daemon restart remain unproved. The final failure
+fixture commits changed checkpoint rows and sequence state before raising;
+it has not executed yet. An earlier snapshot error used a nonexistent composite
+sequence type. The corrected snapshot reads `last_value` and `is_called` directly;
+a temporary-sequence transaction checked 47/false and rolled back.
+
+The proof has caught these boundary failures:
 
 - Root Git-archive extraction retained file mode 0664 and directory mode 0775.
   Unprivileged warm extraction produced 0644, so identical Gemfile bytes missed
@@ -119,9 +148,19 @@ Two findings matter for the final source:
   requires a tagged reference, but
   [reference parsing](https://github.com/distribution/reference/blob/v0.6.0/normalize.go#L88-L120)
   strips the tag from `name:tag@digest`. Cache metadata alone cannot fix that
-  command. The parent must settle the pinned-image availability contract;
-  the proof will not change configured pins, mock a pull or add runtime egress.
+  command. The parent now inspects exact pinned references and pulls only when
+  Docker reports a missing image. Actual preparation/startup uses `--pull never`.
+  The completed run verified the cached path without changing pins or Docker
+  responses or adding runtime egress.
+- Compose 2.39.4 rejected `create --no-deps` before workload creation. The parent
+  now uses `up --no-start --pull never --no-build --no-deps --force-recreate`.
+  Actual pre-start inspections verified unchanged running holder/PostgreSQL
+  IDs and stopped web/jobs before explicit start.
+- Pinned Caddy retains root-owned sticky, world-writable `caddy` directories in
+  both named volumes. The generic root-archive validator rejects them. Any fix
+  must keep checks for ownership, links, special nodes and unrelated writable
+  paths; the proof does not change permissions or bypass the guard.
 
 Every completed failed run removed its disposable assets and matched the
-before/after host IPv4/IPv6 firewall and checked sysctls. None counts as a
-full install, HTTPS, upgrade or recovery pass.
+before/after host IPv4/IPv6 firewall and checked sysctls. No failed run counts
+as a full joined-proof pass.

@@ -163,12 +163,48 @@ begin
   FileUtils.mkdir_p([ managed, wrappers ])
   systemctl_log = File.join(directory, "systemctl.log")
   docker_audit = File.join(directory, "docker-audit.jsonl")
+  staged_audit = File.join(directory, "staged-audit.jsonl")
+  tar_audit = File.join(directory, "tar-audit.log")
   ca = File.join(directory, "caddy-root.crt")
   File.write(File.join(wrappers, "docker"), <<~SH, perm: 0o755)
     #!/usr/bin/env bash
     set -euo pipefail
     real() { /usr/bin/docker --config #{directory}/run --host #{docker.last} "$@"; }
-    maintenance=false
+    state() {
+      local id
+      id=$(real ps -aq --no-trunc --filter label=com.docker.compose.project=navishai-reset --filter label=com.docker.compose.service="$1" --filter label=com.docker.compose.oneoff=False)
+      [[ $id =~ ^[0-9a-f]{64}$ ]] || { echo 'PROOF: missing/duplicate staged service' >&2; exit 97; }
+      real inspect --format '{"id":{{json .Id}},"running":{{json .State.Running}}}' "$id"
+    }
+    controls() { state app-net; state postgres; }
+    stable_controls() {
+      local current
+      current=$(controls)
+      [[ $current == "$(cat #{directory}/staged-controls)" ]] || { echo 'PROOF: staging replaced holder/PostgreSQL or changed Running state' >&2; exit 97; }
+      jq -e -s 'length == 2 and all(.[]; .running == true)' <<< "$current" >/dev/null
+    }
+    staged() {
+      stable_controls
+      local service
+      for service in web jobs; do
+        state "$service" | jq -e '.running == false' >/dev/null || { echo 'PROOF: runtime started before pre-start inspection' >&2; exit 97; }
+      done
+    }
+    # Observe real pre-start inspections without changing Docker responses.
+    if [[ $1 == inspect && -f #{directory}/staged-controls && ${@: -1} =~ ^[0-9a-f]{64}$ ]]; then
+      service=$(real inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "${@: -1}")
+      if [[ $service == web || $service == jobs ]]; then
+        staged
+        printf '{"service":"%s","timeNano":%s}\\n' "$service" "$(date +%s%N)" >> #{staged_audit}
+      fi
+    fi
+    if [[ $1 == compose && " $* " == *' start '* && -f #{directory}/staged-controls ]]; then
+      staged
+      rm -- #{directory}/staged-controls
+    fi
+    staging=false
+    if [[ $1 == compose && " $* " == *' up '* && " $* " == *' --no-start '* ]]; then staging=true; fi
+    maintenance=$staging
     if [[ $1 == run ]] || [[ $1 == exec && " $* " =~ (pg_dump|pg_restore|psql|tar) ]] ||
        [[ $1 == compose && " $* " == *' exec '* && " $* " =~ (pg_dump|pg_restore|psql|tar) ]] ||
        [[ $1 == compose && " $* " == *' run '* ]] || [[ $1 == image && ${2:-} == save ]]; then maintenance=true; fi
@@ -181,12 +217,29 @@ begin
     }
     if ! $maintenance; then exec /usr/bin/docker --config #{directory}/run --host #{docker.last} "$@"; fi
     stopped
+    if $staging; then controls > #{directory}/staged-controls; stable_controls; fi
     printf '{"phase":"before","timeNano":%s}\\n' "$(date +%s%N)" >> #{docker_audit}
     result=0
     real "$@" || result=$?
     stopped
-    printf '{"phase":"after","timeNano":%s}\\n' "$(date +%s%N)" >> #{docker_audit}
+    if $staging && ((result == 0)); then staged; fi
+    printf '{"phase":"after","timeNano":%s,"tool":"%s","status":%s}\\n' "$(date +%s%N)" "$1" "$result" >> #{docker_audit}
     exit "$result"
+  SH
+  # Forward real tar bytes; retain only archive headers for failed-guard diagnosis.
+  File.write(File.join(wrappers, "tar"), <<~SH, perm: 0o755)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ " $* " != *' --list '* ]]; then exec /usr/bin/tar "$@"; fi
+    archive=${@: -1}
+    printf 'BEGIN %s\\n' "${archive##*/}" >> #{tar_audit}
+    set +e
+    /usr/bin/tar "$@" | tee -a #{tar_audit}
+    results=("${PIPESTATUS[@]}")
+    set -e
+    ((results[1] == 0)) || { echo 'PROOF: archive-header audit failed' >&2; exit 97; }
+    printf 'END status=%s\\n' "${results[0]}" >> #{tar_audit}
+    exit "${results[0]}"
   SH
   File.write(File.join(wrappers, "curl"), <<~SH, perm: 0o755)
     #!/usr/bin/env bash
@@ -236,7 +289,19 @@ begin
   cli_prefix = [ "sudo", "-n", "env", "PATH=#{wrappers}:/usr/local/sbin:/usr/sbin:/sbin:#{environment.fetch('PATH')}", "DOCKER_BUILDKIT=0", "COMPOSE_BAKE=false", "timeout", "900", File.join(source, "bin/navishai-vps"), "--root", managed ]
   cli = lambda do |*arguments, allowed: true|
     output, status = capture.call(*cli_prefix, *arguments)
-    raise "CLI #{arguments.first}: expected success=#{allowed}:\n#{output}" unless status.success? == allowed
+    unless status.success? == allowed
+      diagnostics = "exit=#{status.exitstatus.inspect}, signal=#{status.termsig.inspect}"
+      if arguments.first == "backup"
+        diagnostics += "; published=#{File.directory?(arguments.last)}"
+        [ docker_audit, tar_audit ].each do |path|
+          next unless File.file?(path)
+          lines = run.call("sudo", "-n", "cat", path).lines
+          headers = path == tar_audit ? lines.drop(lines.rindex { |line| line.start_with?("BEGIN ") } || 0) : lines.last(12)
+          diagnostics += "\n#{File.basename(path)}:\n#{headers.join}"
+        end
+      end
+      raise "CLI #{arguments.first}: expected success=#{allowed}; #{diagnostics}:\n#{output}"
+    end
     puts output
     output
   end
@@ -402,7 +467,7 @@ begin
       [ database, sql.call(database, <<~SQL) ]
         SELECT json_build_object(
           'rows',(SELECT json_agg(t ORDER BY id) FROM proof_checkpoint_rows t),
-          'sequence',(SELECT row_to_json(t) FROM proof_checkpoint_rows_id_seq t),
+          'sequence',(SELECT json_build_object('last_value',last_value,'is_called',is_called) FROM proof_checkpoint_rows_id_seq),
           'objects',(SELECT json_agg(json_build_array(c.relname,pg_get_userbyid(c.relowner),c.relacl::text) ORDER BY c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'),
           'defaults',(SELECT json_agg(json_build_array(pg_get_userbyid(defaclrole),defaclobjtype,defaclacl::text) ORDER BY defaclrole,defaclobjtype) FROM pg_default_acl),
           'schema',(SELECT json_build_array(pg_get_userbyid(nspowner),nspacl::text) FROM pg_namespace WHERE nspname='public'));
@@ -452,7 +517,12 @@ begin
   raise "Upgrade release identity" unless receipt.fetch("commit") == release2
   run.call("sudo", "-n", "tee", File.join(source, "db/migrate/20261003000000_vps_proof_failure.rb"), input: <<~'RUBY')
     class VpsProofFailure < ActiveRecord::Migration[8.1]
+      disable_ddl_transaction!
+
       def change
+        # A code-only rollback must fail: these changes survive migration failure.
+        execute "UPDATE proof_checkpoint_rows SET marker='failed-candidate-change'"
+        execute "SELECT setval('proof_checkpoint_rows_id_seq',97,true)"
         raise "Synthetic candidate migration failure"
       end
     end
@@ -473,6 +543,9 @@ begin
   puts verify_history.call
   puts "PASS: successful real upgrade and failed-migration full rollback restore prior source/image/config/four-DB point, with writers stopped until explicit start."
   audits = run.call("sudo", "-n", "cat", docker_audit).lines.map { |line| JSON.parse(line) }
+  staged_checks = run.call("sudo", "-n", "cat", staged_audit).lines.map { |line| JSON.parse(line) }
+  raise "Actual pre-start runtime inspections not observed" unless %w[web jobs].all? { |service| staged_checks.any? { |check| check.fetch("service") == service } }
+  puts "PASS: #{staged_checks.size} actual pre-start inspections preserve running holder/PostgreSQL IDs and keep web/jobs Running=false until explicit start."
   started_writers = run.call("sudo", "-n", "cat", events).lines.map { |line| JSON.parse(line) }.select do |event|
     attributes = event.fetch("Actor").fetch("Attributes")
     %w[web jobs proxy].include?(attributes["com.docker.compose.service"]) && attributes["com.docker.compose.oneoff"] == "False"
@@ -482,7 +555,7 @@ begin
     raise "Incomplete maintenance audit" unless before.fetch("phase") == "before" && after&.fetch("phase") == "after"
     raise "Workload started during maintenance" if started_writers.any? { |event| event.fetch("timeNano").between?(before.fetch("timeNano"), after.fetch("timeNano")) }
   end
-  puts "PASS: #{audits.size / 2} actual preparation/dump/restore/storage maintenance windows have no live writers at either boundary and no Docker workload-start event within them."
+  puts "PASS: #{audits.size / 2} actual preparation/staging/dump/restore/storage maintenance windows have no live writers at either boundary and no Docker workload-start event within them."
   cli.call("stop")
   stop_service.call("run")
   start_service.call("run", daemon_command)
