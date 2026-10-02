@@ -1,0 +1,58 @@
+<% content_for :title, "#{@version.title} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @version.title %></h1><p>Version <%= @version.number %> · <%= @version.origin %> · <%= @version.latest_review&.decision || "needs review" %> · <%= @version.importance %></p></div></div>
+  <% if @version.stale? %><p role="status">A linked source changed. This version keeps its prior evidence; check current company guidance before compiling it.</p><% end %>
+  <% if @scenario.merged_into %><p>This scenario merged into <%= link_to @scenario.merged_into.current_version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.merged_into) %>. Its prior versions and evidence remain.</p><% end %>
+  <nav class="workspace-tabs" aria-label="Scenario versions"><% @versions.each do |version| %><%= link_to "Version #{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: version.number), aria: { current: version == @version ? "page" : nil } %><% end %></nav>
+  <p><%= @version.selection_reason %></p>
+  <% if @scenario.parent_version %><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre><% end %>
+  <div class="review-layout">
+    <section aria-labelledby="definition-title"><h2 id="definition-title">Scenario definition</h2>
+      <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+        <%= form_with url: workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), method: :patch, scope: :scenario, class: "form-stack" do |form| %>
+          <%= hidden_field_tag :version_id, params[:version_id] || @version.id %>
+          <div class="field"><%= form.label :title %><%= form.text_field :title, value: @form_values.fetch("title", @version.title), required: true, maxlength: 500 %></div>
+          <div class="field"><%= form.label :situation, "Customer starting situation" %><%= form.text_area :situation, value: @form_values.fetch("situation", @version.situation), rows: 4, required: true, maxlength: 10000 %></div>
+          <div class="field-grid"><div class="field"><%= form.label :taxonomy_label, "Issue family" %><%= form.text_field :taxonomy_label, value: @form_values.fetch("taxonomy_label", @version.taxonomy_label), required: true, maxlength: 500 %></div><div class="field"><%= form.label :importance %><%= form.select :importance, %w[normal high critical], selected: @form_values.fetch("importance", @version.importance) %></div></div>
+          <details><summary>Known and hidden facts</summary><p>Known facts go to the target. Hidden facts do not. Keep historical resolution details out of the starting situation.</p>
+            <div class="field"><%= form.label :known_facts, "Known facts (JSON object)" %><%= form.text_area :known_facts, value: @form_values.fetch("known_facts", JSON.pretty_generate(@version.known_facts)), rows: 4 %></div>
+            <div class="field"><%= form.label :hidden_facts, "Hidden facts (JSON object)" %><%= form.text_area :hidden_facts, value: @form_values.fetch("hidden_facts", JSON.pretty_generate(@version.hidden_facts)), rows: 4 %></div>
+          </details>
+          <% ScenarioVersion::REQUIREMENT_TYPES.each do |kind| %><div class="field"><%= form.label kind, "#{kind.humanize} — one requirement per line" %><%= form.text_area kind, value: @form_values.fetch(kind, @version.requirements.fetch(kind).join("\n")), rows: 3 %></div><% end %>
+          <details><summary>Attach company documentation</summary><p>Choose a current document and paste its exact excerpt. It replaces that document's prior evidence of the same use in the new version. Old versions stay fixed. Up to 100 current documents are listed.</p>
+            <div class="field"><%= label_tag :evidence_item_id, "Company document" %><%= select_tag :evidence_item_id, options_for_select(@knowledge_items.map { |item| [item.title, item.id] }, params[:evidence_item_id]), include_blank: "No added document" %></div>
+            <div class="field"><%= label_tag :evidence_kind, "Evidence use" %><%= select_tag :evidence_kind, options_for_select([["Expected behaviour evidence", "expectation"], ["Knowledge available to target", "knowledge"]], params[:evidence_kind]) %></div>
+            <div class="field"><%= label_tag :excerpt, "Exact document excerpt" %><%= text_area_tag :excerpt, params[:excerpt], rows: 4, maxlength: 4000 %></div>
+          </details>
+          <%= form.submit "Save new version", class: "button button-primary" %>
+        <% end %>
+      <% else %><h3>Starting situation</h3><p><%= @version.situation %></p><pre class="evidence-text"><%= JSON.pretty_generate(@version.attributes.slice(*ScenarioVersion::EDITABLE)) %></pre><% end %>
+    </section>
+    <section aria-labelledby="evidence-title"><h2 id="evidence-title">Company evidence</h2><p>Untrusted source text. It supports expert judgment; it is not a ready-made target prompt.</p>
+      <% @version.scenario_evidence.includes(:corpus_item).each do |evidence| %><article class="source-record"><h3><%= evidence.corpus_item.title %></h3><p><%= evidence.kind == "knowledge" ? "Knowledge available to target" : "Expected behaviour evidence — hidden from target" %></p><%= link_to "Inspect source snapshot", source_evidence_path(evidence.corpus_item) %><pre class="evidence-text"><%= evidence.excerpt %></pre></article><% end %>
+      <% @version.scenario_reviews.order(:id).each do |review| %><p>Expert #<%= review.reviewed_by_id %> · <%= review.decision %> · <%= review.created_at.to_fs(:long) %></p><p><%= review.note %></p><% end %>
+    </section>
+  </div>
+  <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+    <section class="section-block config-panel"><h2>Expert decision</h2><p>Save edits first. Approval binds to exactly version <%= @version.number %>. At least one source-backed outcome is required.</p>
+      <%= form_with url: review_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: @version.id %>
+        <div class="field"><%= form.label :decision %><%= form.select :decision, [["Approve", "approve"], ["Reject", "reject"], ["Merge", "merge"]], selected: params[:decision] %></div>
+        <div class="field"><%= form.label :note, "Decision note" %><%= form.text_area :note, value: params[:note], rows: 3, maxlength: 2000 %></div>
+        <div class="field"><%= form.label :merge_into_id, "Approved scenario ID (only for Merge)" %><%= form.number_field :merge_into_id, value: params[:merge_into_id], min: 1 %></div>
+        <%= form.submit "Save expert decision", class: "button" %>
+      <% end %>
+    </section>
+    <% if @version.approved? %><details class="section-block config-panel"><summary>Create a controlled variant</summary><p>Change one named fact. The variant retains its parent, evidence and exact change; it must be reviewed separately.</p>
+      <%= form_with url: variant_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: @version.id %>
+        <div class="field"><%= form.label :variable, "Fact to change" %><%= form.select :variable, @version.known_facts.keys, selected: params[:variable] %></div>
+        <div class="field"><%= form.label :after, "New value (JSON, including quotes for text)" %><%= form.text_field :after, value: params[:after], required: true %></div>
+        <div class="field"><%= form.label :reason, "Why this change matters" %><%= form.text_area :reason, value: params[:reason], required: true, rows: 2, maxlength: 2000 %></div>
+        <div class="field"><%= form.label :expected_difference, "Expected behaviour difference" %><%= form.text_area :expected_difference, value: params[:expected_difference], required: true, rows: 2, maxlength: 2000 %></div>
+        <%= form.submit "Create variant", class: "button" %>
+      <% end %>
+    </details><% end %>
+  <% end %>
+</main>

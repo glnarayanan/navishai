@@ -9,13 +9,23 @@ The workspace overview links to corpus intake and source evidence. Import forms
 name supported formats, bounds, email masking limits and retention. Source pages
 show the fixed snapshot, input digest, processing version and historical versions;
 record lists paginate. Errors state the rejected input and recovery path. No target
-processing or scenario/eval actions exist yet. Analysis pages distinguish term
+processing or eval actions exist yet. Analysis pages distinguish term
 proposals from expert taxonomy revisions, disclose bounds and selection reasons,
 and link each example to its source snapshot. Queued jobs have a refresh action;
 failures have a recovery message. Light and dark modes retain the native
 theme control. Navigation uses a keyboard-accessible disclosure at every viewport;
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
+
+Scenario review places the starting situation and behavioural requirements beside
+exact company evidence on desktop; mobile stacks them. Facts, document attachment
+and controlled variants use native disclosures. Evidence marks what stays hidden
+from the target. Expert approval binds to a version; saves reset review only when
+content changes. Invalid edits retain their text, and stale edits require a reload.
+Variants show the parent version, named fact change, reason and expected difference.
+Unedited variants cannot inherit approval. Source changes flag affected evidence;
+replacing a document excerpt creates a new version. Merge uses an approved scenario
+ID shown in the paginated scenario list, retaining the source identity and decisions.
 
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are

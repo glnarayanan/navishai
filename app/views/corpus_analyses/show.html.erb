@@ -8,6 +8,7 @@
   <% if @analysis.state == "complete" %>
     <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> term clusters represented. This measures this method's selection, not verified issue-family coverage.</p>
     <p>Taxonomy: <%= @taxonomy ? "expert revision #{@taxonomy.number}" : "unreviewed proposals" %>. A possible documentation gap means no overlap between three cluster terms and the uploaded documents; experts must check it.</p>
+    <% if Current.require_membership!.can_write? %><%= button_to "Create selected scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { analysis_id: @analysis.id }, class: "button button-primary" %><% end %>
     <% @clusters.each do |cluster| %>
       <section class="section-block" aria-labelledby="cluster-<%= cluster.id %>">
         <h2 id="cluster-<%= cluster.id %>"><%= @taxonomy&.labels&.fetch(cluster.id.to_s, nil) || cluster.proposed_label %></h2>

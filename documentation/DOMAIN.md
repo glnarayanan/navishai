@@ -41,3 +41,6 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - Merging preserves the rejected/merged identity and provenance; it does not erase why a case entered the corpus.
 - An execution error is not a behavioural failure. An uncalibrated judgment is not a proven label.
 - Frequency, risk, coverage, confidence, and severity are different facts. Counts alone do not measure scenario quality.
+- Expectation evidence stays hidden from a target; knowledge evidence is an explicit excerpt the expert permits it to use.
+- A source-backed human expectation is not a claim that the historic answer was correct. Mining cannot approve it.
+- A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
