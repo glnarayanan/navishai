@@ -2194,11 +2194,11 @@ Native Bash syntax and Ruby style pass. Real standalone namespace denial/replace
 and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
 and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
 
-Full `bin/ci` passed in 19m24.83s: 684 Rails tests / 10,947 assertions and 71 browser
-tests / 3,561 assertions, no failures/errors/skips. Ruby style (383 files), native
-audits, Brakeman and eager loading passed. The fresh core 19 / 159 run adds two
-ownership-boundary fixtures and real Git-archive recovery after the combined run's
-14 core tests. Actual root tar retained group-write headers; recovery refused that
+Fresh full `bin/ci` passed in 16m42.19s: 689 Rails tests / 10,974 assertions and 71
+browser tests / 3,561 assertions, no failures/errors/skips. Ruby style (384 files),
+native audits, Brakeman and eager loading passed. The run includes all 19 core
+tests for ownership boundaries, archive recovery, image cache/API refusal and
+failed runtime checks. Actual root tar retained group-write headers; recovery refused that
 release. The archive path now strips group/other write and preserves executable
 bits. The actual published release passes the same recovery validator.
 Compose 2.39.4 also pulled cached tag-plus-digest pins despite its missing policy.
@@ -2210,7 +2210,7 @@ and validation, then stopped at unsupported `create --no-deps`. Startup now uses
 supported `up --no-start --no-deps --force-recreate` to create stopped web/jobs
 without reconciling guarded dependencies. Runtime and policy inspection still
 precede start; the failed-runtime regression proves that refusal. The corrected
-joined proof and fresh full CI are in progress. No combined runtime pass is claimed.
+joined proof is in progress. No combined recovery/rollback pass is claimed.
 
 This work is committed/pushed as draft
 [#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not

@@ -175,12 +175,12 @@ ordering, both startup guards, literal env parsing, distinct secrets, lock/resto
 contracts, writable-root/startup-path and shared-resource/partial-install cleanup
 refusal. Bash syntax and native Ruby style pass. The real namespace-policy and PG recovery proofs pass;
 their scope and limits remain in [policy](./VPS_POLICY.md) and
-[recovery](./VPS_RECOVERY.md). Full `bin/ci` passed in 19m24.83s: 684 Rails tests /
-10,947 assertions and 71 browser tests / 3,561 assertions, no failures/errors/skips.
-That run includes 14 core command tests; the fresh 19 / 159 run also covers
-two added ownership-boundary fixtures, actual root Git-archive recovery and
-cache/missing/API-failure pin handling with no retry, and refusal to start writers
-after a failed runtime check. A new full run is in progress for these fixes.
+[recovery](./VPS_RECOVERY.md). Fresh full `bin/ci` passed in 16m42.19s: 689 Rails
+tests / 10,974 assertions and 71 browser tests / 3,561 assertions, no failures,
+errors or skips. Ruby style (384 files), native audits, Brakeman and eager loading
+pass. This run includes all 19 core tests: writable ownership boundaries, actual
+root Git-archive recovery, cache/missing/API-failure pin handling with no retry,
+and refusal to start writers after a failed runtime check.
 Root tar kept Git's group-write headers, causing recovery to refuse the CLI's own
 release. Release extraction now strips group/other write, retains executable bits
 and passes the real archive validator. Style, audits, Brakeman and eager loading
