@@ -16,38 +16,104 @@ sudo git clone https://github.com/glnarayanan/navishai.git /root/navishai-reset-
 RESET_COMMIT=APPROVED_FULL_COMMIT_SHA
 sudo git -C /root/navishai-reset-source checkout --detach "$RESET_COMMIT"
 sudo /root/navishai-reset-source/bin/navishai-vps doctor
-sudo /root/navishai-reset-source/bin/navishai-vps init-env \
-  --host support.example.com --acme-email owner@example.com \
-  --output /root/navishai-reset.env
-sudoedit /root/navishai-reset.env
-# Fill all five SMTP fields; replace hostname/email above with your own.
 sudo /root/navishai-reset-source/bin/navishai-vps install \
-  --source /root/navishai-reset-source --commit "$RESET_COMMIT" \
-  --env /root/navishai-reset.env
+  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
 sudo navishai-reset status
 ```
 
-Run install within the generated bootstrap token's two-hour expiry, or set a new
-explicit expiry in that private file. The CLI prints no secrets. Use the private
-token to create the first Owner through HTTPS; public registration stays off.
+### Guided setup and resume
+
+Install asks for domain, ACME contact email, SMTP server/port/user/password/from,
+initial Owner email/password/confirmation, and organisation/workspace names and
+slugs. It corrects invalid input and shows nonsecret choices before asking `yes`.
+Passwords use hidden terminal reads. Ctrl-C, EOF or rejecting review leaves
+installed state unchanged. You do not need an IP address or an edited `.env`.
+SMTP must support authenticated STARTTLS with a trusted certificate, usually on
+port 587. Enter decimal ports without leading zeroes; implicit-TLS-only SMTP is
+not this application's mail contract. Setup does not send a test email.
+
+The CLI creates distinct random database secrets, a Rails secret and a two-hour
+bootstrap token in private internal config. After gated HTTPS startup, it creates
+the chosen Owner through the existing bootstrap service in the running web
+container and records an attributable audit in the same transaction. Account input
+goes through stdin, not command arguments; the clear Owner password does not enter
+config. This runtime write does not launch one-off maintenance alongside live
+writers. Existing Owners cannot be recreated. Public registration stays off; no
+default password is supplied.
+
+If install reaches owned state but a later step fails, correct the named cause and
+repeat that same source/commit with `install --resume`. Resume retains domain,
+SMTP and secrets; it asks only for unfinished account choices. Do not delete data
+or rerun fresh install. If the protected token expired before Owner creation:
+
+```sh
+sudo navishai-reset renew-bootstrap
+sudo /root/navishai-reset-source/bin/navishai-vps install --resume \
+  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
+```
+
+Renewal stops writers, checks native bootstrap eligibility and creates a new
+private two-hour token. It refuses a completed bootstrap without changing config.
+If failure occurred before any installed state, use normal install again.
+
+Automation must opt in with `--non-interactive --answers /root/private-answers.json`.
+The file must be root-owned, mode 0600, single-link, at most 32 KiB and inside a
+root-controlled directory. Supply exactly these string keys, with no duplicates:
+`host`, `acme_email`, `smtp_server`, `smtp_port`, `smtp_user`, `smtp_password`,
+`smtp_from`, `owner_email`, `owner_password`, `owner_password_confirmation`,
+`organization_name`, `organization_slug`, `workspace_name`, `workspace_slug`.
+The explicit flag supplies consent instead of an interactive review. Keep secrets
+out of shell arguments/history and remove the answers file under your retention
+policy after use. Resume accepts the same answer schema but retains installed
+domain/SMTP config. SMTP credentials cannot contain control characters, single
+quotes or backslashes: the literal dotenv contract refuses those values rather
+than changing them. Owner passwords require 12 characters and at most 72 bytes.
+
+Advanced automation may still generate an `init-env` template and install with
+`--env PRIVATE_FILE`; fill its SMTP fields privately. That path does not collect
+or create an Owner. Use the protected HTTPS bootstrap before token expiry, or
+renew it with the command above. Manual config is not the default install path.
 All six model/target registries default to `[]`. Filling a registry still requires
 its own workspace approval and human disclosure consent.
 
 ### Host prerequisites
 
 Root on Linux with systemd, a **local Unix-socket Docker Engine**, and Compose
-2.39.4 or later. Required commands: Bash, Git, jq, curl, OpenSSL, GNU tar/coreutils,
-flock, findmnt, nsenter, iptables/ip6tables and both save/restore pairs. Both kernel
+2.39.4 or later. Required commands: Bash, Git, jq, curl, getent, awk, OpenSSL,
+GNU tar/coreutils, flock, findmnt, nsenter, ip, ss, iptables/ip6tables and both save/restore pairs. Both kernel
 filter families must work; IPv4-only rules are not a fallback. The host needs disk
 space for builds, retained releases/images and full backups. `doctor` checks local
 tools and Docker, not DNS, public access, SMTP delivery or enough disk space.
 
-The hostname's A/AAAA records must reach this VPS. Public inbound TCP 80/443 must
-reach Caddy without another listener. Host loopback 3000 must be free. Allow Docker
+Normal hosts need one public IPv4 on an up, non-tailnet interface with a main-table
+default route. The CLI reads native JSON addresses/routes, excludes private,
+loopback, carrier-grade NAT, link-local and tailnet addresses, then validates the
+selected address's outbound route. No unique safe choice means refusal, not a guess.
+An optional `--public-listen-address IPV4` override must pass the same assigned
+address and route checks. Use it only for a deliberate multihomed topology.
+
+Desired config stores `auto`, not the discovered IP, interface or container IDs.
+Every startup and Compose call derives the current host address. `check` stops
+writers if actual proxy bindings are stale or unsafe; gated `start` recreates them
+on the current address. Reboot/address changes need no env edits in auto mode.
+An explicit override remains deliberate config on that host and refuses when
+stale; destination `recover` defaults back to auto.
+
+Caddy publishes TCP 80/443 on the derived public address and 443 on 127.0.0.1 for
+direct, trusted local HTTPS checks. There is no wildcard or public IPv6 publication;
+an origin AAAA record must not send clients to an unserved interface. These endpoints
+and host loopback 3000 must be free. Tailnet-only listeners on 443 can stay. Allow Docker
 image/build downloads, Caddy ACME and public SMTP traffic under the owner's host
 policy. Do not publish PostgreSQL. A host with a shared existing proxy or blocked
 ports needs a separate reviewed topology; this CLI does not replace that proxy or
 change its firewall. No host package or network setup command is guessed here.
+
+Startup requires public IPv4 hostname resolution and trusted direct-loopback TLS.
+DNS may point through Cloudflare or another proxy; the CLI does not confuse its
+edge IPs with the host's bind address. The operator must still configure and verify
+the proxy's origin routing, public DNS/ports and SMTP delivery. NAT-only hosts with
+no assigned public IPv4, IPv6-only ingress and shared public proxies need a separate
+reviewed topology. Automatic discovery does not certify arbitrary hosts.
 
 Install/upgrade inspect the exact configured PostgreSQL/Caddy digest references
 and pull only a missing image. Docker/API inspection errors stop the operation.
@@ -64,12 +130,55 @@ docker --version; docker compose version; systemctl --version
 sudo docker compose ls --all
 sudo ss -lntp '( sport = :80 or sport = :443 or sport = :3000 )'
 ip -4 route; ip -6 route
+ip -4 route get 1.1.1.1; ip -brief address show
 ```
 
 The old uninstall preview supplies the exact source SHA, CLI/current release,
 Compose config paths, container IDs, volume names and network IDs. If it cannot
 prove a project/layout, stop and share that refusal and the read-only inventory,
 not private environment contents. It does not run an unknown old CLI for a version.
+
+### Recover a wildcard-bind partial install
+
+The old installer isolated public ingress in
+[`fe5de56`](https://github.com/glnarayanan/navishai/commit/fe5de56b41880dd409bc425ba455ebb18af5d331).
+The first reset CLI lost `NAVISHAI_PUBLIC_LISTEN_ADDRESS` and published wildcard
+80/443. The owner's journal confirmed `0.0.0.0:443: address already in use` while
+Tailscale listened only on tailnet addresses. Web/jobs had started; failure handlers
+then stopped them. This was a deployment regression, not a Cloudflare diagnosis.
+The final historical installer prompted hostname/bind IP and accepted protected
+SMTP answers; it did not prove automatic discovery or complete interactive SMTP/
+Owner setup. Those are the new supported defaults, not invented historical claims.
+
+Keep Tailscale and its access/services unchanged. A listener does not prove Serve
+or Funnel is configured. If needed, record those settings with read-only
+`sudo tailscale serve status` and `sudo tailscale funnel status`. Do not reset them.
+
+After review of the fix, use its source CLI for one backed-up upgrade. The old
+managed CLI cannot parse the new option. Do not add the key to its env first,
+edit an immutable release, delete installed data or rerun install:
+
+```sh
+sudo git -C /root/navishai-reset-source fetch origin
+FIXED_COMMIT=REVIEWED_FULL_FIX_SHA
+sudo git -C /root/navishai-reset-source checkout --detach "$FIXED_COMMIT"
+sudo install -d -m 700 /root/navishai-reset-backups
+sudo /root/navishai-reset-source/bin/navishai-vps upgrade \
+  --source /root/navishai-reset-source --commit "$FIXED_COMMIT" \
+  --backup /root/navishai-reset-backups/before-ingress-fix
+# Only after upgrade succeeds, restore the generated service's active state.
+sudo systemctl start navishai-reset.service navishai-reset-check.timer
+sudo navishai-reset check
+sudo navishai-reset status
+```
+
+No IP input is required. The backup directory must be new. Upgrade stops writers,
+saves the full old recovery point, then writes desired `auto` to private config
+and switches to the new release. Failure restores saved code/data/config and
+stays stopped. Do not
+start the old wildcard release after a failed upgrade; retain the error and backup.
+The certificate/hostname checks, runtime credentials and both namespace policy
+families remain in force. No script stops Tailscale or changes host interfaces.
 
 ## Commands after install
 
@@ -113,9 +222,45 @@ input env file and external backups. If install fails before Docker work, it rem
 only its new staging roots. Later failures keep an `installing` receipt so the source
 CLI can preview/clean that exact partial install even without generated units.
 
-Restore needs validated installed roots and an env file. It supports same-install
-rollback and lost-volume/image/release recovery, not clean-host disaster bootstrap.
-Rebuilding an entire lost VPS still needs a separate approved host/bootstrap plan.
+### Move or recover onto another VPS
+
+First upgrade the source to this portable CLI, then take a full backup. Older
+wildcard releases cannot supply clean-host recovery: upgrade the source before
+migration. Securely copy the complete private backup onto the destination; the CLI
+does not transfer or encrypt it. Keep the source stopped during cutover. Two active
+copies can run duplicate jobs; a backup alone does not coordinate them.
+
+On the destination, prepare the host prerequisites above, fetch/review this CLI
+and make the backup parent/files root-owned with their original 0700/0600 modes.
+Do not run fresh `install` or create empty data first. Target paths and project
+resources must be absent. Inspect the backup's manifest/checksums privately:
+
+```sh
+sudo /root/navishai-reset-source/bin/navishai-vps doctor
+sudo sha256sum /root/navishai-reset-backups/migration-point/CHECKSUMS
+sudo /root/navishai-reset-source/bin/navishai-vps recover \
+  --from /root/navishai-reset-backups/migration-point \
+  --confirm-restore DISPLAYED_CHECKSUMS_SHA256
+# Restore leaves writers stopped. Point DNS/proxy origin at this destination.
+sudo systemctl start navishai-reset.service navishai-reset-check.timer
+sudo navishai-reset check
+sudo navishai-reset status
+```
+
+Recovery validates the full backup, creates only owned destination paths/resources,
+restores exact data/secrets/roles/history and registers local units. It rebinds
+receipt paths, defaults desired ingress to `auto` and recreates container identities.
+It never restores the source IP/interface/container identity as runtime state.
+Before serving, gated startup checks destination DNS, trusted loopback HTTPS,
+restricted roles and both namespace policies. No fresh Owner or secret rotation
+runs during migration. Same-install `restore` still keeps byte-exact desired config.
+
+If destination recovery fails after creating its receipt, fix the named cause and
+repeat `recover --resume` with the same reviewed release, backup and checksum
+consent. It checks the unfinished `recovering` receipt and owned resources, not
+arbitrary existing installations. Data restore repeats; writers stay stopped.
+If failure left no installed roots, repeat ordinary `recover`. No deletion or
+immutable-release edit is part of either retry.
 
 ## Ownership and startup
 
@@ -169,39 +314,26 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Core command tests pass 19 tests / 159 assertions, recovery tests 11 / 33 and
-namespace-policy tests 8 / 155, with no failures, errors or skips. They test command
-ordering, both startup guards, literal env parsing, distinct secrets, lock/restore
-contracts, writable-root/startup-path and shared-resource/partial-install cleanup
-refusal. Bash syntax and native Ruby style pass. The real namespace-policy and PG recovery proofs pass;
-their scope and limits remain in [policy](./VPS_POLICY.md) and
-[recovery](./VPS_RECOVERY.md). Fresh full `bin/ci` passed in 16m42.19s: 689 Rails
-tests / 10,974 assertions and 71 browser tests / 3,561 assertions, no failures,
-errors or skips. Ruby style (384 files), native audits, Brakeman and eager loading
-pass. This run includes all 19 core tests: writable ownership boundaries, actual
-root Git-archive recovery, cache/missing/API-failure pin handling with no retry,
-and refusal to start writers after a failed runtime check.
-Root tar kept Git's group-write headers, causing recovery to refuse the CLI's own
-release. Release extraction now strips group/other write, retains executable bits
-and passes the real archive validator. Style, audits, Brakeman and eager loading
-passed. No public-host acceptance follows from those native checks.
-The joined proof also found Caddy's root-owned `caddy/` mode 1777 in both volumes.
-Only those two archives accept that exact directory/owner/mode; generic root and
-other archive rules stay unchanged. The red-to-green full backup/restore regression
-also refuses unsafe near cases. All operations tests pass 57 / 540 after this fix;
-the full CI above predates it. See [recovery](./VPS_RECOVERY.md).
+Focused core checks pass 29 tests / 278 assertions; guided setup passes 11 / 237,
+with no failures, errors or skips. They cover native terminal hiding/cancellation,
+invalid/protected answers, stdin-only account input, lock ordering, retained resume
+config, automatic discovery, ambiguity/stale override refusal, exact endpoints,
+byte-exact upgrade rollback and unfinished-destination ownership. Bash/Ruby syntax,
+all 388 Ruby files of native style and diff checks pass. Final seeded operations
+pass 85 tests / 1,011 assertions. Sequential `bin/ci` passes 718 Rails tests /
+11,424 assertions and 71 browser tests / 3,562 assertions in 24m20.20s. Final
+operations and the frozen proof recheck the last setup fixes after that broad run.
 
-The [joined real CLI proof](./VPS_CLI_PROOF.md) passes/CLEAN on CLI `76ac2119` and
-recovery `e793c033`: install, child lock handoff, trusted internal-CA Caddy HTTPS,
-four restricted databases, separate jobs, namespace replacement/kernel denial,
-backup, checksum-consented restore, successful upgrade and full failed-migration
-rollback. The failed migration commits changed rows and sequence 97/true;
-rollback restores the prior rows and 47/false sequence, owners, grants and fixed
-native history.
-Fourteen actual pre-start inspections keep writers stopped and dependencies stable;
-142 maintenance windows have no writers or workload-start events. Actual daemon
-restart starts nothing automatically; explicit start reapplies both policy families.
-Cleanup leaves host IPv4/IPv6 firewall rules and checked sysctls unchanged.
+The fast native ingress proof reproduces wildcard `EADDRINUSE`, then passes with
+exact public/loopback ports, reachable IPv4/IPv6 tailnet listeners and refusal of
+occupied endpoints. The [joined proof](./VPS_CLI_PROOF.md) records exact frozen
+source hashes and separates earlier static-binding results from the current
+automatic/guided/portable source. The current full run returns exit 0 / `CLEAN`:
+partial-install automatic upgrade, chosen Owner setup, complete restore and
+committed-mutation rollback, empty different-address destination recovery/resume,
+address-change reconciliation and daemon restart. Eighteen pre-start inspections
+and 175 source maintenance windows pass. Separate kernel/PG proof scope remains
+in [policy](./VPS_POLICY.md) and [recovery](./VPS_RECOVERY.md).
 
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.
 Native fixture/unit tests alone cannot certify public ingress, ACME/DNS, SMTP/OIDC,
@@ -209,4 +341,5 @@ the owner's firewall or storage, live recovery or customer/model quality.
 
 Owner-specific inputs remain hostname/DNS, access to public 80/443, SMTP, and a
 root-controlled Linux/systemd Docker host with the required namespace/firewall tools.
-No VPS, live data, provider, paid call, release or deployment has run.
+The owner attempted the initial reset install; its public-bind failure is recorded
+above. This fix has not run on that VPS. No agent VPS, provider or paid call ran.

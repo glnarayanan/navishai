@@ -4,7 +4,8 @@ Updated 2 October 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
 milestones. All 82 rebuild PRs (#141–#223 except the separate setup PR #208)
 merged into main in dependency order. The resulting tree matches the CI-green
 integrated rebuild: 644 Rails tests / 10,552 assertions and 71 browser tests /
-3,561 assertions, with no failures, errors or skips. No release or deployment ran.
+3,561 assertions, with no failures, errors or skips. No agent release or deployment
+ran. The owner later attempted the reset VPS install; see its follow-up below.
 Live/customer and public-host acceptance remain unproved.
 
 ## Delivered stack
@@ -2233,10 +2234,11 @@ All private assets were removed; host IPv4/IPv6 firewall and four checked sysctl
 stay unchanged. Synthetic systemctl dispatch/internal CA do not prove real reboot,
 public ACME/ingress, SMTP/OIDC, VPS recovery or customer quality.
 
-This work is committed/pushed for review as
-[#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not
-merged or deployed. No owner VPS or provider ran. Host packages, DNS/ports and storage policy
-need owner inputs, not guessed installation commands or weaker egress controls.
+PR [#226](https://github.com/glnarayanan/navishai/pull/226) merged on 2 October
+at 13:44 UTC. Its private proof did not run on the owner VPS or call a provider.
+The owner then attempted deployment; the ingress regression below stopped startup.
+Host packages, DNS/ports and storage policy still need operator checks, not weaker
+egress controls.
 
 ### CI browser follow-up
 
@@ -2283,6 +2285,49 @@ checks pass. Exact pushed-head GitHub checks remain separate from these local
 results and live on [#226](https://github.com/glnarayanan/navishai/pull/226).
 No workflow was blindly rerun or cancelled. The joined VPS proof's production
 hashes and PASS/CLEAN evidence remain unchanged and separate from CI.
+
+### Public ingress, guided setup and portable recovery
+
+The owner's journal confirms the shipped wildcard `0.0.0.0:443` conflicted with
+tailscaled listening on tailnet IPv4/IPv6 addresses. Web/jobs started, then failure
+handlers stopped them when the proxy bind failed. Cloudflare did not cause that
+bind error. The old final installer bound public and loopback addresses, but asked
+for an explicit host IP; automatic discovery is a new requirement, not a recovered
+historical feature.
+
+The current local change derives one usable public IPv4 from native routes and
+interfaces at each gated startup. Desired config stores `auto`, not host identity.
+Ambiguous or stale deliberate overrides fail; endpoint checks preserve tailnet
+listeners. Caddy binds only public IPv4 80/443 and loopback 443. Trusted direct-local
+HTTPS, both policy families and stopped-writer maintenance remain required.
+
+Default install now asks for domain, ACME email, SMTP, chosen Owner credentials
+and organisation/workspace details. Hidden secret entry, correction, nonsecret
+review and consent precede config changes. Protected JSON supports automation;
+`.env` stays an internal detail. Owner creation uses the existing protected,
+expiring bootstrap service and an attributable transaction in the running web
+container; one-off maintenance still requires stopped writers. Resume retains
+config; completed Owners cannot be recreated or have their token renewed.
+
+Consented `recover` bootstraps an empty destination from complete backup data,
+secrets and images. It rebinds local receipt paths and discovers destination ingress,
+registers only exact owned units and leaves writers stopped. Registration failure
+keeps an unfinished receipt for guarded `recover --resume`. Same-install restore
+and failed-upgrade rollback retain their exact prior config contract.
+
+Focused setup passes 11 tests / 237 assertions. Sequential native CI passes
+718 Rails tests / 11,424 assertions and 71 browser tests / 3,562 assertions, with
+no failures, errors or skips; audits, eager loading and all 388 Ruby files pass.
+Final operations after the setup fixes pass 85 tests / 1,011 assertions with seed
+47436. The current frozen-source [joined proof](./VPS_CLI_PROOF.md) returns exit 0
+and `CLEAN`: automatic partial-install upgrade, guided chosen Owner setup, exact
+restore, committed-mutation rollback, different-address destination recovery and
+guarded resume, address-change reconciliation and daemon restart. It checks 18
+pre-start inspections and 175 source maintenance windows. All 11 production hashes
+match the worktree; host firewall/four sysctls stay unchanged and no private asset
+remains. Public ACME/DNS, SMTP delivery and real systemd registration/reboot remain
+unproved. Parent integration owns the PR and exact pushed-head CI; no push, merge,
+owner-VPS action or deployment ran in this slice.
 
 ## Pending owner decisions
 
