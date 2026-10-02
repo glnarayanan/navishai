@@ -40,21 +40,23 @@ class SupportTrace
     validate!(item.context.fetch("support_trace"))
   end
 
-  def self.propose!(item:, membership:)
+  def self.propose!(item:, membership:, discovery_review: nil)
     corpus = item.corpus
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       trace = payload(item)
+      discovery_review.authorize_draft!(item:, membership:) if discovery_review
       existing = corpus.scenarios.find_by(corpus_item: item, parent_version_id: nil)
       return existing if existing
-      raise Scenario::Invalid, "This trace has no reported failure. Review the output before proposing a failure scenario." if trace["observed_failure"].blank?
+      discovery_review.trace_failure_discovery.ensure_evidence! if discovery_review
+      raise Scenario::Invalid, "This trace has no reported failure. Review the output before proposing a failure scenario." if trace["observed_failure"].blank? && !discovery_review
       scenario = corpus.scenarios.create!(workspace: corpus.workspace, corpus_item: item)
       version = scenario.scenario_versions.create!(workspace: corpus.workspace, corpus:, created_by: membership.user,
         number: 1, origin: "mined", title: trace["title"], situation: trace["input"]["situation"],
         taxonomy_label: trace["title"], importance: "normal", known_facts: trace["input"]["known_facts"], hidden_facts: {},
         requirements: ScenarioVersion::REQUIREMENT_TYPES.index_with { [] },
-        selection_reason: "Reported production failure in source record #{item.external_id}. The recorded correction is not an approved expectation.", created_at: Time.current)
-      version.scenario_evidence.create!(workspace: corpus.workspace, corpus:, corpus_item: item, kind: "expectation", excerpt: item.content.first(4000))
+        selection_reason: discovery_review ? "Expert accepted a proposed failure in discovery #{discovery_review.trace_failure_discovery_id}, review #{discovery_review.id}. Model text and uploaded corrections supply no approved expectations." : "Reported production failure in source record #{item.external_id}. The recorded correction is not an approved expectation.", created_at: Time.current)
+      version.scenario_evidence.create!(workspace: corpus.workspace, corpus:, corpus_item: item, kind: "expectation", excerpt: discovery_review ? discovery_review.source_excerpt : item.content.first(4000))
       scenario.update!(current_version: version)
       AuditEvent.record!(action: "scenario.mined", source: :web, workspace: corpus.workspace, actor: membership.user, subject: version, metadata: { version: 1 })
       scenario

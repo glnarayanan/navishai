@@ -1944,6 +1944,28 @@ privacy checks and separate security/architecture guidance are integrated.
 See [ASSUMPTION_IMPACT.md](./ASSUMPTION_IMPACT.md). Selected-set fixture proposals
 do not establish company-wide impact coverage or live model quality.
 
+## Proposed trace failures, families and gaps (slice 79)
+
+An explicit separately approved request now inspects complete traces without
+requiring uploader-reported failures. It proposes emerging families/gaps against
+all disclosed current definitions/cases and accounts for every fixed trace.
+No finding is not pass, exact quotes are not truth and the selected comparison set
+does not measure company coverage. Expert acceptance can open only a source-backed
+draft with empty expectations; review/compilation/regression remain separate.
+
+Parent focused/adjacent checks passed 72 tests / 1134 assertions and native browser
+journeys passed 5 / 207, with no failures, errors or skips. Approval tests cover
+every joined purpose, queued/in-flight revocation and unchanged once-only guards.
+Actual DEBUG inserts and typed request/SQL fields filter input/result/review copies.
+Desktop accounting, mobile exact family/gap evidence and combined empty navigation
+were inspected; keyboard, current-section, viewport/CSP/overflow checks passed.
+Ruby style passed 364 files, eager loading passed and Brakeman reported zero
+warnings/errors. Migration 20261001230000 avoids the draft-quality timestamp;
+native schema regeneration includes all joined tables. Config, nav, routes, audit,
+purge and separate-purpose guidance are integrated. Combined operations/CI follow.
+See [TRACE_FAILURE_DISCOVERY.md](./TRACE_FAILURE_DISCOVERY.md). No live model,
+accuracy, customer-value or commercial-cost proof follows from these fixtures.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

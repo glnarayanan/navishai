@@ -1,0 +1,25 @@
+<% content_for :title, "Preview trace failure discovery — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to "Trace failure discoveries", workspace_corpus_trace_failure_discoveries_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Preview trace failure discovery</h1><p>Proposed failures, emerging families and gaps. No expert authority.</p></div></div>
+  <p>One optional model request reviews every current production trace in this corpus, including those with no reported failure. Default remains no model transmission. Quotes prove source links, not correct judgments. Nothing approves a scenario, adds a label or admits a regression.</p>
+  <p>Limits: 1–50 complete traces, 50 complete documents, 50 current scenario definitions, 50 compiled cases, 200 evidence links and 200 check links, all within 256 KiB. The whole preview must fit; no silent sampling or truncation. Email masking is not full PII removal. Review all shown content before disclosure.</p>
+  <% if @input_error %>
+    <p role="alert" class="inline-error"><%= @input_error %></p><p>No partial preview or request form is shown. <%= link_to "Inspect the corpus", workspace_corpus_path(Current.workspace, @corpus) %>, repair the inputs, then reopen this preview.</p>
+  <% else %>
+    <div class="review-layout">
+      <section aria-labelledby="discovery-preview"><h2 id="discovery-preview">Exact contents</h2><%= render "preview", input: @input %></section>
+      <section aria-labelledby="discovery-request"><h2 id="discovery-request">Request discovery</h2>
+        <p>The operator must approve this exact workspace/endpoint for the separate trace-discovery purpose in NAVISHAI_TRACE_DISCOVERY_ENDPOINTS. Corpus, target, judge, scenario or matching approval cannot grant this purpose. Registry entries remain empty by default.</p>
+        <p>One once-claimed call to these fixed settings. Refresh sends nothing. A crash or unknown outcome never retries; remote retention and idempotency belong to the endpoint operator.</p>
+        <%= form_with url: workspace_corpus_trace_failure_discoveries_path(Current.workspace, @corpus), class: "form-stack config-panel" do |form| %>
+          <%= form.hidden_field :input_digest, value: TraceFailureDiscoveryPreview.digest(@input) %>
+          <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration].is_a?(String) ? params[:configuration] : nil, rows: 7, maxlength: 10240, required: true, aria: { describedby: "discovery-config-help" } %><p id="discovery-config-help">Use endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or a non-negative integer. Never enter credentials.</p></div>
+          <div class="checkbox-field"><%= form.check_box :trace_discovery_disclose, checked: false %><%= form.label :trace_discovery_disclose, "I approve sending these exact complete traces, documents, scenario definitions and compiled cases to the endpoint/model/settings above for the separate trace-discovery purpose: proposed failure, emerging-family and coverage-gap discovery." %></div>
+          <%= form.submit "Request trace failure discovery", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <% end %>
+      </section>
+    </div>
+  <% end %>
+</main>

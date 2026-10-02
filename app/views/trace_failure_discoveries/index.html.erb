@@ -1,0 +1,12 @@
+<% content_for :title, "Trace failure discoveries — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Trace failure discoveries</h1><p>Explicit model attempts, not verified failures or labels.</p></div>
+    <% if Current.require_membership!.can_write? %><%= link_to "Preview discovery contents", new_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus), class: "button button-primary" %><% end %>
+  </div>
+  <%= render "shared/corpus_navigation", active: "trace_discovery" %>
+  <p>Upload production traces first. Discovery can propose failures without an uploader report, emerging issue families and gaps against a frozen comparison set. Importing or opening this page sends nothing.</p>
+  <% if @discoveries.empty? %><p role="status">No discovery attempts on this page. Default remains no model transmission.</p><% end %>
+  <ul role="list"><% @discoveries.each do |discovery| %><li><%= link_to "Discovery ##{discovery.id} · #{discovery.state.humanize}", workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus, discovery) %> · <%= discovery.created_at.utc %></li><% end %></ul>
+  <%= render "shared/record_pagination", more: @more, page_number: @page %>
+</main>

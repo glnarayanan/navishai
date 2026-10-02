@@ -9,6 +9,7 @@ class SourcePurge
       end
       AuditEvent.record!(action: "source.deleted", source: membership ? :web : :job,
         workspace: source.workspace, actor: membership&.user, actor_kind: "system", subject: source)
+      TraceFailureDiscovery.where(corpus: source.corpus).delete_all
       source.corpus.evaluation_runs.delete_all(:delete_all)
       source.corpus.evaluation_targets.delete_all(:delete_all)
       AssumptionImpact.where(corpus: source.corpus).delete_all

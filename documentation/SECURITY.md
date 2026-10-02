@@ -206,6 +206,16 @@ fixed versions, expiry and approval around the one call. Corpus-wide source purg
 deletes copies before scenarios. Proposals never change staleness, expectations,
 expert reviews or linked-source impact. See [ASSUMPTION_IMPACT.md](./ASSUMPTION_IMPACT.md).
 
+Trace discovery requires the distinct `NAVISHAI_TRACE_DISCOVERY_ENDPOINTS` registry
+and dedicated human consent for complete traces, documents, definitions and cases,
+including reported corrections and hidden assumptions. No other registry grants
+this purpose. Count/byte preflights and exact fixed lineage prevent silent sampling
+or foreign evidence; quotes do not establish a sound failure or coverage claim.
+Revocation blocks queued sends and discards returning responses. Immutable receipts
+and expert decisions purge corpus-wide before scenarios/cases; source expiry hides
+their contents. Expert acceptance permits only an unapproved empty-expectation
+draft. See [TRACE_FAILURE_DISCOVERY.md](./TRACE_FAILURE_DISCOVERY.md).
+
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
 prior cases or labels. Suite consent binds its displayed case list, rejecting stale

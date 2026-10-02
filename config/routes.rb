@@ -19,6 +19,11 @@ Rails.application.routes.draw do
       resources :assumption_impacts, only: %i[index new create show] do
         post :interrupt, on: :member
       end
+      resources :trace_failure_discoveries, only: %i[index new create show] do
+        post :interrupt, on: :member
+        post :review, on: :member
+        post :draft, on: :member
+      end
       resources :graders, only: %i[index create show update]
       resources :eval_cases, only: %i[new create show]
       resources :eval_suites, only: %i[index create show update]

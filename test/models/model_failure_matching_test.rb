@@ -7,7 +7,7 @@ class ModelFailureMatchingTest < ActiveSupport::TestCase
 
   test "matching needs separate exact-purpose approval and data endpoint settings consent" do
     with_endpoint_approval { assert_raises(EvaluationHttp::Error) { request_matching } }
-    %w[NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS].each do |name|
+    %w[NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS NAVISHAI_IMPACT_ENDPOINTS NAVISHAI_TRACE_DISCOVERY_ENDPOINTS].each do |name|
       original = ENV[name]
       begin
         ENV[name] = [ { workspace_id: @workspace.id, endpoint: HTTP_ENDPOINT } ].to_json

@@ -10,7 +10,7 @@ class ProductionConfigurationTest < ActiveSupport::TestCase
       assert_not environment.key?("NAVISHAI_POSTGRES_PASSWORD")
       assert_not environment.key?("NAVISHAI_DATABASE_USERNAME")
       assert_includes environment.fetch("NAVISHAI_DATABASE_PASSWORD"), "NAVISHAI_DATABASE_PASSWORD"
-      %w[EVALUATION SCENARIO CORPUS MATCHING IMPACT].each do |purpose|
+      %w[EVALUATION SCENARIO CORPUS MATCHING IMPACT TRACE_DISCOVERY].each do |purpose|
         key = "NAVISHAI_#{purpose}_ENDPOINTS"
         assert_equal "${#{key}:-[]}", environment.fetch(key)
       end

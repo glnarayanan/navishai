@@ -44,6 +44,25 @@ END; $$;
 
 
 --
+-- Name: guard_trace_failure_discovery(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_trace_failure_discovery() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (to_jsonb(NEW) - ARRAY['state', 'error', 'started_at', 'finished_at'])
+      IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['state', 'error', 'started_at', 'finished_at'])
+    OR NOT ((OLD.state = 'queued' AND NEW.state IN ('running', 'interrupted'))
+      OR (OLD.state = 'running' AND NEW.state IN ('complete', 'interrupted'))) THEN
+    RAISE EXCEPTION 'trace discovery definition and terminal state are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: prevent_assumption_impact_rewrite(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -160,6 +179,26 @@ CREATE FUNCTION public.purge_model_matching_copy() RETURNS trigger
     AS $$
 BEGIN
   DELETE FROM model_failure_matchings WHERE id = OLD.model_failure_matching_id;
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: purge_trace_failure_disclosure(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.purge_trace_failure_disclosure() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'corpus_items' THEN
+    DELETE FROM trace_failure_discoveries WHERE id IN (SELECT trace_failure_discovery_id FROM trace_failure_discovery_inputs WHERE corpus_item_id = OLD.id);
+  ELSIF TG_TABLE_NAME = 'scenario_versions' THEN
+    DELETE FROM trace_failure_discoveries WHERE id IN (SELECT trace_failure_discovery_id FROM trace_failure_discovery_versions WHERE scenario_version_id = OLD.id);
+  ELSE
+    DELETE FROM trace_failure_discoveries WHERE id IN (SELECT trace_failure_discovery_id FROM trace_failure_discovery_cases WHERE eval_case_id = OLD.id);
+  END IF;
   RETURN OLD;
 END;
 $$;
@@ -1898,6 +1937,217 @@ ALTER SEQUENCE public.taxonomy_versions_id_seq OWNED BY public.taxonomy_versions
 
 
 --
+-- Name: trace_failure_discoveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_discoveries (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    configuration jsonb NOT NULL,
+    input_content jsonb NOT NULL,
+    input_digest character varying NOT NULL,
+    processing_version character varying NOT NULL,
+    request_key uuid DEFAULT gen_random_uuid() NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    error text,
+    started_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_bc7636c889 CHECK (((((state)::text <> 'running'::text) OR ((started_at IS NOT NULL) AND (finished_at IS NULL))) AND (((state)::text <> ALL ((ARRAY['complete'::character varying, 'interrupted'::character varying])::text[])) OR (finished_at IS NOT NULL)))),
+    CONSTRAINT chk_rails_ef6e12d1c9 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'complete'::character varying, 'interrupted'::character varying])::text[])) AND (jsonb_typeof(input_content) = 'object'::text) AND (jsonb_typeof(configuration) = 'object'::text)))
+);
+
+
+--
+-- Name: trace_failure_discoveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_discoveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_discoveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_discoveries_id_seq OWNED BY public.trace_failure_discoveries.id;
+
+
+--
+-- Name: trace_failure_discovery_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_discovery_cases (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    trace_failure_discovery_id bigint NOT NULL,
+    eval_case_id bigint NOT NULL
+);
+
+
+--
+-- Name: trace_failure_discovery_cases_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_discovery_cases_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_discovery_cases_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_discovery_cases_id_seq OWNED BY public.trace_failure_discovery_cases.id;
+
+
+--
+-- Name: trace_failure_discovery_inputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_discovery_inputs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    trace_failure_discovery_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL
+);
+
+
+--
+-- Name: trace_failure_discovery_inputs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_discovery_inputs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_discovery_inputs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_discovery_inputs_id_seq OWNED BY public.trace_failure_discovery_inputs.id;
+
+
+--
+-- Name: trace_failure_discovery_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_discovery_results (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    trace_failure_discovery_id bigint NOT NULL,
+    result_content jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_2f31810e40 CHECK (((jsonb_typeof(result_content) = 'object'::text) AND (result_content ? 'decision'::text) AND ((result_content ->> 'decision'::text) = ANY (ARRAY['proposal'::text, 'abstain'::text, 'error'::text])))),
+    CONSTRAINT chk_rails_b30be1fef5 CHECK ((jsonb_typeof((result_content -> 'decision'::text)) = 'string'::text))
+);
+
+
+--
+-- Name: trace_failure_discovery_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_discovery_results_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_discovery_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_discovery_results_id_seq OWNED BY public.trace_failure_discovery_results.id;
+
+
+--
+-- Name: trace_failure_discovery_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_discovery_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    trace_failure_discovery_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL
+);
+
+
+--
+-- Name: trace_failure_discovery_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_discovery_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_discovery_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_discovery_versions_id_seq OWNED BY public.trace_failure_discovery_versions.id;
+
+
+--
+-- Name: trace_failure_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_failure_reviews (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    trace_failure_discovery_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    reviewed_by_id bigint NOT NULL,
+    decision character varying NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_694faff529 CHECK ((((decision)::text = ANY ((ARRAY['accept'::character varying, 'reject'::character varying, 'uncertain'::character varying])::text[])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
+);
+
+
+--
+-- Name: trace_failure_reviews_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_failure_reviews_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_failure_reviews_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_failure_reviews_id_seq OWNED BY public.trace_failure_reviews.id;
+
+
+--
 -- Name: trace_scenario_decisions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2365,6 +2615,48 @@ ALTER TABLE ONLY public.taxonomy_versions ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: trace_failure_discoveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discoveries ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_discoveries_id_seq'::regclass);
+
+
+--
+-- Name: trace_failure_discovery_cases id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_cases ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_discovery_cases_id_seq'::regclass);
+
+
+--
+-- Name: trace_failure_discovery_inputs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_inputs ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_discovery_inputs_id_seq'::regclass);
+
+
+--
+-- Name: trace_failure_discovery_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_results ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_discovery_results_id_seq'::regclass);
+
+
+--
+-- Name: trace_failure_discovery_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_versions ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_discovery_versions_id_seq'::regclass);
+
+
+--
+-- Name: trace_failure_reviews id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_reviews ALTER COLUMN id SET DEFAULT nextval('public.trace_failure_reviews_id_seq'::regclass);
+
+
+--
 -- Name: trace_scenario_decisions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2777,6 +3069,54 @@ ALTER TABLE ONLY public.taxonomy_versions
 
 
 --
+-- Name: trace_failure_discoveries trace_failure_discoveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discoveries
+    ADD CONSTRAINT trace_failure_discoveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_failure_discovery_cases trace_failure_discovery_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_cases
+    ADD CONSTRAINT trace_failure_discovery_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_failure_discovery_inputs trace_failure_discovery_inputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_inputs
+    ADD CONSTRAINT trace_failure_discovery_inputs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_failure_discovery_results trace_failure_discovery_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_results
+    ADD CONSTRAINT trace_failure_discovery_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_failure_discovery_versions trace_failure_discovery_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_versions
+    ADD CONSTRAINT trace_failure_discovery_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_failure_reviews trace_failure_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_reviews
+    ADD CONSTRAINT trace_failure_reviews_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: trace_scenario_decisions trace_scenario_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2886,6 +3226,34 @@ CREATE UNIQUE INDEX idx_on_scenario_version_id_corpus_item_id_kind_455675656f ON
 
 
 --
+-- Name: idx_on_trace_failure_discovery_id_48443c04a5; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_trace_failure_discovery_id_48443c04a5 ON public.trace_failure_discovery_results USING btree (trace_failure_discovery_id);
+
+
+--
+-- Name: idx_on_trace_failure_discovery_id_corpus_item_id_cf583960cf; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_trace_failure_discovery_id_corpus_item_id_cf583960cf ON public.trace_failure_discovery_inputs USING btree (trace_failure_discovery_id, corpus_item_id);
+
+
+--
+-- Name: idx_on_trace_failure_discovery_id_eval_case_id_e8a64f42ee; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_trace_failure_discovery_id_eval_case_id_e8a64f42ee ON public.trace_failure_discovery_cases USING btree (trace_failure_discovery_id, eval_case_id);
+
+
+--
+-- Name: idx_on_trace_failure_discovery_id_scenario_version__e844f24c62; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_trace_failure_discovery_id_scenario_version__e844f24c62 ON public.trace_failure_discovery_versions USING btree (trace_failure_discovery_id, scenario_version_id);
+
+
+--
 -- Name: idx_on_workspace_id_corpus_id_evaluation_target_id__d962945b79; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2904,6 +3272,13 @@ CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_grader_id_id_69031213be ON pub
 --
 
 CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_64c83596d2 ON public.model_failure_matchings USING btree (workspace_id, corpus_id, id);
+
+
+--
+-- Name: idx_on_workspace_id_corpus_id_id_86a47642b9; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_id_86a47642b9 ON public.trace_failure_discoveries USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -3565,6 +3940,27 @@ CREATE INDEX index_taxonomy_versions_on_reviewed_by_id ON public.taxonomy_versio
 
 
 --
+-- Name: index_trace_failure_discoveries_on_request_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_trace_failure_discoveries_on_request_key ON public.trace_failure_discoveries USING btree (request_key);
+
+
+--
+-- Name: index_trace_failure_discoveries_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_trace_failure_discoveries_on_requested_by_id ON public.trace_failure_discoveries USING btree (requested_by_id);
+
+
+--
+-- Name: index_trace_failure_reviews_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_trace_failure_reviews_on_reviewed_by_id ON public.trace_failure_reviews USING btree (reviewed_by_id);
+
+
+--
 -- Name: index_trace_scenario_decisions_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3639,6 +4035,13 @@ CREATE UNIQUE INDEX model_matching_fixed_request ON public.model_failure_matchin
 --
 
 CREATE INDEX trace_decision_history ON public.trace_scenario_decisions USING btree (corpus_item_id, scenario_version_id, reviewed_by_id, id);
+
+
+--
+-- Name: trace_discovery_input_lineage; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX trace_discovery_input_lineage ON public.trace_failure_discovery_inputs USING btree (workspace_id, corpus_id, trace_failure_discovery_id, corpus_item_id);
 
 
 --
@@ -3768,6 +4171,13 @@ CREATE TRIGGER corpus_items_immutable BEFORE UPDATE ON public.corpus_items FOR E
 
 
 --
+-- Name: corpus_items corpus_items_purge_trace_disclosure; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_items_purge_trace_disclosure BEFORE DELETE ON public.corpus_items FOR EACH ROW EXECUTE FUNCTION public.purge_trace_failure_disclosure();
+
+
+--
 -- Name: eval_case_checks eval_case_checks_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3779,6 +4189,13 @@ CREATE TRIGGER eval_case_checks_immutable BEFORE UPDATE ON public.eval_case_chec
 --
 
 CREATE TRIGGER eval_cases_immutable BEFORE UPDATE ON public.eval_cases FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: eval_cases eval_cases_purge_trace_disclosure; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER eval_cases_purge_trace_disclosure BEFORE DELETE ON public.eval_cases FOR EACH ROW EXECUTE FUNCTION public.purge_trace_failure_disclosure();
 
 
 --
@@ -3908,6 +4325,13 @@ CREATE TRIGGER scenario_versions_immutable BEFORE UPDATE ON public.scenario_vers
 
 
 --
+-- Name: scenario_versions scenario_versions_purge_trace_disclosure; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER scenario_versions_purge_trace_disclosure BEFORE DELETE ON public.scenario_versions FOR EACH ROW EXECUTE FUNCTION public.purge_trace_failure_disclosure();
+
+
+--
 -- Name: source_snapshots source_snapshots_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3919,6 +4343,48 @@ CREATE TRIGGER source_snapshots_immutable BEFORE UPDATE ON public.source_snapsho
 --
 
 CREATE TRIGGER taxonomy_versions_immutable BEFORE UPDATE ON public.taxonomy_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: trace_failure_discovery_cases trace_failure_discovery_cases_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_discovery_cases_immutable BEFORE UPDATE ON public.trace_failure_discovery_cases FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: trace_failure_discoveries trace_failure_discovery_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_discovery_immutable BEFORE UPDATE ON public.trace_failure_discoveries FOR EACH ROW EXECUTE FUNCTION public.guard_trace_failure_discovery();
+
+
+--
+-- Name: trace_failure_discovery_inputs trace_failure_discovery_inputs_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_discovery_inputs_immutable BEFORE UPDATE ON public.trace_failure_discovery_inputs FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: trace_failure_discovery_results trace_failure_discovery_results_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_discovery_results_immutable BEFORE UPDATE ON public.trace_failure_discovery_results FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: trace_failure_discovery_versions trace_failure_discovery_versions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_discovery_versions_immutable BEFORE UPDATE ON public.trace_failure_discovery_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: trace_failure_reviews trace_failure_reviews_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_failure_reviews_immutable BEFORE UPDATE ON public.trace_failure_reviews FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
 
 
 --
@@ -4033,6 +4499,14 @@ ALTER TABLE ONLY public.taxonomy_versions
 
 
 --
+-- Name: trace_failure_discovery_cases fk_rails_2ce49ec549; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_cases
+    ADD CONSTRAINT fk_rails_2ce49ec549 FOREIGN KEY (workspace_id, corpus_id, eval_case_id) REFERENCES public.eval_cases(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: cluster_members fk_rails_2db3654de9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4118,6 +4592,30 @@ ALTER TABLE ONLY public.evaluation_targets
 
 ALTER TABLE ONLY public.evaluation_run_items
     ADD CONSTRAINT fk_rails_4dcbbf54ce FOREIGN KEY (workspace_id, corpus_id, eval_case_id) REFERENCES public.eval_cases(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_discovery_versions fk_rails_4de972952f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_versions
+    ADD CONSTRAINT fk_rails_4de972952f FOREIGN KEY (workspace_id, corpus_id, trace_failure_discovery_id) REFERENCES public.trace_failure_discoveries(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_discovery_inputs fk_rails_4f052f6592; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_inputs
+    ADD CONSTRAINT fk_rails_4f052f6592 FOREIGN KEY (workspace_id, corpus_id, trace_failure_discovery_id) REFERENCES public.trace_failure_discoveries(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_discoveries fk_rails_4f26327d4b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discoveries
+    ADD CONSTRAINT fk_rails_4f26327d4b FOREIGN KEY (workspace_id, corpus_id) REFERENCES public.corpora(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -4329,6 +4827,14 @@ ALTER TABLE ONLY public.calibration_judge_runs
 
 
 --
+-- Name: trace_failure_reviews fk_rails_8ce0d974aa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_reviews
+    ADD CONSTRAINT fk_rails_8ce0d974aa FOREIGN KEY (workspace_id, corpus_id, trace_failure_discovery_id, corpus_item_id) REFERENCES public.trace_failure_discovery_inputs(workspace_id, corpus_id, trace_failure_discovery_id, corpus_item_id) ON DELETE CASCADE;
+
+
+--
 -- Name: assumption_impacts fk_rails_9265226575; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4374,6 +4880,14 @@ ALTER TABLE ONLY public.regression_cases
 
 ALTER TABLE ONLY public.memberships
     ADD CONSTRAINT fk_rails_99326fb65d FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: trace_failure_discovery_results fk_rails_9d9abd62a3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_results
+    ADD CONSTRAINT fk_rails_9d9abd62a3 FOREIGN KEY (workspace_id, corpus_id, trace_failure_discovery_id) REFERENCES public.trace_failure_discoveries(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -4470,6 +4984,22 @@ ALTER TABLE ONLY public.evaluation_run_items
 
 ALTER TABLE ONLY public.model_failure_matchings
     ADD CONSTRAINT fk_rails_b2b8747e1c FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_discovery_cases fk_rails_b461217b40; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_cases
+    ADD CONSTRAINT fk_rails_b461217b40 FOREIGN KEY (workspace_id, corpus_id, trace_failure_discovery_id) REFERENCES public.trace_failure_discoveries(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_discoveries fk_rails_b83a4f666b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discoveries
+    ADD CONSTRAINT fk_rails_b83a4f666b FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
 
 
 --
@@ -4617,6 +5147,22 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: trace_failure_discovery_inputs fk_rails_e7c49281f9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_inputs
+    ADD CONSTRAINT fk_rails_e7c49281f9 FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_failure_reviews fk_rails_e8d0c16ab2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_reviews
+    ADD CONSTRAINT fk_rails_e8d0c16ab2 FOREIGN KEY (reviewed_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: evaluation_runs fk_rails_e9a13729c6; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4681,6 +5227,14 @@ ALTER TABLE ONLY public.assumption_impact_inputs
 
 
 --
+-- Name: trace_failure_discovery_versions fk_rails_f8e96ee303; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_failure_discovery_versions
+    ADD CONSTRAINT fk_rails_f8e96ee303 FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: oidc_identities fk_rails_f976bdec82; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4712,6 +5266,7 @@ SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
 ('20261002010100'),
+('20261001230000'),
 ('20261001220000'),
 ('20261001210000'),
 ('20261001200000'),

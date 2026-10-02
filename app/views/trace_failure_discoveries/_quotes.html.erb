@@ -1,0 +1,3 @@
+<% evidence.each do |quote| %>
+  <p><%= quote.fetch("reference") %> · exact disclosed quote</p><pre class="evidence-text"><%= quote.fetch("quote") %></pre>
+<% end %>
