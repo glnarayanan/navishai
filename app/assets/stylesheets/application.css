@@ -29,6 +29,7 @@ button, summary, input[type=submit] { cursor: pointer; }
 .lab-container { max-width: 72rem; margin: auto; padding: 0 1.5rem; isolation: isolate; }
 .page-shell { padding: 2.5rem 0 5rem; }
 .page-heading { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.page-heading p { overflow-wrap: anywhere; }
 .eyebrow, .repository-path { font-family: "Geist Mono", monospace; color: var(--muted); font-size: .875rem; margin: 0 0 .75rem; }
 .introduction { padding-top: 5rem; }
 .introduction h1 { font-size: clamp(2rem, 5vw, 3.5rem); }

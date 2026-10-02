@@ -120,8 +120,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   ranking with inspectable term contributions, unchanged limits and human authority.
 - [#205](https://github.com/glnarayanan/navishai/pull/205), based on #204: explicit complete-text
   local discovery within existing bounds, with fixed older methods and human review.
-- `rebuild/66-conversation-evidence-revision`, based on #205: expert replacement of
+- [#206](https://github.com/glnarayanan/navishai/pull/206), based on #205: expert replacement of
   fixed historical conversation quotes, hidden from targets and needing fresh review.
+- `rebuild/67-bounded-mined-labels`, based on #206: bounded new draft labels,
+  inspectable full proposals and unchanged source evidence/expert decisions.
 
 ## Built and checked
 
@@ -1704,7 +1706,34 @@ At 19:55–19:56 UTC on 1 October, all nineteen CI runs for #187–205 match the
 heads: #190/#195/#199 are green and sixteen remain inside `bin/ci`. Each active
 job passed runner/container/checkout/Ruby setup, but all active log requests return
 BlobNotFound and all artifact lists are empty. No exact-head failed run or current
-cause is available. No remote job changed; historical #155/#158 remain separate.
+cause was available then. No remote job changed; historical #155/#158 remain separate.
+
+## Bounded mined labels (slice 67)
+
+A red Unicode boundary test reproduced an overlong taxonomy label rolling back
+the draft batch. Mining now shortens only new labels above 500 characters, keeps
+the complete proposal/source/quote and explains the change. Repeated mining or
+nomination opens the existing expert revision without changing decisions.
+Actual DEBUG INSERT logs also proved label disclosure; the native field filter
+now covers taxonomy labels without changing retained content.
+
+Focused model/access/compiler checks pass 43 tests / 886 assertions. Five rendered
+scenario journeys pass 242 assertions, including first nomination and source
+inspection. The long ASCII family exposed horizontal heading overflow; text now
+wraps at desktop and 390px. Four targeted captures were inspected; the mobile
+family crop cuts the button's bottom border, not its visible label. Executed DOM
+checks confirm intact links, no horizontal overflow and no CSP violations.
+Native style, audits and eager loading pass. Full combined CI remains separate.
+Direct risk review used; named review tools remain unavailable. No provider,
+dependency, expert label, customer data, merge, release or deployment changed.
+
+At 20:23–20:24 UTC on 1 October, #190/#195/#199 remain exact-head green.
+#187's run [36875739393](https://github.com/glnarayanan/navishai/actions/runs/36875739393)
+was cancelled at 20:22:22: GitHub explicitly reports its six-hour maximum.
+Its now-available log stops during 419 Rails tests / four processes, without an
+assertion failure or result summary. Sixteen other heads #188–206 still run.
+#206's active log remains unavailable and artifacts remain empty. The timeout
+is confirmed; its code cause is not. No remote job was cancelled or rerun here.
 
 ## Next and limits
 
@@ -1764,9 +1793,9 @@ need engineering work; these checks do not finish the owner's full acceptance de
 Local scenario context extraction remains title/context/action based, with bounded
 first-source excerpts. Experts can now replace their own fixed conversation quote
 with later diagnostics, but this does not fix automatic draft-quality gaps.
-Very long single terms can also exceed the mined taxonomy-label limit; an authored
-Unicode edge test exposed the validation failure. No partial drafts commit. This
-needs separate bounded label handling, not an unrelated change to this repair path.
+New mined labels now respect the 500-character limit without changing full source
+proposals or saved expert decisions. A separate actual DEBUG trace exposed private
+requirement JSON; remaining definition/result fields need log-filter verification.
 Larger complete-text workloads also need bounded engineering work and evidence,
 not a silent increase of existing limits or a semantic-quality claim.
 

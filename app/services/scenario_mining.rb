@@ -24,13 +24,19 @@ class ScenarioMining
         scenario = analysis.corpus.scenarios.create!(workspace: analysis.workspace, corpus_item: item, cluster_member: member)
         requirements = ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }
         requirements["actions"] = item.content.split(/(?<=[.!?])\s+/).select { |sentence| sentence.match?(/\b(ask|request|collect|verify|reproduce)\b/i) }.first(10).map { |sentence| sentence.first(2000) }
+        label = member.issue_cluster.label
+        selection_reason = nominating ? "Expert nominated this fixed record for review: #{reason.strip}" : member.selection_reason
+        if label.length > 500
+          label = label.first(500)
+          selection_reason += " Draft label shortened to 500 characters; inspect the full issue family before review."
+        end
         values = { title: item.title, situation: item.title,
-          taxonomy_label: member.issue_cluster.label, importance: member.signals.include?("reported critical impact") ? "critical" : member.signals.any? ? "high" : "normal",
+          taxonomy_label: label, importance: member.signals.include?("reported critical impact") ? "critical" : member.signals.any? ? "high" : "normal",
           known_facts: item.context, hidden_facts: {}, requirements: }.stringify_keys
         candidate = model_candidates&.find { |entry| entry.fetch("reference") == "corpus-item-#{item.id}" }
-        values = candidate.fetch("scenario").merge("taxonomy_label" => member.issue_cluster.label) if candidate
+        values = candidate.fetch("scenario").merge("taxonomy_label" => label) if candidate
         version = scenario.scenario_versions.create!(values.merge(workspace: analysis.workspace, corpus: analysis.corpus,
-          created_by: membership.user, number: 1, origin: "mined", selection_reason: nominating ? "Expert nominated this fixed record for review: #{reason.strip}" : member.selection_reason, created_at: Time.current))
+          created_by: membership.user, number: 1, origin: "mined", selection_reason:, created_at: Time.current))
         if candidate
           quotes = ModelCorpusDiscovery.evidence_for(candidate, cluster: member.issue_cluster.signals, sources: source_items.transform_values(&:content))
           quotes.each do |quote|

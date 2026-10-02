@@ -211,6 +211,15 @@ Changing assumptions requires a new set; no labels/predictions/history are rewri
 
 Machine proposals never approve themselves. Experts correct taxonomy and scenario expectations before compilation. Calibration binds labels to exact grader/output versions and separates held-out examples. Store individual decisions, not an opaque score.
 
+Mining bounds each new draft's issue label to the existing 500-character scenario
+field limit. Valid source terms can exceed it; do not let that metadata prevent
+the whole selected batch from becoming reviewable. Preserve the full cluster
+proposal, source text and evidence. Record shortening in the draft's selection
+reason and link the original family for inspection. Ordinary and reviewed labels
+stay unchanged; repeated mining cannot rewrite a saved draft or expert revision.
+This conversion grants no taxonomy authority and changes no discovery window,
+fixed inputs, contract requirement or provider boundary.
+
 Calibration review uses the same latest-per-expert labels and fixed predictions as
 its cohort report. Show missing personal labels first, then expert disputes,
 uncertainty, machine/expert disagreement and missing usable predictions. Before an
