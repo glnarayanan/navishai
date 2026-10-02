@@ -2255,13 +2255,34 @@ with Chrome and ChromeDriver 154.0.8037.57; its scratch code was removed.
 The original focused journey passes 2 tests / 114 assertions with seed 52131.
 Ruby syntax and all 384 files of native RuboCop pass.
 
-The four-worker full system run remains red: 71 tests / 3,472 assertions,
-one failure, no errors/skips. The matching journey passes, but the existing
-`AssumptionImpactJourneyTest` fails at line 17 because its snapshot text is hidden
+The first four-worker full system run stayed red: 71 tests / 3,472 assertions,
+one failure, no errors/skips. The matching journey passed, but the existing
+`AssumptionImpactJourneyTest` failed at line 17 because its snapshot text was hidden
 in a closed disclosure. The same failure occurred before this edit with Chrome
-154.0.8037.92. That separate test stays unchanged; its cause and fix need their
-own scope. No workflow was blindly rerun or cancelled. The joined VPS proof's
-production hashes and PASS/CLEAN evidence remain unchanged and separate from CI.
+154.0.8037.92.
+
+The focused follow-up held the selected-source GET at the controller boundary.
+Before its response, the old form had an empty source ID and an open disclosure;
+Enter closed that old disclosure. The response then loaded the selected source
+with its disclosure closed, and the original visible-text assertion failed.
+Waiting for the new form's exact source ID before Enter opens the new disclosure
+and reveals the snapshot text. The delayed-request probe passed all eight checks.
+This is a test navigation mistake, not a broken keyboard control or permission
+to count hidden text as visible. The test adds that source-ID assertion and keeps
+the keyboard action and visible-text check; production code stays unchanged.
+
+One early focused run hit another inspector -32000 visibility read in the
+historical journey. Four isolated traced historical runs and a traced combined
+run passed without more edits; that occurrence does not establish another cause.
+The final uninstrumented combined journeys pass 4 tests / 247 assertions with
+seed 52131 on Chrome/ChromeDriver 154.0.8037.57. All scratch probes/traces were
+removed. The full four-worker `bin/rails test:system --seed 52131` then passed
+71 tests / 3,562 assertions, no failures/errors/skips, in 256.88 seconds with
+that same browser/driver. Native RuboCop passes all 384 files; syntax and diff
+checks pass. Exact pushed-head GitHub checks remain separate from these local
+results and live on [#226](https://github.com/glnarayanan/navishai/pull/226).
+No workflow was blindly rerun or cancelled. The joined VPS proof's production
+hashes and PASS/CLEAN evidence remain unchanged and separate from CI.
 
 ## Pending owner decisions
 
