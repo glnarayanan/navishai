@@ -2172,6 +2172,34 @@ and bundled JSON 2.21.2. Native preflight/workspace/bootstrap tests passed: 12 t
 gem audit and eager loading passed; eager loading retains its existing optional
 mailer-preview warning. No project snapshot or public-host proof is claimed.
 
+PR [#208](https://github.com/glnarayanan/navishai/pull/208) is now merged. Its exact
+head [GitHub CI](https://github.com/glnarayanan/navishai/actions/runs/36978546129)
+passed on 2 October at 08:45 UTC. The owner's separate
+[Bundler checksum commit](https://github.com/glnarayanan/navishai/commit/440ca0a9be5cf447b54b67e4bb3be885e8c6583e)
+is in main and changes no dependency version.
+
+## Reset VPS CLI follow-up
+
+The owner requested a complete fresh replacement on the same VPS. The
+[old-install uninstall](./LEGACY_UNINSTALL.md) previews exact verified historical
+resources and requires a separate plan digest for deletion; no backup is mandatory
+for disposable old test data. It refuses shared/unknown resources and never prunes.
+
+The separate [VPS CLI](./VPS_CLI.md) now implements reviewed Git install, upgrade,
+full backup, explicit restore, status, gated start/check/stop and scoped cleanup.
+It adds Caddy, systemd ordering, dual-family namespace guards and separate restricted
+setup/runtime roles without changing the manual Compose baseline. Core tests pass
+15 / 138, recovery 10 / 30 and namespace policy 8 / 155, with no failures/errors/skips.
+Native Bash syntax and Ruby style pass. Real standalone namespace denial/replacement
+and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
+and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
+
+This work is local on `feat/vps-cli`, not pushed, merged or deployed. Combined
+entrypoint/Rails/jobs/Caddy/rollback proof and full CI are in progress. Public
+ACME/ingress, real host reboot, SMTP/OIDC delivery and live-host recovery remain
+unproved; no owner VPS or provider ran. Host packages, DNS/ports and storage policy
+need owner inputs, not guessed installation commands or weaker egress controls.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support

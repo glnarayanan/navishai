@@ -1,0 +1,8 @@
+{
+  admin off
+  email {$NAVISHAI_ACME_EMAIL}
+}
+
+{$NAVISHAI_APP_HOST} {
+  reverse_proxy app-net:3000
+}
