@@ -24,7 +24,8 @@
     <p>Current filter: <strong><%= @filter %></strong>.</p>
     <p role="status"><%= pluralize(@matching_count, "matching record") %> of <%= @total %> fixed family records · page <%= @page %> · at most 50 complete records per page.</p>
     <%= link_to "Clear filter", evidence_path %>
-    <% if @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
+    <% if @evidence_read_error %><p role="alert" class="inline-error"><%= @evidence_read_error %></p><p><%= link_to "Inspect source snapshots", workspace_corpus_path(Current.workspace, @corpus) %> to read each source within its own bound.</p>
+    <% elsif @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
     <% @members.each do |member| %>
       <% item = member.corpus_item %>
       <% nomination_error = @nomination_member&.id == member.id ? @nomination_error : nil %>

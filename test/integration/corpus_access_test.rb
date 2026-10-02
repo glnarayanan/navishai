@@ -19,6 +19,48 @@ class CorpusAccessTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
+  test "oversized historical evidence refuses all rows while exact next page and current search stay usable" do
+    attributes = { workspace_id: @workspace.id, corpus_id: @corpus.id, source_snapshot_id: @snapshot.id,
+      title: "Historical large fixture", content: "historical-private-content " + "x" * 99_000,
+      context: { diagnostic: "雪" * 40_000 }, created_at: Time.current }
+    CorpusItem.insert_all!(49.times.map { |index| attributes.merge(external_id: "large-#{index}") })
+    CorpusItem.insert_all!(2.times.map { |index| attributes.merge(external_id: "recovery-#{index}", title: "Later small record", content: "Complete historical recovery", context: { complete: true }) })
+    current = CorpusIntake.call(corpus: @corpus, membership: memberships(:owner_support), name: "KB", kind: "document", bytes: "Current replacement policy")
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+      get workspace_corpus_source_path(@workspace, @corpus, @snapshot.source), params: { snapshot: 1, dependency_page: 3, case_page: 2 }
+    end
+    assert_response :success
+    assert_empty loaded
+    assert_select "#source-evidence [role=status]", text: /52 snapshot records.*page 1/
+    assert_select "#source-evidence [role=alert]", text: /10 MiB.*next page.*no page records were loaded.*does not include historical snapshots/
+    assert_select "#source-evidence > article", count: 0
+    assert_not_includes response.body, "historical-private-content"
+    assert_not_includes response.body, "Require diagnostic logs"
+    recovery = css_select("#source-evidence > p > a").sole["href"]
+    next_link = css_select("nav[aria-label='Record pages'] a").sole["href"]
+    query = Rack::Utils.parse_query(URI(next_link).query)
+    assert_equal "1", query["snapshot"]
+    assert_equal "3", query["dependency_page"]
+    assert_equal "2", query["case_page"]
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") { get next_link }
+    assert_response :success
+    assert_equal [ 2 ], loaded
+    assert_select "#source-evidence > article", count: 2
+    assert_select "#source-evidence .evidence-text", text: /Complete historical recovery/, count: 2
+    assert_select "#source-evidence [role=alert]", count: 0
+    assert_select "nav[aria-label='Record pages'] a", text: "Next records", count: 0
+    get recovery
+    assert_response :success
+    assert_select "#corpus-records > details", count: 1
+    assert_select "#corpus-records pre", text: "Current replacement policy"
+    get workspace_corpus_source_path(@workspace, @corpus, current.source)
+    assert_response :success
+    assert_select "#source-evidence > article", count: 1
+    assert_select "#source-evidence [role=alert]", count: 0
+  end
+
   test "upload applies exact choices and repairs errors without storing or echoing private values" do
     path = workspace_corpus_sources_path(@workspace, @corpus)
     upload = fixture_file_upload("support_export.json", "application/json")

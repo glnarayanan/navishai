@@ -17,6 +17,7 @@ class CorpusAnalysisJob < ApplicationJob
     analysis.corpus.with_lock do
       return unless analysis.authorize_processing!
       summary = analysis.model? ? ModelCorpusDiscovery.persist!(analysis, response) : CorpusDiscovery.call(analysis)
+      analysis.authorize_processing!
       analysis.update!(summary:, state: "complete", finished_at: Time.current)
       AuditEvent.record!(action: "corpus.analysis_completed", source: :job, workspace: analysis.workspace, actor_kind: "system", subject: analysis)
     end

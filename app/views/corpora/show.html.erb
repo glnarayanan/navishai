@@ -18,6 +18,7 @@
     <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
     <% if Current.require_membership!.can_write? %>
       <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :processing_method, "Local method" %><%= form.select :processing_method, [[ "Original local · 2000 records / 10 MiB", "local" ], [ "Streaming local · 100,000 records / 1 GiB", "local_stream" ]] %><p>Streaming keeps global term statistics, not separate batch clusters. Term/vocabulary/comparison budgets can stop the attempt without partial proposals. Model limits and disclosure stay separate.</p></div>
         <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
         <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
       <% end %>
@@ -60,7 +61,8 @@
     <% end %>
     <p><%= link_to "Clear search", workspace_corpus_path(Current.workspace, @corpus, anchor: "corpus-records") %>. Search phrases appear in your browser URL/history; do not paste secrets.</p>
     <% if @search_error %><p class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching record") %> · page <%= @page %> · up to 50 records.</p><% end %>
-    <% if !@search_error && @items.empty? %><p>No records on this page. Clear the phrase or source filter, return to the first page, or import company data.</p><% end %>
+    <% if @evidence_read_error %><p class="inline-error" role="alert"><%= @evidence_read_error %></p><% end %>
+    <% if !@search_error && !@evidence_read_error && @items.empty? %><p>No records on this page. Clear the phrase or source filter, return to the first page, or import company data.</p><% end %>
     <% @items.each do |item| %><details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary>
       <p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %></p>
       <pre class="evidence-text"><%= item.content %></pre><details><summary>Retained context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>

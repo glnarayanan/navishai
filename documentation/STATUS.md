@@ -97,8 +97,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   fixed rule fingerprints and private recovery without rewriting history.
 - [#185](https://github.com/glnarayanan/navishai/pull/185), based on #184: bounded fixed-record reads,
   typed family counts and complete-text scalar batches without full-corpus loading.
-- `rebuild/46-streaming-local-discovery`, based on #185: scalar local processing,
+- [#186](https://github.com/glnarayanan/navishai/pull/186), based on #185: scalar local processing,
   global frequencies, sparse seed lookup and bounded bulk membership writes.
+- `rebuild/47-large-local-analysis`, based on #186: explicit larger-local method,
+  resource budgets, 100,000-record proof and bounded evidence-page recovery.
 
 ## Built and checked
 
@@ -1160,6 +1162,48 @@ Larger-local bounds and their operational proof are the next behaviour change,
 not a customer-data or expert-label gate. No customer/provider data, live spend,
 dependency, expert label, merge, release or deployment changed.
 
+Later exact-head remote evidence: #186 passed run
+[36869276174](https://github.com/glnarayanan/navishai/actions/runs/36869276174)
+at 13:35:40 UTC on 1 October. Failed ancestor #155/#158 runs remain failed.
+
+## Larger local analysis (slice 47)
+
+An explicit v2 local method freezes up to 100,000 complete conversation/document
+records within 1 GiB, without raising original local, model or upload limits.
+It keeps global frequencies, fixed ordering and provenance. Term-entry, vocabulary
+and seed-comparison caps fail atomically without sampling or retry. Vector and
+centroid lengths are computed once. Post-computation access/lifetime checks prevent
+expired work from committing proposals. No provider approval or expert label follows.
+
+Complete evidence reads stay at most 10 MiB. Corpus/source/family pages preflight
+their fifty rows, retain full counts and navigation on refusal, and never load a
+fifty-first full record. Corpus locks cover checks/loading. Blocked streaming
+overviews keep read-only family links for smaller filtered inspection; no partial
+evidence or write controls appear. Source recovery warns that current search omits
+historical snapshots.
+
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 9m2.11s: 299 Ruby files clean,
+native audits clean, Brakeman zero warnings/errors, eager loading passed; 419 Rails
+tests / 5254 assertions and 43 browser tests / 1951 assertions, no failures/errors/skips.
+The 12-test scale/discovery check passed with 163 assertions in 204.91s and peaked
+at 517404 KiB. It processed exactly 1000 scalar batches of 100 without complete
+source objects, kept every member, selected a late risk case and mined from the
+fixed historical snapshot after a newer export. It refuses record 100001 and
+checks exact budget edges, complete UTF-8 bytes, partial reads and expiry rollback.
+The byte-cap edge uses a smaller injected bound, not a 1-GiB allocation.
+This repetitive synthetic workload does not establish semantic quality or throughput
+for arbitrary corpora. No customer data, provider, dependency or authoritative label.
+
+Desktop/mobile picker, completion, failure and blocked/recovered evidence states
+were rendered. Inspection caught stale viewport dimensions in screenshot capture;
+the journey now waits for actual width and sets/clears 2x emulation explicitly.
+The retained refusal now names the previous request rather than the newly selected
+method. Final focused checks pass with 34 access tests / 705 assertions and two
+browser journeys / 126 assertions; style and eager loading pass. Final 2x desktop
+and mobile captures were inspected with readable controls/alerts and no overflow
+or CSP violations. No application guard, style or CSP was weakened. Direct risk review/native audits
+used; named review tools remain unavailable. This branch has no remote CI yet.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1173,8 +1217,10 @@ Replay compatibility now searches all fixed cases and paginates exact matches. R
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge/source-processing endpoints.
-The endpoint registries have no configured entries. Local analysis remains bounded
-to 2000 records and 10 MiB. Model corpus discovery proposes company families and
+The endpoint registries have no configured entries. Original local analysis keeps
+2000 records / 10 MiB; explicit streaming local accepts 100,000 / 1 GiB within
+its resource budgets, with complete reads still bounded to 10 MiB.
+Model corpus discovery proposes company families and
 structured source-backed scenarios from complete fixed records: one request within
 100 records / 256 KiB, or bounded multi-request discovery within 2000 records /
 10 MiB and 31 total calls. It does not silently sample larger inputs. Local mining still uses titles/context/
@@ -1202,8 +1248,9 @@ quality need further evidence, not a coverage claim. Keep the full product scope
 engineering gaps are not customer-data or expert-label approval blockers.
 Intake now refuses recursive masking-key collisions without losing data and binds
 processing version and explicit rule fingerprints in snapshot reuse identity.
-Exact-text masking works within its stated limits; larger-corpus processing and
-streamed processing beyond the current analysis bounds remain engineering work.
+Exact-text masking and larger local processing work within their stated limits.
+Intake still accepts 2000 records / 10 MiB per file; larger single-file intake,
+varied-workload scale proof and retrieval quality remain engineering work.
 These checks do not finish that work or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer

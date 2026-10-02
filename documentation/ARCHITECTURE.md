@@ -88,6 +88,21 @@ and exact provenance. Bulk membership writes remain inside the checked corpus
 transaction. First prove the same bounded method's behaviour before adding an
 explicit larger-local version; existing model bounds and consent remain separate.
 
+The opt-in larger-local version may freeze up to 100,000 complete records within
+1 GiB, using ID-only request reads and bounded membership inserts. Its resource
+caps are 2 million conversation-term entries, 250,000 distinct terms and 2 million
+seed comparisons. Exceeding a cap fails the attempt atomically, never samples or
+continues. Complete evidence views/mining still accept at most 10 MiB per read.
+Recheck lifetime/access after computation before committing. Keep the original
+local and model definitions/limits unchanged; these are local safety bounds, not
+disclosure authority, semantic quality or a claim that every large corpus fits.
+
+Cache vector and centroid squared lengths without changing summation order or
+seed ties. Score each candidate seed once. Corpus/source pages also preflight
+their fifty complete rows under the corpus lock, keeping full counts and navigation
+on refusal rather than loading a fifty-first row or partial content. A blocked
+streaming overview retains read-only family links for bounded filtered inspection.
+
 Corpus exploration uses local, case-insensitive literal substring search over
 current, unexpired item titles, record IDs, normalised text and JSON context.
 Scope source filters to the same corpus before querying. Escape SQL wildcards,

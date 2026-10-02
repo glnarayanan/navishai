@@ -1,7 +1,10 @@
 class CorpusAnalysis < ApplicationRecord
   METHOD = "tfidf-seed-centroid-selection-v1"
+  STREAM_METHOD = "tfidf-stream-seed-centroid-selection-v2"
   MAX_ITEMS = 2_000
   MAX_RECORD_BYTES = 10.megabytes
+  LARGE_MAX_ITEMS = 100_000
+  LARGE_MAX_RECORD_BYTES = 1.gigabyte
   RECORD_BYTES_SQL = "octet_length(corpus_items.external_id) + octet_length(corpus_items.title) + octet_length(corpus_items.content) + octet_length(corpus_items.context::text)"
   belongs_to :workspace
   belongs_to :corpus
@@ -21,8 +24,10 @@ class CorpusAnalysis < ApplicationRecord
       corpus.authorize_writer!(membership)
       model = !configuration.nil?
       batch = processing_method == "model_batch"
+      streaming = processing_method == "local_stream"
       raise CorpusIntake::Invalid, "Batch discovery requires fixed model settings." if batch && !model
-      items = current_inputs(corpus:, model:, batch:)
+      raise CorpusIntake::Invalid, "Streaming local discovery cannot use model settings or disclosure." if streaming && model
+      items = current_inputs(corpus:, model:, batch:, streaming:, ids_only: !model)
       plan = batch ? BatchCorpusDiscovery.plan(items) : {}
       if model
         raise CorpusIntake::Invalid, "The prior request did not start. Confirm disclosure of the exact corpus preview before model discovery." unless disclose == true
@@ -34,8 +39,11 @@ class CorpusAnalysis < ApplicationRecord
         EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
       end
       analysis = corpus.corpus_analyses.create!(workspace: corpus.workspace, requested_by: membership.user,
-        processing_method: batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : METHOD), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
-      items.each { |item| analysis.corpus_analysis_inputs.create!(workspace: corpus.workspace, corpus:, corpus_item: item) }
+        processing_method: streaming ? STREAM_METHOD : (batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : METHOD)), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
+      ids = model ? items.map(&:id) : items
+      ids.each_slice(1000) do |batch_ids|
+        CorpusAnalysisInput.insert_all!(batch_ids.map { |id| { workspace_id: corpus.workspace_id, corpus_id: corpus.id, corpus_analysis_id: analysis.id, corpus_item_id: id } }, returning: false)
+      end
       if batch
         plan.fetch("batches").each do |definition|
           analysis.corpus_discovery_batches.create!(workspace: corpus.workspace, corpus:, **definition.except("bytes").symbolize_keys, created_at: Time.current)
@@ -52,10 +60,13 @@ class CorpusAnalysis < ApplicationRecord
     end
   end
 
-  def self.current_inputs(corpus:, model: false, batch: false)
+  def self.current_inputs(corpus:, model: false, batch: false, streaming: false, ids_only: false)
     corpus.with_lock do
+      raise CorpusIntake::Invalid, "Streaming local discovery cannot use model settings or disclosure." if streaming && model
       inputs = corpus.current_items.where(sources: { kind: %w[conversations document] }).order(:id)
-      load_inputs(inputs, limit: model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS)
+      records = load_inputs(inputs, limit: streaming ? LARGE_MAX_ITEMS : (model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS),
+        byte_limit: streaming ? LARGE_MAX_RECORD_BYTES : MAX_RECORD_BYTES, item_ids: ids_only ? [] : nil)
+      ids_only ? inputs.pluck(:id) : records
     end
   end
 
@@ -63,18 +74,28 @@ class CorpusAnalysis < ApplicationRecord
     corpus.with_lock do
       raise CorpusIntake::Invalid, "Source inputs expired; request a new analysis." if expired?
       inputs = corpus_items.order(model? ? :id : [ :external_id, :id ])
-      self.class.load_inputs(inputs, limit: model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, item_ids:)
+      limit, byte_limit = input_limits
+      self.class.load_inputs(inputs, limit:, byte_limit:, item_ids:)
     end
   end
 
   # Call under the corpus lock so intake/purge cannot change membership between
   # aggregate checks and loading. Encoded model/per-call bounds still apply later.
-  def self.load_inputs(inputs, limit:, item_ids: nil)
+  def self.load_inputs(inputs, limit:, item_ids: nil, byte_limit: MAX_RECORD_BYTES)
     raise CorpusIntake::Invalid, "Analysis needs 1–#{limit} conversation/document records. Production traces use separate review." unless inputs.count.between?(1, limit)
     bytes = inputs.sum(RECORD_BYTES_SQL)
-    raise CorpusIntake::Invalid, "Analysis accepts at most 10 MiB of retained IDs, titles, text and context JSON. Use a smaller corpus; nothing is sampled or truncated." if bytes > MAX_RECORD_BYTES
+    raise CorpusIntake::Invalid, "Analysis accepts at most #{byte_limit / 1.megabyte} MiB of retained IDs, titles, text and context JSON. Use a smaller corpus; nothing is sampled or truncated." if bytes > byte_limit
     inputs = inputs.where(id: item_ids) unless item_ids.nil?
+    raise CorpusIntake::Invalid, "This complete evidence read exceeds 10 MiB. Inspect individual source snapshots or choose fewer records; nothing was partially loaded." if byte_limit > MAX_RECORD_BYTES && inputs.sum(RECORD_BYTES_SQL) > MAX_RECORD_BYTES
     inputs.includes(source_snapshot: :source).to_a
+  end
+
+  def streaming?
+    processing_method == STREAM_METHOD
+  end
+
+  def input_limits
+    streaming? ? [ LARGE_MAX_ITEMS, LARGE_MAX_RECORD_BYTES ] : [ model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, MAX_RECORD_BYTES ]
   end
 
   def model?
@@ -101,7 +122,7 @@ class CorpusAnalysis < ApplicationRecord
       raise CorpusIntake::Invalid, "Fixed call plan changed." if batch? && BatchCorpusDiscovery.plan(items) != call_plan
       EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
     else
-      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method == METHOD
+      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method.in?([ METHOD, STREAM_METHOD ])
     end
     true
   end

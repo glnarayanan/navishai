@@ -14,8 +14,8 @@ class CorpusAnalysesController < ApplicationController
       raise CorpusIntake::Invalid, "Model configuration must be JSON of at most 10 KiB." if params[:configuration].to_s.bytesize > 10.kilobytes
       configuration = JSON.parse(params[:configuration].to_s)
       raise CorpusIntake::Invalid, "Model configuration must be a JSON object." unless configuration.is_a?(Hash)
-    elsif params[:processing_method].present? && params[:processing_method] != "local"
-      raise CorpusIntake::Invalid, "Choose local or model discovery."
+    elsif params[:processing_method].present? && !params[:processing_method].in?(%w[local local_stream])
+      raise CorpusIntake::Invalid, "Choose local, streaming local or model discovery."
     end
     analysis = CorpusAnalysis.request!(corpus: @corpus, membership: Current.require_membership!, scenario_limit: params[:scenario_limit],
       configuration:, disclose: params[:corpus_disclose] == "1", input_digest: params[:input_digest],
@@ -28,7 +28,7 @@ class CorpusAnalysesController < ApplicationController
       flash.now[:alert] = message
       render :new, status: :unprocessable_content
     else
-      redirect_to workspace_corpus_path(Current.workspace, @corpus), alert: message, status: :see_other
+      redirect_to workspace_corpus_path(Current.workspace, @corpus), alert: "The previous local request did not start. #{message}", status: :see_other
     end
   end
 

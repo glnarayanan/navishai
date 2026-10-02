@@ -37,11 +37,19 @@ class CorporaController < ApplicationController
         "%#{ActiveRecord::Base.sanitize_sql_like(@query)}%", CorpusItem.type_for_attribute("content"))
       matching = matching.where("corpus_items.title ILIKE :pattern OR corpus_items.external_id ILIKE :pattern OR corpus_items.content ILIKE :pattern OR corpus_items.context::text ILIKE :pattern", pattern:)
     end
-    @matching_count = matching.count
-    @page = params[:page].to_i.clamp(1, 10000)
-    @items = matching.includes(source_snapshot: :source).order(:id).offset((@page - 1) * 50).limit(51).to_a
-    @more = @items.size > 50
-    @items = @items.first(50)
+    @corpus.with_lock do
+      @matching_count = matching.count
+      @page = params[:page].to_i.clamp(1, 10000)
+      @more = @matching_count > @page * 50
+      page_items = matching.order(:id).offset((@page - 1) * 50).limit(50)
+      bytes = matching.where(id: page_items.select(:id)).sum(CorpusAnalysis::RECORD_BYTES_SQL)
+      if bytes > CorpusAnalysis::MAX_RECORD_BYTES
+        @evidence_read_error = "This complete evidence page exceeds 10 MiB. Narrow the source or search phrase, or try the next page if available; no page records were loaded."
+        @items = []
+      else
+        @items = page_items.includes(source_snapshot: :source).to_a
+      end
+    end
     render :show, status: :unprocessable_content if @search_error
   end
 end

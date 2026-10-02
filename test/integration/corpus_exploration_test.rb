@@ -99,7 +99,7 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select "#corpus-records > details > summary", text: "auth-12 · Certificate rotation", count: 1
     end
-    assert_equal 2, statements.size
+    assert_equal 3, statements.size
     statements.each { |statement| assert_not_includes statement, "ACS 500" }
     assert_includes buffer.string, "ILIKE"
     assert_not_includes buffer.string, "ACS 500"
@@ -137,6 +137,59 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
     get workspace_corpus_path(@workspace, @corpus), params: { corpus_query: "  " }
     assert_response :success
     assert_select "#corpus-records > details", count: 3
+  end
+
+  test "oversized filtered pages keep complete counts without materializing and later small pages recover" do
+    attributes = { workspace_id: @workspace.id, corpus_id: @corpus.id, source_snapshot_id: @snapshot.id,
+      title: "Certificate bounded fixture", content: "private-page-content " + "x" * 99_000,
+      context: { diagnostic: "雪" * 41_000 }, created_at: Time.current }
+    CorpusItem.insert_all!(48.times.map { |index| attributes.merge(external_id: "bounded-#{index}") })
+    CorpusItem.insert_all!([ attributes.merge(external_id: "later-small", content: "Certificate recoverable evidence", context: {}) ])
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+      get workspace_corpus_path(@workspace, @corpus), params: { source_id: @snapshot.source_id }
+    end
+    assert_response :success
+    assert_empty loaded
+    assert_select "#corpus-records [role=status]", text: /51 matching records/
+    assert_select "#corpus-records [role=alert]", text: /10 MiB.*Narrow the source or search phrase.*next page.*no page records were loaded/
+    assert_select "#corpus-records > details", count: 0
+    assert_not_includes response.body, "private-page-content"
+    assert_not_includes response.body, "No records on this page"
+    get css_select("nav[aria-label='Record pages'] a").sole["href"]
+    assert_response :success
+    assert_select "#corpus-records > details > summary", text: /later-small/, count: 1
+    assert_select "#corpus-records [role=alert]", count: 0
+    get workspace_corpus_path(@workspace, @corpus), params: { source_id: @snapshot.source_id, corpus_query: "recoverable" }
+    assert_select "#corpus-records [role=status]", text: /1 matching record/
+    assert_select "#corpus-records > details", count: 1
+    get workspace_corpus_path(@workspace, @corpus), params: { source_id: @document.source_id }
+    assert_select "#corpus-records > details", count: 1
+    assert_select "#corpus-records [role=alert]", count: 0
+  end
+
+  test "the fifty first complete rows load without materializing an oversized fifty first row" do
+    attributes = { workspace_id: @workspace.id, corpus_id: @corpus.id, source_snapshot_id: @snapshot.id,
+      title: "Small page", content: "Small complete evidence", context: {}, created_at: Time.current }
+    CorpusItem.insert_all!(48.times.map { |index| attributes.merge(external_id: "small-#{index}") })
+    CorpusItem.insert_all!([ attributes.merge(external_id: "oversized-last", context: { private: "x" * 10.megabytes }) ])
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+      get workspace_corpus_path(@workspace, @corpus), params: { source_id: @snapshot.source_id }
+    end
+    assert_response :success
+    assert_equal [ 50 ], loaded
+    assert_select "#corpus-records > details", count: 50
+    assert_select "#corpus-records [role=alert]", count: 0
+    assert_select "nav[aria-label='Record pages'] a", text: "Next records"
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") do
+      get css_select("nav[aria-label='Record pages'] a").sole["href"]
+    end
+    assert_equal [ 50 ], loaded
+    assert_select "#corpus-records [role=alert]", text: /10 MiB/
+    assert_select "nav[aria-label='Record pages'] a", text: "Next records", count: 0
   end
 
   test "filtered pagination retains search and provenance reaches records beyond the first source page" do
