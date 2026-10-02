@@ -2238,6 +2238,31 @@ This work is committed/pushed for review as
 merged or deployed. No owner VPS or provider ran. Host packages, DNS/ports and storage policy
 need owner inputs, not guessed installation commands or weaker egress controls.
 
+### CI browser follow-up
+
+[Exact-head CI](https://github.com/glnarayanan/navishai/actions/runs/37002826231)
+passed style, audits, Brakeman, eager loading and 690 Rails tests / 10,977
+assertions, but failed one of 71 system tests with seed 52131. Chrome
+154.0.8037.57 returned `UnknownError`, inspector code -32000, "Node with given
+id does not belong to the document" at the matching preview's text assertion.
+
+A private repeated native repair/preview probe reproduced that exact error twice.
+Its full trace failed in WebDriver's HTML-element text read; a fresh document query
+already found the confirmation heading. The test now waits for that heading's
+unique selector instead of reading the old whole document. It adds no sleep,
+error rescue, dependency or production change. The same probe passed 150 transitions
+with Chrome and ChromeDriver 154.0.8037.57; its scratch code was removed.
+The original focused journey passes 2 tests / 114 assertions with seed 52131.
+Ruby syntax and all 384 files of native RuboCop pass.
+
+The four-worker full system run remains red: 71 tests / 3,472 assertions,
+one failure, no errors/skips. The matching journey passes, but the existing
+`AssumptionImpactJourneyTest` fails at line 17 because its snapshot text is hidden
+in a closed disclosure. The same failure occurred before this edit with Chrome
+154.0.8037.92. That separate test stays unchanged; its cause and fix need their
+own scope. No workflow was blindly rerun or cancelled. The joined VPS proof's
+production hashes and PASS/CLEAN evidence remain unchanged and separate from CI.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support
