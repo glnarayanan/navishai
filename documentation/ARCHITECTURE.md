@@ -64,6 +64,12 @@ links, not semantic ranking or coverage. Filter search phrases from request logs
 the existing no-referrer policy applies. No model call, search service or new index
 is needed for the current intake bounds.
 
+Name the search bind `corpus_query` so Rails can apply the configured private-field
+filter to SQL debug values as well as request parameters. The native query already
+binds values; do not replace it with interpolated SQL. Active Record shares the
+request filter list, including retained content/context. This does not sanitize
+PostgreSQL, proxy, browser-history or operator logs outside Rails.
+
 ### Family evidence and error-cost decisions (1 October 2026)
 
 Explore every fixed cluster member through a read-only, scoped and paginated family

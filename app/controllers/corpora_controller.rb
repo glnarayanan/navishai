@@ -33,7 +33,8 @@ class CorporaController < ApplicationController
       @search_error = "Search needs at most 200 characters and no null bytes. Shorten the phrase and try again."
       matching = matching.none
     elsif @query.present?
-      pattern = "%#{ActiveRecord::Base.sanitize_sql_like(@query)}%"
+      pattern = ActiveRecord::Relation::QueryAttribute.new("corpus_query",
+        "%#{ActiveRecord::Base.sanitize_sql_like(@query)}%", CorpusItem.type_for_attribute("content"))
       matching = matching.where("corpus_items.title ILIKE :pattern OR corpus_items.external_id ILIKE :pattern OR corpus_items.content ILIKE :pattern OR corpus_items.context::text ILIKE :pattern", pattern:)
     end
     @matching_count = matching.count

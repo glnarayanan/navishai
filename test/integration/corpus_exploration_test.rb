@@ -88,6 +88,43 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filter.filter("corpus_query" => "private search")["corpus_query"]
   end
 
+  test "search phrases remain data without entering SQL statements or debug log values" do
+    buffer = StringIO.new
+    original_logger = ActiveRecord::Base.logger
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    statements = []
+    capture = ->(event) { statements << event.payload[:sql] if event.payload[:sql].include?("ILIKE") }
+    ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
+      get workspace_corpus_path(@workspace, @corpus), params: { corpus_query: "ACS 500", source_id: @snapshot.source_id }
+      assert_response :success
+      assert_select "#corpus-records > details > summary", text: "auth-12 · Certificate rotation", count: 1
+    end
+    assert_equal 2, statements.size
+    statements.each { |statement| assert_not_includes statement, "ACS 500" }
+    assert_includes buffer.string, "ILIKE"
+    assert_not_includes buffer.string, "ACS 500"
+    assert_includes buffer.string, "[FILTERED]"
+  ensure
+    ActiveRecord::Base.logger = original_logger
+  end
+
+  test "configured private corpus fields stay intact but leave actual SQL debug logs filtered" do
+    buffer = StringIO.new
+    original_logger = ActiveRecord::Base.logger
+    ActiveRecord::Base.logger = ActiveSupport::Logger.new(buffer, level: Logger::DEBUG)
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Private log fixture", kind: "conversations",
+      bytes: [ { id: "log-13", title: "Diagnostic policy", content: "Fixture-only private troubleshooting sequence.", context: { plan: "fixture-private-entitlement" } } ].to_json)
+    assert_equal "Fixture-only private troubleshooting sequence.", snapshot.corpus_items.sole.content
+    assert_equal({ "plan" => "fixture-private-entitlement" }, snapshot.corpus_items.sole.context)
+    assert_includes buffer.string, "INSERT INTO"
+    assert_not_includes buffer.string, "Fixture-only private troubleshooting sequence."
+    assert_not_includes buffer.string, "fixture-private-entitlement"
+    assert_includes buffer.string, '["content", "[FILTERED]"]'
+    assert_includes buffer.string, '["context", "[FILTERED]"]'
+  ensure
+    ActiveRecord::Base.logger = original_logger
+  end
+
   test "phrase bounds preserve errors and whitespace resets the search" do
     get workspace_corpus_path(@workspace, @corpus), params: { corpus_query: "x" * 200 }
     assert_response :success
