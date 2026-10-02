@@ -81,7 +81,8 @@ all 30 asset manifest entries resolved to files, including local CSS/fonts.
 These commands did not create a database, start services or contact a provider.
 They do not prove a Docker build, image permissions or clean-host acceptance.
 Later isolated Docker builds and runtime checks passed; see the proof below.
-Compose and Buildx plugins remain absent. Keep each proof separate from deployment acceptance.
+Global Compose and Buildx plugins remain absent. A later partial Compose trial used
+a private checksum-verified binary; see below. Neither is deployment acceptance.
 
 Before claiming deployment readiness, independently verify a clean host, image
 build, pinned image execution, non-superuser database roles, HTTPS/proxy
@@ -128,6 +129,40 @@ came from service-name length, the upstream initializer clearing PGHOST, contain
 readiness timing and Rails using a 365.2425-day cache year; corrected the proof,
 not the security controls. No live provider or customer data ran.
 
+## Partial disposable Compose trial
+
+An independent operations worker ran the tracked Compose composition from archived
+[#166](https://github.com/glnarayanan/navishai/pull/166)
+([`389162e`](https://github.com/glnarayanan/navishai/commit/389162e)), substituting only the built web/jobs image names. It made no
+topology or security overrides. The worker downloaded official Compose v2.39.4
+privately and verified its published checksum; it installed no production dependency.
+This trial is separate from the passing `bin/prove-container-runtime` socket/TLS
+proof above. There is no tracked Compose proof script.
+
+The trial used the existing parent-owned `navishai-image-proof` daemon and exact
+socket `tmp/navishai-image-proof/docker.sock`, with separate vfs data/exec/pid roots
+and no bridge, iptables, masquerade or userland proxy. Preparation/runtime roles
+worked across all four databases. Separate web/jobs completed a synthetic two-family
+analysis; cache/cable access and audit denials passed.
+
+PostgreSQL had no published port or default route and joined only the internal
+control network. PostgreSQL-to-web control TCP passed; PostgreSQL-to-edge returned
+`Network unreachable`. Web had an edge default route and `/up` returned HTTP 200
+inside its container. Inspection showed host publication `127.0.0.1:3000:3000`, but
+the host request timed out after 5001 ms with HTTP 000. The cause remains unverified;
+the daemon flags are not a proved explanation. A TEST-NET probe cannot establish
+useful public egress or allowlist enforcement.
+
+The worker removed only its project, volumes, networks, generated secrets, private
+CLI, archive and new image. Parent inspection found no containers and only the
+host/none networks. No global daemon, firewall or network-policy changes occurred.
+The private daemon stayed running after this trial for later scoped cleanup.
+
+This is partial local trial evidence, not green Compose, egress or deployment
+acceptance. Finish host ingress and useful-egress/deny-policy checks on a disposable
+clean host with authority over proxy and network testing. No clean-host, public TLS
+or production backup acceptance exists.
+
 ## Disposable backup/restore fixture proof
 
 Run `bin/prove-backup-restore` from the repository with the installed Ruby/bundle
@@ -169,6 +204,6 @@ Local orb execution on 1 October 2026 passed this fixture proof. This covers the
 primary lab schema, not separate production queue/cache/cable databases, backup
 encryption/retention, PITR, role/ACL restoration (owner and ACL data are omitted),
 RLS, all possible composite relationships, live targets or model quality. Owners
-and superusers still can bypass triggers. Clean-host, Compose image execution,
-HTTPS/proxy and production network/role acceptance remain unverified; this local
-socket proof supplies none of those claims.
+and superusers still can bypass triggers. Clean-host, end-to-end Compose ingress/
+egress, public HTTPS/proxy and production network/role acceptance remain unverified;
+this local socket proof supplies none of those claims.

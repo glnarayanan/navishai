@@ -60,7 +60,8 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   fixed provenance, explicit cohorts and blind first-label review.
 - [#167](https://github.com/glnarayanan/navishai/pull/167), based on #166: response-scoped v2 transcript checks,
   source-backed failure/regression and separate calibration proof.
-- `rebuild/28-calibration-trials`, based on #167: local revised-grader development
+- [#168](https://github.com/glnarayanan/navishai/pull/168), based on #167,
+  `rebuild/28-calibration-trials` at [`9768637`](https://github.com/glnarayanan/navishai/commit/9768637): local revised-grader development
   previews, separate matrices and held-out/first-label guards.
 
 ## Built and checked
@@ -507,6 +508,31 @@ This is not Compose, an external clean host, public TLS, egress-policy, SMTP/OID
 production backup or upgrade acceptance. No production service or dependency was
 added, and no real credential, customer data or live provider was used.
 
+An independent partial Compose trial later ran archived #166
+([`389162e`](https://github.com/glnarayanan/navishai/commit/389162e)), with
+only built web/jobs image-name substitutions and no topology/security overrides.
+Official Compose v2.39.4 was downloaded privately and its published checksum
+verified; global plugins remain absent and no production dependency was installed.
+The existing parent-owned private daemon used separate vfs data/exec/pid roots,
+no bridge/iptables/masquerade/userland proxy and socket
+`tmp/navishai-image-proof/docker.sock`. Four-database preparation/runtime roles,
+separate web/jobs, synthetic two-family analysis, cache/cable and audit denials passed.
+
+PostgreSQL had no published port/default route and only an internal control network.
+PostgreSQL-to-web TCP passed; PostgreSQL-to-edge returned `Network unreachable`.
+Web had an edge default route and container `/up` returned 200. Inspection showed
+`127.0.0.1:3000:3000`, but host curl timed out after 5001 ms with HTTP 000.
+The cause is unverified; daemon flags are not a proved cause. A TEST-NET probe
+does not prove useful public egress or allowlist enforcement. This is partial local
+evidence, not green Compose/egress/deployment acceptance, and has no tracked proof
+script. It does not replace the passing private socket/TLS runtime proof.
+
+The worker cleaned only its project/volumes/networks/secrets/private CLI/archive/new
+image. Parent inspection found no containers and only host/none networks. No global
+daemon, firewall or network-policy changes occurred; the private daemon stayed
+running after the trial for later scoped cleanup. Clean-host, public TLS and production backup acceptance remain unverified.
+See [deployment evidence](./DEPLOYMENT.md#partial-disposable-compose-trial).
+
 GitHub CI for #164 passed
 ([run](https://github.com/glnarayanan/navishai/actions/runs/36811262222)).
 
@@ -598,6 +624,16 @@ Desktop/390px preview, refusal and empty captures were inspected without
 overflow/CSP failures. Direct risk review/native audits used; named reviews remain
 unavailable. No provider, customer data, dependency or training was used.
 
+GitHub inspection on 1 October found #167 and #168 open and unmerged.
+#167 CI passed ([run](https://github.com/glnarayanan/navishai/actions/runs/36815505174));
+#168 CI passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36817164500), completed
+04:56:32 UTC). The local full CI counts above remain separate evidence.
+The actual failed #155/#158 runs remain failed. No PR was merged, released or deployed.
+
+The next interactive conversation-execution slice is in progress; app-worker proof
+is pending. No completion or test evidence is claimed for that work here.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -629,14 +665,15 @@ Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by lab
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
 Independent engineering includes interactive multi-turn execution,
-fresh revised-judge calibration and clean-host/Compose/egress proof.
+fresh revised-judge calibration and end-to-end clean-host/Compose ingress/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
-validation ran. Clean-host/Compose/public TLS and production backup acceptance are unverified.
+validation ran. The partial Compose trial does not establish clean-host, host ingress,
+useful-egress, public TLS or production backup acceptance.
 Pinned-image execution and isolated runtime roles pass, not deployment acceptance. Database administrators can
 bypass triggers; last-Owner protection is application-side. Backups need their own
 retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
@@ -654,6 +691,10 @@ proved JSON 3 incompatible with this Rails version. No new dependency was added.
    labels. Fixture judgments cannot establish taxonomy quality or grader accuracy.
 3. Approve exact target/judge/scenario/corpus-processing endpoints, disclosure scope
    and cost limits before live execution. The private registries still have zero entries.
+4. Provide or authorise a disposable clean host with authority over proxy/network
+   testing if no runner can supply it. The runner list was empty at 04:46 UTC on
+   1 October. Host ingress and useful-egress/deny-policy proof remain unfinished;
+   the private trial's host-publication failure has no verified cause.
 
 Classifier work remains gated by enough labelled data and measured economics.
 Independent local engineering and fixture checks can continue without these gates.
