@@ -49,6 +49,21 @@ policy. Do not publish PostgreSQL. A host with a shared existing proxy or blocke
 ports needs a separate reviewed topology; this CLI does not replace that proxy or
 change its firewall. No host package or network setup command is guessed here.
 
+Before deletion/install, collect only read-only host facts (no env/secret dump):
+
+```sh
+cat /etc/os-release
+docker --version; docker compose version; systemctl --version
+sudo docker compose ls --all
+sudo ss -lntp '( sport = :80 or sport = :443 or sport = :3000 )'
+ip -4 route; ip -6 route
+```
+
+The old uninstall preview supplies the exact source SHA, CLI/current release,
+Compose config paths, container IDs, volume names and network IDs. If it cannot
+prove a project/layout, stop and share that refusal and the read-only inventory,
+not private environment contents. It does not run an unknown old CLI for a version.
+
 ## Commands after install
 
 ```sh
@@ -148,7 +163,11 @@ ordering, both startup guards, literal env parsing, distinct secrets, lock/resto
 contracts, writable-root/startup-path and shared-resource/partial-install cleanup
 refusal. Bash syntax and native Ruby style pass. The real namespace-policy and PG recovery proofs pass;
 their scope and limits remain in [policy](./VPS_POLICY.md) and
-[recovery](./VPS_RECOVERY.md). Combined real CLI proof and full CI remain pending.
+[recovery](./VPS_RECOVERY.md). Full `bin/ci` passed in 19m24.83s: 684 Rails tests /
+10,947 assertions and 71 browser tests / 3,561 assertions, no failures/errors/skips.
+That run includes 14 core command tests; the final fresh 16 / 145 run also covers
+the two added ownership-boundary fixtures. Style, audits, Brakeman and eager loading
+passed. Combined real CLI proof remains pending; no public-host acceptance follows.
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.
 Native fixture/unit tests alone cannot certify public ingress, ACME/DNS, SMTP/OIDC,
 the owner's firewall or storage, live recovery or customer/model quality.

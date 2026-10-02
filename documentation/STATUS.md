@@ -2194,8 +2194,13 @@ Native Bash syntax and Ruby style pass. Real standalone namespace denial/replace
 and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
 and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
 
-This work is local on `feat/vps-cli`, not pushed, merged or deployed. Combined
-entrypoint/Rails/jobs/Caddy/rollback proof and full CI are in progress. Public
+Full `bin/ci` passed in 19m24.83s: 684 Rails tests / 10,947 assertions and 71 browser
+tests / 3,561 assertions, no failures/errors/skips. Ruby style (383 files), native
+audits, Brakeman and eager loading passed. The fresh core 16 / 145 run adds two
+ownership-boundary fixtures after the combined run's 14 core tests.
+
+This work is committed on `feat/vps-cli`, not pushed, merged or deployed. Combined
+entrypoint/Rails/jobs/Caddy/rollback proof is in progress. Public
 ACME/ingress, real host reboot, SMTP/OIDC delivery and live-host recovery remain
 unproved; no owner VPS or provider ran. Host packages, DNS/ports and storage policy
 need owner inputs, not guessed installation commands or weaker egress controls.
