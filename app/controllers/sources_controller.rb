@@ -8,13 +8,20 @@ class SourcesController < ApplicationController
   def create
     upload = params[:file]
     raise CorpusIntake::Invalid, "Choose an export or text document." unless upload.respond_to?(:read)
+    input = if params[:kind] == "conversation_lines"
+      raise CorpusIntake::Invalid, "Choose a conversation JSONL file." unless upload.respond_to?(:tempfile)
+      { file: upload.tempfile }
+    else
+      { bytes: upload.read(CorpusIntake::MAX_BYTES + 1) }
+    end
     snapshot = CorpusIntake.call(corpus: @corpus, membership: Current.require_membership!,
-      name: params[:name], kind: params[:kind], bytes: upload.read(CorpusIntake::MAX_BYTES + 1),
+      name: params[:name], kind: params[:kind], **input,
       redaction: params[:redaction], retention_days: params[:retention_days], redaction_values: params[:redaction_values] || "")
     redirect_to workspace_corpus_source_path(Current.workspace, @corpus, snapshot.source),
       notice: "Snapshot #{snapshot.number} retained; #{snapshot.corpus_items.count} source-backed records.", status: :see_other
   rescue CorpusIntake::Invalid, ActiveRecord::RecordInvalid => error
     flash[:intake_redaction] = params[:redaction] if %w[email none exact].include?(params[:redaction])
+    flash[:intake_kind] = params[:kind] if %w[conversations conversation_lines document traces].include?(params[:kind])
     redirect_to workspace_corpus_path(Current.workspace, @corpus), alert: error.message, status: :see_other
   end
 

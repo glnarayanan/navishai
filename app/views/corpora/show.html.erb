@@ -29,11 +29,13 @@
   </section>
   <% if Current.require_membership!.can_write? %>
     <section class="section-block config-panel"><h2>Add company data</h2>
-      <p>UTF-8 JSON conversation exports or production traces, or plain text/Markdown documents. 10 MiB and 2000 records per upload. Within one source, matching bytes, masking rules and processing version reuse a snapshot; changes add a version.</p>
+      <p>UTF-8 JSON exports, production traces or text/Markdown documents: 10 MiB and 2000 records per file.</p>
+      <p id="intake-format-help">Conversation JSONL: one conversation object per line, up to 60 MiB and 100,000 records. Each line is at most 1 MiB; normalized fields after masking are at most 256 MiB. Other formats keep their limits. Imports run locally and commit as a whole; wait for confirmation before submitting again.</p>
+      <p>Within one source, matching bytes, masking rules and processing version reuse a snapshot; changes add a version.</p>
       <%= form_with url: workspace_corpus_sources_path(Current.workspace, @corpus), multipart: true, class: "form-stack" do |form| %>
         <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 180 %></div>
         <div class="field-grid">
-          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Text / Markdown", "document"], ["Production traces", "traces"]] %></div>
+          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Conversation JSONL", "conversation_lines"], ["Text / Markdown", "document"], ["Production traces", "traces"]], { selected: flash[:intake_kind] || "conversations" }, { aria: { describedby: "intake-format-help" } } %></div>
           <div class="field"><%= form.label :redaction, "Redaction" %><%= form.select :redaction, [["Mask email addresses", "email"], ["Mask exact text", "exact"], ["Keep original text", "none"]], selected: flash[:intake_redaction] || "email" %></div>
         </div>
         <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Masking must not merge JSON keys or record IDs; rename colliding keys or IDs before trying again. Original files are not stored; snapshots retain normalised text and an input digest.</p>
@@ -42,13 +44,17 @@
           <p class="field-hint">Values are not retained; snapshots keep their SHA-256 fingerprint and count. Keep your list privately to repeat processing. Values clear after errors; re-enter them before retrying. New rules leave older snapshots unchanged. Review retained evidence before any separate provider disclosure.</p>
         </div>
         <div class="field-grid">
-          <div class="field"><%= form.label :file, "Company data file" %><%= form.file_field :file, required: true, accept: ".json,.txt,.md" %></div>
+          <div class="field"><%= form.label :file, "Company data file" %><%= form.file_field :file, required: true, accept: ".json,.jsonl,.ndjson,.txt,.md" %></div>
           <div class="field"><%= form.label :retention_days, "Retention days" %><%= form.number_field :retention_days, value: 365, min: 1, max: 3650, required: true %></div>
         </div>
         <%= form.submit "Import source", class: "button button-primary" %>
       <% end %>
       <details class="section-block"><summary>Conversation export format</summary><p>A JSON array of objects with id, title, content and an optional context object. Intercom conversations with source/parts and Zendesk tickets with description/comments also work. HTML inside export fields stays untrusted text.</p>
         <pre class="evidence-text">[{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}]</pre>
+      </details>
+      <details class="section-block"><summary>Conversation JSONL format</summary><p>Choose Conversation JSONL for a normalized .jsonl or .ndjson file. Each line has id, title, content and an optional context object. No blank lines, array wrapper or vendor envelope. IDs must be unique across the whole file. Escape newlines inside strings. Invalid input refuses the whole file; no partial records or automatic retry.</p>
+        <pre class="evidence-text">{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}
+{"id":"api-43","title":"Webhook replay","content":"A replay writes two invoices.","context":{"reopened":true}}</pre>
       </details>
       <details class="section-block"><summary>Production trace format</summary><p>A JSON array of support-trace-v1 objects, at most 100 KiB each. Fields: schema, id, title, target_version, observed_at (ISO 8601 with timezone), input, output, observed_failure and human_correction. Input has situation, known_facts and knowledge; output uses support-output-v1. Failure/correction may be empty text. Extra fields, hidden expectations and malformed outputs are rejected. Reports do not create authoritative labels or run an agent.</p></details>
     </section>

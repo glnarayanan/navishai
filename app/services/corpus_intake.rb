@@ -3,41 +3,40 @@ class CorpusIntake
   MAX_BYTES = 10.megabytes
   MAX_ITEMS = 2_000
   PROCESSING_VERSION = "support-export-v1"
+  STREAM_MAX_BYTES = 60.megabytes
+  STREAM_MAX_ITEMS = 100_000
+  STREAM_MAX_LINE_BYTES = 1.megabyte
+  STREAM_MAX_RETAINED_BYTES = 256.megabytes
+  STREAM_PROCESSING_VERSION = "support-conversation-jsonl-v1"
 
-  def self.call(corpus:, membership:, name:, kind:, bytes:, redaction: "email", retention_days: 365, redaction_values: "")
+  def self.call(corpus:, membership:, name:, kind:, bytes: nil, file: nil, redaction: "email", retention_days: 365, redaction_values: "")
+    streaming = kind == "conversation_lines"
+    kind = "conversations" if streaming
     raise Invalid, "Choose conversations, document or traces." unless %w[conversations document traces].include?(kind)
     raise Invalid, "Choose email masking, exact text or original text." unless %w[email none exact].include?(redaction)
     raise Invalid, "Retention must be 1–3650 days." unless retention_days.to_s.match?(/\A[0-9]+\z/) && retention_days.to_i.between?(1, 3650)
     values = mask_values(redaction_values, redaction:)
     mask_digest = Digest::SHA256.hexdigest(JSON.generate(values))
     pattern = redaction == "email" ? /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i : Regexp.union(values.sort_by { |value| [ -value.length, value ] })
-    text = bytes.dup.force_encoding(Encoding::UTF_8)
-    raise Invalid, "Upload valid UTF-8 text, at most 10 MiB, without null bytes." if text.bytesize > MAX_BYTES || !text.valid_encoding? || text.include?("\0")
-    records = case kind
-    when "document" then [ { "id" => "document", "title" => name, "content" => text, "context" => {} } ]
-    when "traces" then SupportTrace.records(text)
-    else conversations(text)
+    stats = {}
+    if streaming
+      records = conversation_lines(file, pattern:, redaction:, stats:)
+      records.each { |_fields| }
+      record_count, digest = stats.values_at(:count, :digest)
+    else
+      text = bytes.dup.force_encoding(Encoding::UTF_8)
+      raise Invalid, "Upload valid UTF-8 text, at most 10 MiB, without null bytes." if text.bytesize > MAX_BYTES || !text.valid_encoding? || text.include?("\0")
+      records = case kind
+      when "document" then [ { "id" => "document", "title" => name, "content" => text, "context" => {} } ]
+      when "traces" then SupportTrace.records(text)
+      else conversations(text)
+      end
+      raise Invalid, "An upload needs 1–2000 records with unique IDs." unless records.size.between?(1, MAX_ITEMS) && records.map { |record| record["id"].to_s }.uniq.size == records.size
+      records = records.map { |record| normalize_record(record, pattern:, redaction:, kind:) }
+      raise Invalid, "Masking would merge distinct record IDs. Rename those IDs before upload; no records were imported." unless records.map { |record| record[:external_id] }.uniq.size == records.size
+      record_count, digest = records.size, Digest::SHA256.hexdigest(bytes)
     end
-    raise Invalid, "An upload needs 1–2000 records with unique IDs." unless records.size.between?(1, MAX_ITEMS) && records.map { |record| record["id"].to_s }.uniq.size == records.size
-    records = records.map do |record|
-      unless record["id"].is_a?(String) || record["id"].is_a?(Integer)
-        raise Invalid, "Each record needs a string or integer ID."
-      end
-      unless record["title"].is_a?(String) && record["content"].is_a?(String) && record.fetch("context", {}).is_a?(Hash)
-        raise Invalid, "Each record needs a string title, string content and an object context."
-      end
-      raise Invalid, "Source text must not contain null bytes." if record.to_json.include?("\\u0000")
-      fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
-        content: record.fetch("content"), context: record.fetch("context", {}) }
-      unless redaction == "none"
-        fields = redact(fields, pattern:, redaction:)
-        fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
-      end
-      SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
-      fields
-    end
-    raise Invalid, "Masking would merge distinct record IDs. Rename those IDs before upload; no records were imported." unless records.map { |record| record[:external_id] }.uniq.size == records.size
-    processing_version = kind == "traces" ? SupportTrace::VERSION : PROCESSING_VERSION
+    processing_version = streaming ? STREAM_PROCESSING_VERSION : (kind == "traces" ? SupportTrace::VERSION : PROCESSING_VERSION)
 
     corpus.with_lock do
       corpus.authorize_writer!(membership)
@@ -45,7 +44,6 @@ class CorpusIntake
       source.workspace = corpus.workspace
       source.expires_at = retention_days.to_i.days.from_now
       source.save!
-      digest = Digest::SHA256.hexdigest(bytes)
       snapshot = source.source_snapshots.find_by(digest:, redaction:, processing_version:, mask_digest:)
       unless snapshot
         snapshot = source.source_snapshots.create!(workspace: corpus.workspace, corpus:,
@@ -66,15 +64,67 @@ class CorpusIntake
               external_id text, title text, content text, context jsonb, created_at timestamp)
           SQL
         end
+        raise Invalid, "The file changed during import. Re-upload it; no records were imported." if streaming && stats.values_at(:count, :digest) != [ record_count, digest ]
       end
       source.update!(current_snapshot: snapshot)
       AuditEvent.record!(action: "corpus.imported", source: :web, workspace: corpus.workspace,
-        actor: membership.user, subject: corpus, metadata: { record_count: records.size })
+        actor: membership.user, subject: corpus, metadata: { record_count: })
       snapshot
     end
   rescue JSON::ParserError, KeyError, TypeError
-    raise Invalid, "Use a supported conversation export or support-trace-v1 array. Check the source type and required fields."
+    raise Invalid, "Use a supported conversation export, conversation JSONL or support-trace-v1 array. Check the source type and required fields."
   end
+
+  def self.normalize_record(record, pattern:, redaction:, kind:)
+    raise Invalid, "Each record needs a string or integer ID." unless record["id"].is_a?(String) || record["id"].is_a?(Integer)
+    unless record["title"].is_a?(String) && record["content"].is_a?(String) && record.fetch("context", {}).is_a?(Hash)
+      raise Invalid, "Each record needs a string title, string content and an object context."
+    end
+    raise Invalid, "Source text must not contain null bytes." if record.to_json.include?("\\u0000")
+    fields = { external_id: record.fetch("id").to_s, title: record.fetch("title"),
+      content: record.fetch("content"), context: record.fetch("context", {}) }
+    unless redaction == "none"
+      fields = redact(fields, pattern:, redaction:)
+      fields[:external_id] = "record-#{Digest::SHA256.hexdigest(record.fetch('id').to_s)}" if fields[:external_id] != record.fetch("id").to_s
+    end
+    SupportTrace.validate!(fields[:context].fetch("support_trace")) if kind == "traces"
+    fields
+  end
+  private_class_method :normalize_record
+
+  def self.conversation_lines(file, pattern:, redaction:, stats:)
+    raise Invalid, "Choose a seekable conversation JSONL file." unless file.respond_to?(:gets) && file.respond_to?(:rewind)
+    Enumerator.new do |output|
+      file.rewind
+      count, bytes, retained = 0, 0, 0
+      raw_ids, masked_ids = {}, {}
+      digest = Digest::SHA256.new
+      while (line = file.gets("\n", STREAM_MAX_LINE_BYTES + 1))
+        bytes += line.bytesize
+        count += 1
+        raise Invalid, "Conversation JSONL exceeds 60 MiB or 100000 records; no records were imported." if bytes > STREAM_MAX_BYTES || count > STREAM_MAX_ITEMS
+        line.force_encoding(Encoding::UTF_8)
+        raise Invalid, "Each JSONL line needs valid UTF-8, at most 1 MiB, without null bytes." if line.bytesize > STREAM_MAX_LINE_BYTES || !line.valid_encoding? || line.include?("\0")
+        digest.update(line)
+        begin
+          record = JSON.parse(line)
+        rescue JSON::ParserError
+          raise Invalid, "Each JSONL line must be one conversation object; omit blank lines and array wrappers."
+        end
+        raise Invalid, "Each JSONL line must be one conversation object; omit blank lines and array wrappers." unless record.is_a?(Hash)
+        fields = normalize_record(record.slice("id", "title", "content", "context"), pattern:, redaction:, kind: "conversations")
+        raise Invalid, "JSONL record IDs must be unique; no records were imported." if raw_ids.key?(record.fetch("id").to_s)
+        raise Invalid, "Masking would merge distinct record IDs. Rename those IDs before upload; no records were imported." if masked_ids.key?(fields[:external_id])
+        raw_ids[record.fetch("id").to_s] = masked_ids[fields[:external_id]] = true
+        retained += JSON.generate(fields).bytesize
+        raise Invalid, "Conversation JSONL exceeds 256 MiB of normalized fields after masking; no records were imported." if retained > STREAM_MAX_RETAINED_BYTES
+        output << fields
+      end
+      raise Invalid, "Conversation JSONL needs 1–100000 records; no records were imported." if count.zero?
+      stats.replace(count:, digest: digest.hexdigest)
+    end
+  end
+  private_class_method :conversation_lines
 
   def self.conversations(text)
     data = JSON.parse(text)

@@ -88,6 +88,34 @@ shapes are not every vendor export format. Plain UTF-8 text and Markdown also wo
 PDF, attachments and live connectors do not. Limits: 10 MiB, 2000 records per upload,
 100,000 characters per record. Bad batches roll back as a whole.
 
+Choose **Conversation JSONL** for a larger normalized `.jsonl` or `.ndjson` file.
+Each line contains one conversation object with the same `id`, `title`, `content`
+and optional object `context`. No blank lines, array wrapper or vendor envelope;
+escape newlines inside strings. IDs must be unique across the whole file.
+Limits: 60 MiB of file bytes, 100,000 records, 1 MiB per line including its newline,
+and 256 MiB of encoded normalized fields after masking. Existing per-record text
+limits still apply. The retained source type is conversations; processing version
+is `support-conversation-jsonl-v1`. Other formats keep their original bounds.
+The existing 64-MiB request-body ceiling also includes multipart fields/headers.
+
+The upload tempfile is read in bounded lines, never as one whole string. A first
+pass checks format, masking, identity collisions, bounds and the raw-byte digest.
+A second pass validates and writes batches of at most 1000 records inside the
+corpus transaction. Changed bytes/counts or a late invalid record roll back source,
+retention, snapshot, all earlier batches and audit. No partial import or automatic
+retry. Wait for confirmation before submitting again; large intake stays synchronous.
+Errors retain the format and masking choice but clear private rules and the file.
+This local import starts no analysis, provider call, approval or label.
+
+[`support_export.jsonl`](../test/fixtures/files/support_export.jsonl) is a small
+synthetic format example, not customer data. `bin/rails test
+test/services/streamed_corpus_intake_test.rb` exercises a real 100,000-record file
+above 10 MiB, bounded reads/inserts, repeat reuse and record-100001 refusal.
+Byte-boundary tests use smaller injected limits rather than allocating 256 MiB.
+The browser imports 3001 records, then explicitly requests streaming analysis and
+creates source-backed unapproved scenarios. This proves engineering, not useful
+company taxonomy, semantic retrieval or throughput across arbitrary corpora.
+
 The same source name/type, input digest, redaction, processing version and masking
 fingerprint reuse a snapshot. Changed input, rules or processing add a version;
 matching an old snapshot under the current processing version selects it again.

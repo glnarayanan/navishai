@@ -21,6 +21,12 @@ Masking-collision alerts explain how to repair keys or IDs without showing them,
 choosing original text or implying partial intake. The existing source and retention
 stay fixed. Desktop/mobile keep the same native import controls and privacy limits.
 
+Conversation JSONL uses the same native source picker and form, with separate
+file/line/record/masked-byte limits and a two-line example in a disclosure.
+Repair keeps the chosen format and masking mode, clears private rules/file and
+names the whole-file refusal. Large local imports wait for confirmation; neither
+intake nor its count implies analysis, useful coverage, approval or disclosure.
+
 Exact-text mode has one labelled native textarea with literal/case-sensitive limits
 and privacy/retry help. It masks only the author's listed text, not all emails or
 PII. Errors preserve the mode but clear private values; never put them in flash,

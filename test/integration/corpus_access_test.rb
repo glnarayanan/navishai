@@ -61,6 +61,36 @@ class CorpusAccessTest < ActionDispatch::IntegrationTest
     assert_select "#source-evidence [role=alert]", count: 0
   end
 
+  test "JSONL multipart intake streams a file above the original bound and keeps errors private" do
+    Tempfile.create([ "navishai-http-fixture-", ".jsonl" ]) do |file|
+      12.times { |index| file.puts(JSON.generate({ id: "large-#{index}", title: "Large context", content: "Fixture body", context: { evidence: "雪" * 300_000 } })) }
+      file.flush
+      assert_operator file.size, :>, CorpusIntake::MAX_BYTES
+      assert_difference "CorpusItem.count", 12 do
+        post workspace_corpus_sources_path(@workspace, @corpus), params: { name: "Large JSONL fixture", kind: "conversation_lines",
+          file: Rack::Test::UploadedFile.new(file.path, "application/x-ndjson"), redaction: "email", retention_days: 30 }
+        assert_response :see_other
+      end
+      assert_equal "[FILTERED]", request.filtered_parameters["file"]
+      snapshot = @corpus.sources.find_by!(name: "Large JSONL fixture").current_snapshot
+      assert_equal "support-conversation-jsonl-v1", snapshot.processing_version
+      assert_equal Digest::SHA256.file(file.path).hexdigest, snapshot.digest
+      assert_equal "雪" * 300_000, snapshot.corpus_items.find_by!(external_id: "large-11").context.fetch("evidence")
+    end
+    assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+      post workspace_corpus_sources_path(@workspace, @corpus), params: { name: "Invalid JSONL", kind: "conversation_lines",
+        file: fixture_file_upload("support_export.json", "application/json"), redaction: "exact", redaction_values: "private-fixture-rule", retention_days: 30 }
+      assert_response :see_other
+      assert_not_includes flash.to_hash.to_json, "private-fixture-rule"
+      follow_redirect!
+      assert_select "[role=alert]", text: /one conversation object/
+      assert_select "select[name=kind] option[value=conversation_lines][selected]"
+      assert_select "select[name=kind][aria-describedby=intake-format-help]"
+      assert_select "select[name=redaction] option[value=exact][selected]"
+      assert_select "textarea[name=redaction_values]", text: ""
+    end
+  end
+
   test "upload applies exact choices and repairs errors without storing or echoing private values" do
     path = workspace_corpus_sources_path(@workspace, @corpus)
     upload = fixture_file_upload("support_export.json", "application/json")

@@ -53,6 +53,17 @@ snapshot, items, retention and audit in the same corpus-locked transaction. A la
 invalid item rolls back earlier batches; validation objects never enter the
 snapshot's returned association. This changes writes, not intake limits or identity.
 
+Larger conversation intake uses an explicit JSONL format, not raised vendor-export
+limits. Bound seekable tempfile reads to one 1-MiB line plus one refusal byte;
+allow at most 60 MiB wire, 100,000 records and 256 MiB encoded normalized fields
+after masking. The first pass validates structure, masking, identities and bounds
+before source mutation, with a digest of exact file bytes. Rewind and feed the
+same bounded writer inside the corpus transaction. A changed count/digest or late
+model-validation error rolls back all writes. Reuse needs the fixed JSONL processor
+as well as existing identity fields. Keep source kind conversations and old
+processors unchanged. No background retry, provider call, automatic analysis or
+human authority follows intake; the synchronous request waits for the whole commit.
+
 Exact-text masking is a separate, opt-in mode, not an inferred PII policy or an
 addition to automatic email masking. The author supplies 1–50 unique UTF-8 values,
 one per line, 3–200 characters each and at most 8 KiB total. Preserve spaces and
