@@ -42,6 +42,81 @@ class CorpusIntakeTest < ActiveSupport::TestCase
     assert_includes original.corpus_items.pluck(:content), "Ask admin@example.org for metadata"
   end
 
+  test "recursive masking collisions refuse the whole batch without rewriting retained history" do
+    original = import(@records.to_json)
+    items_state = original.corpus_items.order(:id).map(&:attributes)
+    collisions = [ { "first@example.org" => "First report", "second@example.org" => "Different report" },
+      { "[email redacted]" => false, "third@example.org" => nil },
+      { "nested" => [ { "owner@example.org" => { "plan" => "enterprise" }, "other@example.org" => { "plan" => "pro" } } ] } ]
+    collisions.each do |context|
+      source_state = original.source.reload.attributes
+      records = @records.deep_dup
+      records.last[:context] = context
+      assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+        error = assert_raises(CorpusIntake::Invalid) { import(records.to_json, retention_days: 2) }
+        assert_equal "Email masking would merge distinct JSON keys. Rename those keys before upload; no records were imported.", error.message
+        assert_not_includes error.message, "@"
+      end
+      assert_equal source_state, original.source.reload.attributes
+      assert_equal items_state, original.corpus_items.order(:id).map(&:attributes)
+      assert_equal context.deep_stringify_keys, import(records.to_json, redaction: "none").corpus_items.find_by!(external_id: "api-b").context
+      original.source.update!(current_snapshot: original, expires_at: source_state.fetch("expires_at"))
+    end
+  end
+
+  test "previously retained colliding input cannot bypass validation through snapshot reuse" do
+    records = @records.deep_dup
+    records.last[:context] = { "first@example.org" => "First report", "second@example.org" => "Different report" }
+    source = @corpus.sources.create!(workspace: @corpus.workspace, name: "History", kind: "conversations", expires_at: 30.days.from_now)
+    old = source.source_snapshots.create!(workspace: @corpus.workspace, corpus: @corpus, imported_by: @membership.user,
+      number: 1, digest: Digest::SHA256.hexdigest(records.to_json), redaction: "email", processing_version: CorpusIntake::PROCESSING_VERSION, created_at: Time.current)
+    old.corpus_items.create!(workspace: @corpus.workspace, corpus: @corpus, external_id: "api-b", title: "Historical masked output",
+      content: "Retained history is not repaired automatically.", context: { "[email redacted]" => "Different report" }, created_at: Time.current)
+    source.update!(current_snapshot: old)
+    source_state = source.reload.attributes
+    assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+      assert_raises(CorpusIntake::Invalid) { import(records.to_json) }
+    end
+    assert_equal source_state, source.reload.attributes
+    assert_equal({ "[email redacted]" => "Different report" }, old.corpus_items.sole.context)
+  end
+
+  test "masked record IDs cannot collide with existing digest-shaped input IDs" do
+    records = @records.deep_dup
+    records.first[:id] = "first@example.org"
+    records.last[:id] = "record-#{Digest::SHA256.hexdigest(records.first[:id])}"
+    assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+      error = assert_raises(CorpusIntake::Invalid) { import(records.to_json) }
+      assert_equal "Masking would merge distinct record IDs. Rename those IDs before upload; no records were imported.", error.message
+    end
+    assert_equal records.map { |record| record[:id] }, import(records.to_json, redaction: "none").corpus_items.order(:id).pluck(:external_id)
+  end
+
+  test "processing version forms part of immutable snapshot reuse and database identity" do
+    source = @corpus.sources.create!(workspace: @corpus.workspace, name: "History", kind: "conversations", expires_at: 30.days.from_now)
+    old = source.source_snapshots.create!(workspace: @corpus.workspace, corpus: @corpus, imported_by: @membership.user,
+      number: 1, digest: Digest::SHA256.hexdigest(@records.to_json), redaction: "email", processing_version: "prior-synthetic-intake", created_at: Time.current)
+    old.corpus_items.create!(workspace: @corpus.workspace, corpus: @corpus, external_id: "sso-a", title: "Old parser output", content: "Fixed historical output", created_at: Time.current)
+    source.update!(current_snapshot: old)
+    old_state = old.reload.attributes
+    newer = import(@records.to_json)
+    assert_not_equal old.id, newer.id
+    assert_equal 2, newer.number
+    assert_equal CorpusIntake::PROCESSING_VERSION, newer.processing_version
+    assert_equal old.digest, newer.digest
+    assert_equal 2, newer.corpus_items.count
+    assert_equal old_state, old.reload.attributes
+    assert_equal "Fixed historical output", old.corpus_items.sole.content
+    assert_equal newer.id, import(@records.to_json).id
+    assert_equal newer.id, source.reload.current_snapshot_id
+    assert_equal 2, source.source_snapshots.count
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      SourceSnapshot.transaction(requires_new: true) do
+        source.source_snapshots.create!(newer.attributes.except("id").merge("number" => 3))
+      end
+    end
+  end
+
   test "supported vendor shapes retain all messages without executing HTML" do
     zendesk = import({ tickets: [ { id: 91, subject: "Reopened", description: "Still broken", comments: [ { body: "Escalate to Engineering" } ] } ] }.to_json)
     assert_equal "Still broken\n\nEscalate to Engineering", zendesk.corpus_items.sole.content

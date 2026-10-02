@@ -16,6 +16,11 @@ theme control. Navigation uses a keyboard-accessible disclosure at every viewpor
 workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
 
+Import copy names bytes, redaction and processing version as snapshot identity.
+Masking-collision alerts explain how to repair keys or IDs without showing them,
+choosing original text or implying partial intake. The existing source and retention
+stay fixed. Desktop/mobile keep the same native import controls and privacy limits.
+
 Model corpus discovery places the fixed model request beside complete source
 previews on desktop and stacks them on mobile. Consent names exact records and
 retained context, with separate corpus-purpose approval and PII limits. Invalid

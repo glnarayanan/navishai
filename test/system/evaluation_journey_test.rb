@@ -82,6 +82,8 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     capture("deletion-warning-390")
     find(".lab-navigation summary").click
     click_button "Sign out"
+    assert_selector "h1", text: "Sign in"
+    assert_current_path new_session_path
     visit root_path
     assert_text "Local scripted runs can retain failures as regressions."
     assert_no_horizontal_overflow

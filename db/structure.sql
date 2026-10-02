@@ -3043,10 +3043,10 @@ CREATE INDEX index_source_snapshots_on_imported_by_id ON public.source_snapshots
 
 
 --
--- Name: index_source_snapshots_on_source_id_and_digest_and_redaction; Type: INDEX; Schema: public; Owner: -
+-- Name: index_source_snapshots_on_processing_identity; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX index_source_snapshots_on_source_id_and_digest_and_redaction ON public.source_snapshots USING btree (source_id, digest, redaction);
+CREATE UNIQUE INDEX index_source_snapshots_on_processing_identity ON public.source_snapshots USING btree (source_id, digest, redaction, processing_version);
 
 
 --
@@ -4050,6 +4050,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001140000'),
 ('20261001130000'),
 ('20261001120000'),
 ('20261001040000'),

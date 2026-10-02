@@ -28,14 +28,14 @@
   </section>
   <% if Current.require_membership!.can_write? %>
     <section class="section-block config-panel"><h2>Add company data</h2>
-      <p>UTF-8 JSON conversation exports or production traces, or plain text/Markdown documents. 10 MiB and 2000 records per upload. A changed upload with the same name adds a snapshot; an exact repeat reuses it.</p>
+      <p>UTF-8 JSON conversation exports or production traces, or plain text/Markdown documents. 10 MiB and 2000 records per upload. Within one source, matching bytes, redaction and processing version reuse a snapshot; changes add a version.</p>
       <%= form_with url: workspace_corpus_sources_path(Current.workspace, @corpus), multipart: true, class: "form-stack" do |form| %>
         <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 180 %></div>
         <div class="field-grid">
           <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Text / Markdown", "document"], ["Production traces", "traces"]] %></div>
           <div class="field"><%= form.label :redaction, "Redaction" %><%= form.select :redaction, [["Mask email addresses", "email"], ["Keep original text", "none"]] %></div>
         </div>
-        <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Original files are not stored; snapshots retain normalised text and an input digest.</p>
+        <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Masking must not merge JSON keys or record IDs; rename colliding keys or IDs before trying again. Original files are not stored; snapshots retain normalised text and an input digest.</p>
         <div class="field-grid">
           <div class="field"><%= form.label :file, "Company data file" %><%= form.file_field :file, required: true, accept: ".json,.txt,.md" %></div>
           <div class="field"><%= form.label :retention_days, "Retention days" %><%= form.number_field :retention_days, value: 365, min: 1, max: 3650, required: true %></div>

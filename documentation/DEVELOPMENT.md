@@ -88,12 +88,18 @@ shapes are not every vendor export format. Plain UTF-8 text and Markdown also wo
 PDF, attachments and live connectors do not. Limits: 10 MiB, 2000 records per upload,
 100,000 characters per record. Bad batches roll back as a whole.
 
-The same source name/type and input digest/redaction reuse a snapshot. Changed
-input or redaction adds a version; re-uploading an old version selects it again.
+The same source name/type, input digest, redaction and processing version reuse a
+snapshot. Changed input, redaction or processing adds a version; matching an old
+snapshot under the current processing version selects it again.
 Current corpus views use only current, unexpired snapshots. Original files are not
 retained: normalised records, SHA-256 input digest and processing version are.
 Email masking is the default, not complete PII removal; review other sensitive data
 before upload. Email IDs become distinct digest-based record IDs.
+If masking would merge distinct JSON keys or record IDs, intake refuses the whole
+upload before source, retention or snapshot changes. This includes nested facts
+and trace outputs, and repeats of an already retained input. Rename colliding keys
+or IDs in the source file; intake never drops a value or disables masking for you.
+The error contains no source keys. Retained history stays fixed, not auto-repaired.
 
 Production traces use a JSON array of `support-trace-v1` objects with exactly
 `schema`, `id`, `title`, `target_version`, `observed_at`, `input`, `output`,

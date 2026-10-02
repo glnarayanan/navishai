@@ -56,6 +56,12 @@ job deletes source snapshots/items. Explicit source deletion needs a managing ro
 and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
+Masking rejects key and record-ID collisions before persistence or snapshot reuse,
+including nested trace facts/outputs. Repair errors contain no source keys. Intake
+does not drop values, switch to original text or repair retained history. Snapshot
+reuse also binds the processing version through a database unique index; a new
+processor cannot silently return a prior processor's artifacts for the same bytes.
+
 Managers/Admins/Owners may download one exact retained snapshot by POST with typed
 source-name confirmation. Membership, source expiry and snapshot scope are checked
 under the corpus lock. Complete normalized JSON is bounded to 2000 records / 10 MiB;

@@ -28,6 +28,21 @@ class SupportTraceTest < ActiveSupport::TestCase
     end
   end
 
+  test "email-key collisions in retained trace facts and output refuse every copy atomically" do
+    [ @traces.sole["input"]["known_facts"], @traces.sole["output"]["collected_fields"] ].each do |fields|
+      fields.merge!("first@example.org" => false, "second@example.org" => "Different fact")
+      assert_no_difference [ "Source.count", "SourceSnapshot.count", "CorpusItem.count", "AuditEvent.count" ] do
+        error = assert_raises(CorpusIntake::Invalid) { import }
+        assert_match(/merge distinct JSON keys/, error.message)
+        assert_not_includes error.message, "@"
+      end
+      fields.except!("first@example.org", "second@example.org")
+    end
+    snapshot = import
+    assert_equal SupportTrace::VERSION, snapshot.processing_version
+    assert_equal snapshot.id, import.id
+  end
+
   test "malformed partial hidden oversized and duplicate trace batches leave no records" do
     invalid = [ @traces.sole.merge("schema" => "support-trace-v2"), @traces.sole.except("observed_at"),
       @traces.sole.merge("observed_at" => "2026-19-28T15:45:00Z"), @traces.sole.merge("observed_at" => "2026-09-28T15:45:00"),

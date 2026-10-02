@@ -37,6 +37,14 @@ Use a fresh baseline schema for this unreleased product. Do not drop an existing
 
 Intake accepts bounded, valid UTF-8 text/JSON, rejects malformed records atomically, records content digests and redaction, and never renders raw HTML. Large work runs through Solid Queue with progress, limits, terminal errors, and attributable settings. Dataset exploration should paginate; analysis must disclose method and limits. Deterministic term/risk mining is a baseline, not a claim of semantic discovery or 100,000-conversation quality.
 
+Normalise and validate masking before snapshot lookup or source mutation, including
+repeated uploads. If distinct JSON keys mask to one key, or masked IDs collide,
+refuse the whole batch with a content-free repair error. Do not discard either
+value, invent replacement keys or change the masking choice. Old retained records
+stay fixed; this refusal does not repair them. Snapshot identity includes source,
+input digest, redaction and processing version in both lookup and the unique index.
+Changed processing creates a new version without rewriting prior evidence.
+
 Current analysis previews/requests and fixed processing, mining and overview reads
 share a pre-load count and retained-field byte check. Count IDs, titles, text and
 PostgreSQL's context JSON bytes, not just conversation text. Hold a short corpus
