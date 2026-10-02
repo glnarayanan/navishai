@@ -32,8 +32,8 @@ job deletes source snapshots/items. Explicit source deletion needs a managing ro
 and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
-There is no source export, evaluation execution, external disclosure or calibration
-yet. Scenario versions, exact-source evidence and expert decisions are immutable
+There is no source export, evaluation execution or external disclosure yet.
+Scenario versions, exact-source evidence and expert decisions are immutable
 in Ruby and SQL, with composite workspace/corpus relationships. Current-version
 pointers cannot refer to another scenario. All writes recheck a locked membership;
 version tokens block stale edits/reviews. Variants retain fixed parent versions and
@@ -49,7 +49,14 @@ admission rechecks these facts rather than trusting cached records. Grader edits
 need a current-version token. Request logs filter grader forms and definitions.
 Source purge removes compiled cases and all corpus graders; expiry hides grader
 text and case inputs before purge. Suite names survive without sensitive cases.
-No calibration or external execution exists yet.
+
+Calibration samples bind an exact output to a compiled check and the set's grader
+version through composite foreign keys. Sets, samples, predictions and human labels
+reject updates in Ruby and SQL. Writes lock the membership and corpus; labels use
+stale-write tokens and cannot overwrite another expert. First-label UI hides machine
+and other expert decisions; this is not a security or double-blind boundary. Viewers
+can read but cannot label/upload. Expiry blocks reads/writes, purge deletes retained
+output and rationale copies, and parameter logs filter both. No external judge runs.
 
 Analysis inputs and cluster members have workspace/corpus foreign keys and
 immutable updates. Jobs recheck the requester's membership. Source deletion also

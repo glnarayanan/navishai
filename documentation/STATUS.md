@@ -17,8 +17,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   risk-prioritised candidate selection and immutable expert taxonomy revisions.
 - [#145](https://github.com/glnarayanan/navishai/pull/145), based on #144: scenario mining, source-backed expert
   edits/review/merge, fixed versions, document knowledge and controlled variants.
-- `rebuild/06-eval-compiler`, based on #145: fixed contracts, exact check/evidence
+- [#146](https://github.com/glnarayanan/navishai/pull/146), based on #145: fixed contracts, exact check/evidence
   bindings, versioned deterministic/rubric definitions and bounded suite membership.
+- `rebuild/07-calibration`, based on #146: fixed output samples, authoritative expert
+  label history, held-out/development reports and measured disagreement.
 
 ## Built and checked
 
@@ -32,8 +34,8 @@ Bounded JSON conversation exports and text/Markdown intake retain input digest,
 processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
 links. Local term analysis, expert labels, versioned scenarios, controlled variants,
-fixed eval definitions and deterministic checks are built; evaluation execution
-and grader calibration are not built yet.
+fixed eval definitions, deterministic checks and expert calibration are built;
+evaluation execution is not built yet.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -84,10 +86,23 @@ content. Email masking is not complete PII removal; original files are not kept.
   mobile contract and mapping captures plus error/blocked states. Early checks
   exposed two fixture expectations and Rails' unpermitted missing-parameter
   fallback; corrected them without weakening coverage or approval guards.
+- Calibration `bin/ci`: passed in 1m23.26s; 172 Ruby files clean, audits clean,
+  Brakeman zero warnings/errors and eager load passes. 167 Rails tests / 1184
+  assertions and 7 browser tests / 185 assertions, no failures/errors/skips.
+  Asymmetric counts distinguish false alarms from missed failures; checks cover
+  cohort separation, JSON key-order deduplication, disputed/uncertain labels,
+  missing/abstaining predictions, fixed graders, stale labels, foreign links,
+  SQL immutability, the 100-sample bound and expiry/purge. Browser journey proves
+  first-label hiding, correction/history, measured disagreement and empty cohorts.
+  Final focused capture check: 1 test / 35 assertions. Desktop/mobile review,
+  report, blind and upload-error captures inspected, without overflow/CSP issues.
+  Fixed a permitted-parameter conversion error, shortened clipped select labels,
+  and corrected full-page capture width rather than changing the app layout.
+  Impeccable detector found no new issues; direct risk review and native audits used.
 
 ## Next and limits
 
-Next: expert calibration, then generic target execution, failure inspection and
+Next: generic target/judge execution, failure inspection and
 regressions. Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;

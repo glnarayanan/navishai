@@ -1,0 +1,26 @@
+<% content_for :title, "Sample #{@sample.id} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: @sample.cohort), class: "back-link" %>
+  <div class="page-heading"><div><h1>Sample <%= @sample.id %></h1><p><%= @sample.cohort.humanize %> · <%= @sample.grader_version.grader.name %> v<%= @sample.grader_version.number %></p></div></div>
+  <div class="review-layout">
+    <section><h2>Behaviour to judge</h2><p><%= @check.requirement %></p><p><%= link_to "Fixed contract", workspace_corpus_eval_case_path(Current.workspace, @corpus, @check.eval_case) %></p>
+      <details><summary>Fixed grader definition</summary><pre class="evidence-text"><%= JSON.pretty_generate(@sample.grader_version.definition) %></pre></details>
+      <h3>Company evidence</h3><%= link_to "Supporting source snapshot", workspace_corpus_source_path(Current.workspace, @corpus, @check.scenario_evidence.corpus_item.source_snapshot.source_id, snapshot: @check.scenario_evidence.corpus_item.source_snapshot_id) %><pre class="evidence-text"><%= @check.scenario_evidence.excerpt %></pre>
+      <h3>Recorded output</h3><pre class="evidence-text"><%= JSON.pretty_generate(@sample.output) %></pre>
+    </section>
+    <section><h2>Expert judgment</h2>
+      <% if Current.require_membership!.can_write? %><p>Judge this requirement using the company evidence. Your first label hides machine and other expert decisions to reduce anchoring.</p>
+        <%= form_with url: label_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "form-stack" do |form| %>
+          <%= hidden_field_tag :previous_id, @own_label&.id %>
+          <div class="field"><%= form.label :decision, "Your decision" %><%= form.select :decision, [["Pass — meets the requirement", "pass"], ["Fail — breaks the requirement", "fail"], ["Uncertain — more evidence needed", "uncertain"]], { include_blank: "Choose a judgment", selected: params[:decision] || @own_label&.decision }, required: true %></div>
+          <div class="field"><%= form.label :rationale, "Evidence for your decision" %><%= form.text_area :rationale, required: true, maxlength: 2000, rows: 5, value: params[:rationale] || @own_label&.rationale %></div>
+          <%= form.submit "Save expert label", class: "button button-primary", data: { turbo_submits_with: "Saving…" } %>
+        <% end %>
+      <% end %>
+      <% if @reveal %><section class="section-block"><h2>Machine prediction</h2><% if @sample.calibration_prediction %><pre class="evidence-text"><%= JSON.pretty_generate(@sample.calibration_prediction.result) %></pre><% else %><p>No prediction. A rubric definition alone does not execute a judge.</p><% end %>
+        <h3>Current expert labels</h3><% @labels.each do |label| %><p>Expert #<%= label.labelled_by_id %>: <strong><%= label.decision.humanize %></strong><br><%= label.rationale %></p><% end %>
+        <details><summary>Label history</summary><% @sample.human_labels.order(:id).each do |label| %><p>Expert #<%= label.labelled_by_id %> · <%= label.created_at.to_fs(:long) %> · <%= label.decision.humanize %><br><%= label.rationale %></p><% end %></details>
+      </section><% else %><p class="section-block" role="status">Prediction and other labels stay hidden until you save your first judgment.</p><% end %>
+    </section>
+  </div>
+</main>

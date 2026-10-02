@@ -34,6 +34,13 @@ Native labelled fieldsets distinguish deterministic checks from judge rubrics;
 copy names each check's limits. Suites show case membership, not invented scores
 or run buttons. Approval, source changes and expiry block unsafe compilation.
 
+Calibration uses the same evidence/review split. The first-label state hides machine
+and other expert decisions; after saving, their disagreement appears below the form.
+The report keeps held-out/development tabs, a labelled failure-positive confusion
+matrix and explicit unknown rates. It shows sample counts and exclusions, not a
+universal support score. Upload errors retain the output; compact case-check options
+link to full requirements in a native disclosure. Mobile stacks review sections.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,

@@ -1,0 +1,17 @@
+<% content_for :title, "Calibration — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Calibration</h1><p>Measure a fixed grader against company experts, not against its own predictions.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "calibration" %>
+  <% if @sets.empty? %><p class="empty-state">No calibration sets yet. Compile a scenario, then add output samples for its grader checks.</p><% end %>
+  <ul class="workspace-list" role="list"><% @sets.each do |set| %><li class="workspace-card"><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %><span><%= set.grader_version.grader.name %> · v<%= set.grader_version.number %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_write? %>
+    <section class="section-block config-panel"><h2>Create calibration set</h2>
+      <%= form_with url: workspace_corpus_calibration_sets_path(Current.workspace, @corpus), scope: :calibration_set, class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :name, "Set name" %><%= form.text_field :name, required: true, maxlength: 120, value: params.dig(:calibration_set, :name) %></div>
+        <div class="field"><%= form.label :grader_version_id, "Fixed grader version" %><%= form.select :grader_version_id, @graders.map { |version| [ "#{version.grader.name} · v#{version.number}", version.id ] }, { include_blank: "Choose a grader", selected: params.dig(:calibration_set, :grader_version_id) }, required: true %></div>
+        <%= form.submit "Create calibration set", class: "button button-primary", data: { turbo_submits_with: "Creating…" } %>
+      <% end %>
+    </section>
+  <% end %>
+</main>
