@@ -184,12 +184,25 @@ and refusal to start writers after a failed runtime check.
 Root tar kept Git's group-write headers, causing recovery to refuse the CLI's own
 release. Release extraction now strips group/other write, retains executable bits
 and passes the real archive validator. Style, audits, Brakeman and eager loading
-passed. Combined real CLI proof remains pending; no public-host acceptance follows.
+passed. No public-host acceptance follows from those native checks.
 The joined proof also found Caddy's root-owned `caddy/` mode 1777 in both volumes.
 Only those two archives accept that exact directory/owner/mode; generic root and
 other archive rules stay unchanged. The red-to-green full backup/restore regression
 also refuses unsafe near cases. All operations tests pass 57 / 540 after this fix;
 the full CI above predates it. See [recovery](./VPS_RECOVERY.md).
+
+The [joined real CLI proof](./VPS_CLI_PROOF.md) passes/CLEAN on CLI `76ac2119` and
+recovery `e793c033`: install, child lock handoff, trusted internal-CA Caddy HTTPS,
+four restricted databases, separate jobs, namespace replacement/kernel denial,
+backup, checksum-consented restore, successful upgrade and full failed-migration
+rollback. The failed migration commits changed rows and sequence 97/true;
+rollback restores the prior rows and 47/false sequence, owners, grants and fixed
+native history.
+Fourteen actual pre-start inspections keep writers stopped and dependencies stable;
+142 maintenance windows have no writers or workload-start events. Actual daemon
+restart starts nothing automatically; explicit start reapplies both policy families.
+Cleanup leaves host IPv4/IPv6 firewall rules and checked sysctls unchanged.
+
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.
 Native fixture/unit tests alone cannot certify public ingress, ACME/DNS, SMTP/OIDC,
 the owner's firewall or storage, live recovery or customer/model quality.

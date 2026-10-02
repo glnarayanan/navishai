@@ -168,8 +168,14 @@ volumes contain root-owned `caddy/` mode 1777. A real-image metadata probe repro
 both refusals under the generic root validator. The narrow Caddy archive rule above
 has a red-to-green native regression for full backup/restore and unsafe near cases.
 The updated unit suite has 11 tests / 33 assertions; the full operations suite
-passes 57 / 540, with no failures/errors/skips. The corrected joined run remains
-pending; the earlier standalone proof does not establish real Caddy recovery.
+passes 57 / 540, with no failures/errors/skips. The corrected
+[joined CLI proof](./VPS_CLI_PROOF.md) now passes/CLEAN on CLI `76ac2119` and recovery
+`e793c033`: actual Caddy backup/restore, all four exact DB catalogs, private env,
+Rails storage, successful upgrade and full rollback after committed row/sequence
+changes. Fourteen pre-start inspections and 142 no-writer/no-start-event maintenance
+windows pass, followed by a real daemon restart and explicit policy reapply.
+Internal-CA HTTPS and simulated systemctl dispatch remain private proof interfaces,
+not public ACME or a real host reboot.
 
 Relevant existing ops checks also passed:
 

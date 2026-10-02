@@ -2209,8 +2209,7 @@ The next joined run passed cached pins, both policy families, four-DB preparatio
 and validation, then stopped at unsupported `create --no-deps`. Startup now uses
 supported `up --no-start --no-deps --force-recreate` to create stopped web/jobs
 without reconciling guarded dependencies. Runtime and policy inspection still
-precede start; the failed-runtime regression proves that refusal. The corrected
-joined proof is in progress. No combined recovery/rollback pass is claimed.
+precede start; the failed-runtime regression proves that refusal.
 
 The next real run passed install, trusted internal-CA Caddy HTTPS, native jobs,
 role/privilege checks and replacement/kernel-denial checks, then backup validation
@@ -2219,13 +2218,24 @@ confirmed both Caddy volumes. Only those two archive kinds now accept that exact
 directory/owner/mode; all generic ownership, path, link and special-mode rules
 remain strict. The full operations suite passes 57 / 540 after the red-to-green
 backup/restore regression and unsafe near cases. The full CI above predates this
-last fix. Corrected joined recovery/upgrade/rollback still needs its final run.
+last fix.
 
-This work is committed/pushed as draft
+The corrected [joined proof](./VPS_CLI_PROOF.md) passes/CLEAN on exact CLI `76ac2119`
+and recovery `e793c033`. Actual backup/checksum-consented restore matches all four
+DB rows, 47/false sequences, owners, ACL/default ACL, private env and Rails storage.
+Successful upgrade and failed migration with committed row/97-true sequence changes
+restore the full prior code/image/config/data point; writers remain stopped until
+explicit start. Native complete/interrupted history survives without resend.
+Fourteen pre-start inspections and 142 maintenance windows prove stopped writers,
+stable running dependencies and no workload-start event inside maintenance. Actual
+daemon restart starts nothing automatically; explicit CLI startup reapplies policy.
+All private assets were removed; host IPv4/IPv6 firewall and four checked sysctls
+stay unchanged. Synthetic systemctl dispatch/internal CA do not prove real reboot,
+public ACME/ingress, SMTP/OIDC, VPS recovery or customer quality.
+
+This work is committed/pushed for review as
 [#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not
-merged or deployed. Combined entrypoint/Rails/jobs/Caddy/rollback proof is in progress. Public
-ACME/ingress, real host reboot, SMTP/OIDC delivery and live-host recovery remain
-unproved; no owner VPS or provider ran. Host packages, DNS/ports and storage policy
+merged or deployed. No owner VPS or provider ran. Host packages, DNS/ports and storage policy
 need owner inputs, not guessed installation commands or weaker egress controls.
 
 ## Pending owner decisions
