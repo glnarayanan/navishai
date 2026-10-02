@@ -1,5 +1,6 @@
 <%= form_with url:, method:, class: "form-stack" do |form| %>
   <% if @target %><%= hidden_field_tag :version_id, params[:version_id] || @target.current_version_id %><% else %><div class="field"><%= form.label :name, "Target name" %><%= form.text_field :name, required: true, maxlength: 120, value: params[:name] %></div><% end %>
-  <div class="field"><%= form.label :configuration, "Script configuration JSON" %><%= form.text_area :configuration, required: true, rows: 14, value: params[:configuration] || (@version && JSON.pretty_generate(@version.configuration)) %><small>At most 20 ordered fact rules and 1 MiB. Each output must match support-output-v1. No shell, model or external request.</small></div>
-  <%= form.submit @target ? "Save target version" : "Create scripted target", class: "button button-primary", data: { turbo_submits_with: "Saving…" } %>
+  <% unless @target %><div class="field"><%= form.label :adapter, "Target adapter" %><%= form.select :adapter, [["Scripted · local fixture", "scripted"], ["HTTP · approved HTTPS endpoint", "http"]], selected: params[:adapter] || "scripted" %></div><% end %>
+  <div class="field"><%= form.label :configuration, "Target configuration JSON" %><%= form.text_area :configuration, required: true, rows: 14, value: params[:configuration] || (@version && JSON.pretty_generate(@version.configuration)) %><small>Scripted: rules and default_output, at most 20 rules and 1 MiB. HTTP: only an endpoint URL approved by your operator. Never paste credentials here.</small></div>
+  <%= form.submit @target ? "Save target version" : "Create target", class: "button button-primary", data: { turbo_submits_with: "Saving…" } %>
 <% end %>

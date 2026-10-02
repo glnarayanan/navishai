@@ -13,9 +13,9 @@ class EvaluationRunsController < ApplicationController
 
   def create
     suite = @corpus.eval_suites.find(params[:suite_id])
-    run = EvaluationRun.request!(suite:, membership: Current.require_membership!, target_version_id: params[:target_version_id])
+    run = EvaluationRun.request!(suite:, membership: Current.require_membership!, target_version_id: params[:target_version_id], disclose: params[:disclose] == "1")
     redirect_to workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run), notice: "Run queued with fixed case inputs and target version. Refresh to see results.", status: :see_other
-  rescue EvalCase::Invalid => error
+  rescue EvalCase::Invalid, HttpTarget::Error, SupportOutput::Invalid => error
     redirect_to workspace_corpus_eval_suite_path(Current.workspace, @corpus, suite), alert: error.message, status: :see_other
   end
 

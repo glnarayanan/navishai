@@ -41,7 +41,7 @@ Machine proposals never approve themselves. Experts correct taxonomy and scenari
 
 ## External execution
 
-Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The later HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.
+Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.
 
 Provider disclosure is off unless an authorised human configures and starts it. Do not send hidden expected outcomes to a target. Send only the case's visible context and permitted knowledge. Judge calls may receive the frozen rubric and relevant evidence; source content remains untrusted. Record model/settings, attempts, usage when supplied, and unknown cost honestly.
 
@@ -55,6 +55,19 @@ not permission to retry an external call. An expert may stop an old claimed run
 and deliberately start a new run. Immutable results distinguish reported behaviour,
 abstention and execution errors. A regression records the exact failed result,
 case, human and reason; adding it never silently rewrites the case.
+
+HTTP definitions bind only an endpoint. The operator's private environment
+allowlists exact HTTPS port-443 URLs per workspace and holds optional bearer tokens;
+an expert must also confirm visible-input disclosure for each requested run.
+The versioned support-target-v1 interface sends only that preview and receives
+support-output-v1. Each run item has an immutable request UUID. The worker claims
+once, checks access/evidence under short locks, releases them before execution,
+then checks again before retaining a result. An in-flight request cannot be recalled
+on revocation or deletion; changed access/evidence discards its local response and
+stops later cases. No automatic retry or remote exactly-once claim. Endpoint
+operators own idempotency and remote retention. Private-address targets stay denied;
+deployment egress policy must enforce the same boundary. No live target is configured
+by default. See [the interface and bounds](./DEVELOPMENT.md#generic-http-target).
 
 ## Isolation, deletion, and hosting
 

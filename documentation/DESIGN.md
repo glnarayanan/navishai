@@ -48,6 +48,13 @@ Failure groups disclose their exact-grader grouping. A regression needs the expe
 reason and retains the source result, case and author. Target JSON errors preserve
 the edit; prior versions stay inspectable. The existing visual system remains unchanged.
 
+HTTP setup retains the target adapter and invalid endpoint on errors. Target views
+show the exact versioned endpoint and warn that local deletion cannot recall sent
+data. Suite setup asks for explicit disclosure through a labelled native checkbox;
+the notice says when a prior request did not start. The endpoint and confirmation
+wrap on mobile. Execution-error views show unknown remote outcome/cost, no retained
+output and no regression action. No credentials enter these pages.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,

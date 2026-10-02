@@ -32,7 +32,8 @@ job deletes source snapshots/items. Explicit source deletion needs a managing ro
 and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
-There is no source export or external evaluation disclosure yet.
+There is no source export. External evaluation disclosure requires operator and
+expert approval; it is off by default.
 Scenario versions, exact-source evidence and expert decisions are immutable
 in Ruby and SQL, with composite workspace/corpus relationships. Current-version
 pointers cannot refer to another scenario. All writes recheck a locked membership;
@@ -70,6 +71,23 @@ pages escape content; regression admission needs a reported failure and human
 reason, not an execution error. Source purge clears corpus targets/runs and their
 derived copies; expiry hides them and suite history before purge. These guarantees
 do not prove target quality, calibration accuracy or attested tool execution.
+
+HTTP targets require exact per-workspace operator endpoint approval and deliberate
+expert confirmation on each run. Optional bearer tokens stay in the operator
+environment; target JSON rejects credentials/extra fields and logs filter forms.
+Only fixed visible context/knowledge enter support-target-v1; hidden expectations
+stay local. HTTPS port 443, peer/hostname verification, all-answer public-IP checks,
+address pinning, no proxy/redirect/retry, a DNS-inclusive 30-second deadline and
+bounded uncompressed UTF-8 JSON limit the network surface. Operator egress rules
+must also deny private destinations. Internal targets are not supported.
+
+Calls hold no corpus/membership locks. Access, approval and retention are checked
+before dispatch and before storing output. A concurrent change stops local
+retention/later cases; it cannot recall an in-flight request. Each fixed item has
+one request UUID and the endpoint owns deduplication. Errors may leave the remote
+outcome unknown; automatic retry stays forbidden. Local purge cannot delete remote
+copies. Test-only local TLS routing proves certificate/hostname validation and
+streaming without relaxing the production address checks. No real provider ran.
 
 Analysis inputs and cluster members have workspace/corpus foreign keys and
 immutable updates. Jobs recheck the requester's membership. Source deletion also

@@ -10,11 +10,15 @@ class EvaluationRun < ApplicationRecord
   attr_readonly :workspace_id, :corpus_id, :eval_suite_id, :evaluation_target_version_id, :requested_by_id, :processing_version, :created_at
   validates :state, inclusion: { in: %w[queued running complete interrupted] }
 
-  def self.request!(suite:, membership:, target_version_id:)
+  def self.request!(suite:, membership:, target_version_id:, disclose: false)
     suite.corpus.with_lock do
       corpus = suite.corpus
       corpus.authorize_writer!(membership)
       target = EvaluationTargetVersion.where(corpus:).find(target_version_id)
+      if target.adapter == "http"
+        raise EvalCase::Invalid, "Run not started. Confirm disclosure of visible case context and permitted knowledge before starting an HTTP run." unless disclose == true
+        HttpTarget.validate!(target.configuration, workspace_id: corpus.workspace_id)
+      end
       items = suite.eval_cases.order(:id).to_a
       raise EvalCase::Invalid, "Run a suite with 1–50 cases and at most 100 checks." unless items.size.between?(1, 50) && items.sum { |item| item.eval_case_checks.count } <= 100
       items.each(&:eligible!)

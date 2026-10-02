@@ -14,10 +14,10 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     sign_in users(:owner)
     visit workspace_corpus_evaluation_targets_path(@workspace, @corpus)
     fill_in "Target name", with: "New scripted proof"
-    fill_in "Script configuration JSON", with: "{unfinished"
-    click_button "Create scripted target"
+    fill_in "Target configuration JSON", with: "{unfinished"
+    click_button "Create target"
     assert_selector "[role=alert]", text: /valid JSON/
-    assert_field "Script configuration JSON", with: "{unfinished"
+    assert_field "Target configuration JSON", with: "{unfinished"
     page.current_window.resize_to(390, 1600)
     capture("target-error-390")
     visit workspace_corpus_eval_suite_path(@workspace, @corpus, @suite)
@@ -60,7 +60,7 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     end
     suite_path = page.current_path
     visit workspace_corpus_evaluation_target_path(@workspace, @corpus, @target)
-    fill_in "Script configuration JSON", with: JSON.pretty_generate(script_configuration(output: support_output(tools: [ "collect_expiry" ])))
+    fill_in "Target configuration JSON", with: JSON.pretty_generate(script_configuration(output: support_output(tools: [ "collect_expiry" ])))
     click_button "Save target version"
     assert_text "version 2"
     visit suite_path
