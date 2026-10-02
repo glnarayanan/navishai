@@ -40,4 +40,11 @@ module FamilyEvidenceFixture
     CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Family history", kind: "conversations",
       bytes: [ { id: "later", title: "New export", content: "No original records remain in current export.", context: { failed: true } } ].to_json)
   end
+
+  def assert_source_rows_loaded(count)
+    loaded = []
+    observer = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    ActiveSupport::Notifications.subscribed(observer, "instantiation.active_record") { yield }
+    assert_equal count, loaded.sum, "Load complete source rows only for this page or selected evidence."
+  end
 end

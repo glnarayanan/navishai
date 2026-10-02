@@ -78,10 +78,27 @@ class ModelDiscoveryTest < ActiveSupport::TestCase
     [ CorpusAnalysis::METHOD, ModelCorpusDiscovery::VERSION, BatchCorpusDiscovery::VERSION ].each do |method|
       analysis = build_fixed_analysis(processing_method: method)
       assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { analysis.fixed_inputs } }
+      assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { analysis.fixed_inputs(item_ids: [ @items.fetch("login").id ]) } }
     end
     analysis = build_fixed_analysis(complete: true)
     assert_no_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ]) do
       assert_no_corpus_item_materialization { assert_raises(CorpusIntake::Invalid) { ScenarioMining.call(analysis:, membership: @membership) } }
+    end
+  end
+
+  test "partial fixed reads keep ordering and cannot read a new or foreign snapshot" do
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 2)
+    later = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations",
+      bytes: [ { id: "later", title: "Not in this analysis", content: "New retained record." } ].to_json).corpus_items.sole
+    other = @workspace.corpora.create!(name: "Other corpus")
+    foreign = CorpusIntake.call(corpus: other, membership: @membership, name: "Foreign", kind: "document", bytes: "Other corpus policy.").corpus_items.sole
+    original = @items.fetch("login")
+    assert_equal [ original ], analysis.fixed_inputs(item_ids: [ later.id, foreign.id, original.id ])
+    assert_equal [ @items.fetch("assertion"), @items.fetch("rare") ], analysis.fixed_inputs(item_ids: [ @items.fetch("rare").id, @items.fetch("assertion").id ])
+    assert_empty analysis.fixed_inputs(item_ids: [])
+    @document.source_snapshot.source.update!(expires_at: 1.minute.ago)
+    assert_no_corpus_item_materialization do
+      assert_raises(CorpusIntake::Invalid) { analysis.fixed_inputs(item_ids: [ original.id ]) }
     end
   end
 

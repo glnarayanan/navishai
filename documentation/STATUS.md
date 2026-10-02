@@ -93,8 +93,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   collisions and processing-version-aware source snapshot identity.
 - [#183](https://github.com/glnarayanan/navishai/pull/183), based on #182: named search bind and shared
   Rails request/SQL-debug private-field filtering.
-- `rebuild/44-explicit-text-masking`, based on #183: opt-in exact-text masking,
+- [#184](https://github.com/glnarayanan/navishai/pull/184), based on #183: opt-in exact-text masking,
   fixed rule fingerprints and private recovery without rewriting history.
+- `rebuild/45-bounded-analysis-review`, based on #184: bounded fixed-record reads,
+  typed family counts and complete-text scalar batches without full-corpus loading.
 
 ## Built and checked
 
@@ -1095,6 +1097,37 @@ named reviews remain unavailable. Remote CI for this branch has not run yet.
 The owner-owned lockfile remains untouched and unstaged. No live customer data,
 provider, dependency, expert label, merge, release or deployment changed.
 
+Later exact-head remote evidence: #184 passed run
+[36863533615](https://github.com/glnarayanan/navishai/actions/runs/36863533615)
+at 12:46:52 UTC on 1 October. No ancestor failure changed.
+
+## Bounded analysis review (slice 45)
+
+Local overview loads only ten examples per displayed family, selected first with
+stable ties. Family pages load only their fifty complete records; typed SQL counts
+keep true/false/missing separate, and 100-record scalar scans keep the original
+Ruby mention rules over complete text. Counts retain the whole fixed denominator,
+including late/beyond-window mentions. Mining loads chosen records plus linked
+expectation evidence, not every fixed row. Full-input bounds/lifetime still run
+before partial reads; later or foreign snapshots cannot enter them. Corpus locks
+cover checks, counts and page loading. Model disclosure inputs stay complete and
+unchanged. Family byte guards now include IDs/titles as well as text/context.
+
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m16.77s: 409 Rails tests /
+5044 assertions, 41 browser tests / 1825 assertions, no failures/errors/skips;
+style, audits and eager loading passed. Focused checks passed 64 tests /
+948 assertions, including concurrency, batch/model evidence and mining. Actual
+query/instantiation evidence shows text scans of 100 + 65 rows with no complete
+source objects, ten overview rows, five second-page rows, zero invalid/empty rows,
+and one nomination row. A new test initially inspected the first family globally;
+scoping its DOM lookup to the intended family fixed the test, not the selection.
+Desktop/mobile filtered, empty, invalid and nomination journeys passed; final
+captures were inspected for full counts, escaped source text, readable context
+and recovery. DOM checks cover alert semantics, keyboard actions and viewer gates.
+Direct risk review/native audits used; named reviews remain unavailable. These
+are local checks; this branch has no remote CI yet. No limits, discovery method,
+dependency, provider approval, expert label, merge, release or deployment changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1138,7 +1171,7 @@ engineering gaps are not customer-data or expert-label approval blockers.
 Intake now refuses recursive masking-key collisions without losing data and binds
 processing version and explicit rule fingerprints in snapshot reuse identity.
 Exact-text masking works within its stated limits; larger-corpus processing and
-removal of complete-content loads from review reads remain engineering work.
+streamed processing beyond the current analysis bounds remain engineering work.
 These checks do not finish that work or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer

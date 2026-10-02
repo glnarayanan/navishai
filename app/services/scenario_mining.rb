@@ -10,10 +10,12 @@ class ScenarioMining
         raise Scenario::Invalid, "Explain why this record needs a scenario (1–2000 characters, with no null bytes)." unless reason.is_a?(String) && reason.strip.present? && reason.length <= 2000 && !reason.include?("\0")
         members = [ members.find(member_id) ]
       else
-        members = members.selected
+        members = members.selected.to_a
       end
-      source_items = analysis.fixed_inputs.index_by { |item| "corpus-item-#{item.id}" }
       model_candidates = analysis.model? && !nominating ? analysis.corpus_analysis_result.result.fetch("candidates", []) : nil
+      item_ids = members.map(&:corpus_item_id)
+      item_ids += model_candidates.flat_map { |candidate| candidate.fetch("evidence_links").map { |link| link.fetch("reference").delete_prefix("corpus-item-") } } if model_candidates
+      source_items = analysis.fixed_inputs(item_ids:).index_by { |item| "corpus-item-#{item.id}" }
       members.map do |member|
         existing = analysis.corpus.scenarios.find_by(cluster_member: member)
         next existing if existing

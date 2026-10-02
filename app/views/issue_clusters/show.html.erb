@@ -9,20 +9,20 @@
     <h2 id="source-counts-heading">Full-family source counts</h2>
     <p>Exact context booleans stay separate from missing, null, strings and numbers. Critical impact requires exactly <code>context.impact == "critical"</code>. Mentions use the local discovery literal patterns on complete retained text, not titles or context. Groups can overlap; filtering never changes the denominator.</p>
     <dl class="source-metadata field-grid">
-      <% @groups.except("All records").each do |name, members| %>
-        <div><dt><%= name %></dt><dd><%= members.size %> / <%= @total %> records</dd></div>
+      <% @group_counts.except("All records").each do |name, count| %>
+        <div><dt><%= name %></dt><dd><%= count %> / <%= @total %> records</dd></div>
       <% end %>
     </dl>
   </section>
   <section class="section-block" aria-labelledby="family-records-heading" id="family-records">
     <h2 id="family-records-heading">Complete source records</h2>
     <%= form_with url: evidence_path, method: :get, class: "form-stack config-panel" do |form| %>
-      <div class="field"><%= form.label :signal, "Source signal filter" %><%= form.select :signal, @groups.map { |name, members| [ "#{name} (#{members.size} / #{@total})", name ] }, { selected: @filter }, { aria: { invalid: @invalid_filter, describedby: @invalid_filter ? "signal-error" : nil } } %></div>
+      <div class="field"><%= form.label :signal, "Source signal filter" %><%= form.select :signal, @group_counts.map { |name, count| [ "#{name} (#{count} / #{@total})", name ] }, { selected: @filter }, { aria: { invalid: @invalid_filter, describedby: @invalid_filter ? "signal-error" : nil } } %></div>
       <%= form.submit "Filter source records", class: "button" %>
     <% end %>
     <% if @invalid_filter %><p role="alert" class="inline-error" id="signal-error">Unknown source signal filter. Choose a listed group or clear the filter.</p><% end %>
     <p>Current filter: <strong><%= @filter %></strong>.</p>
-    <p role="status"><%= pluralize(@matching.size, "matching record") %> of <%= @total %> fixed family records · page <%= @page %> · at most 50 complete records per page.</p>
+    <p role="status"><%= pluralize(@matching_count, "matching record") %> of <%= @total %> fixed family records · page <%= @page %> · at most 50 complete records per page.</p>
     <%= link_to "Clear filter", evidence_path %>
     <% if @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
     <% @members.each do |member| %>
