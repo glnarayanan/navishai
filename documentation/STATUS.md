@@ -27,8 +27,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   operator approval, human disclosure confirmation and bounded non-retrying calls.
 - [#150](https://github.com/glnarayanan/navishai/pull/150), based on #149: fixed rubric judges, separate
   disclosure consent, once-claimed calibration attempts and quoted result evidence.
-- `rebuild/11-consent-snapshot`, based on #150: prevent stale HTTP-only consent
+- [#151](https://github.com/glnarayanan/navishai/pull/151), based on #150: prevent stale HTTP-only consent
   from sending cases added after review.
+- `rebuild/12-p0-workflow-proof`, based on #151: fresh technical-Support fixture
+  through the whole engineering loop, including held-out calibration and replay.
 
 ## Built and checked
 
@@ -187,11 +189,28 @@ the form token. Desktop/mobile stale-consent captures were inspected, with reada
 recovery controls and no overflow/CSP violations. Direct risk review/native audits
 used; no external request ran. No dependency or schema changed.
 
+P0 engineering proof `bin/ci`: passed in 2m4.17s; 210 Ruby files clean,
+gem/importmap audits clean, Brakeman zero warnings/errors and eager loading passes.
+210 Rails tests / 1765 assertions and 11 browser tests / 370 assertions, no
+failures/errors/skips. One fresh fixture follows raw conversation/document intake
+through two issue families, risk selection, expert taxonomy/scenario correction,
+source-backed compilation, mixed deterministic/judge checks, held-out labels,
+HTTP execution, human regression admission and a later target passing the same
+case. A deliberate missed failure yields one true positive, one true negative and
+one false negative; the report does not hide it. Duplicate job delivery produces
+exactly seven fixture calls, each with its own attempt key. Hidden facts stay
+local. Changed policy evidence blocks future runs without rewriting prior results.
+This tests the connected pipeline, not live-model accuracy or discovery quality.
+No product code changed in this proof slice; direct risk review checked independent
+expected inputs, imperfect judge predictions, fixed provenance and call counts.
+
 ## Next and limits
 
-Next: complete P0 acceptance proof with a fresh technical-Support dataset,
+The P0 engineering loop passes with fixtures. Next: customer acceptance with a
+privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge endpoints.
-Scenario mining is a title/context/sentence baseline, not model-based
+The endpoint registry has no configured entries. Analysis remains bounded to
+2000 records and 10 MiB. Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
