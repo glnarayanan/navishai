@@ -48,7 +48,8 @@ class BatchDiscoveryAccessTest < ActionDispatch::IntegrationTest
       get workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
       assert_response :success
       assert_select "h2", text: "Batch progress and receipts"
-      assert_select "input[type=submit]", count: 0
+      assert_select "form[method=get] input[type=submit]", count: 1
+      assert_select "main form[method=post]", count: 0
       get new_workspace_corpus_corpus_analysis_path(@workspace, @corpus), params: { processing_method: "model_batch" }
       assert_response :forbidden
       post workspace_corpus_corpus_analyses_path(@workspace, @corpus), params: { processing_method: "model_batch" }

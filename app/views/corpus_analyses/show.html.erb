@@ -1,7 +1,7 @@
 <% content_for :title, "Corpus analysis — NavishAI" %>
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
-  <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.model? && @model_result ? "#{@model_result.fetch('decision').humanize} · attempt complete" : @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", request.path, class: "button" %></div>
+  <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.model? && @model_result ? "#{@model_result.fetch('decision').humanize} · attempt complete" : @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis, family_focus: @family_focus, page: @page), class: "button" %></div>
   <% if @analysis_input_error %>
     <p role="alert" class="inline-error"><%= @analysis_input_error %></p>
     <p>This fixed analysis has not changed. No partial source preview or candidates are shown. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %> to prepare smaller inputs and request a new analysis.</p>
@@ -33,9 +33,25 @@
     <% if Current.require_membership!.can_write? && (@analysis.batch? || @analysis.state == "queued" || @analysis.started_at < 10.minutes.ago) %><%= button_to "Interrupt analysis attempt", interrupt_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "button" %><% end %>
   <% end %>
   <% if @analysis.state == "complete" && !@analysis_input_error %>
-    <p><%= @analysis.summary["selected"] %> candidates selected from <%= @analysis.summary["conversations"] %> conversations. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> <%= @analysis.model? ? "proposed families" : "term clusters" %> represented. This measures this method's selection, not verified issue-family coverage.</p>
+    <p><%= pluralize(@analysis.summary["selected"], "candidate") %> selected from <%= pluralize(@analysis.summary["conversations"], "conversation") %>. <%= @analysis.summary["represented_clusters"] %> of <%= @analysis.summary["clusters"] %> <%= @analysis.model? ? "proposed families" : "term clusters" %> represented. This measures this method's selection, not verified issue-family coverage.</p>
     <p>Taxonomy: <%= @taxonomy ? "expert revision #{@taxonomy.number}" : "unreviewed proposals" %>. <%= @analysis.model? ? "Possible documentation gaps and importance are model proposals; experts must check them." : "A possible documentation gap means no overlap between three cluster terms and the uploaded documents; experts must check it." %></p>
     <% if Current.require_membership!.can_write? && @analysis.summary["selected"].to_i.positive? %><%= button_to "Create selected scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { analysis_id: @analysis.id }, class: "button button-primary" %><% end %>
+    <section class="section-block" aria-labelledby="family-selection">
+      <h2 id="family-selection">Review family selection</h2>
+      <p>Find families with no selected candidate in this fixed analysis. The filter changes only this list, not selection, totals or scenario creation. It does not show which issues have tests elsewhere.</p>
+      <%= form_with url: workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), method: :get, class: "form-stack config-panel" do |form| %>
+        <div class="field"><%= form.label :family_focus, "Family focus" %><%= select_tag :family_focus, options_for_select(@family_counts.map { |name, count| [ "#{name} (#{count})", name ] }, @family_focus), include_blank: @invalid_family_focus, aria: { invalid: @invalid_family_focus, describedby: @invalid_family_focus ? "family-focus-error" : nil } %></div>
+        <% if @invalid_family_focus %><p id="family-focus-error" role="alert" class="inline-error">Choose a family focus from the list. <%= link_to "All families", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis) %> clears the invalid filter.</p><% end %>
+        <%= form.submit "Filter families", class: "button" %>
+      <% end %>
+      <% if !@invalid_family_focus && @clusters.empty? %>
+        <% if @family_counts.fetch(@family_focus).zero? %>
+          <p role="status">No families in this view. <%= link_to "All families", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis) %> shows the complete selection.</p>
+        <% else %>
+          <p role="status">No families on this page. <%= link_to "First page", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis, family_focus: @family_focus) %> keeps this focus.</p>
+        <% end %>
+      <% end %>
+    </section>
     <% @clusters.each do |cluster| %>
       <section class="section-block" aria-labelledby="cluster-<%= cluster.id %>">
         <h2 id="cluster-<%= cluster.id %>"><%= @taxonomy&.labels&.fetch(cluster.id.to_s, nil) || cluster.proposed_label %></h2>

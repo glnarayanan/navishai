@@ -32,6 +32,12 @@ corpus-return link and keep refresh read-only. No partial examples, taxonomy for
 or mining action appears. The accessible analysis still renders as a page; POST
 validation remains an error response. No CSP relaxation or nonce changes.
 
+Family selection review uses a labelled native GET picker with whole-analysis
+counts. It makes families with no selected candidate easy to find without changing
+the selection or claiming coverage. The global scenario-creation action stays above
+the filter. Refresh and pagination retain focus; empty/invalid states name the
+problem and link to recovery. Viewers keep the filter without write controls.
+
 Multi-request discovery shows the complete preview and actual call ceiling before
 consent in document/mobile order; desktop keeps preview and request side by side.
 A native disclosure contains the full record list without forcing a long mobile

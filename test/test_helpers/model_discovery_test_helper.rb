@@ -26,6 +26,18 @@ module ModelDiscoveryTestHelper
     ModelCorpusDiscovery.input(CorpusAnalysis.current_inputs(corpus: @corpus, model: true))
   end
 
+  def build_selection_analysis
+    titles = [ "SAML login", "Webhook retries", "Invoice rounding", "Role permissions", "OAuth scopes", "DNS records",
+      "Cursor pagination", "Search indexing", "CSV exports", "Sandbox limits", "Cache invalidation", "Certificate expiry" ]
+    records = titles.each_with_index.map do |title, index|
+      { id: "family-#{index + 1}", title:, content: title, context: index == 11 ? { impact: "critical" } : {} }
+    end
+    @snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "History", kind: "conversations", bytes: records.to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 1)
+    CorpusAnalysisJob.perform_now(analysis.id)
+    analysis.reload
+  end
+
   def add_large_context_sources
     2.times.map do |index|
       CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Large context #{index}", kind: "conversations",
