@@ -40,6 +40,30 @@ class JudgeAccessTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "fixed threshold report stays on its definition after edits and is absent from deterministic previews" do
+    with_endpoint_approval do
+      @outcome_grader.revise!(membership: @membership, version_id: @outcome_grader.current_version_id, kind: "rubric_judge",
+        definition: @outcome_grader.current_version.definition.merge("confidence_threshold" => 0.95))
+    end
+    @outcome_grader.revise!(membership: @membership, version_id: @outcome_grader.current_version_id, kind: "deterministic",
+      definition: { "type" => "text_contains", "value" => "expiry" })
+    path = workspace_corpus_calibration_set_path(@workspace, @corpus, @judge_set)
+    assert_no_difference [ "AuditEvent.count", "HumanLabel.count", "CalibrationPrediction.count", "CalibrationJudgeRun.count" ] do
+      assert_no_enqueued_jobs do
+        get path, params: { cohort: "development", candidate_version_id: @outcome_grader.current_version_id }
+        assert_response :success
+        assert_select "#fixed-report .judge-threshold", text: "0.8"
+        assert_select "#fixed-report .judge-threshold", text: "0.95", count: 0
+        assert_select "#fixed-report", text: /below the threshold.*At the threshold/m
+        assert_select "#fixed-report", text: /not calibrated probability or accuracy/
+        assert_select "#candidate-report .judge-threshold", text: /Not applicable — deterministic grader/
+        assert_select "#candidate-report", text: /reported confidence below/, count: 0
+      end
+    end
+    assert_empty @sample.reload.human_labels
+    assert_nil @sample.calibration_prediction
+  end
+
   test "viewers cannot execute or interrupt judges and foreign or expired records are hidden" do
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
     sign_in_as users(:teammate)

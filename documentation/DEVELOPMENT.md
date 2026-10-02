@@ -712,6 +712,13 @@ denominators show no evidence, not 0% or 100%. Pairwise agreement uses only cert
 expert-label pairs and is not chance-corrected. Small selected sets do not establish
 population accuracy. Do not tune on held-out samples.
 
+Each report displays its fixed judge abstention threshold beside the counts.
+Reported confidence below that threshold turns pass/fail into abstention; equality
+does not force abstention. Confidence is an endpoint report, not calibrated
+probability or accuracy. A later grader edit never changes an old set's displayed
+rule. Deterministic reports and previews show not applicable. The report neither
+tunes a threshold nor changes a prediction, label or disclosure permission.
+
 Use **Review focus** on the set page to find missing personal labels, expert disputes,
 uncertainty, machine/expert disagreement or missing usable predictions. The list
 puts missing personal labels first. Until you label a sample, its row cannot reveal

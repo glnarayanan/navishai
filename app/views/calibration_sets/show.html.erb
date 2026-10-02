@@ -10,7 +10,7 @@
     <p>Set created by expert #<%= @set.created_by_id %> at <%= @set.created_at.iso8601 %>, for fixed grader v<%= @set.grader_version.number %>. Changing assumptions requires a new set.</p>
   </section>
   <section class="section-block" id="fixed-report"><h2><%= @cohort.humanize %> evidence · fixed v<%= @set.grader_version.number %></h2>
-    <%= render "report", report: @report %>
+    <%= render "report", report: @report, grader_version: @set.grader_version %>
     <% if @set.grader_version.kind == "rubric_judge" %><p role="status">Each sample needs a separately approved judge attempt. Reports compare only usable fixed predictions with certain expert labels; rubric text and self-reported confidence do not prove accuracy.</p><% end %>
   </section>
   <section class="section-block" id="grader-preview"><h2>Preview a revised grader</h2>
@@ -26,7 +26,7 @@
     <% end %>
     <% if @candidate_report %><section id="candidate-report" class="section-block"><h3>Development preview · v<%= @candidate.number %></h3>
       <p><%= link_to "Fixed candidate definition", workspace_corpus_grader_path(Current.workspace, @corpus, @candidate.grader, version: @candidate.number) %>. Counts use current expert labels on the original fixed requirements, not new labels or held-out evidence. Obtain fresh held-out calibration before trusting a revision.</p>
-      <%= render "report", report: @candidate_report %>
+      <%= render "report", report: @candidate_report, grader_version: @candidate %>
       <% if Current.require_membership!.can_write? %><h4>Inspect candidate disagreements</h4>
         <p>Only samples you have already labelled can appear here. The original review queue below still uses saved predictions.</p>
         <ul class="workspace-list" role="list"><% @candidate_report[:reviews].select { |entry| entry[:state] == "disagreement" }.each do |entry| %><li class="workspace-card"><%= link_to "Sample #{entry[:sample].id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, entry[:sample]) %><span>Candidate differs from current expert labels on the original requirement.</span></li><% end %></ul>
