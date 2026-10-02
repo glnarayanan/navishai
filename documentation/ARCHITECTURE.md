@@ -66,6 +66,23 @@ calibration. Personal first-label hiding also applies to candidate disagreements
 
 ## External execution
 
+### Bounded incremental conversation decision (1 October 2026)
+
+Expert-authored immutable follow-up plans remain local until a literal condition
+matches the latest assistant reply. One generic `http_conversation` adapter uses
+`support-conversation-v1`, the existing endpoint-purpose registry and guarded HTTP
+transport. Consent binds fixed cases, planned messages, transcript forwarding and
+the maximum eleven calls per case. Single-shot adapters reject planned cases.
+Start with the visible situation as a user turn; never send future messages, hidden
+facts, expectations or labels. Literal matching is not semantic correctness.
+Recheck access, run state, source/approval lifetime and endpoint authority around
+each unlocked call. Once-claimed runs never retry unknown calls. Turn keys derive
+from the item UUID and index; content-free receipts accompany execution results.
+Only a fully validated aggregate transcript is a successful output. Ordered tool
+and citation reports do not prove tools ran. Existing adapters and processing
+versions retain their semantics. No vendor integration or generated authoritative
+dialogue is introduced.
+
 Start with one generic structured target interface and a scripted adapter for contract tests. Rails does not execute model CLIs or shell commands. Use Solid Queue jobs for the first bounded batch, not a second worker language: there is no customer process to isolate. The HTTP adapter uses Ruby's standard HTTP/TLS capabilities, explicit endpoint approval, DNS/IP checks and connection pinning, no redirects or proxy inheritance, deadlines, bounded JSON and no credentials in logs. Go earns a return only when a separate process/network boundary reduces real risk or measured load. The domain branches on check/capability types, not vendor names.
 
 Provider disclosure is off unless an authorised human configures and starts it. Do not send hidden expected outcomes to a target. Send only the case's visible context and permitted knowledge. Judge calls may receive the frozen rubric and relevant evidence; source content remains untrusted. Record model/settings, attempts, usage when supplied, and unknown cost honestly.

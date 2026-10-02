@@ -18,8 +18,12 @@ class EvaluationRunJob < ApplicationJob
       return unless run.corpus.with_lock { authorize_item!(run, item) }
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       target = run.evaluation_target_version
+      execution = {}
       begin
-        output = target.call(input: item.target_input, request_key: item.request_key)
+        output = target.call(input: item.target_input, request_key: item.request_key, plan: item.eval_case.scenario_version.follow_ups, execution:) do
+          raise EvalCase::Invalid, "Run stopped." unless run.corpus.with_lock { authorize_item!(run, item) }
+          HttpTarget.validate!(target.configuration, workspace_id: run.workspace_id)
+        end
         SupportOutput.validate!(output)
         decisions = item.eval_case.eval_case_checks.order(:id).map do |check|
           return unless run.corpus.with_lock { authorize_item!(run, item) }
@@ -40,8 +44,8 @@ class EvaluationRunJob < ApplicationJob
       rescue HttpTarget::Error, RecordedTarget::Error => error
         attributes = { status: "error", error: error.message }
       end
-      execution = { "adapter" => target.adapter, "processing_version" => target.processing_version,
-        "elapsed_ms" => ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1_000).round, "cost" => nil }
+      execution.merge!("adapter" => target.adapter, "processing_version" => target.processing_version,
+        "elapsed_ms" => ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1_000).round, "cost" => nil)
       run.corpus.with_lock do
         return unless authorize_item!(run, item)
         item.create_evaluation_result!(workspace: run.workspace, corpus: run.corpus, eval_case: item.eval_case, **attributes, execution:, created_at: Time.current)

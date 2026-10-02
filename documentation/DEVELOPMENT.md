@@ -5,6 +5,36 @@ Supermemory, vector extension, document converters or provider services remain.
 Solid Queue owns bounded evaluation batches; HTTP uses the Ruby standard library.
 A separate worker language needs measured workload or isolation evidence.
 
+## Bounded HTTP conversations
+
+`http_conversation` fixes processing `http-conversation-v1` and uses the same
+endpoint-only configuration and evaluation-purpose approval as HTTP. Each POST
+is `{"schema":"support-conversation-v1","input":{…fixed visible input…},"history":[{"role":"user","content":"…situation…"},…]}`.
+Responses use the six-field support-output-v1 schema but messages must all be
+assistant messages. No returned user turn is accepted. The initial request has
+no plan, future message, hidden fact, expectation or label. Later requests forward
+only the actual released-user/returned-assistant history and fixed visible input.
+
+Scenario follow_ups default to [] and allow ten entries / 10 KiB. Every entry has
+exactly `after_assistant_contains` (nonblank literal ≤500 characters) and `message`
+(nonblank user text ≤2000 characters), without null bytes. Conditions match only
+the latest assistant block, case-insensitively. Stop at the first unmet condition;
+never release later messages. Empty plans call once; the maximum is eleven calls.
+Single-shot adapters refuse planned cases before queuing. Experts approve the
+source-backed version and explicitly consent to planned messages, transcript
+forwarding and maximum calls on the fixed-case suite preview.
+
+Turn idempotency keys are SHA-256 of `<item UUID>/turn/<zero-based index>`.
+Execution JSON retains content-free receipts for completed/failed attempts when
+authority permits retention; invalid/unknown output has no partial transcript.
+The once-claimed run never retries or resumes after an unknown call. Recheck
+membership, state, source lifetime/current approval and endpoint purpose around
+every unlocked call. A sent request cannot be recalled. Aggregate messages, ordered
+tools/citations, latest collected-field values and terminal escalation/policy branch
+must satisfy final support-output-v1 bounds; nothing is truncated. Reports are not
+proof a tool ran. Literal plans and synthetic fixtures do not establish dialogue
+quality or semantic correctness. Old target/check processing versions are unchanged.
+
 ## Fresh baseline
 
 Install the pinned Ruby with mise, install PostgreSQL and libpq development headers,

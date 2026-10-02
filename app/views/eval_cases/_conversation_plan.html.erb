@@ -1,0 +1,3 @@
+<h3>Fixed conversation plan · maximum <%= version.follow_ups.size + 1 %> calls</h3>
+<p>Initial visible input is sent first. Planned user messages stay local until their case-insensitive literal occurs in the latest assistant reply. The actual transcript is forwarded on later calls. An unmet condition stops later disclosure; this does not establish semantic correctness.</p>
+<pre class="evidence-text"><%= JSON.pretty_generate(version.follow_ups) %></pre>

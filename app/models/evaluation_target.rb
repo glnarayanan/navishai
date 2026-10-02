@@ -21,11 +21,11 @@ class EvaluationTarget < ApplicationRecord
       reload
       raise EvalCase::Invalid, "This target changed. Reload before saving." unless current_version_id.to_s == version_id.to_s
       adapter ||= current_version&.adapter || "scripted"
-      raise EvalCase::Invalid, "Choose the scripted, HTTP or recorded adapter." unless %w[scripted http recorded].include?(adapter)
+      raise EvalCase::Invalid, "Choose the scripted, HTTP, HTTP conversation or recorded adapter." unless %w[scripted http http_conversation recorded].include?(adapter)
       trace_item = corpus.corpus_items.find_by(id: trace_item_id) if adapter == "recorded"
       RecordedTarget.validate!(trace_item:) if adapter == "recorded"
       return current_version if current_version && current_version.configuration == configuration && current_version.adapter == adapter && current_version.trace_item_id == trace_item&.id
-      processing_version = { "http" => HttpTarget::VERSION, "scripted" => ScriptedTarget::VERSION, "recorded" => RecordedTarget::VERSION }.fetch(adapter)
+      processing_version = { "http_conversation" => HttpConversationTarget::VERSION, "http" => HttpTarget::VERSION, "scripted" => ScriptedTarget::VERSION, "recorded" => RecordedTarget::VERSION }.fetch(adapter)
       version = evaluation_target_versions.create!(workspace:, corpus:, created_by: membership.user, number: (current_version&.number || 0) + 1, adapter:, processing_version:, configuration:, trace_item:, created_at: Time.current)
       update!(current_version: version)
       AuditEvent.record!(action: "target.version_created", source: :web, workspace:, actor: membership.user, subject: version, metadata: { version: version.number })

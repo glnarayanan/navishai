@@ -15,6 +15,8 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
 | Trace association | An expert's match, different or uncertain decision on an exact trace and scenario version, with append-only reasons. It is neither scenario approval nor a calibration label. |
 | Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
+| Follow-up plan | Expert-authored immutable ordered literal conditions and user messages. Separate from hidden facts; a new plan needs ordinary source-backed approval. |
+| Conversation turn receipt | Content-free request key, input digest, elapsed time and reported attempt outcome. Not proof of remote execution or tool use. |
 | Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
 | Taxonomy version | Fixed expert labels for some or all clusters from one corpus analysis. Unreviewed clusters stay proposals. |
 | Issue cluster | Related corpus items with a proposed issue label, examples, and disclosed selection method. |

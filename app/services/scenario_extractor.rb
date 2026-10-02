@@ -40,7 +40,7 @@ class ScenarioExtractor
   end
 
   def self.valid_definition?(definition, version:)
-    return false unless definition.is_a?(Hash) && definition.keys.sort == ScenarioVersion::EDITABLE.sort &&
+    return false unless definition.is_a?(Hash) && definition.keys.sort == %w[title situation taxonomy_label importance known_facts hidden_facts requirements].sort &&
       %w[title situation taxonomy_label importance].all? { |key| definition[key].is_a?(String) }
     ScenarioVersion.new(definition.merge(workspace: version.workspace, corpus: version.corpus, scenario: version.scenario, created_by: version.created_by,
       number: 1, origin: "mined", selection_reason: "Machine proposal; no expert approval.")).valid?
