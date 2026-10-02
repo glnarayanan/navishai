@@ -87,7 +87,7 @@ begin
     command += [ "nsenter", "--net=#{directory}/netns" ] if isolated
     command += [ "dockerd", "--config-file=#{config}", "--host=unix://#{socket}", "--data-root=#{home}/data", "--exec-root=#{home}/exec",
       "--pidfile=#{home}/pid", "--storage-driver=vfs", "--bridge=none", "--userland-proxy=#{isolated}",
-      "--iptables=#{isolated}", "--ip-masq=#{isolated}", "--ip-forward=#{isolated}" ]
+      "--iptables=#{isolated}", "--ip6tables=#{isolated}", "--ip-masq=#{isolated}", "--ip-forward=#{isolated}" ]
     start.call(suffix, command)
     client = [ "sudo", "-n", "docker", "--config", home, "--host", "unix://#{socket}" ]
     wait.call("#{suffix} daemon") { run.call(*client, "info", "--format", "{{.DockerRootDir}}").strip == "#{home}/data" }
