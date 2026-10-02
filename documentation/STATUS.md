@@ -122,8 +122,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   local discovery within existing bounds, with fixed older methods and human review.
 - [#206](https://github.com/glnarayanan/navishai/pull/206), based on #205: expert replacement of
   fixed historical conversation quotes, hidden from targets and needing fresh review.
-- `rebuild/67-bounded-mined-labels`, based on #206: bounded new draft labels,
+- [#207](https://github.com/glnarayanan/navishai/pull/207), based on #206: bounded new draft labels,
   inspectable full proposals and unchanged source evidence/expert decisions.
+- `rebuild/68-private-definition-logs`, based on #207: private request/SQL bind
+  filters for definitions and receipts, without changing stored company text.
 
 ## Built and checked
 
@@ -1735,6 +1737,29 @@ assertion failure or result summary. Sixteen other heads #188–206 still run.
 #206's active log remains unavailable and artifacts remain empty. The timeout
 is confirmed; its code cause is not. No remote job was cancelled or rerun here.
 
+## Private definitions and receipts (slice 68)
+
+Actual DEBUG writes reproduced private requirement disclosure. The shared native
+filter now covers titles, requirements, follow-ups, mutations, proposed/reviewed
+labels, signals, fixed input/results and per-check decisions. Stored values remain
+exact. Tests exercise scenario/variant/taxonomy writes, typed PostgreSQL binds for
+14 actual model fields and real taxonomy request parameter logs, including ignored
+private root parameters. Public method/count metadata remains visible.
+
+Full native CI passed 477 Rails tests / 7366 assertions and 53 browser tests / 2454
+assertions before the final request-log regression. The final Rails state then
+passed 478 tests / 7414 assertions, with no failures, errors or skips. That run took
+7m03.72s and peaked at 525176 KiB; the prior complete CI took 10m36.79s and peaked at
+560008 KiB. Ruby style, audits and eager loading pass. No UI behavior changed.
+Direct risk review used; named review tools remain unavailable. These filters do
+not sanitize SQL literals, PostgreSQL/proxy/operator logs or arbitrary output.
+No dependency, provider, customer data, expert decision, merge or deployment changed.
+
+At 21:05 UTC on 1 October, #190/#195/#199 remain exact-head green and #187 retains
+its confirmed six-hour timeout. The seventeen other heads #188–207 still run;
+#207 is [run 36922246175](https://github.com/glnarayanan/navishai/actions/runs/36922246175).
+No new assertion failure or confirmed code cause was available. No remote run changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1794,8 +1819,8 @@ Local scenario context extraction remains title/context/action based, with bound
 first-source excerpts. Experts can now replace their own fixed conversation quote
 with later diagnostics, but this does not fix automatic draft-quality gaps.
 New mined labels now respect the 500-character limit without changing full source
-proposals or saved expert decisions. A separate actual DEBUG trace exposed private
-requirement JSON; remaining definition/result fields need log-filter verification.
+proposals or saved expert decisions. Private definition/result fields now pass
+actual native request/SQL log-filter checks; storage remains unchanged.
 Larger complete-text workloads also need bounded engineering work and evidence,
 not a silent increase of existing limits or a semantic-quality claim.
 
