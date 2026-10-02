@@ -276,7 +276,8 @@ vps_check() {
   vps_policy_check && vps_runtime_check && vps_services_check || { vps_stop; return 1; }
 }
 vps_units() {
-  mkdir -p -- "$VPS_UNITS" "$(dirname -- "$VPS_CLI")"
+  mkdir -p -- "$VPS_UNITS" "$(dirname -- "$VPS_CLI")" || return 1
+  vps_directory "$VPS_UNITS" && vps_directory "$(dirname -- "$VPS_CLI")" || return 1
   local file
   for file in "$VPS_UNITS/navishai-reset.service" "$VPS_UNITS/navishai-reset-check.service" "$VPS_UNITS/navishai-reset-check.timer" "$VPS_CLI"; do
     [[ ! -e $file && ! -L $file ]] || { vps_die "Existing unclaimed service/CLI: $file"; return 1; }

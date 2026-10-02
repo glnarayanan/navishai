@@ -142,11 +142,11 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Core command tests pass 15 tests / 138 assertions, recovery tests 10 / 30 and
+Core command tests pass 16 tests / 145 assertions, recovery tests 10 / 30 and
 namespace-policy tests 8 / 155, with no failures, errors or skips. They test command
 ordering, both startup guards, literal env parsing, distinct secrets, lock/restore
-contracts, writable-root and shared-resource/partial-install cleanup refusal. Bash syntax and
-native Ruby style pass. The real namespace-policy and PG recovery proofs pass;
+contracts, writable-root/startup-path and shared-resource/partial-install cleanup
+refusal. Bash syntax and native Ruby style pass. The real namespace-policy and PG recovery proofs pass;
 their scope and limits remain in [policy](./VPS_POLICY.md) and
 [recovery](./VPS_RECOVERY.md). Combined real CLI proof and full CI remain pending.
 Host-side proof builders disable both Docker `iptables` and `ip6tables` manipulation.

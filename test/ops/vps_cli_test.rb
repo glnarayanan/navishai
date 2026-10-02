@@ -57,6 +57,18 @@ class VpsCliTest < Minitest::Test
     assert File.exist?("#{@config}/env")
   end
 
+  def test_generated_startup_files_refuse_writable_unit_directory
+    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai-reset",
+      *%w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer].map { |name| "#{@units}/#{name}" })
+    root_command("chmod", "0777", @units)
+    output, status = shell("systemctl() { echo MUST-NOT-RUN; }; vps_units")
+    refute status.success?, output
+    assert_includes output, "Directory ancestry is not root-controlled"
+    refute_includes output, "MUST-NOT-RUN"
+    refute File.exist?("#{@units}/navishai-reset.service")
+    refute File.symlink?("#{@root}/usr/local/bin/navishai-reset")
+  end
+
   def test_literal_env_never_runs_shell_and_clears_old_exports
     @env["NAVISHAI_SYSTEM_SMTP_PASSWORD"] = "$(touch #{@directory}/executed)"
     write_env

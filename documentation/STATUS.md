@@ -2189,7 +2189,7 @@ The separate [VPS CLI](./VPS_CLI.md) now implements reviewed Git install, upgrad
 full backup, explicit restore, status, gated start/check/stop and scoped cleanup.
 It adds Caddy, systemd ordering, dual-family namespace guards and separate restricted
 setup/runtime roles without changing the manual Compose baseline. Core tests pass
-15 / 138, recovery 10 / 30 and namespace policy 8 / 155, with no failures/errors/skips.
+16 / 145, recovery 10 / 30 and namespace policy 8 / 155, with no failures/errors/skips.
 Native Bash syntax and Ruby style pass. Real standalone namespace denial/replacement
 and four-DB/image/file rollback proofs pass/CLEAN; see [policy](./VPS_POLICY.md)
 and [recovery](./VPS_RECOVERY.md) for exact scope and limits.
