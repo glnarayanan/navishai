@@ -11,7 +11,7 @@ class GraderVersion < ImmutableRecord
       valid = if kind == "deterministic"
         DeterministicGrader.valid_definition?(definition)
       else
-        definition.is_a?(Hash) && definition.keys.sort == %w[confidence_threshold rubric] && definition["rubric"].is_a?(String) && definition["rubric"].strip.length.between?(1, 10_000) && definition["confidence_threshold"].is_a?(Numeric) && definition["confidence_threshold"].between?(0, 1)
+        JudgeGrader.valid_definition?(definition)
       end
       errors.add(:definition, "must match the selected versioned grader schema") unless valid && !definition.to_json.include?("\\u0000")
     end

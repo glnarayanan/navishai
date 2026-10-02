@@ -69,6 +69,18 @@ operators own idempotency and remote retention. Private-address targets stay den
 deployment egress policy must enforce the same boundary. No live target is configured
 by default. See [the interface and bounds](./DEVELOPMENT.md#generic-http-target).
 
+Rubric judges use the same approved JSON transport, not a second network client.
+Each definition fixes its model, settings, rubric and threshold. A separate consent
+binds the displayed suite cases and their judge endpoints; target consent cannot
+approve judge disclosure. Only the requirement, visible context, exact company
+excerpt and recorded output enter support-judge-v1. Labels and hidden facts stay
+local. Quotes must occur in those inputs; that check does not prove sound reasoning.
+Low confidence abstains, malformed responses are errors, and reported usage/cost
+remain reports. A calibration judge attempt claims once outside network locks and
+retains one immutable prediction beside human label history. Endpoint operators
+own model execution, settings enforcement, deduplication and remote retention.
+There is no direct vendor integration or proof of live judge quality.
+
 ## Isolation, deletion, and hosting
 
 Every controller and job starts from a checked workspace. Composite relationships prevent foreign evidence and definitions. These checks are not PostgreSQL RLS and must not be described as such. Source retention/deletion must remove content and dependent disclosed copies under explicit policy while preserving a minimal non-content audit. Raw data, redacted snapshots, labels, and outputs have separate lifetimes.

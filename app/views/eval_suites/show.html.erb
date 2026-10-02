@@ -11,6 +11,7 @@
       <% if @cases.empty? %><p>Add a compiled case before running.</p><% elsif @targets.empty? %><p><%= link_to "Define an evaluation target", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus) %> before running.</p><% elsif Current.require_membership!.can_write? %>
         <%= form_with url: workspace_corpus_evaluation_runs_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
           <%= hidden_field_tag :suite_id, @suite.id %>
+          <%= hidden_field_tag :suite_digest, Digest::SHA256.hexdigest(@cases.map(&:id).to_json) %>
           <div class="field"><%= form.label :target_version_id, "Target version" %><%= form.select :target_version_id, @targets.map { |target| ["#{target.name} · v#{target.current_version.number} · #{target.current_version.adapter}", target.current_version_id] }, { prompt: "Choose a target version" }, required: true %></div>
           <% if @targets.any? { |target| target.current_version.adapter == "http" } %>
             <fieldset class="form-stack">
@@ -19,6 +20,15 @@
               <ul role="list"><% @targets.select { |target| target.current_version.adapter == "http" }.each do |target| %><li><%= link_to "#{target.name} v#{target.current_version.number}", workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %>: <%= target.current_version.configuration.fetch("endpoint") %></li><% end %></ul>
               <div class="checkbox-field"><%= form.check_box :disclose %><%= form.label :disclose, "I approve sending visible inputs to the selected HTTP endpoint for this run." %></div>
               <small>Required for HTTP only. Starting another run deliberately sends a new request; refresh never does.</small>
+            </fieldset>
+          <% end %>
+          <% if @judges.any? %>
+            <fieldset class="form-stack">
+              <legend>Separate judge disclosure</legend>
+              <p>The fixed judges receive target outputs, rubrics, requirements, visible context and supporting company evidence. Target consent does not approve this. Hidden facts and expert labels stay local. Inspect each definition and source; local deletion cannot recall sent data.</p>
+              <ul role="list"><% @judges.each do |version| %><li><%= link_to "#{version.grader.name} v#{version.number}", workspace_corpus_grader_path(Current.workspace, @corpus, version.grader, version: version.number) %> · <%= version.definition.dig("execution", "model") %>: <%= version.definition.dig("execution", "endpoint") %></li><% end %></ul>
+              <div class="checkbox-field"><%= form.check_box :judge_disclose %><%= form.label :judge_disclose, "I approve sending outputs, rubrics and company evidence to these fixed judges for this run." %></div>
+              <small>Low confidence abstains. Endpoint-reported confidence, model, usage and cost do not prove accuracy or execution.</small>
             </fieldset>
           <% end %>
           <%= form.submit "Start fixed run", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>

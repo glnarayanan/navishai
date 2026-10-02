@@ -3,7 +3,7 @@ class CalibrationSamplesController < ApplicationController
   before_action :require_workspace
   before_action -> { require_role(:owner, :admin, :manager, :member) }, except: :show
   before_action :load_set
-  rescue_from EvalCase::Invalid, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
+  rescue_from EvalCase::Invalid, EvaluationHttp::Error, SupportOutput::Invalid, ActiveRecord::RecordInvalid, JSON::ParserError, with: :invalid_input
 
   def new
     @checks = EvalCaseCheck.where(corpus: @corpus, grader_version: @set.grader_version).includes(eval_case: :scenario_version).order(id: :desc).limit(100)
@@ -21,6 +21,19 @@ class CalibrationSamplesController < ApplicationController
     @labels = @sample.latest_labels.includes(:labelled_by).order(:labelled_by_id)
     @own_label = @labels.find { |label| label.labelled_by_id == Current.user.id }
     @reveal = @own_label.present? || !Current.require_membership!.can_write?
+    @judge_run = @sample.calibration_judge_run
+  end
+
+  def judge
+    sample = @set.calibration_samples.find(params[:id])
+    CalibrationJudgeRun.request!(sample:, membership: Current.require_membership!, disclose: params[:judge_disclose] == "1")
+    redirect_to workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample), notice: "Judge attempt recorded. Refresh to see its state; refresh never sends a new request.", status: :see_other
+  end
+
+  def interrupt_judge
+    sample = @set.calibration_samples.find(params[:id])
+    sample.calibration_judge_run&.interrupt!(membership: Current.require_membership!)
+    redirect_to workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample), notice: "Judge attempt interrupted. It will not retry automatically.", status: :see_other
   end
 
   def label

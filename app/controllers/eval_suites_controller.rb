@@ -22,9 +22,10 @@ class EvalSuitesController < ApplicationController
   def show
     @suite = @corpus.eval_suites.find(params[:id])
     if @corpus.eval_definitions_expired?
-      @cases = @targets = @regressions = @runs = []
+      @cases = @targets = @regressions = @runs = @judges = []
     else
-      @cases = @suite.eval_cases.includes(:scenario_version).order(:id)
+      @cases = @suite.eval_cases.includes(:scenario_version).order(:id).to_a
+      @judges = EvalCaseCheck.where(eval_case: @cases).includes(grader_version: :grader).map(&:grader_version).select { |version| version.kind == "rubric_judge" && version.definition.key?("execution") }.uniq(&:id)
       @targets = @corpus.evaluation_targets.includes(:current_version).order(:name).limit(100)
       @regressions = RegressionCase.where(eval_suite: @suite).includes(:evaluation_result).order(:id)
       @runs = @corpus.evaluation_runs.where(eval_suite: @suite).order(id: :desc).limit(20)

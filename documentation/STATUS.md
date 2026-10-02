@@ -23,8 +23,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   label history, held-out/development reports and measured disagreement.
 - [#148](https://github.com/glnarayanan/navishai/pull/148), based on #147: scripted targets, fixed runs/results,
   explained failures and human-reviewed regression admissions.
-- `rebuild/09-http-target`, based on #148: generic HTTPS targets, per-workspace
+- [#149](https://github.com/glnarayanan/navishai/pull/149), based on #148: generic HTTPS targets, per-workspace
   operator approval, human disclosure confirmation and bounded non-retrying calls.
+- `rebuild/10-judge-execution`, based on #149: fixed rubric judges, separate
+  disclosure consent, once-claimed calibration attempts and quoted result evidence.
 
 ## Built and checked
 
@@ -39,7 +41,7 @@ processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
 links. Local term analysis, expert labels, versioned scenarios, controlled variants,
 fixed eval definitions, deterministic checks and expert calibration are built;
-scripted/HTTP evaluation and regression are built. Judge execution is next.
+scripted/HTTP evaluation, rubric judge execution and regression are built.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -146,17 +148,43 @@ assertion; corrections did not weaken product controls.
 Final focused browser check: 1 test / 50 assertions, including Space-key disclosure
 confirmation, no failures/errors/skips. No product code changed after full CI.
 
+Judge execution `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 1m55.86s;
+209 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors,
+eager load passes. 208 Rails tests / 1708 assertions and 10 browser tests / 349
+assertions, no failures/errors/skips. Fixed definitions bind the endpoint, model,
+settings, rubric and threshold. Target and judge calls share the bounded approved
+transport; judge consent remains separate. Suite consent binds the displayed case
+IDs. Calibration retains one immutable attempt/prediction per sample and never
+overwrites human labels. Inputs omit hidden facts, labels and other predictions.
+Pass/fail responses need exact quotes from company evidence and recorded output;
+low confidence abstains. Quotes and self-reported confidence do not prove accuracy.
+Usage/cost remain optional endpoint reports, not verified charges.
+
+Checks cover separate consent, stale suite membership, threshold boundaries,
+malformed/model/quote/cost rejection, fixed graders after revision, SQL immutability,
+purge, role/endpoint revocation, unknown outcomes and concurrent delivery/expiry.
+Network waits do not hold corpus/membership locks. Browser checks cover retained
+configuration errors, first-label hiding, consent, queued refresh and quoted failure
+inspection, without overflow/CSP violations. Nine desktop/mobile judge captures
+under `.amp/in/artifacts/judge/` were inspected. The detector found no new issues;
+direct risk review and native audits replace unavailable Ponytail Audit and CE Code
+Review. Early failures came from foreign-key/last-Owner test setup and a browser
+selector; fixes did not weaken those controls. Orb YAML and `git diff --check` pass.
+No live judge or target ran. The operator endpoint registry remains empty.
+
 ## Next and limits
 
-Next: versioned judge execution/calibration, then the complete P0 acceptance demo.
+Next: complete P0 acceptance proof with a fresh technical-Support dataset,
+authoritative expert corrections and approved target/judge endpoints.
 Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
 and descendants because their analysis depends on the full corpus. Purge also
 clears fixed cases, corpus graders/calibration, targets, runs/results and regressions;
-suite names remain without cases. Judge
-definitions are versioned but do not yet execute or establish grader accuracy.
+suite names remain without cases. Judges execute through a generic gateway;
+the gateway must enforce model/settings and separate data from instructions.
+Fixture responses do not establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 

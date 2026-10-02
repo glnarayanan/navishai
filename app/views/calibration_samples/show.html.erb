@@ -17,6 +17,22 @@
           <%= form.submit "Save expert label", class: "button button-primary", data: { turbo_submits_with: "Saving…" } %>
         <% end %>
       <% end %>
+      <% if @sample.grader_version.definition.key?("execution") %><section class="section-block"><h2>Judge execution</h2>
+        <% if @judge_run %>
+          <p role="status"><%= @judge_run.state.humanize %> · one fixed attempt. No automatic retry.</p>
+          <% if @judge_run.error %><p role="alert"><%= @judge_run.error %></p><% end %>
+          <%= link_to "Refresh judge state", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "button" %>
+          <% if Current.require_membership!.can_write? && (@judge_run.state == "queued" || (@judge_run.state == "running" && @judge_run.started_at < 10.minutes.ago)) %><%= button_to "Interrupt judge attempt", interrupt_judge_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "button" %><% end %>
+        <% elsif @sample.calibration_prediction %><p>A fixed prediction already exists. Use a new calibration set for another attempt.</p>
+        <% elsif Current.require_membership!.can_write? %>
+          <p>The judge receives this output, fixed rubric, requirement, visible context and company evidence. Hidden facts and expert labels stay local. Local deletion cannot recall sent data.</p>
+          <p><%= @sample.grader_version.definition.dig("execution", "model") %> · <%= @sample.grader_version.definition.dig("execution", "endpoint") %></p>
+          <%= form_with url: judge_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "form-stack" do |form| %>
+            <div class="checkbox-field"><%= form.check_box :judge_disclose %><%= form.label :judge_disclose, "I approve sending this sample, rubric and company evidence to its fixed judge." %></div>
+            <%= form.submit "Request fixed judge", class: "button", data: { turbo_submits_with: "Queuing…" } %>
+          <% end %>
+        <% end %>
+      </section><% end %>
       <% if @reveal %><section class="section-block"><h2>Machine prediction</h2><% if @sample.calibration_prediction %><pre class="evidence-text"><%= JSON.pretty_generate(@sample.calibration_prediction.result) %></pre><% else %><p>No prediction. A rubric definition alone does not execute a judge.</p><% end %>
         <h3>Current expert labels</h3><% @labels.each do |label| %><p>Expert #<%= label.labelled_by_id %>: <strong><%= label.decision.humanize %></strong><br><%= label.rationale %></p><% end %>
         <details><summary>Label history</summary><% @sample.human_labels.order(:id).each do |label| %><p>Expert #<%= label.labelled_by_id %> · <%= label.created_at.to_fs(:long) %> · <%= label.decision.humanize %><br><%= label.rationale %></p><% end %></details>
