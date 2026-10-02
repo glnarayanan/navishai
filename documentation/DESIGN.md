@@ -199,8 +199,12 @@ unmatched entries. Compact desktop columns stack on mobile. Unresolved and
 unmatched results cannot appear as recoveries; refresh retains the baseline.
 
 Trace failure suggestions keep their literal method and limits visible. Each
-candidate links its exact version and evidence, with shared terms and distinct
-equal/conflicting/missing facts. Native disclosures hold source details. Writers
+candidate links its exact version and evidence, with shared terms, a literal
+rarity score and distinct equal/conflicting/missing facts. **Why this rank?** is a
+keyboard-accessible native disclosure with the formula and rounded per-term
+contributions. It names membership-dependent scores, repetition rules and ties;
+neither a percentage nor a confidence badge appears. Negation/paraphrase limits
+stay visible. Native disclosures hold source details. Writers
 use labelled decision/reason fields; errors retain their input. Append-only history
 shows the author, exact trace/version and whether that author's decision is latest,
 even across pages. No-match states offer a separate scenario proposal, not a false

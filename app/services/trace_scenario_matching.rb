@@ -2,9 +2,9 @@ class TraceScenarioMatching
   MAX_VERSIONS = 2000
   MAX_BYTES = 10.megabytes
   LIMIT = 5
-  METHOD = "Local literal terms: at least two distinct shared terms excluding known-fact keys and values; ordered by shared-term count, then equal-fact count, then version ID. No semantic matching or probability."
+  METHOD = "Local literal terms: at least two distinct shared terms excluding known-fact keys and values; ranked by corpus term rarity, then equal-fact count and version ID. No semantic matching or probability."
   Result = Data.define(:candidates, :searched_versions, :searched_bytes, :message)
-  Candidate = Data.define(:version, :shared_terms, :equal_facts, :conflicting_facts, :missing_facts, :evidence)
+  Candidate = Data.define(:version, :shared_terms, :equal_facts, :conflicting_facts, :missing_facts, :evidence, :score, :term_weights)
 
   def self.call(item:)
     call_all(items: [ item ]).fetch(item.id)
@@ -18,6 +18,9 @@ class TraceScenarioMatching
       return items.to_h { |item| [ item.id, Result.new([], 0, 0, "Matches hidden because a corpus source has expired.") ] }
     end
     inputs, bytes, message = corpus.with_lock { searchable_versions(corpus) }
+    frequencies = Hash.new(0)
+    inputs.each { |_version, _evidence, words| words.each { |word| frequencies[word] += 1 } }
+    weights = frequencies.transform_values { |count| Math.log(1.0 + inputs.size.to_f / count) }
     items.to_h do |item|
       trace = SupportTrace.payload(item)
       if trace["observed_failure"].blank?
@@ -32,9 +35,11 @@ class TraceScenarioMatching
           next if shared.size < 2
           shared -= terms([ facts, version.known_facts ].to_json)
           next if shared.size < 2
+          shared.sort!
+          contributions = shared.index_with { |word| weights.fetch(word) }
           equal, conflict, missing = compare_facts(facts, version.known_facts)
-          Candidate.new(version, shared.sort, equal, conflict, missing, evidence)
-        end.sort_by { |candidate| [ -candidate.shared_terms.size, -candidate.equal_facts.size, candidate.version.id ] }.first(LIMIT)
+          Candidate.new(version, shared, equal, conflict, missing, evidence, contributions.values.sum, contributions)
+        end.sort_by { |candidate| [ -candidate.score, -candidate.equal_facts.size, candidate.version.id ] }.first(LIMIT)
         result = Result.new(candidates, inputs.size, bytes, nil)
       end
       [ item.id, result ]
