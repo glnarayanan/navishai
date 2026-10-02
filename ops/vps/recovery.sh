@@ -466,6 +466,10 @@ vps_recovery_restore() (
   find "$VPS_STATE" -mindepth 1 ! -path "$VPS_STATE/install.lock" -delete || exit 1
   tar --numeric-owner --same-owner --same-permissions -xf "$source/config.tar" -C "$VPS_CONFIG" || exit 1
   tar --numeric-owner --same-owner --same-permissions -xf "$source/state.tar" -C "$VPS_STATE" || exit 1
+  if [[ ${VPS_RECOVERY_DESTINATION:-false} == true ]]; then
+    # Data and desired settings move; source-host receipt paths do not.
+    vps_receipt "$VPS_RECOVERY_SHA" recovering && vps_write_ingress "${listen_address:-auto}" || exit 1
+  fi
   ln -s "releases/$VPS_RECOVERY_SHA" "$VPS_RECOVERY_WORK/current" || exit 1
   mv -T -- "$VPS_RECOVERY_WORK/current" "$VPS_PREFIX/current" || exit 1
   VPS_RELEASE="$release"

@@ -67,6 +67,8 @@ host = host_snapshot.call
 docker = nil
 begin
   raise "Exact base unavailable" unless run.call("git", "-C", root, "rev-parse", "#{base}^{commit}").strip == base
+  # Prepare its user-owned fixture directory before the parent becomes root-owned.
+  FileUtils.mkdir_p(File.join(directory, "destination"))
   source = File.join(directory, "source")
   run.call("git", "clone", "--quiet", "--shared", root, source)
   run.call("git", "-C", source, "checkout", "--quiet", "--detach", base)
@@ -85,16 +87,21 @@ begin
     run.call("git", "-C", source, "-c", "user.name=Disposable proof", "-c", "user.email=proof@example.invalid", "commit", "--quiet", "-m", message)
     run.call("git", "-C", source, "rev-parse", "HEAD").strip
   end
-  release1 = commit_source.call("test: synthetic production source with internal TLS")
+  ingress_files = %w[ops/vps/cli.sh ops/vps/compose.yaml].to_h { |path| [ path, File.read(File.join(source, path)) ] }
+  ingress_files.each_key do |path|
+    File.write(File.join(source, path), run.call("git", "-C", root, "show", "cc443cf09dc8be9d4ea1239b78ff7c642ce0c0ae:#{path}"))
+  end
+  release1 = commit_source.call("test: shipped wildcard ingress with internal TLS")
+  shipped_manifest = ingress_files.keys.to_h { |path| [ path, Digest::SHA256.file(File.join(source, path)).hexdigest ] }
   source_manifest = production_files.to_h { |path| [ path, Digest::SHA256.file(File.join(root, path)).hexdigest ] }
-  puts "SOURCE: exact base #{base}; synthetic release #{release1}; production file SHA256 #{JSON.generate(source_manifest)}"
+  puts "SOURCE: exact base #{base}; synthetic shipped release #{release1}; shipped ingress SHA256 #{JSON.generate(shipped_manifest)}; fixed production file SHA256 #{JSON.generate(source_manifest)}"
   compose_binary = File.join(directory, "compose")
   url = "https://github.com/docker/compose/releases/download/v2.39.4/docker-compose-linux-x86_64"
   run.call("curl", "--fail", "--location", "--silent", "--show-error", url, "--output", compose_binary)
   checksum = run.call("curl", "--fail", "--location", "--silent", "--show-error", "#{url}.sha256").split.first
   raise "Compose checksum" unless checksum.match?(/\A[0-9a-f]{64}\z/) && Digest::SHA256.file(compose_binary).hexdigest == checksum
   File.chmod(0o755, compose_binary)
-  daemon = lambda do |suffix, isolated|
+  daemon = lambda do |suffix, isolated, netns: File.join(directory, "netns")|
     home = File.join(directory, suffix)
     FileUtils.mkdir_p(home)
     File.write(File.join(home, "daemon.json"), "{}")
@@ -102,7 +109,7 @@ begin
     FileUtils.cp(compose_binary, File.join(home, "cli-plugins/docker-compose"))
     socket = "unix://#{home}/docker.sock"
     command = [ "sudo", "-n" ]
-    command += [ "nsenter", "--net=#{directory}/netns" ] if isolated
+    command += [ "nsenter", "--net=#{netns}" ] if isolated
     command += [ "dockerd", "--config-file=#{home}/daemon.json", "--host=#{socket}", "--data-root=#{home}/data", "--exec-root=#{home}/exec",
       "--pidfile=#{home}/pid", "--storage-driver=vfs", "--bridge=none", "--userland-proxy=#{isolated}",
       "--iptables=#{isolated}", "--ip6tables=#{isolated}", "--ip-masq=#{isolated}", "--ip-forward=#{isolated}" ]
@@ -136,6 +143,8 @@ begin
   File.write(warm_env, <<~ENV, perm: 0o600)
     VPS_IMAGE=navishai-reset:#{release1}
     NAVISHAI_APP_HOST=proof.example.invalid
+    NAVISHAI_PUBLIC_LISTEN_ADDRESS=auto
+    VPS_PUBLIC_LISTEN_ADDRESS=203.0.113.9
     NAVISHAI_ACME_EMAIL=proof@example.invalid
     NAVISHAI_DATABASE_PASSWORD=#{password}
     NAVISHAI_POSTGRES_PASSWORD=#{password}
@@ -153,10 +162,15 @@ begin
   run.call("sudo", "-n", "cp", "-a", "#{directory}/build/data", "#{directory}/run/data")
   File.write(File.join(directory, "netns"), "")
   start_service.call("net", [ "sudo", "-n", "unshare", "--net", "sh", "-ec",
-    "mount --bind /proc/self/ns/net #{Shellwords.escape(directory)}/netns; ip link set lo up; exec sleep infinity" ])
+    "mount --bind /proc/self/ns/net #{Shellwords.escape(directory)}/netns; ip link set lo up; ip link add public0 type dummy; ip link set public0 up; ip addr add 203.0.113.9/32 dev public0; ip route add default dev public0 src 203.0.113.9; ip addr add 100.98.160.115/32 dev lo; ip -6 addr add fd7a:115c:a1e0::6634:a074/128 dev lo nodad; exec sleep infinity" ])
   namespace = [ "sudo", "-n", "nsenter", "--net=#{directory}/netns" ]
   wait.call("namespace") { run.call(*namespace, "ip", "link", "show", "lo").include?("UP") }
   docker, daemon_command = daemon.call("run", true)
+  start_service.call("tailnet", namespace + [ RbConfig.ruby, "-rsocket", "-e", 'sockets = [TCPServer.new("100.98.160.115", 443), TCPServer.new("fd7a:115c:a1e0::6634:a074", 443)]; sleep' ])
+  tailnet_check = lambda do
+    run.call(*namespace, RbConfig.ruby, "-rsocket", "-e", 'TCPSocket.new("100.98.160.115", 443).close; TCPSocket.new("fd7a:115c:a1e0::6634:a074", 443).close')
+  end
+  wait.call("tailnet listeners") { tailnet_check.call; true }
   pins.each { |pin| run.call(*docker, "image", "inspect", pin) }
   managed = File.join(directory, "host")
   wrappers = File.join(directory, "bin")
@@ -241,6 +255,14 @@ begin
     printf 'END status=%s\\n' "${results[0]}" >> #{tar_audit}
     exit "${results[0]}"
   SH
+  # Real NSS lookup under a private hosts mount; no public DNS claim or host edit.
+  proof_hosts = File.join(directory, "proof-hosts")
+  File.write(proof_hosts, "127.0.0.1 localhost\n203.0.113.9 proof.example.invalid\n")
+  File.write(File.join(wrappers, "getent"), <<~SH, perm: 0o755)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    exec unshare --mount --propagation private sh -ec 'mount --bind #{proof_hosts} /etc/hosts; exec /usr/bin/getent "$@"' getent "$@"
+  SH
   File.write(File.join(wrappers, "curl"), <<~SH, perm: 0o755)
     #!/usr/bin/env bash
     set -euo pipefail
@@ -264,7 +286,7 @@ begin
     #!/usr/bin/env bash
     set -euo pipefail
     printf '%s\\n' "$*" >> #{systemctl_log}
-    if [[ $1 == start && " $* " == *' navishai-reset.service '* ]]; then
+    if [[ ( $1 == start || $1 == restart ) && " $* " == *' navishai-reset.service '* ]]; then
       line=$(sed -n 's/^ExecStart=//p' #{managed}/etc/systemd/system/navishai-reset.service)
       read -r -a command <<< "$line"
       result=0
@@ -286,7 +308,8 @@ begin
   run.call("sudo", "-n", "chmod", "755", directory)
   run.call("sudo", "-n", "chmod", "700", managed)
   private_env = File.join(directory, "proof.env")
-  cli_prefix = [ "sudo", "-n", "env", "PATH=#{wrappers}:/usr/local/sbin:/usr/sbin:/sbin:#{environment.fetch('PATH')}", "DOCKER_BUILDKIT=0", "COMPOSE_BAKE=false", "timeout", "900", File.join(source, "bin/navishai-vps"), "--root", managed ]
+  # Native host checks and Docker publications must use the same private host namespace.
+  cli_prefix = [ "sudo", "-n", "nsenter", "--net=#{directory}/netns", "env", "PATH=#{wrappers}:/usr/local/sbin:/usr/sbin:/sbin:#{environment.fetch('PATH')}", "DOCKER_BUILDKIT=0", "COMPOSE_BAKE=false", "timeout", "900", File.join(source, "bin/navishai-vps"), "--root", managed ]
   cli = lambda do |*arguments, allowed: true|
     output, status = capture.call(*cli_prefix, *arguments)
     unless status.success? == allowed
@@ -326,9 +349,32 @@ begin
   end
   puts "PASS: real Compose 2.39.4 normalized web/jobs share service:app-net without inherited networks/ports."
   start_service.call("events", [ "sudo", "-n", "sh", "-ec", "exec #{Shellwords.join(event_command)} >> #{events}" ])
-  puts "INSTALL: actual archive/build/pinned pulls/roles/preparation/systemctl startup child."
-  cli.call("install", "--source", source, "--commit", release1, "--env", private_env)
+  puts "INSTALL: reproduce shipped wildcard :443 conflict with preserved IPv4/IPv6 tailnet listeners."
+  failure = cli.call("install", "--source", source, "--commit", release1, "--env", private_env, allowed: false)
+  raise "Wrong partial-install failure" unless failure.include?("0.0.0.0:443") && failure.include?("address already in use")
   raise "Installer did not hand startup to generated systemctl child" unless run.call("sudo", "-n", "cat", systemctl_log).include?("start navishai-reset.service navishai-reset-check.timer")
+  partial_databases = %w[navishai_lab_production navishai_lab_production_cache navishai_lab_production_queue navishai_lab_production_cable]
+  partial_pg = run.call(*docker, "ps", "-q", "--filter", "label=com.docker.compose.service=postgres").strip
+  partial_databases.each do |database|
+    run.call(*docker, "exec", partial_pg, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "navishai_admin", "-d", database, "-c",
+      "SET ROLE navishai_setup; CREATE TABLE ingress_checkpoint(id integer, marker text); INSERT INTO ingress_checkpoint VALUES(13,'kept-before-ingress'); CREATE SEQUENCE ingress_checkpoint_seq; SELECT setval('ingress_checkpoint_seq',47,false)")
+  end
+  run.call("sudo", "-n", "chown", "-R", Etc.getpwuid.uid.to_s, source)
+  ingress_files.each { |path, text| File.write(File.join(source, path), text) }
+  release1 = commit_source.call("test: supported public ingress partial-install recovery")
+  run.call("sudo", "-n", "chown", "-R", "root:root", source)
+  ingress_backup = File.join(directory, "partial-install-backup")
+  cli.call("upgrade", "--source", source, "--commit", release1, "--backup", ingress_backup)
+  env_text = run.call("sudo", "-n", "cat", File.join(managed, "etc/navishai-reset/env"))
+  raise "Discovered IP persisted" unless env_text.include?("NAVISHAI_PUBLIC_LISTEN_ADDRESS='auto'") && !env_text.include?("203.0.113.9")
+  partial_pg = run.call(*docker, "ps", "-q", "--filter", "label=com.docker.compose.service=postgres").strip
+  partial_databases.each do |database|
+    answer = run.call(*docker, "exec", partial_pg, "psql", "-X", "-At", "-U", "navishai_admin", "-d", database, "-c",
+      "SELECT id||':'||marker FROM ingress_checkpoint; SELECT last_value||':'||is_called FROM ingress_checkpoint_seq; SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='ingress_checkpoint'::regclass").strip
+    raise "Ingress upgrade lost #{database}" unless answer == "13:kept-before-ingress\n47:false\nnavishai_setup"
+  end
+  tailnet_check.call
+  puts "PASS: real partial-install wildcard failure upgraded through full stopped-writer backup to public + loopback bindings; four DB rows/sequences/owners and both tailnet listeners preserved."
   containers = lambda do
     ids = run.call(*docker, "ps", "-aq", "--filter", "label=com.docker.compose.project=navishai-reset").split
     ids.empty? ? [] : JSON.parse(run.call(*docker, "inspect", *ids))
@@ -363,6 +409,22 @@ begin
     raise "Database owner #{database}" unless sql.call(database, "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()") == "navishai_setup"
     raise "Schema owner #{database}" unless sql.call(database, "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='public'") == "navishai_setup"
   end
+  owner_password = SecureRandom.hex(24)
+  secrets << owner_password
+  owner_input = JSON.generate(organization_name: "Guided Proof", organization_slug: "guided-proof", workspace_name: "Support Lab", workspace_slug: "support-lab",
+    email_address: "owner@example.invalid", password: owner_password, password_confirmation: owner_password)
+  answers_path = File.join(directory, "guided-answers.json")
+  guided_answers = JSON.parse(owner_input).except("email_address", "password", "password_confirmation").merge(
+    host: "proof.example.invalid", acme_email: "proof@example.invalid", smtp_server: "smtp.example.invalid", smtp_port: "2525",
+    smtp_user: "synthetic", smtp_password: "synthetic-mail-password", smtp_from: "proof@example.invalid",
+    owner_email: "owner@example.invalid", owner_password:, owner_password_confirmation: owner_password)
+  run.call("sudo", "-n", "tee", answers_path, input: JSON.generate(guided_answers))
+  run.call("sudo", "-n", "chmod", "600", answers_path)
+  cli.call("install", "--resume", "--source", source, "--commit", release1, "--non-interactive", "--answers", answers_path)
+  web = service_info.call("web").fetch("Id")
+  proxy = service_info.call("proxy").fetch("Id")
+  raise "Initial Owner or audit missing" unless sql.call(databases.first, "SELECT count(*) FROM installation_states") == "1" && sql.call(databases.first, "SELECT count(*) FROM audit_events WHERE action='installation.bootstrapped'") == "1"
+  puts "PASS: actual guided resume/protected answers use the native chosen-password Owner runner through Compose stdin, with one installation marker and attributable audit."
   puts run.call(*docker, "exec", "-i", web, "bin/rails", "runner", "-", input: File.read(File.join(root, "test/support/container_runtime_proof.rb")))
   verification = <<~'RUBY'
     require Rails.root.join("ops/current_workflows_proof")
@@ -410,11 +472,12 @@ begin
   raise "Startup reused shadowed namespace" if service_info.call("app-net").fetch("Id") == holder.fetch("Id")
   cli.call("check")
   holder = service_info.call("app-net")
+  ingress_address = service_info.call("proxy").fetch("HostConfig").fetch("PortBindings").fetch("80/tcp").fetch(0).fetch("HostIp")
   cli.call("stop")
   writers_stopped.call
   release_path = File.join(managed, "opt/navishai-reset/releases", release1)
-  compose = [ *docker, "compose", "--project-name", "navishai-reset", "--project-directory", release_path, "--env-file", File.join(managed, "etc/navishai-reset/env"), "--file", File.join(release_path, "compose.yaml"), "--file", File.join(release_path, "ops/vps/compose.yaml") ]
-  run.call("sudo", "-n", "env", "VPS_IMAGE=navishai-reset:#{release1}", *compose.drop(2), "up", "-d", "--no-deps", "--wait", "--force-recreate", "app-net", "postgres")
+  compose = [ "sudo", "-n", "env", "VPS_IMAGE=navishai-reset:#{release1}", "VPS_PUBLIC_LISTEN_ADDRESS=#{ingress_address}", *docker.drop(2), "compose", "--project-name", "navishai-reset", "--project-directory", release_path, "--env-file", File.join(managed, "etc/navishai-reset/env"), "--file", File.join(release_path, "compose.yaml"), "--file", File.join(release_path, "ops/vps/compose.yaml") ]
+  run.call(*compose, "up", "-d", "--no-deps", "--wait", "--force-recreate", "app-net", "postgres")
   raise "Holder unchanged" if service_info.call("app-net").fetch("Id") == holder.fetch("Id")
   raise "Postgres unchanged" if service_info.call("postgres").fetch("Id") == pg
   addresses4 = %w[93.184.216.34 169.254.169.254 100.64.1.2 198.18.0.1]
@@ -478,7 +541,7 @@ begin
   storage_value = "Synthetic retained storage #{SecureRandom.hex(8)}"
   # Stopped containers cannot exec; use a real one-off in the already guarded holder namespace.
   marker_command = compose + [ "run", "--rm", "--no-deps", "web", "ruby", "-e", 'File.write("/rails/storage/vps-proof-marker", ARGV.fetch(0))', storage_value ]
-  run.call("sudo", "-n", "env", "VPS_IMAGE=navishai-reset:#{release1}", *marker_command.drop(2))
+  run.call(*marker_command)
   env_path = File.join(managed, "etc/navishai-reset/env")
   env_before = run.call("sudo", "-n", "sha256sum", env_path).split.first
   checkpoint = File.join(directory, "checkpoint")
@@ -492,7 +555,7 @@ begin
   databases.each { |database| sql.call(database, "CREATE TABLE proof_later_mutation(id integer); INSERT INTO proof_later_mutation VALUES (17); UPDATE proof_checkpoint_rows SET marker='later-change'; SELECT setval('proof_checkpoint_rows_id_seq',93,true)") }
   run.call("sudo", "-n", "tee", env_path, input: env_text.sub("smtp.example.invalid", "later.example.invalid"))
   changed_marker = compose + [ "run", "--rm", "--no-deps", "web", "ruby", "-e", 'File.write("/rails/storage/vps-proof-marker", "later-storage")' ]
-  run.call("sudo", "-n", "env", "VPS_IMAGE=navishai-reset:#{release1}", *changed_marker.drop(2))
+  run.call(*changed_marker)
   cli.call("restore", "--from", checkpoint, "--confirm-restore", digest)
   writers_stopped.call
   pg = service_info.call("postgres").fetch("Id")
@@ -564,7 +627,80 @@ begin
   cli.call("start")
   cli.call("check")
   puts verify_history.call
+  tailnet_check.call
   puts "PASS: real daemon restart has no automatic workload-start window; actual CLI reapplies namespace policy."
+  # A second empty daemon/root/network models a different VPS, not same-host restore.
+  portable_backup = File.join(directory, "portable-backup")
+  cli.call("backup", "--output", portable_backup)
+  source_holder = service_info.call("app-net").fetch("Id")
+  source_pg = service_info.call("postgres").fetch("Id")
+  portable_env = run.call("sudo", "-n", "sha256sum", env_path).split.first
+  cli.call("stop")
+  stop_service.call("run")
+  destination_netns = File.join(directory, "destination-netns")
+  run.call("sudo", "-n", "touch", destination_netns)
+  start_service.call("destination-net", [ "sudo", "-n", "unshare", "--net", "sh", "-ec",
+    "mount --bind /proc/self/ns/net #{destination_netns}; ip link set lo up; ip link add public1 type dummy; ip link set public1 up; ip addr add 198.51.100.23/32 dev public1; ip route add default dev public1 src 198.51.100.23; ip addr add 100.98.160.115/32 dev lo; ip -6 addr add fd7a:115c:a1e0::6634:a074/128 dev lo nodad; exec sleep infinity" ])
+  namespace = [ "sudo", "-n", "nsenter", "--net=#{destination_netns}" ]
+  wait.call("destination namespace") { run.call(*namespace, "ip", "link", "show", "public1").include?("UP") }
+  start_service.call("destination-tailnet", namespace + [ RbConfig.ruby, "-rsocket", "-e", 'sockets = [TCPServer.new("100.98.160.115", 443), TCPServer.new("fd7a:115c:a1e0::6634:a074", 443)]; sleep' ])
+  wait.call("destination tailnet") { tailnet_check.call; true }
+  docker, destination_daemon = daemon.call("destination", true, netns: destination_netns)
+  old_managed = managed
+  managed = File.join(directory, "destination-host")
+  run.call("sudo", "-n", "mkdir", "-m", "700", managed)
+  %w[docker curl systemctl].each do |name|
+    path = File.join(wrappers, name)
+    script = File.read(path).gsub("#{directory}/run", "#{directory}/destination").gsub("#{directory}/netns", destination_netns).gsub(old_managed, managed)
+    run.call("sudo", "-n", "tee", path, input: script)
+  end
+  cli_prefix = [ "sudo", "-n", "nsenter", "--net=#{destination_netns}", "env", "PATH=#{wrappers}:/usr/local/sbin:/usr/sbin:/sbin:#{environment.fetch('PATH')}", "DOCKER_BUILDKIT=0", "COMPOSE_BAKE=false", "timeout", "900", File.join(source, "bin/navishai-vps"), "--root", managed ]
+  run.call("sudo", "-n", "tee", proof_hosts, input: "127.0.0.1 localhost\n198.51.100.23 proof.example.invalid\n")
+  portable_digest = run.call("sudo", "-n", "sha256sum", File.join(portable_backup, "CHECKSUMS")).split.first
+  cli.call("recover", "--from", portable_backup, "--confirm-restore", "0" * 64, allowed: false)
+  raise "Unconsented recovery created roots" if File.exist?(File.join(managed, "opt/navishai-reset"))
+  # Fail only synthetic unit registration after real data restore; retry must
+  # validate its owned unfinished receipt without reinstalling/adopting data.
+  systemctl_path = File.join(wrappers, "systemctl")
+  destination_systemctl = File.read(systemctl_path)
+  run.call("sudo", "-n", "tee", systemctl_path, input: destination_systemctl.sub("set -euo pipefail", "set -euo pipefail\n[[ $1 != daemon-reload ]] || exit 7"))
+  cli.call("recover", "--from", portable_backup, "--confirm-restore", portable_digest, allowed: false)
+  writers_stopped.call
+  run.call("sudo", "-n", "tee", systemctl_path, input: destination_systemctl)
+  cli.call("recover", "--resume", "--from", portable_backup, "--confirm-restore", portable_digest)
+  writers_stopped.call
+  pg = service_info.call("postgres").fetch("Id")
+  raise "Destination retained source PG identity" if pg == source_pg
+  raise "Destination catalogs differ" unless checkpoint_state.call == before_restore
+  env_path = File.join(managed, "etc/navishai-reset/env")
+  raise "Portable desired env/secrets differ" unless run.call("sudo", "-n", "sha256sum", env_path).split.first == portable_env
+  cli.call("start")
+  cli.call("check")
+  raise "Destination retained source holder identity" if service_info.call("app-net").fetch("Id") == source_holder
+  raise "Wrong destination public binds" unless service_info.call("proxy").fetch("HostConfig").fetch("PortBindings").fetch("80/tcp") == [ { "HostIp" => "198.51.100.23", "HostPort" => "80" } ]
+  puts verify_history.call
+  tailnet_check.call
+  puts "PASS: consent-bound clean-host bootstrap/restore on a second empty daemon/root/network discovers different public address/interface, preserves exact data/secrets/roles/history, and recreates local identities before gated HTTPS/policy startup."
+  run.call(*namespace, "ip", "addr", "del", "198.51.100.23/32", "dev", "public1")
+  run.call(*namespace, "ip", "addr", "add", "198.51.100.24/32", "dev", "public1")
+  run.call(*namespace, "ip", "route", "replace", "default", "dev", "public1", "src", "198.51.100.24")
+  run.call("sudo", "-n", "tee", proof_hosts, input: "127.0.0.1 localhost\n198.51.100.24 proof.example.invalid\n")
+  cli.call("check", allowed: false)
+  writers_stopped.call
+  cli.call("start")
+  cli.call("check")
+  raise "Startup reused stale address" unless service_info.call("proxy").fetch("HostConfig").fetch("PortBindings").fetch("80/tcp").first.fetch("HostIp") == "198.51.100.24"
+  raise "Address change mutated desired config" unless run.call("sudo", "-n", "sha256sum", env_path).split.first == portable_env
+  cli.call("stop")
+  stop_service.call("destination")
+  start_service.call("destination", destination_daemon)
+  wait.call("destination daemon restart") { run.call(*docker, "info"); true }
+  raise "Destination automatic restart" unless run.call(*docker, "ps", "--quiet").strip.empty?
+  cli.call("start")
+  cli.call("check")
+  puts verify_history.call
+  tailnet_check.call
+  puts "PASS: address change refuses stale binding with stopped writers, automatic gated start reconciles without config edits, and daemon restart preserves the new binding and secure history."
 ensure
   clean = lambda do |*command|
     run.call(*command)

@@ -1,18 +1,25 @@
 # Sourced by bin/navishai-vps; no implicit action when sourced by tests.
+source "${BASH_SOURCE[0]%/*}/ingress.sh"
+source "${BASH_SOURCE[0]%/*}/setup.sh"
+source "${BASH_SOURCE[0]%/*}/destination.sh"
 vps_die() { printf 'navishai-vps: %s\n' "$*" >&2; return 1; }
 vps_help() {
   cat <<'HELP'
 Usage: sudo bin/navishai-vps [--root /] COMMAND [options]
-  init-env --host DNS_NAME --acme-email EMAIL --output NEW_PRIVATE_FILE
-  install --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA --env PRIVATE_FILE
-  upgrade --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA --backup NEW_DIRECTORY
+  install --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA [--resume]
+    Guided setup by default; automation: --non-interactive --answers PRIVATE_JSON
+    Advanced prebuilt configuration: --env PRIVATE_FILE
+  init-env --host DNS_NAME --acme-email EMAIL --output NEW_PRIVATE_FILE [--public-listen-address IPV4|auto]
+  upgrade --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA --backup NEW_DIRECTORY [--public-listen-address IPV4|auto]
+  recover --from BACKUP_DIRECTORY --confirm-restore BACKUP_SHA256 [--resume] [--public-listen-address IPV4|auto]
   backup --output NEW_DIRECTORY
   restore --from BACKUP_DIRECTORY --confirm-restore BACKUP_SHA256
-  start | stop | check | status | doctor
+  start | stop | check | status | doctor | renew-bootstrap
   cleanup [--apply --confirm-destroy PLAN_SHA256]
 
-Install builds only a Git archive, never local edits. Fill SMTP in init-env output.
-Requires root, Linux/systemd, local Docker + Compose >=2.39.4, Git, jq, curl,
+Install builds only a Git archive, never local edits. Guided setup collects SMTP.
+Advanced init-env templates still need SMTP fields before --env installation.
+Requires root, Linux/systemd, local Docker + Compose >=2.39.4, Git, jq, curl, ip, ss,
 OpenSSL, tar, flock, nsenter, iptables/ip6tables and their save/restore tools.
 No package installer, old-data conversion, broad prune or host firewall mutation.
 Cleanup previews exact owned resources; apply destroys them and all reset data.
@@ -65,7 +72,7 @@ vps_load_env() {
     [[ $line =~ ^(NAVISHAI_[A-Z_]+)=(.*)$ ]] || { vps_die 'Expected NAME=value literal dotenv (no shell statements).'; return 1; }
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
     case "$key" in
-      NAVISHAI_APP_HOST|NAVISHAI_ACME_EMAIL|NAVISHAI_DATABASE_PASSWORD|NAVISHAI_POSTGRES_PASSWORD|NAVISHAI_PREPARE_PASSWORD|NAVISHAI_SECRET_KEY_BASE|NAVISHAI_BOOTSTRAP_TOKEN|NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT|NAVISHAI_SYSTEM_SMTP_ADDRESS|NAVISHAI_SYSTEM_SMTP_PORT|NAVISHAI_SYSTEM_SMTP_USER_NAME|NAVISHAI_SYSTEM_SMTP_PASSWORD|NAVISHAI_SYSTEM_SMTP_FROM|NAVISHAI_OIDC_ISSUER|NAVISHAI_OIDC_CLIENT_ID|NAVISHAI_OIDC_CLIENT_SECRET|NAVISHAI_EVALUATION_ENDPOINTS|NAVISHAI_SCENARIO_ENDPOINTS|NAVISHAI_CORPUS_ENDPOINTS|NAVISHAI_MATCHING_ENDPOINTS|NAVISHAI_IMPACT_ENDPOINTS|NAVISHAI_TRACE_DISCOVERY_ENDPOINTS) ;;
+      NAVISHAI_APP_HOST|NAVISHAI_PUBLIC_LISTEN_ADDRESS|NAVISHAI_ACME_EMAIL|NAVISHAI_DATABASE_PASSWORD|NAVISHAI_POSTGRES_PASSWORD|NAVISHAI_PREPARE_PASSWORD|NAVISHAI_SECRET_KEY_BASE|NAVISHAI_BOOTSTRAP_TOKEN|NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT|NAVISHAI_SYSTEM_SMTP_ADDRESS|NAVISHAI_SYSTEM_SMTP_PORT|NAVISHAI_SYSTEM_SMTP_USER_NAME|NAVISHAI_SYSTEM_SMTP_PASSWORD|NAVISHAI_SYSTEM_SMTP_FROM|NAVISHAI_OIDC_ISSUER|NAVISHAI_OIDC_CLIENT_ID|NAVISHAI_OIDC_CLIENT_SECRET|NAVISHAI_EVALUATION_ENDPOINTS|NAVISHAI_SCENARIO_ENDPOINTS|NAVISHAI_CORPUS_ENDPOINTS|NAVISHAI_MATCHING_ENDPOINTS|NAVISHAI_IMPACT_ENDPOINTS|NAVISHAI_TRACE_DISCOVERY_ENDPOINTS) ;;
       *) vps_die "Unsupported environment key: $key"; return 1 ;;
     esac
     [[ " ${keys[*]} " != *" $key "* ]] || { vps_die "Duplicate key: $key"; return 1; }
@@ -76,6 +83,7 @@ vps_load_env() {
     printf -v "$key" '%s' "$value"; export "$key"
   done < "$VPS_CONFIG/env"
   vps_identity || return 1
+  [[ ${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto} == auto ]] || vps_public_listen_address "$NAVISHAI_PUBLIC_LISTEN_ADDRESS" || { vps_die 'Invalid desired public listen address.'; return 1; }
   for key in NAVISHAI_DATABASE_PASSWORD NAVISHAI_POSTGRES_PASSWORD NAVISHAI_PREPARE_PASSWORD NAVISHAI_SECRET_KEY_BASE; do
     [[ ${!key:-} =~ ^[a-zA-Z0-9_-]{32,}$ ]] || { vps_die "Use at least 32 random URL-safe characters for $key."; return 1; }
   done
@@ -92,11 +100,13 @@ vps_load_env() {
 vps_init_env() {
   [[ -n $host && -n $email && -n $output && ! -e $output && ! -L $output ]] || { vps_die 'init-env needs --host, --acme-email and a new --output file.'; return 1; }
   NAVISHAI_APP_HOST="$host" NAVISHAI_ACME_EMAIL="$email" vps_identity || return 1
+  vps_resolve_ingress "${listen_address:-auto}" || return 1
   vps_directory "$(dirname -- "$(realpath -m -- "$output")")" || return 1
   (set -o noclobber
     {
       printf '# Literal dotenv; single quotes, no embedded quotes/backslashes. Fill SMTP before install.\n'
       printf "NAVISHAI_APP_HOST='%s'\nNAVISHAI_ACME_EMAIL='%s'\n" "$host" "$email"
+      printf "NAVISHAI_PUBLIC_LISTEN_ADDRESS='%s'\n" "${listen_address:-auto}"
       local key
       for key in DATABASE_PASSWORD POSTGRES_PASSWORD PREPARE_PASSWORD SECRET_KEY_BASE BOOTSTRAP_TOKEN; do printf "NAVISHAI_%s='%s'\n" "$key" "$(openssl rand -hex 48)"; done
       printf "NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT='%s'\n" "$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)"
@@ -111,7 +121,7 @@ vps_docker() { docker "$@"; }
 vps_doctor() {
   [[ $EUID == 0 && $(uname -s) == Linux ]] || { vps_die 'Requires root on Linux.'; return 1; }
   local tool version
-  for tool in docker git jq curl openssl tar flock nsenter iptables ip6tables iptables-save ip6tables-save iptables-restore ip6tables-restore findmnt systemctl realpath sha256sum; do
+  for tool in docker git jq curl getent awk openssl tar flock nsenter ip iptables ip6tables iptables-save ip6tables-save iptables-restore ip6tables-restore ss findmnt systemctl realpath sha256sum; do
     command -v "$tool" >/dev/null || { vps_die "Missing prerequisite: $tool"; return 1; }
   done
   [[ $(vps_docker context inspect --format '{{.Endpoints.docker.Host}}') == unix:///* ]] || { vps_die 'Only the local Unix Docker context is supported.'; return 1; }
@@ -121,6 +131,7 @@ vps_doctor() {
   [[ $VPS_ROOT != / || -d /run/systemd/system ]] || { vps_die 'Persistent startup requires systemd.'; return 1; }
 }
 vps_compose() {
+  vps_resolve_ingress || return 1
   local -a files=(--file "$VPS_RELEASE/compose.yaml" --file "$VPS_RELEASE/ops/vps/compose.yaml")
   if [[ -e $VPS_STATE/recovery-images.yaml || -L $VPS_STATE/recovery-images.yaml ]]; then
     vps_private "$VPS_STATE/recovery-images.yaml" || return 1
@@ -256,6 +267,8 @@ vps_https() {
 }
 vps_start() {
   vps_stop || return 1
+  vps_ingress_check || return 1
+  vps_dns_check || return 1
   vps_compose up -d --pull never --no-build --no-deps --wait postgres || return 1
   # Fresh namespace avoids stale/partial rules after replacement or interrupted apply.
   vps_compose up -d --pull never --no-build --no-deps --force-recreate --wait app-net || return 1
@@ -273,6 +286,7 @@ vps_start() {
   $ready || { vps_stop; vps_die 'Web readiness failed.'; return 1; }
   vps_policy_check || { vps_stop; return 1; }
   vps_compose up -d --pull never --no-build --no-deps proxy || { vps_stop; return 1; }
+  vps_ingress_binding_check || { vps_stop; return 1; }
   ready=false
   for attempt in {1..60}; do
     if vps_https; then ready=true; break; fi
@@ -290,17 +304,15 @@ vps_services_check() {
   curl --noproxy '*' --fail --silent --max-time 5 --header "Host: $NAVISHAI_APP_HOST" http://127.0.0.1:3000/up >/dev/null
 }
 vps_check() {
-  vps_policy_check && vps_runtime_check && vps_services_check || { vps_stop; return 1; }
+  vps_policy_check && vps_runtime_check && vps_services_check && vps_ingress_binding_check || { vps_stop; return 1; }
 }
-vps_units() {
+vps_units() (
   mkdir -p -- "$VPS_UNITS" "$(dirname -- "$VPS_CLI")" || return 1
   vps_directory "$VPS_UNITS" && vps_directory "$(dirname -- "$VPS_CLI")" || return 1
-  local file
-  for file in "$VPS_UNITS/navishai-reset.service" "$VPS_UNITS/navishai-reset-check.service" "$VPS_UNITS/navishai-reset-check.timer" "$VPS_CLI"; do
-    [[ ! -e $file && ! -L $file ]] || { vps_die "Existing unclaimed service/CLI: $file"; return 1; }
-  done
-  ln -s "$VPS_PREFIX/current/bin/navishai-vps" "$VPS_CLI"
-  cat > "$VPS_UNITS/navishai-reset.service" <<UNIT
+  local file temporary
+  temporary="$(mktemp -d "$VPS_STATE/.units.XXXXXXXX")" || return 1
+  trap 'rm -rf -- "$temporary"' EXIT
+  cat > "$temporary/navishai-reset.service" <<UNIT
 [Unit]
 Description=NavishAI reset gated startup
 Requires=docker.service network-online.target
@@ -318,7 +330,7 @@ TimeoutStopSec=90
 [Install]
 WantedBy=multi-user.target docker.service
 UNIT
-  cat > "$VPS_UNITS/navishai-reset-check.service" <<UNIT
+  cat > "$temporary/navishai-reset-check.service" <<UNIT
 [Unit]
 Description=NavishAI reset fail-closed policy check
 After=navishai-reset.service
@@ -327,7 +339,7 @@ ConditionPathExists=$VPS_STATE/install.json
 Type=oneshot
 ExecStart=$VPS_CLI --root $VPS_ROOT check
 UNIT
-  cat > "$VPS_UNITS/navishai-reset-check.timer" <<'UNIT'
+  cat > "$temporary/navishai-reset-check.timer" <<'UNIT'
 [Unit]
 Description=Check NavishAI reset namespace binding
 [Timer]
@@ -337,14 +349,22 @@ Unit=navishai-reset-check.service
 [Install]
 WantedBy=timers.target
 UNIT
-  chmod 644 -- "$VPS_UNITS/navishai-reset.service" "$VPS_UNITS/navishai-reset-check.service" "$VPS_UNITS/navishai-reset-check.timer"
+  for file in navishai-reset.service navishai-reset-check.service navishai-reset-check.timer; do
+    if [[ -e $VPS_UNITS/$file || -L $VPS_UNITS/$file ]]; then
+      [[ -f $VPS_UNITS/$file && ! -L $VPS_UNITS/$file && $(stat -c '%u:%a:%h' -- "$VPS_UNITS/$file") == 0:644:1 ]] && cmp -s -- "$temporary/$file" "$VPS_UNITS/$file" || { vps_die "Existing unclaimed service/CLI: $file"; return 1; }
+    fi
+  done
+  if [[ -e $VPS_CLI || -L $VPS_CLI ]]; then
+    [[ -L $VPS_CLI && $(stat -c %u -- "$VPS_CLI") == 0 && $(readlink -- "$VPS_CLI") == "$VPS_PREFIX/current/bin/navishai-vps" ]] || { vps_die 'Existing unclaimed CLI.'; return 1; }
+  else ln -s "$VPS_PREFIX/current/bin/navishai-vps" "$VPS_CLI" || return 1; fi
+  for file in navishai-reset.service navishai-reset-check.service navishai-reset-check.timer; do
+    [[ -e $VPS_UNITS/$file ]] || install -m 644 -- "$temporary/$file" "$VPS_UNITS/$file" || return 1
+  done
   systemctl daemon-reload && systemctl enable navishai-reset.service navishai-reset-check.timer
-}
-vps_install() {
-  [[ -n $source && -n $commit && -n $envfile ]] || { vps_die 'Install requires --source, --commit and --env.'; return 1; }
+)
+vps_fresh_check() {
   local path existing
   for path in "$VPS_PREFIX" "$VPS_CONFIG" "$VPS_STATE" "$VPS_CLI"; do [[ ! -e $path && ! -L $path ]] || { vps_die "Fresh install path exists: $path"; return 1; }; done
-  vps_private "$envfile" || return 1
   # No reuse of a manual/old project's state, even when the name happens to match.
   existing="$(vps_docker ps -aq --filter "label=com.docker.compose.project=$VPS_PROJECT")" || return 1
   [[ -z $existing ]] || { vps_die 'Project containers already exist; refuse adoption.'; return 1; }
@@ -356,25 +376,41 @@ vps_install() {
   while IFS= read -r path; do
     case "$path" in navishai-reset_control|navishai-reset_edge) vps_die "Named network already exists, even without labels: $path"; return 1 ;; esac
   done <<< "$existing"
+}
+vps_install() {
+  [[ -n $source && -n $commit && -n $envfile ]] || { vps_die 'Install requires reviewed --source and --commit.'; return 1; }
+  vps_fresh_check && vps_private "$envfile" || return 1
   mkdir -p -m 700 -- "$VPS_PREFIX" "$VPS_CONFIG" "$VPS_STATE"
   vps_directory "$VPS_PREFIX" && vps_directory "$VPS_CONFIG" && vps_directory "$VPS_STATE" || return 1
   vps_lock || return 1
-  if ! { install -m 600 -- "$envfile" "$VPS_CONFIG/env" && vps_load_env && vps_archive "$source" "$commit" >/dev/null && vps_switch "$commit" installing && vps_load; }; then
+  if ! { install -m 600 -- "$envfile" "$VPS_CONFIG/env" && vps_load_env && vps_ingress_check && vps_archive "$source" "$commit" >/dev/null && vps_switch "$commit" installing && vps_load; }; then
     # These roots did not exist before this invocation; no Docker work has run.
     rm -rf --one-file-system -- "$VPS_PREFIX" "$VPS_CONFIG" "$VPS_STATE" || return 1
     return 1
   fi
+  vps_finish_install
+}
+vps_resume() {
+  vps_load && vps_lock || return 1
+  [[ $commit == "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" && -n $source ]] || { vps_die 'Resume needs the same reviewed source and full installed commit.'; return 1; }
+  vps_cleanup_plan >/dev/null && vps_stop && vps_ingress_check || return 1
+  vps_finish_install
+}
+vps_finish_install() {
   vps_compose build web jobs || return 1
   vps_pull_pins || return 1
   vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate || return 1
   vps_units || return 1
   # The systemd child must take the same lock, not collide with this installer.
   flock -u "$VPS_LOCK" || return 1
-  systemctl start navishai-reset.service navishai-reset-check.timer || return 1
+  systemctl restart navishai-reset.service navishai-reset-check.timer || return 1
   printf 'Installed reviewed reset. Open https://%s; bootstrap token stays in private env.\n' "$NAVISHAI_APP_HOST"
 }
 vps_candidate() {
-  vps_switch "$commit" upgrading && vps_load || return 1
+  vps_switch "$commit" upgrading || return 1
+  # Backup captured the old env first. Legacy configuration becomes portable auto.
+  vps_write_ingress "${listen_address:-${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto}}" || return 1
+  vps_load && vps_ingress_check || return 1
   rm -f -- "$VPS_STATE/recovery-images.yaml"
   vps_compose build web jobs && vps_pull_pins || return 1
   vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate && vps_start
@@ -382,6 +418,8 @@ vps_candidate() {
 vps_upgrade() {
   [[ -n $source && -n $commit && -n $backup ]] || { vps_die 'Upgrade needs --source, --commit and --backup.'; return 1; }
   [[ $commit != "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" ]] || { vps_die 'Already on this release.'; return 1; }
+  local VPS_INGRESS_OVERRIDE="${listen_address:-}"
+  vps_resolve_ingress "${listen_address:-${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto}}" || return 1
   vps_archive "$source" "$commit" >/dev/null || return 1
   vps_backup "$backup" || return 1
   if vps_candidate; then printf 'Upgrade passed runtime/schema/policy gates. Recovery point: %s\n' "$backup";
@@ -422,12 +460,12 @@ vps_cleanup_plan() {
   if [[ -e $VPS_CLI || -L $VPS_CLI ]]; then
     [[ -L $VPS_CLI && $(realpath -e -- "$VPS_CLI") == "$VPS_RELEASE/bin/navishai-vps" ]] || { vps_die 'Unclaimed reset CLI.'; return 1; }
   else
-    [[ $(jq -r .phase "$VPS_STATE/install.json") == installing ]] || return 1
+    [[ $(jq -r .phase "$VPS_STATE/install.json") =~ ^(installing|recovering)$ ]] || return 1
   fi
   local -a units=()
   for file in navishai-reset.service navishai-reset-check.service navishai-reset-check.timer; do
     if [[ ! -e $VPS_UNITS/$file && ! -L $VPS_UNITS/$file ]]; then
-      [[ $(jq -r .phase "$VPS_STATE/install.json") == installing ]] || return 1
+      [[ $(jq -r .phase "$VPS_STATE/install.json") =~ ^(installing|recovering)$ ]] || return 1
       continue
     fi
     [[ -f $VPS_UNITS/$file && ! -L $VPS_UNITS/$file && $(stat -c %u "$VPS_UNITS/$file") == 0 ]] || { vps_die "Unclaimed unit: $file"; return 1; }
@@ -461,7 +499,7 @@ vps_cleanup() {
   printf 'Removed only verified reset resources. Images/packages/external backups remain.\n'
 }
 vps_main() {
-  local root=/ command= source= commit= envfile= backup= output= host= email= from= confirmation= apply=false
+  local root=/ command= source= commit= envfile= backup= output= host= email= listen_address= from= confirmation= answers= apply=false non_interactive=false resume=false
   if [[ ${1:-} == --root ]]; then [[ $# -ge 3 ]] || return 1; root="$2"; shift 2; fi
   command="${1:-help}"; (($# == 0)) || shift
   case "$command" in help|--help|-h) vps_help; return ;; esac
@@ -469,18 +507,25 @@ vps_main() {
   vps_paths "$root" || return 1
   while (($#)); do
     case "$1" in
-      --source|--commit|--env|--backup|--output|--host|--acme-email|--from|--confirm-restore|--confirm-destroy)
+      --source|--commit|--env|--backup|--output|--host|--acme-email|--public-listen-address|--from|--confirm-restore|--confirm-destroy|--answers)
         [[ $# -ge 2 ]] || { vps_die "Missing value: $1"; return 1; }
         case "$1" in
           --source) source="$(realpath -e -- "$2")" ;; --commit) commit="$2" ;; --env) envfile="$2" ;;
           --backup) backup="$2" ;; --output) output="$2" ;; --host) host="$2" ;; --acme-email) email="$2" ;;
+          --public-listen-address) listen_address="$2" ;;
+          --answers) answers="$2" ;;
           --from) from="$2" ;; --confirm-restore|--confirm-destroy) confirmation="$2" ;;
         esac
         shift 2 ;;
       --apply) apply=true; shift ;;
+      --non-interactive) non_interactive=true; shift ;;
+      --resume) resume=true; shift ;;
       *) vps_die "Unknown option: $1"; return 1 ;;
     esac
   done
+  [[ -z $listen_address || $command == init-env || $command == install || $command == upgrade || $command == recover ]] || { vps_die '--public-listen-address is only for setup, backed-up upgrade or destination recovery.'; return 1; }
+  [[ $command == install || ( -z $answers && $non_interactive == false ) ]] || return 1
+  [[ $resume == false || $command == install || $command == recover ]] || return 1
   [[ $command != init-env ]] || { vps_init_env; return; }
   # Emergency stop does not need healthy config, Compose, Git or firewall tools.
   [[ $command != stop ]] || {
@@ -490,7 +535,8 @@ vps_main() {
   }
   vps_doctor || return 1
   [[ $command != doctor ]] || { printf 'Local tool/Docker prerequisites pass; DNS/ports/SMTP are not certified.\n'; return; }
-  [[ $command != install ]] || { vps_install; return; }
+  [[ $command != install ]] || { if [[ -n $envfile ]]; then [[ $resume == false && -z $answers ]] && vps_install; else vps_setup; fi; return; }
+  [[ $command != recover ]] || { vps_recover; return; }
   case "$command" in cleanup) vps_load cleanup ;; restore) vps_load no-env ;; *) vps_load ;; esac || {
     case "$command" in check|start) vps_stop ;; esac
     return 1
@@ -501,6 +547,7 @@ vps_main() {
     status) printf 'Release: %s\n' "$(cat "$VPS_RELEASE/SOURCE_COMMIT")"; vps_compose ps; vps_policy_check && vps_runtime_check && vps_services_check || return 1; printf 'Verified local HTTPS: '; vps_https && echo reachable ;;
     backup) [[ -n $output ]] || { vps_die 'backup needs --output.'; return 1; }; vps_backup "$output" && vps_start ;;
     upgrade) vps_upgrade ;;
+    renew-bootstrap) vps_renew_bootstrap ;;
     restore) [[ -n $from && $confirmation =~ ^[0-9a-f]{64}$ && $(sha256sum "$from/CHECKSUMS" | cut -d' ' -f1) == "$confirmation" ]] || { vps_die 'Inspect backup; --confirm-restore needs CHECKSUMS SHA256 (all payloads).' ; return 1; }; vps_restore "$from" && vps_load_env ;;
     cleanup) vps_cleanup "$apply" "$confirmation" ;;
     *) vps_die "Unknown command: $command"; return 1 ;;

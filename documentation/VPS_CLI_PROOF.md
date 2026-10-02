@@ -9,7 +9,10 @@ ruby test/support/vps_cli_proof.rb
 The proof calls the real `bin/navishai-vps` entrypoint. It starts from exact
 reset base `6c9fa890127c7cbfac59b810f68ebd9b3bb77603`, copies the current
 VPS units into a private source checkout, records their SHA-256 values and
-commits that synthetic source. Install and upgrade still build Git archives,
+commits that synthetic source. The ingress regression first uses the shipped
+CLI/override from [`cc443cf`](https://github.com/glnarayanan/navishai/commit/cc443cf09dc8be9d4ea1239b78ff7c642ce0c0ae),
+then upgrades to the current files. Both source identities enter the log.
+Install and upgrade still build Git archives,
 not the working tree. No production file changes in the shared checkout.
 
 ## Isolation and substitutions
@@ -31,8 +34,15 @@ The runtime daemon and Docker bridges live in a separate network namespace.
 They have no host route or registry proxy. Actual install and upgrade must
 accept cached exact pinned images without registry access. Actual Compose
 builds reuse the copied cache. The proof never selects a shared Docker daemon.
+Synthetic public IPv4 addresses live on private dummy interfaces with a matching
+default route; tailnet IPv4/IPv6 addresses live on private loopback. Neither
+namespace has a host route. The actual CLI reads those native interfaces/routes,
+not an `ip` mock or a supplied production override. Real TCP
+listeners hold both tailnet addresses on 443 throughout install, upgrade, restore
+and daemon restart. They model the proven bind conflict, not Tailscale access,
+Serve/Funnel configuration or a real Tailscale daemon.
 
-Only two host interfaces change for the test:
+The proof substitutes these external interfaces:
 
 - A PATH-scoped `systemctl` fixture records registration and runs the exact
   generated ExecStart in a separate process. The real startup child must
@@ -43,6 +53,9 @@ Only two host interfaces change for the test:
   namespace and supplies Caddy's generated internal CA during the install gate.
   The real CLI resolves HTTPS to namespace loopback and checks CA and hostname
   before recording READY. No request uses `-k` or skips certificate checks.
+- A PATH-scoped `getent` fixture uses real NSS under a private mount namespace
+  with a synthetic hosts entry. It changes neither host DNS nor `/etc/hosts`.
+  This checks the native resolution gate but does not prove public DNS.
 
 The only production source adjustment is `tls internal` in the synthetic
 Caddyfile. The fixture restores executable mode on the private CLI copy because
@@ -58,9 +71,18 @@ enters the repository.
 
 ## Checks
 
-The proof exercises actual install, startup, check, status, stop, upgrade,
-backup and consent-bound restore. It checks:
+The proof exercises actual install, guided resume, startup, check, status, stop,
+upgrade, backup, consent-bound restore and clean-destination recovery. It checks:
 
+- The shipped wildcard proxy fails with the exact `0.0.0.0:443` bind error
+  after web/jobs start; failure handlers stop them. The new source CLI upgrades
+  that partial install through full backup before changing private ingress
+  config. Four-DB checkpoint rows, sequence state and owners stay fixed.
+- Public IPv4 80/443 plus loopback 443 without wildcard or tailnet bindings;
+  both tailnet listeners stay reachable and trusted loopback HTTPS still passes.
+- Desired `auto` with no discovered IP in config; automatic partial-install
+  upgrade needs no address input. Protected guided answers create the native
+  chosen-password Owner through real Compose stdin and record one bootstrap audit.
 - Installer-to-startup lock handoff, exact shared runtime namespace,
   dropped capabilities, runtime UID and disabled Docker auto-restart.
 - Unchanged holder/PostgreSQL IDs and Running=true across stopped workload
@@ -85,6 +107,14 @@ backup and consent-bound restore. It checks:
 - No live writers before/after preparation/dump/restore/storage commands and
   no Docker workload-start event inside those audited windows.
 - No Docker auto-start after actual daemon restart, then explicit reapply.
+- A second empty Docker daemon/root/network with a different public address
+  and interface receives the complete consented source backup. Exact catalogs,
+  secrets and history match; local container identities differ. Recovery starts
+  no writers. A synthetic registration failure after real restore exercises
+  guarded `recover --resume` rather than adoption, deletion or reinstall.
+- Changing the destination address makes `check` stop stale writers. Automatic
+  gated startup recreates bindings without config edits; destination daemon
+  restart keeps the new binding, roles and fixed history.
 - Removal of the private daemons, containers, volumes, images, namespace,
   source and managed host tree, with host IPv4/IPv6 firewall and checked
   sysctl values unchanged.
@@ -105,6 +135,72 @@ network/TLS acceptance need a separately authorised host.
 
 ## Run evidence
 
+The separate fast proof uses the real normalized Compose port definitions and
+kernel TCP binds in a disposable namespace:
+
+```sh
+ruby test/support/vps_ingress_proof.rb /path/to/checksum-verified-compose-2.39.4
+```
+
+It reproduced wildcard `EADDRINUSE` with the shipped override, then passed with
+the fixed public/loopback bindings while both tailnet listeners stayed reachable.
+It also calls the actual ingress preflight against those native listeners, first
+free and then occupied. It uses no Docker daemon or host-network mutation and
+does not certify Docker publication, Caddy TLS or the owner's VPS by itself.
+
+### Automatic ingress, guided setup and portable recovery
+
+The full current joined proof returned exit 0 and `CLEAN`. All 11 frozen
+production hashes still match the worktree. Key SHA-256 values are:
+
+| File | SHA-256 |
+| --- | --- |
+| `ops/vps/cli.sh` | `6c1fd88ce1f4cd783240618b0988e3f4f6431ee906f196245731e75ecdcf5afd` |
+| `ops/vps/ingress.sh` | `23c0a4cc43848c18343e0787e513cc3a1f99dec408b259e67239d704ac925a69` |
+| `ops/vps/setup.sh` | `4c31b95f999d8b0bcae2bc03efaddedc209273e31370a555f9c838dacc6e7bb0` |
+| `ops/vps/destination.sh` | `a8964aaab502afbf9c8f31875e61262d8b20cb8fa52726937775e7293d67339f` |
+| `ops/vps/recovery.sh` | `988ac42cba9a66179fcb9497d46b15ac6033a5422ed6052d84c2fe57c6096c98` |
+| Executed proof | `2cb59ebd9ea29a997bd42e285b428f8633a5ada7b89e74d18502a289fe7cef74` |
+| Redacted log | `4c0e7a598780af100a3b7494ef64aeb39a5b797bfe35ec4411fda265aaabd748` |
+
+It passed every check above, including the real wildcard failure and backed-up
+automatic partial-install upgrade with both tailnet listeners preserved. Guided
+resume created the chosen Owner through stdin-only `exec -T` in the running web
+service, with one installation marker and one attributable bootstrap audit.
+The four-DB/env/storage restore and committed-mutation failed-upgrade rollback
+passed. Before the final source daemon restart, 18 actual pre-start inspections
+and 175 maintenance windows found stable guarded dependencies, stopped workloads
+and no workload-start event inside maintenance.
+
+An empty second daemon/root/network received the source backup on a different
+public address/interface without a supplied IP. Wrong consent failed before
+bootstrap; an injected registration failure left writers stopped and a guarded
+resume succeeded. Exact data, secrets, roles and history matched with new local
+identities. A later address change made `check` stop stale writers; gated startup
+and daemon restart used the new address without config edits. Both tailnet
+listeners remained reachable. Cleanup removed all private assets and matched host
+IPv4/IPv6 firewall and all four sysctls.
+
+Four embedded Ruby and five embedded Bash syntax checks pass. Sequential native
+CI passes 718 Rails tests / 11,424 assertions (seed 47436) and 71 browser tests /
+3,562 assertions (seed 53985). It finished in 24m20.20s. Final operations after the
+last setup fixes pass 85 / 1,011 (seed 47436); all 388 Ruby files pass native style.
+The broad CI run began before those setup refinements; final operations and this
+frozen proof rechecked the changed source afterwards. No check was weakened.
+
+Earlier current-source attempts caught a one-off Owner container launched beside
+live writers, then a fixture storage call missing its derived Compose address.
+Owner setup now uses the running runtime service; every stopped-maintenance guard
+remains. The fixture's shared Compose vector now carries the actual inspected
+binding for all three direct calls. Those failed runs cleaned their assets and
+do not count as green evidence. No real Tailscale, public ACME/DNS, SMTP delivery,
+systemd registration/reboot, VPS or customer acceptance follows from this run.
+
+### Earlier joined proof
+
+The following result predates the ingress extension and records only its earlier
+scope; it cannot certify changed source.
+
 Ruby syntax, four embedded Ruby blocks, four embedded Bash blocks and native
 RuboCop pass. On 2 October 2026, the full joined CLI proof returned exit 0 with
 CLI SHA-256
@@ -115,7 +211,7 @@ The executed proof script SHA-256 is
 `11331ea0d6ccdd72a401c5b7081c0610e6cb7759f8a2edab46d0443c25e44736`.
 The log records all seven production file hashes and the synthetic release.
 
-The completed run passed all checks above, including:
+That completed run passed the pre-ingress checks, including:
 
 - Actual install, startup-child lock handoff, trusted internal-CA HTTPS,
   restricted roles across four databases, native jobs and privilege denials.
