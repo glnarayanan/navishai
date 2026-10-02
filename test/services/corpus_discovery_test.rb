@@ -2,6 +2,7 @@ require "test_helper"
 
 class CorpusDiscoveryTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
+  include ActiveSupport::Testing::ConstantStubbing
 
   setup do
     @corpus = workspaces(:acme_support).corpora.create!(name: "Company issues")
@@ -13,6 +14,81 @@ class CorpusDiscoveryTest < ActiveSupport::TestCase
       { id: "rare", title: "Quasar webhook replay", content: "Quasar webhook replay causes data loss. Engineering escalation. Still broken.", context: { impact: "critical" } }
     ]
     @snapshot = intake(@records.to_json)
+  end
+
+  test "explicit full text separates late diagnostic terms without changing the fixed older windows" do
+    prefix = "Shared preamble. " + " " * 4100
+    snapshot = intake([
+      { id: "late-cert", title: "Imported record", content: prefix + "Nacre certificate metadata expiry. " * 20 },
+      { id: "late-cursor", title: "Imported record", content: prefix + "Quasar pagination checkpoint discarded. " * 20 }
+    ].to_json)
+    original = request(2)
+    streaming = request(2, processing_method: "local_stream")
+    full = request(2, processing_method: "local_full_text")
+    intake([ { id: "later", title: "Replacement history", content: "Other company evidence." } ].to_json)
+    [ original, streaming, full ].each do |analysis|
+      2.times { CorpusAnalysisJob.perform_now(analysis.id) }
+      assert_equal "complete", analysis.reload.state, analysis.error
+      assert_equal [ snapshot.id ], analysis.corpus_items.pluck(:source_snapshot_id).uniq
+      assert_equal 2, ClusterMember.where(issue_cluster: analysis.issue_clusters).count
+    end
+    assert_equal "tfidf-full-text-seed-centroid-selection-v3", full.processing_method
+    assert_equal [ 2000, 10.megabytes ], full.input_limits
+    assert_equal "complete", full.summary.fetch("text_window")
+    assert_equal 0.3, full.summary.fetch("similarity_threshold")
+    partitions = full.issue_clusters.map { |cluster| cluster.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id") }
+    assert_equal [ [ "late-cert" ], [ "late-cursor" ] ], partitions.sort
+    [ original, streaming ].each do |analysis|
+      assert_equal 4000, analysis.summary.fetch("text_window")
+      assert_equal [ "late-cert", "late-cursor" ], analysis.issue_clusters.sole.cluster_members.joins(:corpus_item).order("corpus_items.external_id").pluck("corpus_items.external_id")
+    end
+    assert_equal CorpusAnalysis::METHOD, original.processing_method
+    assert_equal CorpusAnalysis::STREAM_METHOD, streaming.processing_method
+    scenarios = ScenarioMining.call(analysis: full, membership: @membership)
+    assert_equal 2, scenarios.size
+    assert_equal [ snapshot.id ], scenarios.map { |scenario| scenario.corpus_item.source_snapshot_id }.uniq
+    assert scenarios.all? { |scenario| !scenario.current_version.approved? && scenario.current_version.scenario_reviews.empty? }
+    assert_empty full.taxonomy_versions
+    assert_raises(ActiveRecord::ReadonlyAttributeError) { full.update!(processing_method: CorpusAnalysis::METHOD) }
+  end
+
+  test "full text uses existing resource budgets and rolls back each overflow without retry" do
+    intake([
+      { id: "a", title: "Azure certificate", content: " " * 4100 + "Azure certificate metadata" },
+      { id: "b", title: "Azure certificate", content: " " * 4100 + "Azure certificate rotation" },
+      { id: "c", title: "Quasar replay", content: " " * 4100 + "Quasar replay" }
+    ].to_json)
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Policy", kind: "document", bytes: "Certificate policy.")
+    # Eight distinct per-conversation entries, seven union terms including the
+    # document, and one shared-term seed comparison. Late terms must count too.
+    [ [ :MAX_TERM_ENTRIES, 8 ], [ :MAX_DISTINCT_TERMS, 7 ], [ :MAX_SEED_COMPARISONS, 1 ] ].each do |name, boundary|
+      stub_const(CorpusDiscovery, name, boundary) do
+        analysis = request(2, processing_method: "local_full_text")
+        CorpusAnalysisJob.perform_now(analysis.id)
+        assert_equal "complete", analysis.reload.state, "#{name}: #{analysis.error}"
+      end
+      stub_const(CorpusDiscovery, name, boundary - 1) do
+        analysis = request(2, processing_method: "local_full_text")
+        assert_no_difference [ "IssueCluster.count", "ClusterMember.count", "CorpusAnalysisResult.count", "AuditEvent.count" ] do
+          assert_no_enqueued_jobs { 2.times { CorpusAnalysisJob.perform_now(analysis.id) } }
+        end
+        assert_equal "failed", analysis.reload.state, name.to_s
+        assert_match(/Full-text local discovery exceeded.*budget/, analysis.error)
+        assert_empty analysis.summary
+      end
+    end
+  end
+
+  test "full text cannot accept model configuration or disclosure and preserves local writer checks" do
+    assert_no_difference [ "CorpusAnalysis.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        assert_raises(CorpusIntake::Invalid) { request(2, processing_method: "local_full_text", configuration: { "endpoint" => "https://invalid.example/eval" }) }
+        assert_raises(CorpusIntake::Invalid) { request(2, processing_method: "local_full_text", disclose: true) }
+        Membership.create!(workspace: @corpus.workspace, user: users(:teammate), role: :owner)
+        @membership.update!(role: :viewer)
+        assert_raises(Current::RoleAccessDenied) { request(2, processing_method: "local_full_text") }
+      end
+    end
   end
 
   test "scalar batches keep global frequencies full-text risk and seed-order centroid ties without source objects" do
@@ -136,8 +212,8 @@ class CorpusDiscoveryTest < ActiveSupport::TestCase
   end
 
   private
-    def request(limit)
-      CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: limit)
+    def request(limit, **options)
+      CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: limit, **options)
     end
 
     def intake(bytes)

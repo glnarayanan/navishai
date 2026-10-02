@@ -2,6 +2,61 @@ require "application_system_test_case"
 
 class StreamingDiscoveryJourneyTest < ApplicationSystemTestCase
   include ActiveJob::TestHelper
+  include ActiveSupport::Testing::ConstantStubbing
+
+  test "expert selects full text inspects late-term families and sees a bounded failure without partial proposals" do
+    membership = memberships(:owner_support)
+    workspace = membership.workspace
+    corpus = workspace.corpora.create!(name: "Synthetic late-diagnostic history")
+    prefix = "Shared preamble. " + " " * 4100
+    snapshot = CorpusIntake.call(corpus:, membership:, name: "Long conversations", kind: "conversations", bytes: [
+      { id: "late-cert", title: "Imported record", content: prefix + "Nacre certificate metadata expiry. " * 20 },
+      { id: "late-cursor", title: "Imported record", content: prefix + "Quasar pagination checkpoint discarded. " * 20 }
+    ].to_json)
+    sign_in users(:owner)
+    visit workspace_corpus_path(workspace, corpus)
+    assert_field "Local method", with: "local"
+    select "Full-text local · 2000 records / 10 MiB", from: "Local method"
+    fill_in "Candidate limit", with: 2
+    assert_text "Original and streaming use only the first 4000 characters"
+    capture("full-text-picker", target: "section:has(select[name=processing_method])")
+    find("input[value='Analyse corpus locally']").send_keys(:enter)
+    assert_selector "h1", text: "Corpus analysis"
+    assert_text CorpusAnalysis::FULL_TEXT_METHOD
+    assert_text "Waiting for the local processing job. No data leaves this deployment."
+    assert_text "the complete text of each conversation"
+    capture("full-text-queued")
+    perform_enqueued_jobs
+    click_link "Refresh result"
+    assert_text "2 candidates selected from 2 conversations"
+    assert_text "2 of 2 term clusters represented"
+    assert_text "not verified issue-family coverage"
+    assert_text "Full-text local limits: 2000 complete records / 10 MiB"
+    assert_selector "h2", text: "certificate / expiry / metadata"
+    assert_selector "h2", text: "checkpoint / discarded / pagination"
+    capture("full-text-complete")
+    analysis = corpus.corpus_analyses.sole
+    click_button "Create selected scenarios"
+    assert_selector "h1", text: "Scenarios"
+    assert_equal [ snapshot.id ], corpus.scenarios.map { |scenario| scenario.corpus_item.source_snapshot_id }.uniq
+    assert_equal 2, corpus.scenarios.count
+    assert corpus.scenarios.all? { |scenario| !scenario.current_version.approved? }
+    assert_empty analysis.taxonomy_versions
+
+    visit workspace_corpus_path(workspace, corpus)
+    select "Full-text local · 2000 records / 10 MiB", from: "Local method"
+    click_button "Analyse corpus locally"
+    assert_selector "h1", text: "Corpus analysis"
+    stub_const(CorpusDiscovery, :MAX_TERM_ENTRIES, 1) do
+      assert_no_difference([ "IssueCluster.count", "ClusterMember.count", "Scenario.count" ]) { perform_enqueued_jobs }
+    end
+    click_link "Refresh result"
+    assert_selector "[role=alert]", text: /Full-text local discovery exceeded.*budget/
+    assert_no_button "Create selected scenarios"
+    assert_no_selector "details.source-record"
+    assert_empty corpus.corpus_analyses.order(:id).last.summary
+    capture("full-text-failed")
+  end
 
   test "expert deliberately selects streaming after original bounds refuse and sees complete local selection" do
     membership = memberships(:owner_support)

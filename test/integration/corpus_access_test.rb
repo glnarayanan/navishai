@@ -8,6 +8,52 @@ class CorpusAccessTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
   end
 
+  test "full text is an explicit scoped local request with retained method repair and read-only viewer history" do
+    path = workspace_corpus_corpus_analyses_path(@workspace, @corpus)
+    CorpusIntake.call(corpus: @corpus, membership: memberships(:owner_support), name: "History", kind: "conversations",
+      bytes: [ { id: "late", title: "Imported history", content: " " * 4100 + "Certificate metadata expiry." } ].to_json)
+    get workspace_corpus_path(@workspace, @corpus)
+    assert_select "select[name=processing_method] option[value=local][selected]"
+    assert_select "select[name=processing_method] option[value=local_full_text]", text: "Full-text local · 2000 records / 10 MiB"
+    assert_no_difference [ "CorpusAnalysis.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        post path, params: { processing_method: "local_full_text", scenario_limit: 101 }
+        assert_response :see_other
+        follow_redirect!
+        assert_select "[role=alert]", text: /previous local request did not start/
+        assert_select "select[name=processing_method] option[value=local_full_text][selected]"
+        post path, params: { processing_method: "local_full_text", scenario_limit: 2, corpus_disclose: "1" }
+        assert_response :see_other
+        assert_includes flash[:alert], "cannot use model settings or disclosure"
+        post workspace_corpus_corpus_analyses_path(workspaces(:beta_support), @corpus), params: { processing_method: "local_full_text", scenario_limit: 2 }
+        assert_response :not_found
+      end
+    end
+    assert_difference "CorpusAnalysis.count", 1 do
+      assert_enqueued_with(job: CorpusAnalysisJob) { post path, params: { processing_method: "local_full_text", scenario_limit: 2 } }
+    end
+    analysis = @corpus.corpus_analyses.sole
+    assert_equal "tfidf-full-text-seed-centroid-selection-v3", analysis.processing_method
+    assert_equal({}, analysis.configuration)
+    CorpusAnalysisJob.perform_now(analysis.id)
+    get workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+    assert_select "p", text: /uses titles and the complete text of each conversation/
+    assert_select "p", text: /Full-text local limits: 2000 complete records \/ 10 MiB/
+    assert_select "p", text: /not verified issue-family coverage/
+    Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
+    sign_in_as users(:teammate)
+    assert_no_difference [ "CorpusAnalysis.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        get workspace_corpus_corpus_analysis_path(@workspace, @corpus, analysis)
+        assert_response :success
+        assert_select "p", text: /the complete text/
+        assert_select "main form[method=post]", count: 0
+        post path, params: { processing_method: "local_full_text", scenario_limit: 2 }
+        assert_response :forbidden
+      end
+    end
+  end
+
   test "source HTML is escaped and foreign corpus source and snapshot cannot be read" do
     get workspace_corpus_source_path(@workspace, @corpus, @snapshot.source)
     assert_response :success

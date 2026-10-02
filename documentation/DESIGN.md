@@ -51,8 +51,13 @@ or mining action appears. The accessible analysis still renders as a page; POST
 validation remains an error response. No CSP relaxation or nonce changes.
 
 Local analysis has a labelled native method picker. Original local stays the
-default; larger processing requires an explicit choice and states its resource
-and quality limits. Complete streaming analyses keep read-only family links if
+default; streaming and full-text processing require explicit choices and state
+their resource and quality limits. The picker explains complete conversations
+versus the older 4000-character window before submission. Invalid local requests
+retain their method rather than silently changing the repaired attempt. Full-text
+queued/complete/failed states name the fixed version, complete-text method and
+unchanged input bounds; a budget failure shows no partial family or mining action.
+Complete streaming analyses keep read-only family links if
 their requested evidence preview is too large. Corpus/source/family byte refusals
 retain full counts, filters and page recovery, never partial source text. Source
 recovery warns that current search excludes historical snapshots. Existing focus,

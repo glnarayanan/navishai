@@ -18,7 +18,10 @@
     <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
     <% if Current.require_membership!.can_write? %>
       <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
-        <div class="field"><%= form.label :processing_method, "Local method" %><%= form.select :processing_method, [[ "Original local · 2000 records / 10 MiB", "local" ], [ "Streaming local · 100,000 records / 1 GiB", "local_stream" ]] %><p>Streaming keeps global term statistics, not separate batch clusters. Term/vocabulary/comparison budgets can stop the attempt without partial proposals. Model limits and disclosure stay separate.</p></div>
+        <div class="field"><%= form.label :processing_method, "Local method" %><%= form.select :processing_method, [[ "Original local · 2000 records / 10 MiB", "local" ], [ "Streaming local · 100,000 records / 1 GiB", "local_stream" ], [ "Full-text local · 2000 records / 10 MiB", "local_full_text" ]], selected: flash[:local_analysis_method] || "local" %>
+          <p>Full-text local uses complete conversations, including later diagnostics. Original and streaming use only the first 4000 characters for clustering. All use complete documents and global term statistics, not separate batch clusters.</p>
+          <p>Streaming and full-text budgets: 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. Exceeding a budget saves no proposals. These local methods neither send data to a model nor prove discovery quality; model limits and disclosure stay separate.</p>
+        </div>
         <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
         <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
       <% end %>
