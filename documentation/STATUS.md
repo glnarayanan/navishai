@@ -91,8 +91,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   replay matching with retained-input comparison and read-only per-trace pages.
 - [#182](https://github.com/glnarayanan/navishai/pull/182), based on #181: atomic refusal of masking
   collisions and processing-version-aware source snapshot identity.
-- `rebuild/43-private-sql-binds`, based on #182: named search bind and shared
+- [#183](https://github.com/glnarayanan/navishai/pull/183), based on #182: named search bind and shared
   Rails request/SQL-debug private-field filtering.
+- `rebuild/44-explicit-text-masking`, based on #183: opt-in exact-text masking,
+  fixed rule fingerprints and private recovery without rewriting history.
 
 ## Built and checked
 
@@ -1063,6 +1065,36 @@ after the full run. #182 has been pushed with an open stacked PR; its remote CI
 is separate and was still pending when this slice was prepared. No merge,
 release, deployment, live disclosure/spend, dependency or authoritative label.
 
+Later exact-head remote evidence: #182 passed run
+[36859087652](https://github.com/glnarayanan/navishai/actions/runs/36859087652)
+at 12:05:12 UTC; #183 passed run
+[36859246828](https://github.com/glnarayanan/navishai/actions/runs/36859246828)
+at 12:07:57 UTC on 1 October. Failed ancestor #155/#158 runs remain failed.
+
+## Explicit exact-text masking (slice 44)
+
+Authors may choose a separate literal, case-sensitive mode with 1–50 unique
+values, 3–200 characters each, at most 8 KiB total. Longer matches win at the
+same position; strings and JSON keys are masked, other scalar types stay fixed.
+Snapshots retain the sorted unique list's fingerprint/count, not its raw values.
+Changed rules create new versions. Errors clear private values but keep the mode;
+entered rules in other modes refuse rather than silently doing nothing. Structural
+trace/key/identity collisions refuse atomically. Source names and older history
+stay unchanged. Masking never proves PII removal or approves disclosure.
+
+Full `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m4.54s: 404 Rails tests /
+4992 assertions, 41 browser tests / 1825 assertions, no failures/errors/skips;
+297 Ruby files clean, audits and eager loading passed. Focused checks passed
+37 tests / 939 assertions and four browser tests / 159 assertions. Desktop,
+390px and 320px form/repair/source captures were inspected for clear privacy
+limits, private errors and readable wrapped digests; no overflow/CSP violations.
+`bin/prove-backup-restore` passed with exact masking-history/fingerprint/content
+and rule-aware reuse checks across sixteen immutable tables; only disposable
+proof databases/archive were removed. Direct risk review and native audits used;
+named reviews remain unavailable. Remote CI for this branch has not run yet.
+The owner-owned lockfile remains untouched and unstaged. No live customer data,
+provider, dependency, expert label, merge, release or deployment changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -1104,9 +1136,10 @@ isolated backup/restore/private production-runtime/TLS checks pass; inputs beyon
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 Intake now refuses recursive masking-key collisions without losing data and binds
-processing version in snapshot reuse identity. Broader explicit redaction choices
-and larger-corpus processing remain engineering
-work; these checks do not finish them or the owner's full acceptance demo.
+processing version and explicit rule fingerprints in snapshot reuse identity.
+Exact-text masking works within its stated limits; larger-corpus processing and
+removal of complete-content loads from review reads remain engineering work.
+These checks do not finish that work or the owner's full acceptance demo.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. The partial Compose trial and later passing private-namespace proof

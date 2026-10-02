@@ -49,7 +49,8 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 ## Rules
 
 - Human decisions outrank machine proposals. Approval of one version does not approve its next revision.
-- Snapshot reuse requires the same source, input digest, redaction and processing version. Changed processing creates a new snapshot; masking cannot silently merge keys or record identities. Invalid repeats cannot bypass validation through retained history.
+- Snapshot reuse requires the same source, input digest, redaction, processing version and masking-rule fingerprint. Changed processing or rules create a new snapshot; masking cannot silently merge keys or record identities. Invalid repeats cannot bypass validation through retained history.
+- Exact-text masks come from an explicit author-supplied list, not inferred PII or disclosure policy. Snapshots retain its fixed fingerprint/count, not the list. Prior snapshots and approvals stay unchanged.
 - A changed source never changes a prior scenario, case, label, or run. A dependent definition may need a new version.
 - Evidence links cannot cross workspaces. A variant must retain both its original evidence and its explicit counterfactual changes.
 - Merging preserves the rejected/merged identity and provenance; it does not erase why a case entered the corpus.

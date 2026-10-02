@@ -88,13 +88,27 @@ shapes are not every vendor export format. Plain UTF-8 text and Markdown also wo
 PDF, attachments and live connectors do not. Limits: 10 MiB, 2000 records per upload,
 100,000 characters per record. Bad batches roll back as a whole.
 
-The same source name/type, input digest, redaction and processing version reuse a
-snapshot. Changed input, redaction or processing adds a version; matching an old
-snapshot under the current processing version selects it again.
+The same source name/type, input digest, redaction, processing version and masking
+fingerprint reuse a snapshot. Changed input, rules or processing add a version;
+matching an old snapshot under the current processing version selects it again.
 Current corpus views use only current, unexpired snapshots. Original files are not
 retained: normalised records, SHA-256 input digest and processing version are.
 Email masking is the default, not complete PII removal; review other sensitive data
 before upload. Email IDs become distinct digest-based record IDs.
+
+**Mask exact text** is a separate choice. Enter 1–50 unique values, one per line,
+3–200 characters each, at most 8 KiB total. It replaces listed, case-sensitive
+literal text with `[text redacted]`; it does not detect other emails/PII or interpret
+regex syntax. Preserve spaces; longest matches win at the same position. Empty
+lines and duplicates do not add rules. The snapshot stores the unique rule count
+and SHA-256 of `JSON.generate(values.sort)`, not the list; values use UTF-8 without
+case or Unicode normalization. Keep that private list with the original input to
+repeat processing. Rules clear after errors; the form keeps the chosen mode.
+Entered values in other modes refuse intake instead of silently ignoring them.
+Changed IDs become digest-based IDs. Source names stay unchanged. New rules never
+mask older retained snapshots or grant external disclosure approval; inspect all
+evidence before separate consent. A hash is not proof of anonymity or PII removal.
+
 If masking would merge distinct JSON keys or record IDs, intake refuses the whole
 upload before source, retention or snapshot changes. This includes nested facts
 and trace outputs, and repeats of an already retained input. Rename colliding keys
@@ -165,7 +179,7 @@ enforce expiry. Intake stays local.
 Managing roles can also open **Download retained snapshot** on an exact current
 or historical source page and type its source name. The POST attachment contains
 complete normalized title/text/context records, source/snapshot identity, input
-digest, intake time and processing/redaction versions. It is
+digest, intake time, processing/redaction versions and masking-rule fingerprint/count. It is
 `navishai-retained-source-v1` JSON, not a vendor export or the original raw file.
 It is not a vendor-format reimport path. Limits are 2000 records / 10 MiB of complete
 JSON; larger snapshots fail without a partial download. Read-only source pages

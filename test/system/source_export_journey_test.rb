@@ -15,7 +15,7 @@ class SourceExportJourneyTest < ApplicationSystemTestCase
     visit workspace_corpus_source_path(workspace, corpus, source)
     find("#source-download summary").click
     assert_selector "input[name=snapshot_id][value='#{current.id}']", visible: :all
-    assert_text "Email masking is incomplete"
+    assert_text "Masking is not full PII removal"
     assert_text "Downloaded copies fall outside local purge"
     [ 1280, 390 ].each { |width| capture("form-#{width}", width) }
     click_link "Snapshot 1", exact: true

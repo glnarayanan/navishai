@@ -42,8 +42,21 @@ repeated uploads. If distinct JSON keys mask to one key, or masked IDs collide,
 refuse the whole batch with a content-free repair error. Do not discard either
 value, invent replacement keys or change the masking choice. Old retained records
 stay fixed; this refusal does not repair them. Snapshot identity includes source,
-input digest, redaction and processing version in both lookup and the unique index.
+input digest, redaction, processing version and masking-rule fingerprint in both
+lookup and the unique index.
 Changed processing creates a new version without rewriting prior evidence.
+
+Exact-text masking is a separate, opt-in mode, not an inferred PII policy or an
+addition to automatic email masking. The author supplies 1–50 unique UTF-8 values,
+one per line, 3–200 characters each and at most 8 KiB total. Preserve spaces and
+case; discard empty lines, sort unique values and hash `JSON.generate(values)`.
+Match literals left to right, longest first at the same position; never execute
+regular expressions supplied by the user. Keep the fixed fingerprint and count,
+not the rule list. Reprocessing needs the author's private list and original input.
+The existing recursive masker covers keys, strings and arrays, refuses collisions
+and revalidates traces. SQL guards bind mode/count/fingerprint and immutable history.
+Source names stay unchanged. New rules cannot redact prior snapshots or approve
+provider disclosure. Readers must still review retained evidence for sensitive data.
 
 Current analysis previews/requests and fixed processing, mining and overview reads
 share a pre-load count and retained-field byte check. Count IDs, titles, text and

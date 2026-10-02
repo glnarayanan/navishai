@@ -24,7 +24,8 @@ class Source < ApplicationRecord
       envelope = { format: "navishai-retained-source-v1", workspace_id:, corpus_id:,
         source: { id: id, name: name, kind: kind },
         snapshot: { id: snapshot.id, number: snapshot.number, digest: snapshot.digest,
-          redaction: snapshot.redaction, processing_version: snapshot.processing_version, intake_time: snapshot.created_at.iso8601(6) } }
+          redaction: snapshot.redaction, mask_digest: snapshot.mask_digest, mask_count: snapshot.mask_count,
+          processing_version: snapshot.processing_version, intake_time: snapshot.created_at.iso8601(6) } }
       json = JSON.generate(envelope).delete_suffix("}") + ',"records":['
       items.find_each(batch_size: 50).with_index do |item, index|
         json << "," unless index.zero?

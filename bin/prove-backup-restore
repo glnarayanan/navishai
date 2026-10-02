@@ -128,6 +128,12 @@ begin
     assert_proof(analysis.reload.state == "complete" && calls.size == 3, "two fixed discoveries and reducer")
     assert_proof(ENV["NAVISHAI_CORPUS_ENDPOINTS"] == "[]", "synthetic purpose approval removed")
     batch_keys = analysis.corpus_discovery_batches.order(:position).pluck(:request_key)
+    masking_corpus = membership.workspace.corpora.create!(name: "Restore exact masking fixture")
+    masking_bytes = [ { id: "private-fixture", title: "Restore masking", content: "Fixture Private Contact needs metadata." } ].to_json
+    masking_old = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "Fixture Private Contact")
+    masking_current = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "Fixture Private Contact\nmetadata")
     source_db = PG.connect(host: socket, user: user, dbname: source)
     expected = fingerprint(source_db)
     source_db.close
@@ -139,6 +145,10 @@ begin
     assert_proof(fingerprint(restore_db) == expected, "all public table content must survive exactly")
     restore_db.close
     ActiveRecord::Base.establish_connection(adapter: "postgresql", host: socket, username: user, database: restored)
+    assert_proof(masking_old.reload.mask_count == 1 && masking_current.reload.mask_count == 2 && masking_old.mask_digest == Digest::SHA256.hexdigest('["Fixture Private Contact"]') && masking_old.mask_digest != masking_current.mask_digest, "exact fixed masking rules fingerprint/count and historical identity")
+    assert_proof(masking_old.corpus_items.sole.content == "[text redacted] needs metadata." && masking_current.corpus_items.sole.content == "[text redacted] needs [text redacted]." && !masking_old.attributes.to_json.include?("Fixture Private Contact"), "masked content survives without raw rule values")
+    assert_proof(CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "metadata\nFixture Private Contact").id == masking_current.id, "restored rule-aware snapshot reuse")
     assert_proof(before.reload.evaluation_results.sole.status == "fail", "recorded failure")
     assert_proof(after.reload.evaluation_results.sole.status == "pass", "corrected target passes same fixed case")
     assert_proof(before.evaluation_run_items.sole.eval_case_id == after.evaluation_run_items.sole.eval_case_id, "fixed-case identity")
@@ -186,7 +196,7 @@ begin
     last_audit_id = AuditEvent.maximum(:id)
     event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
     assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
-    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: exact table content/provenance, exact-text masking fingerprints/history/reuse, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
   end
 ensure
   ActiveRecord::Base.connection_pool.disconnect! if defined?(ActiveRecord::Base)
