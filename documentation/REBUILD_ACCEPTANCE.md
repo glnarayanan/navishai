@@ -1,6 +1,6 @@
 # Original rebuild acceptance checklist
 
-Updated 1 October 2026 for the joined rebuild through slice 81. The source of truth
+Updated 2 October 2026 for the joined rebuild through slice 83. The source of truth
 is the owner's entire original prompt, sections 0–25 and A–F/P0–P2, in
 [the source thread](https://ampcode.com/threads/T-01a0f3b9-4f9a-706a-90a2-fcee6f822501).
 This map supplements [PRODUCT](./PRODUCT.md), [ARCHITECTURE](./ARCHITECTURE.md),
@@ -24,8 +24,9 @@ This map has 45 check groups: 41 E, zero M and four G. That is 41/45 groups
 (91.1%) with engineering evidence, including all 41 ungated engineering groups.
 It is not a feature-count, quality or customer-acceptance score. The four G groups
 remain unproved; conditional P2 below stays separately gated and is not counted
-as delivered. The stack through [#222](https://github.com/glnarayanan/navishai/pull/222)
-is committed, pushed and open, not merged, released or deployed.
+as delivered. The stack through [#223](https://github.com/glnarayanan/navishai/pull/223)
+is committed, pushed and open, not merged, released or deployed. Current remote CI
+is pending; the fresh local password-only TCP check below passed.
 
 ## A — Demolition, architecture and delivery
 
@@ -35,7 +36,7 @@ is committed, pushed and open, not merged, released or deployed.
 | E — Remove the old product and its unused dependencies | [lab_baseline_test](../test/integration/lab_baseline_test.rb) checks old routes/tables are gone. Inbox, tickets/assignment, customer drafts/sends, SLAs, account-health/renewals, crews, broad memory/Supermemory, process runners and old deployment machinery do not remain behind flags. Git preserves history. |
 | E — Re-derived tenant/source/eval domain and safe fresh setup | [database_preflight_test](../test/services/database_preflight_test.rb), [security_baseline_test](../test/integration/security_baseline_test.rb). Setup refuses obsolete databases and never resets customer data. |
 | E — Atomic Conventional Commits and stacked PRs | [STATUS delivered stack](./STATUS.md#delivered-stack). Implementation branches use the rebuild predecessor, not obsolete main. The owner lockfile checksum remains unstaged and unchanged. |
-| E — Final combined engineering handoff | Fresh native `bin/ci` passes in 17m48.72s: Rails 640/10520 and browser 71/3561, no failures/errors/skips; style, eager loading and audits pass. Recovery/upgrade pass with v3 receipts; image-specific Compose proof passes. The stack through #222 is pushed/open, not merged/deployed. Remote CI is separate. |
+| E — Final combined engineering handoff | Fresh password-only TCP `bin/ci` passes in 40m32.01s: Rails 644/10552 and browser 71/3561, no failures/errors/skips; style 376 files, eager loading and audits pass. It includes the real test-administrator transport and indexed full-family query fixes. Recovery/upgrade pass with v3 receipts; image-specific Compose proof passes. The stack through #223 is pushed/open, not merged/deployed. Current remote CI is pending and separate. |
 
 ## B — Corpus and scenario foundation (all P0)
 
