@@ -86,6 +86,7 @@ class PrivateLoggingTest < ActionDispatch::IntegrationTest
       [ TaxonomyVersion, "labels" ], [ ScenarioProposal, "input" ], [ ScenarioProposalResult, "result" ],
       [ CorpusAnalysisResult, "result" ], [ CorpusDiscoveryBatch, "result" ], [ CalibrationPrediction, "result" ],
       [ ModelFailureMatching, "input" ], [ ModelFailureMatchingResult, "result" ],
+      [ AssumptionImpact, "input" ], [ AssumptionImpactResult, "result" ],
       [ EvaluationRunItem, "target_input" ], [ EvaluationResult, "decisions" ] ]
     request_values = {}
     fields.each_with_index do |(model, field), index|

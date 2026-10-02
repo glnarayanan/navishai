@@ -1,0 +1,41 @@
+<% content_for :title, "Change-analysis attempt ##{@impact.id} — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to "Source assumption impact", workspace_corpus_assumption_impacts_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Change-analysis attempt #<%= @impact.id %></h1><p role="status"><%= @impact.state.humanize %> · one fixed attempt, no automatic retry.</p></div></div>
+  <p>This optional proposal changes no scenario, staleness, approval, case or human label. Unlisted or unselected versions are not proven unaffected. Quotes show where text came from, not whether it supports the proposal.</p>
+  <p><%= @impact.configuration.fetch("model") %> · <%= @impact.configuration.fetch("endpoint") %></p>
+  <% if @impact.error %><p role="alert"><%= @impact.error %></p><% end %>
+  <% if @source_changed %><p role="status">The document head changed after consent. These fixed snapshots remain historical; this result cannot establish current policy.</p><% end %>
+  <% if @impact.state.in?(%w[queued running]) %>
+    <p><%= link_to "Refresh attempt state", workspace_corpus_assumption_impact_path(Current.workspace, @corpus, @impact), class: "button" %></p>
+    <% if Current.require_membership!.can_write? && (@impact.state == "queued" || @impact.started_at < 10.minutes.ago) %><%= button_to "Interrupt change analysis", interrupt_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, @impact), class: "button" %><% end %>
+  <% end %>
+  <% if @result %>
+    <section id="impact-result" class="section-block" aria-labelledby="impact-result-title"><h2 id="impact-result-title"><%= @result.fetch("decision").humanize %></h2>
+      <p <%= 'role=alert' if @result.fetch("decision") == "error" %>><%= @result.fetch("reason") %></p>
+      <% @result.fetch("affected").each do |proposal| %>
+        <% entry = @input.fetch("scenarios").find { |candidate| candidate.fetch("reference") == proposal.fetch("reference") } %>
+        <article class="source-record comparison-row"><h3><%= entry.fetch("title") %> · fixed version <%= entry.fetch("number") %></h3>
+          <p><%= link_to "Inspect proposed fixed version", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.fetch("scenario_id"), version: entry.fetch("number")) %> · <%= entry.fetch("reference") %></p>
+          <% if @current_versions[entry.fetch("scenario_id")] != entry.fetch("version_id") %><p role="status">This scenario has a newer version. Do not apply this old proposal to it without checking its current assumptions.</p><% end %>
+          <h4>Possibly affected <%= proposal.fetch("field").humanize.downcase %></h4><pre class="evidence-text"><%= proposal.fetch("assumption_quote") %></pre>
+          <div class="review-layout"><section><h4>Before supporting quote</h4><pre class="evidence-text"><%= proposal.fetch("before_quote") %></pre></section><section><h4>After supporting quote</h4><pre class="evidence-text"><%= proposal.fetch("after_quote") %></pre></section></div>
+          <h4>Reason</h4><p><%= proposal.fetch("reason") %></p><h4>Uncertainty</h4><p><%= proposal.fetch("uncertainty") %></p>
+          <p><%= link_to Current.require_membership!.can_write? ? "Open current version for separate revision and review" : "Inspect current scenario", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.fetch("scenario_id")) %>. Nothing copies or applies itself. Expert saves create a new version that needs fresh review.</p>
+        </article>
+      <% end %>
+      <% if @result.fetch("decision") == "abstain" %><p>No supported proposal from this attempt. This does not prove that the selected assumptions are unaffected.</p><% end %>
+      <details><summary>Reported usage and cost</summary><p>Endpoint reports are not verified charges. Missing values remain unknown.</p><pre class="evidence-text"><%= JSON.pretty_generate(@result.slice("elapsed_ms", "usage", "cost", "usage_and_cost")) %></pre></details>
+    </section>
+  <% end %>
+  <details class="section-block"><summary>Fixed settings, consent and attempt lineage</summary>
+    <p>Requested by expert #<%= @impact.requested_by_id %> at <%= @impact.created_at.to_fs(:long) %> in workspace #<%= @impact.workspace_id %>, corpus #<%= @impact.corpus_id %>. Confirmation bound to this preview digest.</p>
+    <pre class="evidence-text"><%= JSON.pretty_generate(@impact.configuration.merge("protocol" => @impact.processing_version, "request_key" => @impact.request_key, "input_digest" => @impact.input_digest, "request_digest" => @impact.request_digest)) %></pre>
+  </details>
+  <% if @wire %>
+    <details id="impact-wire" class="section-block"><summary>Exact fixed JSON request body</summary><p>POST to <%= @impact.configuration.fetch("endpoint") %> · <%= JSON.generate(@wire).bytesize %> bytes. Local provenance below is not model input.</p><pre class="evidence-text"><%= JSON.generate(@wire) %></pre></details>
+  <% else %><p role="status">Legacy protocol receipt. This page does not reconstruct its wire with the current protocol; queued legacy attempts cannot dispatch.</p><% end %>
+  <%= render "preview", input: @input %>
+  <% if Current.require_membership!.can_write? %><p><%= link_to "Review a new comparison preview", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, source_id: @impact.source_id) %>. The same fixed input/settings reuse this attempt, even after an error or interruption. A changed request may incur a new charge.</p><% end %>
+</main>

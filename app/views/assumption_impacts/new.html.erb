@@ -1,0 +1,63 @@
+<% content_for :title, "Preview source change — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to "Source assumption impact", workspace_corpus_assumption_impacts_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Preview a document change</h1><p>Find possibly affected assumptions without requiring exact source links.</p></div></div>
+  <p>Choose two retained snapshots from one product, policy or document source and 1–50 active scenarios. The model can propose at most 20 affected versions in one request within 256 KiB, including protocol/settings overhead. This selected set is not company-wide coverage. No automatic rewrite, staleness, approval or label change.</p>
+  <% if @preview_error %><p class="inline-error" role="alert"><%= @preview_error %> Repair the selection and preview again; no request started.</p><% end %>
+  <details class="section-block" <%= "open" unless @source %>><summary>Find document source and snapshot IDs</summary>
+    <p><%= @document_count || 0 %> document sources · 50 per page. <%= link_to "Inspect corpus sources", workspace_corpus_path(Current.workspace, @corpus) %>.</p>
+    <% @documents&.each do |source| %><p><%= link_to "#{source.name} · source ##{source.id}", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, source_id: source.id) %></p><% end %>
+    <nav class="workspace-tabs" aria-label="Document source pages">
+      <% if @document_page && @document_page > 1 %><%= link_to "Previous documents", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, document_page: @document_page - 1) %><% end %>
+      <% if @document_count && @document_count > @document_page * 50 %><%= link_to "Next documents", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, document_page: @document_page + 1) %><% end %>
+    </nav>
+    <% if @source %>
+      <h2><%= @source.name %> snapshots</h2><p><%= @snapshot_count %> retained snapshots · 50 per page. Use IDs, not version numbers, below.</p>
+      <% @snapshots.each do |snapshot| %><p>ID <%= snapshot.id %> · snapshot <%= snapshot.number %> · <%= link_to "Inspect snapshot #{snapshot.number}", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: snapshot.number) %></p><% end %>
+      <nav class="workspace-tabs" aria-label="Snapshot pages">
+        <% if @snapshot_page > 1 %><%= link_to "Previous snapshots", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, source_id: @source.id, snapshot_page: @snapshot_page - 1) %><% end %>
+        <% if @snapshot_count > @snapshot_page * 50 %><%= link_to "Next snapshots", new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus, source_id: @source.id, snapshot_page: @snapshot_page + 1) %><% end %>
+      </nav>
+    <% end %>
+  </details>
+  <section class="section-block config-panel" aria-labelledby="impact-selection-title"><h2 id="impact-selection-title">Choose the comparison</h2>
+    <p><%= link_to "Find scenario IDs", workspace_corpus_scenarios_path(Current.workspace, @corpus) %>. Preview freezes their current versions, including all selected assumptions. This local GET starts no job and grants no disclosure.</p>
+    <%= form_with url: new_workspace_corpus_assumption_impact_path(Current.workspace, @corpus), method: :get, class: "form-stack" do |form| %>
+      <div class="field"><%= form.label :source_id, "Document source ID" %><%= form.number_field :source_id, value: params[:source_id], min: 1, required: true %></div>
+      <div class="field-grid">
+        <div class="field"><%= form.label :before_snapshot_id, "Before snapshot ID" %><%= form.number_field :before_snapshot_id, value: params[:before_snapshot_id], min: 1, required: true %></div>
+        <div class="field"><%= form.label :after_snapshot_id, "After snapshot ID" %><%= form.number_field :after_snapshot_id, value: params[:after_snapshot_id], min: 1, required: true %></div>
+      </div>
+      <div class="field"><%= form.label :scenario_ids, "Scenario IDs (spaces or commas)" %><%= form.text_area :scenario_ids, value: params[:scenario_ids] || @input&.fetch("scenarios")&.pluck("scenario_id")&.join(" "), rows: 2, maxlength: 5000, required: true %></div>
+      <%= form.submit "Preview fixed change", class: "button", data: { turbo_submits_with: "Loading preview…" } %>
+    <% end %>
+  </section>
+  <% if @input %>
+    <%= render "preview", input: @input %>
+    <section id="impact-request" class="section-block config-panel" aria-labelledby="impact-request-title"><h2 id="impact-request-title">Request optional model analysis</h2>
+      <p>The operator must approve this exact workspace/endpoint for impact processing in NAVISHAI_IMPACT_ENDPOINTS. Corpus, target/judge or scenario-purpose approval is not enough. Review full text, hidden facts and masking limits; masking is not PII clearance. Sent data cannot be recalled by expiry or purge.</p>
+      <p>One once-only call · 256–4096 output tokens · 100 KiB response · 30-second deadline. Unknown outcomes/cost never retry or show zero. New inputs/settings require a new preview and consent and may cost more.</p>
+      <% if @wire %>
+        <h3>Exact model request</h3><p>POST JSON to <%= @endpoint %> · <%= JSON.generate(@wire).bytesize %> bytes. This is the complete actual body, including instructions and settings. Local author/importer IDs, intake/expiry times and snapshot metadata do not leave the workspace.</p>
+        <details id="impact-wire"><summary>Inspect complete JSON request body</summary><pre class="evidence-text"><%= JSON.generate(@wire) %></pre></details>
+        <p>Transport also sends standard JSON headers, an opaque once-only request UUID and any operator-managed bearer token. No credential appears in this preview.</p>
+      <% else %><p>Enter settings, then preview the exact model request locally. That preview sends nothing and queues no job. Consent is available only after it.</p><% end %>
+      <%= form_with url: workspace_corpus_assumption_impacts_path(Current.workspace, @corpus), class: "form-stack", data: { turbo: false } do |form| %>
+        <%= form.hidden_field :source_id, value: @input.fetch("source_id"), id: nil %>
+        <%= form.hidden_field :before_snapshot_id, value: @input.dig("before", "snapshot_id"), id: nil %>
+        <%= form.hidden_field :after_snapshot_id, value: @input.dig("after", "snapshot_id"), id: nil %>
+        <%= form.hidden_field :version_ids, value: @input.fetch("scenarios").pluck("version_id").join(" "), id: nil %>
+        <%= form.hidden_field :input_digest, value: AssumptionChangeAnalysis.digest(@input), id: nil %>
+        <%= form.hidden_field :wire_digest, value: @wire_digest, id: nil if @wire %>
+        <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 6, maxlength: 10240, required: true, aria: { describedby: "impact-settings-help" } %><p id="impact-settings-help">Use endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or an integer 0–2147483647. Never enter credentials.</p></div>
+        <%= form.button "Preview exact model request", type: :submit, name: :preview_only, value: "1", class: "button", data: { turbo_submits_with: "Loading local preview…" } %>
+        <% if @wire %>
+          <% if @input.fetch("historical") %><div class="checkbox-field"><%= form.check_box :historical_confirm, checked: false %><%= form.label :historical_confirm, "I intentionally compare these historical snapshots, not current policy." %></div><% end %>
+          <div class="checkbox-field"><%= form.check_box :impact_disclose, checked: false %><%= form.label :impact_disclose, "I approve sending the exact JSON body above, including both document texts and all selected scenario assumptions/requirements, to the displayed endpoint, model and settings." %></div>
+          <%= form.submit "Request change analysis", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <% end %>
+      <% end %>
+    </section>
+  <% end %>
+</main>

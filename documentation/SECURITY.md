@@ -195,6 +195,17 @@ the source/scenarios; expired or stale previews hide them. Matching pages use
 no-store/no-cache. No association, expectation, label or regression changes.
 See [MODEL_FAILURE_MATCHING.md](./MODEL_FAILURE_MATCHING.md).
 
+Source-assumption change proposals require `NAVISHAI_IMPACT_ENDPOINTS`, not any
+other purpose's approval. A local preview sends nothing and shows the canonical
+wire JSON; consent binds the exact endpoint and body. It sends two complete
+same-source documents and 1–50 explicit fixed versions' complete assumptions,
+including hidden facts, within 256 KiB. Review those private fields before consent.
+Local actor/intake/masking provenance stays local; the projection is not redaction.
+Legacy v1 receipts cannot dispatch as v2. Recheck membership, latest source change,
+fixed versions, expiry and approval around the one call. Corpus-wide source purge
+deletes copies before scenarios. Proposals never change staleness, expectations,
+expert reviews or linked-source impact. See [ASSUMPTION_IMPACT.md](./ASSUMPTION_IMPACT.md).
+
 Configured judges need exact workspace/URL operator approval and separate human
 disclosure consent. Fixed model/settings/rubric/threshold versions never change
 prior cases or labels. Suite consent binds its displayed case list, rejecting stale
