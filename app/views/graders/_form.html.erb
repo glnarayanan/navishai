@@ -1,0 +1,21 @@
+<%= form_with url: url, method: method, scope: :grader, class: "form-stack config-panel" do |form| %>
+  <% if @grader %><%= hidden_field_tag :version_id, params[:version_id] || @grader.current_version_id %><% else %><div class="field"><%= form.label :name, "Grader name" %><%= form.text_field :name, value: @values["name"], required: true, maxlength: 120 %></div><% end %>
+  <div class="field"><%= form.label :kind, "Grader kind" %><%= form.select :kind, [["Deterministic check", "deterministic"], ["Rubric judge", "rubric_judge"]], selected: @values["kind"] %></div>
+  <fieldset><legend>Deterministic definition</legend><p>Use this section for a deterministic check. Tool names, fields, teams and policy branches match exactly. Text checks match assistant text only, without case sensitivity; they do not prove meaning.</p>
+    <div class="field"><%= form.label :check_type, "Check type" %><%= form.select :check_type, DeterministicGrader::TYPES.map { |type| [type.humanize, type] }, selected: @values["check_type"] %></div>
+    <div class="field"><%= form.label :value, "Check value" %><%= form.text_area :value, value: @values["value"], rows: DeterministicGrader::PAIR_TYPES.include?(@values["check_type"]) ? 4 : 2, maxlength: 1001 %></div>
+    <p class="field-hint">For Tool before, put the two distinct tool names on separate lines, in required order. Citation present needs a corpus-item reference and an exact quote from the permitted knowledge, not just a claimed citation.</p>
+    <p class="field-hint">For Assistant response contains or absent, use two nonblank lines: a user phrase, then a required or forbidden reply phrase (up to 500 characters each). Check the assistant's reply after each matching user message, stopping at the next user message. Contains requires the phrase; absent forbids it. Matching ignores case. Missing user turns or blank replies fail both. These check reported transcripts, not meaning or incremental target execution.</p>
+  </fieldset>
+  <fieldset><legend>Judge definition</legend><p>Use this section for a rubric judge. Define one behaviour and its pass/fail boundaries. A written rubric is not evidence of accuracy.</p>
+    <div class="field"><%= form.label :rubric, "Company rubric" %><%= form.text_area :rubric, value: @values["rubric"], rows: 5, maxlength: 10000 %></div>
+    <div class="field"><%= form.label :confidence_threshold, "Judge abstention threshold" %><%= form.number_field :confidence_threshold, value: @values["confidence_threshold"], min: 0, max: 1, step: 0.01 %></div>
+    <p class="field-hint">Self-reported judge confidence is not a calibrated probability. Low-confidence decisions must remain uncertain. No model call occurs when you save.</p>
+    <details><summary>Optional model execution</summary>
+      <p>Leave blank for an offline rubric. The operator must approve the exact HTTPS endpoint for this workspace. Credentials stay in the private endpoint registry.</p>
+      <div class="field"><%= form.label :judge_configuration, "Judge configuration JSON" %><%= form.text_area :judge_configuration, value: @values["judge_configuration"], rows: 8, maxlength: 8192, spellcheck: false %></div>
+      <p class="field-hint">Use endpoint, a fixed model identifier, and settings with temperature: 0, max_output_tokens: 256–4096, and seed: a non-negative integer or null. The endpoint must implement support-judge-v1 and honor these settings.</p>
+    </details>
+  </fieldset>
+  <%= form.submit @grader ? "Save grader version" : "Create grader", class: "button button-primary" %>
+<% end %>

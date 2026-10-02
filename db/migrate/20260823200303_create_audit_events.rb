@@ -1,6 +1,6 @@
 class CreateAuditEvents < ActiveRecord::Migration[8.1]
   ACTOR_KINDS = %w[user break_glass system anonymous].freeze
-  SOURCES = %w[web job task runner integration system].freeze
+  SOURCES = %w[web job task integration system].freeze
 
   def change
     create_table :audit_events do |t|

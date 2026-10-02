@@ -1,0 +1,22 @@
+<% content_for :title, "Scenarios — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Scenarios</h1><p>Real-source cases and controlled variants. Experts own the expected behaviour.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "scenarios" %>
+  <section id="scenario-search" class="section-block" aria-labelledby="scenario-search-heading">
+    <h2 id="scenario-search-heading">Find a scenario</h2>
+    <p id="scenario-search-help">Search a literal phrase in current titles, situations and taxonomy labels, ignoring case. Facts, requirements and old versions are not searched. This local search grants no association or approval.</p>
+    <%= form_with url: workspace_corpus_scenarios_path(Current.workspace, @corpus, anchor: "scenario-search"), method: :get, class: "form-stack config-panel", role: "search" do |form| %>
+      <div class="field"><%= form.label :corpus_query, "Scenario search phrase" %><%= form.search_field :corpus_query, value: @query, maxlength: 200, aria: { invalid: @search_error.present?, describedby: @search_error ? "scenario-search-help scenario-search-error" : "scenario-search-help" } %></div>
+      <%= form.submit "Find scenarios", class: "button" %>
+    <% end %>
+    <p><%= link_to "Clear search", workspace_corpus_scenarios_path(Current.workspace, @corpus, anchor: "scenario-search") %>. Phrases stay in your browser URL/history; do not paste secrets.</p>
+    <% if @search_error %><p id="scenario-search-error" class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching scenario") %> · page <%= @page %> · up to 50 scenarios. Counts describe this filter, not issue coverage.</p><% end %>
+  </section>
+  <% if !@search_error && @scenarios.empty? %><p><%= @query.blank? && @page == 1 ? "No candidates yet. Analyse a corpus, inspect its selection, then create scenarios." : "No scenarios on this page. Clear the phrase or return to the first page, then inspect your corpus if needed." %></p><% end %>
+  <ul class="workspace-list" role="list"><% @scenarios.each do |scenario| %><li class="workspace-card">
+    <%= link_to scenario.current_version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, scenario) %>
+    <span>#<%= scenario.id %> · v<%= scenario.current_version.number %> · <%= scenario.merged_into_id ? "merged" : scenario.current_version.latest_review&.decision || "needs review" %> · <%= scenario.current_version.importance %><%= " · source changed" if scenario.current_version.stale? %></span>
+  </li><% end %></ul>
+  <%= render "shared/record_pagination", more: @more, page_number: @page, query: request.query_parameters.except("page") %>
+</main>

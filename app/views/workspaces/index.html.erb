@@ -1,60 +1,27 @@
 <% content_for :title, "Workspaces — NavishAI" %>
-
-<main class="page-shell page-family-collection">
-  <div class="page-heading workspace-index-heading">
-    <div>
-      <h1>Choose a workspace</h1>
-      <p>Choose where you want to work, or create another workspace for a separate team.</p>
-    </div>
+<main class="page-shell">
+  <div class="page-heading">
+    <div><p class="eyebrow">Support evaluation lab</p><h1>Choose a workspace</h1>
+      <p>Each workspace is an isolated lab with its own people and access.</p></div>
     <% if @owned_workspace_ids.any? %>
-      <%= link_to "Create workspace", new_workspace_path, class: "button button-primary button-compact" %>
+      <%= link_to "Create workspace", new_workspace_path, class: "button button-primary" %>
     <% end %>
   </div>
-
   <% if @workspaces.any? %>
     <ul class="workspace-list" role="list">
       <% @workspaces.each do |workspace| %>
         <li class="workspace-card">
           <%= link_to workspace_path(workspace), class: "workspace-link" do %>
-            <span>
-              <strong><%= workspace.name %></strong>
-              <small><%= workspace.organization.name %></small>
-            </span>
-            <span>Open workspace</span>
+            <div><strong><%= workspace.name %></strong><p><%= workspace.organization.name %> / <%= workspace.slug %></p></div>
+            <span>Open lab →</span>
           <% end %>
           <% if @owned_workspace_ids.include?(workspace.id) %>
-            <%= link_to "Manage", edit_workspace_path(workspace), class: "button button-secondary button-compact" %>
+            <%= link_to "Settings", edit_workspace_path(workspace), class: "button button-secondary" %>
           <% end %>
         </li>
       <% end %>
     </ul>
   <% else %>
-    <section class="empty-state workspace-empty" aria-labelledby="workspace-empty-title">
-      <h2 id="workspace-empty-title">No workspace access</h2>
-      <p>Ask a workspace Owner or Admin to invite you.</p>
-    </section>
-  <% end %>
-
-  <% if @deleting_workspaces.any? %>
-    <section class="section-block" aria-labelledby="workspace-deletions-title">
-      <h2 id="workspace-deletions-title">Deletion in progress</h2>
-      <ul class="workspace-list" role="list">
-        <% @deleting_workspaces.each do |workspace| %>
-          <% request = workspace.workspace_deletion_request %>
-          <li class="workspace-status-row">
-            <span>
-              <strong><%= workspace.name %></strong>
-              <small><%= workspace.organization.name %></small>
-            </span>
-            <span><%= request&.failed? ? "Failed: #{request.failure_code.humanize}" : "Access blocked" %></span>
-            <% membership = workspace.memberships.find { |candidate| candidate.user_id == Current.user.id } %>
-            <% if request&.failed? && membership&.owner? %>
-              <%= button_to "Retry deletion", workspace_deletion_path(workspace), method: :patch,
-                class: "button button-secondary" %>
-            <% end %>
-          </li>
-        <% end %>
-      </ul>
-    </section>
+    <%= render "shared/empty_state", title: "No workspace access", description: "Ask a workspace Owner or Admin to invite you." %>
   <% end %>
 </main>

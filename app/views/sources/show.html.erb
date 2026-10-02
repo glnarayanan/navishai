@@ -1,0 +1,111 @@
+<% content_for :title, "#{@source.name} — NavishAI" %>
+<% if @model_matching_item %><% content_for :head do %><meta name="turbo-cache-control" content="no-cache"><% end %><% end %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @source.name %></h1><p>Snapshot <%= @snapshot.number %> · <%= @snapshot.created_at.to_fs(:long) %> · <%= { "email" => "Email addresses masked", "exact" => "Exact text masked", "none" => "Original text" }.fetch(@snapshot.redaction) %></p></div></div>
+  <dl class="source-metadata"><dt>Input SHA-256</dt><dd><code><%= @snapshot.digest %></code></dd><dt>Processing</dt><dd><%= @snapshot.processing_version %></dd><dt>Retention ends</dt><dd><%= @source.expires_at.to_date %></dd></dl>
+  <% if @snapshot.redaction == "exact" %>
+    <dl class="source-metadata"><dt>Exact-text values</dt><dd><%= pluralize(@snapshot.mask_count, "unique value") %>; the values themselves are not retained.</dd><dt>Rules SHA-256</dt><dd><code><%= @snapshot.mask_digest %></code></dd></dl>
+    <p role="status">Only the listed, case-sensitive text was masked. Other personal data, emails or credentials may remain. This is not approval to disclose data.</p>
+  <% end %>
+  <nav class="workspace-tabs" aria-label="Source snapshots"><% @snapshots.each do |snapshot| %><%= link_to "Snapshot #{snapshot.number}", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: snapshot.number), aria: { current: snapshot.id == @snapshot.id ? "page" : nil } %><% end %></nav>
+  <section class="section-block" id="source-impact"><h2>Source change impact</h2><p>Exact evidence links across all retained snapshots of this source, including prior versions. This is not semantic change detection. History stays fixed; experts decide which expectations need revision.</p>
+    <% if @corpus.eval_definitions_expired? %><p role="status">Dependencies stay hidden because a corpus source has expired.</p><% else %>
+      <h3>Dependent scenario versions</h3><p>Page <%= @dependency_page %> · up to 50 versions. Older document evidence becomes stale; a newer conversation or trace export does not invalidate historical evidence.</p>
+      <% if @dependencies.empty? %><p>No linked scenario versions on this page. Unlinked assumptions cannot appear here.</p><% end %>
+      <ul class="workspace-list" role="list"><% @dependencies.each do |version| %><li class="workspace-card"><%= link_to "#{version.title} · v#{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario, version: version.number) %><span><%= version.scenario.current_version_id == version.id ? "Current scenario version" : "Historical scenario version" %></span><strong><%= version.stale? ? "Stale document evidence" : "No stale document evidence" %></strong></li><% end %></ul>
+      <nav class="workspace-tabs" aria-label="Dependency pages"><% if @dependency_page > 1 %><%= link_to "Previous dependencies", url_for(only_path: true, params: request.query_parameters.merge("dependency_page" => @dependency_page - 1), anchor: "source-impact") %><% end %><% if @more_dependencies %><%= link_to "Next dependencies", url_for(only_path: true, params: request.query_parameters.merge("dependency_page" => @dependency_page + 1), anchor: "source-impact") %><% end %></nav>
+      <h3>Fixed cases and current suites</h3><p>Page <%= @case_page %> · up to 50 cases. Suite links show current membership, not the case lists of prior runs. Each case keeps its original contract and graders.</p>
+      <% if @dependent_cases.empty? %><p>No linked compiled cases on this page.</p><% end %>
+      <% @dependent_cases.each do |eval_case| %><article class="source-record"><h4><%= link_to "Case #{eval_case.id} · #{eval_case.scenario_version.title} · v#{eval_case.scenario_version.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, eval_case) %></h4>
+        <% memberships = @suite_memberships.fetch(eval_case.id, []) %>
+        <% if memberships.empty? %><p>No current suite membership.</p><% else %><ul role="list"><% memberships.each do |membership| %><li><%= link_to membership.eval_suite.name, workspace_corpus_eval_suite_path(Current.workspace, @corpus, membership.eval_suite) %> · <%= membership.eval_suite.kind %></li><% end %></ul><% end %>
+      </article><% end %>
+      <nav class="workspace-tabs" aria-label="Dependent case pages"><% if @case_page > 1 %><%= link_to "Previous dependent cases", url_for(only_path: true, params: request.query_parameters.merge("case_page" => @case_page - 1), anchor: "source-impact") %><% end %><% if @more_cases %><%= link_to "Next dependent cases", url_for(only_path: true, params: request.query_parameters.merge("case_page" => @case_page + 1), anchor: "source-impact") %><% end %></nav>
+    <% end %>
+  </section>
+  <section class="section-block" id="source-evidence"><h2>Source evidence</h2><p role="status"><%= pluralize(@matching_count, "snapshot record") %> · page <%= @page %> · up to 50 records; all content is untrusted source text.</p>
+    <% if @evidence_read_error %>
+      <p class="inline-error" role="alert"><%= @evidence_read_error %></p>
+      <p><%= link_to "Search current records from this source", workspace_corpus_path(Current.workspace, @corpus, source_id: @source.id, anchor: "corpus-records") %></p>
+    <% end %>
+    <% if @source.kind == "traces" %><p role="status">Reported failures and corrections are not expert labels. Review company evidence before approving a scenario. Trace intake stays local and does not execute an agent or judge.</p><% end %>
+    <% @items.each do |item| %>
+      <article id="record-<%= item.id %>" class="source-record">
+        <h3><%= item.title %></h3><p class="muted-copy">Source record <%= item.external_id %></p>
+        <% if @source.kind == "traces" %>
+          <% trace = SupportTrace.payload(item) %>
+          <dl class="source-metadata"><dt>Trace record ID</dt><dd><%= item.id %></dd><dt>Reported target version</dt><dd><%= trace["target_version"] %></dd><dt>Observed at</dt><dd><%= trace["observed_at"] %></dd></dl>
+          <h4>Reported failure</h4><p><%= trace["observed_failure"].presence || "None reported." %></p>
+          <h4>Reported correction</h4><p><%= trace["human_correction"].presence || "None reported." %></p>
+          <% if @trace_scenarios[item.id] %>
+            <p><%= link_to "Open trace scenario", workspace_corpus_scenario_path(Current.workspace, @corpus, @trace_scenarios[item.id]) %></p>
+          <% elsif Current.require_membership!.can_write? && trace["observed_failure"].present? %>
+            <%= button_to "Propose scenario from trace", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { trace_item_id: item.id }, class: "button", data: { turbo_submits_with: "Creating…" } %>
+          <% end %>
+          <p>Proposals keep the situation and known facts, with no approved requirements. Experts choose current documentation and permitted knowledge.</p>
+          <%= render "sources/failure_matching", item: item %>
+          <details id="model-matching-<%= item.id %>" class="section-block" <%= "open" if @model_matching_item == item %>>
+            <summary>Optional model failure matching</summary>
+            <p>Literal matching above stays local and unchanged. This separate workflow sends one fixed trace and every eligible current version in this corpus only after an exact preview, purpose approval and your confirmation. Suggestions cannot write expert decisions, labels, expectations or regressions.</p>
+            <% if @model_matching_item == item %>
+              <%= render "sources/model_failure_matching", item: item %>
+            <% else %>
+              <%= link_to "Preview optional model matching", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, model_matching_item_id: item.id, anchor: "model-matching-#{item.id}") %>
+            <% end %>
+          </details>
+          <% matching_page = @matching_item_id == item.id.to_s ? @matching_page : 1 %>
+          <% matching_params = { snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page, matching_item_id: item.id, anchor: "replay-cases-#{item.id}" } %>
+          <details id="replay-cases-<%= item.id %>" <%= "open" if @matching_item_id == item.id.to_s %>><summary>Cases with identical visible input<% unless @trace_matching_blocked %> (<%= @trace_match_counts[item.id] %>)<% end %></summary><p>Searches all fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
+            <% if @trace_matching_blocked %><p role="status">Matches stay hidden because a corpus source has expired.</p><% else %>
+              <p>Page <%= matching_page %> · up to 50 exact matches for this trace record. No run, label or decision is created.</p>
+              <% if @trace_matches[item.id].empty? %>
+                <% if @trace_match_counts[item.id].zero? %><p>No exact match in this corpus. Create and review a scenario, or inspect other fixed cases.</p>
+                <% else %><p>No matching cases on this page. <%= link_to "First matching page", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: 1)) %> keeps this trace and snapshot.</p><% end %>
+              <% end %>
+              <ul role="list"><% @trace_matches[item.id].each do |case_id, title| %><li><%= link_to "Case #{case_id} · #{title}", workspace_corpus_eval_case_path(Current.workspace, @corpus, case_id) %></li><% end %></ul>
+              <nav class="workspace-tabs" aria-label="Matching input case pages for <%= item.external_id %>">
+                <% if matching_page > 1 %><%= link_to "Previous matching cases", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: matching_page - 1)) %><% end %>
+                <% if @trace_match_counts[item.id] > matching_page * 50 %><%= link_to "Next matching cases", workspace_corpus_source_path(Current.workspace, @corpus, @source, **matching_params.merge(matching_page: matching_page + 1)) %><% end %>
+              </nav>
+            <% end %>
+          </details>
+          <% if Current.require_membership!.can_manage_work? && !@corpus.eval_definitions_expired? %><p><%= link_to "Define recorded target from this trace", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus, adapter: "recorded", trace_item_id: item.id) %>. Saving does not execute or send data.</p><% end %>
+          <div class="review-layout">
+            <section><h4>Recorded visible input</h4><pre class="evidence-text"><%= JSON.pretty_generate(trace["input"]) %></pre></section>
+            <section><h4>Recorded output</h4><p>Tool calls and actions are reported, not attested.</p><pre class="evidence-text"><%= JSON.pretty_generate(trace["output"]) %></pre></section>
+          </div>
+          <details><summary>Normalized source evidence</summary><pre class="evidence-text"><%= item.content %></pre></details>
+        <% else %>
+          <pre class="evidence-text"><%= item.content %></pre><details><summary>Context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
+        <% end %>
+      </article>
+    <% end %>
+    <% if @source.kind == "traces" && !@corpus.eval_definitions_expired? %>
+      <nav class="workspace-tabs" aria-label="Trace decision history pages">
+        <% if @decision_page > 1 %><%= link_to "Previous decisions", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page - 1, anchor: "source-evidence") %><% end %>
+        <% if @more_decisions %><%= link_to "Next decisions", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, dependency_page: @dependency_page, case_page: @case_page, decision_page: @decision_page + 1, anchor: "source-evidence") %><% end %>
+      </nav>
+    <% end %>
+    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  </section>
+  <% if Current.require_membership!.can_manage_work? %>
+    <details class="section-block" id="source-download" <%= "open" if @download_error %>><summary>Download retained snapshot <%= @snapshot.number %></summary>
+      <p>Complete normalized records from this exact snapshot, including titles, text and context, with source identity and processing provenance. This is retained data, not original raw files or a vendor export. No external provider receives it.</p>
+      <p>Masking is not full PII removal: personal or sensitive data may remain. Downloaded copies fall outside local purge; you are responsible for their storage and deletion.</p>
+      <p>Limit: 2000 records and 10 MiB of complete JSON. Larger downloads are refused, never sampled or truncated.</p>
+      <% if @download_error %><p role="alert"><%= @download_error %></p><% end %>
+      <%= form_with url: download_snapshot_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel", data: { turbo: false } do |form| %>
+        <%= form.hidden_field :snapshot_id, value: @snapshot.id %>
+        <div class="field"><%= form.label :download_confirmation, "Type #{@source.name} to confirm download" %><%= form.text_field :download_confirmation, value: @download_confirmation, required: true, autocomplete: "off" %></div>
+        <%= form.submit "Download snapshot #{@snapshot.number} JSON", class: "button" %>
+      <% end %>
+    </details>
+    <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record, plus all analyses, taxonomy revisions, scenarios, compiled cases, graders, calibration labels/outputs, targets, runs, results and regressions in this corpus. They may contain copies of company evidence. Suite names remain, with no cases. This cannot be undone.</p>
+      <%= form_with url: workspace_corpus_source_path(Current.workspace, @corpus, @source), method: :delete, class: "form-stack config-panel" do |form| %>
+        <div class="field"><%= form.label :confirmation, "Type #{@source.name} to confirm" %><%= form.text_field :confirmation, required: true, autocomplete: "off" %></div>
+        <%= form.submit "Delete source and records", class: "button" %>
+      <% end %>
+    </details>
+  <% end %>
+</main>

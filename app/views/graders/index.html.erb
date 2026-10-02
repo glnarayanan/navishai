@@ -1,0 +1,10 @@
+<% content_for :title, "Graders — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Graders</h1><p>Check a concrete support behaviour. Keep each definition fixed and measure it against expert labels.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "graders" %>
+  <% if @graders.empty? %><p class="empty-state">No graders yet. Start with a tool, field or escalation check where code can decide. Use a rubric only when the check needs meaning and context.</p><% end %>
+  <ul class="workspace-list" role="list"><% @graders.each do |grader| %><li class="workspace-card"><%= link_to grader.name, workspace_corpus_grader_path(Current.workspace, @corpus, grader) %><span>Version <%= grader.current_version.number %> · <%= grader.current_version.kind.humanize %></span></li><% end %></ul>
+  <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  <% if Current.require_membership!.can_write? %><section class="section-block"><h2>Define a grader</h2><%= render "form", url: workspace_corpus_graders_path(Current.workspace, @corpus), method: :post %></section><% end %>
+</main>

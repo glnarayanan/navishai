@@ -1,11 +1,15 @@
 .git
 .amp
 .local-agent
+.bundle
 log/*
 storage/*
 tmp/*
-!.keep
-config/master.key
+!log/.keep
+!storage/.keep
+!tmp/.keep
+public/assets/
+config/**/*.key
 .env
 .env.*
 ops/secrets/

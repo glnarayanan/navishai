@@ -1,0 +1,53 @@
+<% content_for :title, "#{@set.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @set.name %></h1><p><%= link_to @set.grader_version.grader.name, workspace_corpus_grader_path(Current.workspace, @corpus, @set.grader_version.grader, version: @set.grader_version.number) %> · fixed version <%= @set.grader_version.number %></p></div></div>
+  <nav class="workspace-tabs" aria-label="Calibration cohorts"><% %w[held_out development].each do |cohort| %><%= link_to cohort.humanize, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort:), aria: { current: cohort == @cohort ? "page" : nil } %><% end %></nav>
+  <section class="section-block" id="error-cost-assumptions"><h2>Fixed human-supplied error-cost assumptions</h2>
+    <% if @set.error_costs_supplied? %>
+      <dl class="source-metadata"><dt>False-positive cost</dt><dd><%= @set.false_positive_cost.to_s("F") %> <%= @set.error_cost_unit %></dd><dt>False-negative cost</dt><dd><%= @set.false_negative_cost.to_s("F") %> <%= @set.error_cost_unit %></dd><dt>Rationale</dt><dd><%= @set.error_cost_rationale %></dd></dl>
+    <% else %><p>Not supplied. Error costs are unknown; no values are inferred or inherited.</p><% end %>
+    <p>Set created by expert #<%= @set.created_by_id %> at <%= @set.created_at.iso8601 %>, for fixed grader v<%= @set.grader_version.number %>. Changing assumptions requires a new set.</p>
+  </section>
+  <section class="section-block" id="fixed-report"><h2><%= @cohort.humanize %> evidence · fixed v<%= @set.grader_version.number %></h2>
+    <%= render "report", report: @report, grader_version: @set.grader_version %>
+    <% if @set.grader_version.kind == "rubric_judge" %><p role="status">Each sample needs a separately approved judge attempt. Reports compare only usable fixed predictions with certain expert labels; rubric text and self-reported confidence do not prove accuracy.</p><% end %>
+  </section>
+  <section class="section-block" id="grader-preview"><h2>Preview a revised grader</h2>
+    <p>Local deterministic checks only, on development outputs and their fixed case requirements. Expert labels still belong to the original definitions. If a revision changes the meaning of the requirement, these labels cannot validate it. No labels, saved predictions or approvals change; no provider request is sent.</p>
+    <% if @cohort != "development" %><p><%= link_to "Switch to development", workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: "development", anchor: "grader-preview") %> to preview changes. Held-out samples never enter this preview.</p>
+    <% elsif @candidates.empty? %><p>No newer deterministic version of this grader. <%= link_to "Review or revise the grader", workspace_corpus_grader_path(Current.workspace, @corpus, @set.grader_version.grader) %>, then return here. A saved revision does not approve it.</p>
+    <% else %>
+      <%= form_with url: workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, anchor: "grader-preview"), method: :get, class: "form-stack config-panel" do |form| %>
+        <%= form.hidden_field :cohort, value: "development" %>
+        <div class="field"><%= form.label :candidate_version_id, "Revised deterministic grader" %><%= form.select :candidate_version_id, @candidates.map { |version| ["#{version.grader.name} v#{version.number}", version.id] }, { include_blank: "Choose a revised version", selected: params[:candidate_version_id] }, required: true %></div>
+        <%= form.submit "Preview on development", class: "button" %>
+      <% end %>
+    <% end %>
+    <% if @candidate_report %><section id="candidate-report" class="section-block"><h3>Development preview · v<%= @candidate.number %></h3>
+      <p><%= link_to "Fixed candidate definition", workspace_corpus_grader_path(Current.workspace, @corpus, @candidate.grader, version: @candidate.number) %>. Counts use current expert labels on the original fixed requirements, not new labels or held-out evidence. Obtain fresh held-out calibration before trusting a revision.</p>
+      <%= render "report", report: @candidate_report, grader_version: @candidate %>
+      <% if Current.require_membership!.can_write? %><h4>Inspect candidate disagreements</h4>
+        <p>Only samples you have already labelled can appear here. The original review queue below still uses saved predictions.</p>
+        <ul class="workspace-list" role="list"><% @candidate_report[:reviews].select { |entry| entry[:state] == "disagreement" }.each do |entry| %><li class="workspace-card"><%= link_to "Sample #{entry[:sample].id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, entry[:sample]) %><span>Candidate differs from current expert labels on the original requirement.</span></li><% end %></ul>
+      <% end %>
+      <%= link_to "Clear preview", workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: "development", anchor: "grader-preview") %>
+    </section><% end %>
+  </section>
+  <section class="section-block" id="review-samples"><h2>Review samples</h2>
+    <% if Current.require_membership!.can_write? %>
+      <p>Missing personal labels come first, then disputes, uncertainty and machine disagreement. Until your first label, each sample says only that it needs your judgment. These states guide review, not support quality or error cost.</p>
+      <%= form_with url: workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, anchor: "review-samples"), method: :get, class: "form-stack config-panel" do |form| %>
+        <%= form.hidden_field :cohort, value: @cohort %>
+        <div class="field"><%= form.label :review_state, "Review focus" %><%= form.select :review_state, CalibrationReport::REVIEW_STATES.map { |state, name| ["#{name} (#{@report[:reviews].count { |entry| entry[:state] == state }})", state] }, { include_blank: "All samples", selected: @review_state } %></div>
+        <%= form.submit "Filter review samples", class: "button" %>
+      <% end %>
+      <p><%= link_to "Clear review focus", workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: @cohort, anchor: "review-samples") %>. The report above always uses the whole selected cohort.</p>
+      <% if @next_unlabelled %><p><%= link_to "Start next unlabelled review", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @next_unlabelled), class: "button button-primary" %></p><% end %>
+    <% end %>
+    <p role="status"><%= @reviews.size %> of <%= @report[:samples] %> cohort samples shown.</p>
+    <% if @report[:samples].zero? %><p>No samples in this cohort. Add a recorded output, choosing its cohort before review.</p><% elsif @reviews.empty? %><p>No samples need this review focus. Clear the filter to inspect the rest of this cohort.</p><% end %>
+    <ul class="workspace-list" role="list"><% @reviews.each do |entry| %><% sample = entry[:sample] %><li class="workspace-card" data-review-state="<%= entry[:state] if Current.require_membership!.can_write? %>"><%= link_to "Sample #{sample.id}", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, sample) %><span>Check #<%= sample.eval_case_check_id %> · <%= entry[:label_count] %> expert labels</span><% if Current.require_membership!.can_write? %><strong><%= CalibrationReport::REVIEW_STATES.fetch(entry[:state]) %></strong><% end %></li><% end %></ul>
+  </section>
+  <% if Current.require_membership!.can_write? %><p class="section-block"><%= link_to "Add output sample", new_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set), class: "button button-primary" %></p><% end %>
+</main>

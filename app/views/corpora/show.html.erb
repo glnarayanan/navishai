@@ -1,0 +1,84 @@
+<% content_for :title, "#{@corpus.name} — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. Local processing unless you approve a model request.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "sources" %>
+  <section aria-labelledby="sources-title"><h2 id="sources-title">Sources</h2>
+    <ul class="workspace-list" role="list">
+      <% @sources.each do |source| %>
+        <li class="workspace-card"><% if source.expires_at > Time.current %><%= link_to source.name, workspace_corpus_source_path(Current.workspace, @corpus, source) %><% else %><%= source.name %> (expired; awaiting deletion)<% end %>
+          <span>Snapshot <%= source.current_snapshot.number %> · <%= source.kind.humanize %> · expires <%= source.expires_at.to_date %></span></li>
+      <% end %>
+    </ul>
+    <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
+    <p><%= link_to "Explore current records", "#corpus-records", data: { turbo: false } %></p>
+  </section>
+  <section class="section-block config-panel"><h2>Corpus analysis</h2>
+    <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
+    <% if Current.require_membership!.can_write? %>
+      <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :processing_method, "Local method" %><%= form.select :processing_method, [[ "Original local · 2000 records / 10 MiB", "local" ], [ "Streaming local · 100,000 records / 1 GiB", "local_stream" ], [ "Full-text local · 2000 records / 10 MiB", "local_full_text" ], [ "Large full-text · 100,000 / 1 GiB", "local_large_full_text" ]], selected: flash[:local_analysis_method] || "local" %>
+          <p>Full-text and large full-text local use complete conversations, including later diagnostics. Original and streaming use only the first 4000 characters for clustering. All use complete documents and global term statistics, not separate batch clusters.</p>
+          <p>Streaming and full-text budgets: 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. Exceeding a budget saves no proposals. These local methods neither send data to a model nor prove discovery quality; model limits and disclosure stay separate.</p>
+          <p>Large full-text uses the same work budgets, with up to 100,000 complete records / 1 GiB. Complete evidence reads and mining stay within 10 MiB; a larger input can still exceed a work budget.</p>
+        </div>
+        <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
+        <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
+      <% end %>
+      <p><%= link_to "Model-assisted corpus discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus) %>. Preview exact records and approve their separate disclosure before any model request.</p>
+      <p><%= link_to "Bounded multi-request discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch") %>. Preview all records, repeated documents and the fixed maximum call plan separately.</p>
+      <p>Retain source-backed support observations with uncertainty and every source anchor: <%= link_to "Single-request support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_observations") %> or <%= link_to "Batch support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_observations") %>. These explicit v2 methods use the same source limits, approval and call quota; original v1 requests stay unchanged.</p>
+      <p><%= link_to "Cross-batch support relationships", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_relationships") %> · explicit v3. Propose new relationships from retained observation quotes across batches, keeping all originals and the same call ceiling. Missing evidence and company meaning still need expert review.</p>
+    <% end %>
+    <ul class="workspace-list" role="list"><% @analyses.each do |analysis| %><li class="workspace-card"><%= link_to "Analysis #{analysis.id} · #{analysis.state}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></li><% end %></ul>
+  </section>
+  <% if Current.require_membership!.can_write? %>
+    <section class="section-block config-panel"><h2>Add company data</h2>
+      <p>UTF-8 JSON exports, production traces or text/Markdown documents: 10 MiB and 2000 records per file.</p>
+      <p id="intake-format-help">Conversation JSONL: one conversation object per line, up to 60 MiB and 100,000 records. Each line is at most 1 MiB; normalized fields after masking are at most 256 MiB. Other formats keep their limits. Imports run locally and commit as a whole; wait for confirmation before submitting again.</p>
+      <p>Within one source, matching bytes, masking rules and processing version reuse a snapshot; changes add a version.</p>
+      <%= form_with url: workspace_corpus_sources_path(Current.workspace, @corpus), multipart: true, class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 180 %></div>
+        <div class="field-grid">
+          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Conversation JSONL", "conversation_lines"], ["Text / Markdown", "document"], ["Production traces", "traces"]], { selected: flash[:intake_kind] || "conversations" }, { aria: { describedby: "intake-format-help" } } %></div>
+          <div class="field"><%= form.label :redaction, "Redaction" %><%= form.select :redaction, [["Mask email addresses", "email"], ["Mask exact text", "exact"], ["Keep original text", "none"]], selected: flash[:intake_redaction] || "email" %></div>
+        </div>
+        <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Masking must not merge JSON keys or record IDs; rename colliding keys or IDs before trying again. Original files are not stored; snapshots retain normalised text and an input digest.</p>
+        <div class="field"><%= form.label :redaction_values, "Text to mask (exact-text mode only)" %><%= form.text_area :redaction_values, rows: 4, autocomplete: "off", spellcheck: false, aria: { describedby: "exact-mask-help" } %>
+          <p id="exact-mask-help" class="field-hint">One value per line: 1–50 unique values, 3–200 characters each, 8 KiB total. Case-sensitive literal matches, not regular expressions. This mode masks only listed text, not other emails or PII. Source names stay unchanged.</p>
+          <p class="field-hint">Values are not retained; snapshots keep their SHA-256 fingerprint and count. Keep your list privately to repeat processing. Values clear after errors; re-enter them before retrying. New rules leave older snapshots unchanged. Review retained evidence before any separate provider disclosure.</p>
+        </div>
+        <div class="field-grid">
+          <div class="field"><%= form.label :file, "Company data file" %><%= form.file_field :file, required: true, accept: ".json,.jsonl,.ndjson,.txt,.md" %></div>
+          <div class="field"><%= form.label :retention_days, "Retention days" %><%= form.number_field :retention_days, value: 365, min: 1, max: 3650, required: true %></div>
+        </div>
+        <%= form.submit "Import source", class: "button button-primary" %>
+      <% end %>
+      <details class="section-block"><summary>Conversation export format</summary><p>A JSON array of objects with id, title, content and an optional context object. Intercom conversations with source/parts and Zendesk tickets with description/comments also work. HTML inside export fields stays untrusted text.</p>
+        <pre class="evidence-text">[{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}]</pre>
+      </details>
+      <details class="section-block"><summary>Conversation JSONL format</summary><p>Choose Conversation JSONL for a normalized .jsonl or .ndjson file. Each line has id, title, content and an optional context object. No blank lines, array wrapper or vendor envelope. IDs must be unique across the whole file. Escape newlines inside strings. Invalid input refuses the whole file; no partial records or automatic retry.</p>
+        <pre class="evidence-text">{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}
+{"id":"api-43","title":"Webhook replay","content":"A replay writes two invoices.","context":{"reopened":true}}</pre>
+      </details>
+      <details class="section-block"><summary>Production trace format</summary><p>A JSON array of support-trace-v1 objects, at most 100 KiB each. Fields: schema, id, title, target_version, observed_at (ISO 8601 with timezone), input, output, observed_failure and human_correction. Input has situation, known_facts and knowledge; output uses support-output-v1. Failure/correction may be empty text. Extra fields, hidden expectations and malformed outputs are rejected. Reports do not create authoritative labels or run an agent.</p></details>
+    </section>
+  <% end %>
+  <section class="section-block" id="corpus-records"><h2>Explore current records</h2><p>Search a literal phrase in titles, source record IDs, normalised text and context, ignoring case. Only current, unexpired snapshots appear. This local search does not find semantic matches or measure coverage.</p>
+    <%= form_with url: workspace_corpus_path(Current.workspace, @corpus, anchor: "corpus-records"), method: :get, class: "form-stack config-panel" do |form| %>
+      <div class="field-grid"><div class="field"><%= form.label :corpus_query, "Search phrase" %><%= form.search_field :corpus_query, value: @query, maxlength: 200 %></div>
+        <div class="field"><%= form.label :source_id, "Search source" %><%= form.select :source_id, @sources.select { |source| source.expires_at > Time.current }.map { |source| [ source.name, source.id ] }, { include_blank: "All current sources", selected: @selected_source&.id } %></div></div>
+      <%= form.submit "Search retained records", class: "button" %>
+    <% end %>
+    <p><%= link_to "Clear search", workspace_corpus_path(Current.workspace, @corpus, anchor: "corpus-records") %>. Search phrases appear in your browser URL/history; do not paste secrets.</p>
+    <% if @search_error %><p class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching record") %> · page <%= @page %> · up to 50 records.</p><% end %>
+    <% if @evidence_read_error %><p class="inline-error" role="alert"><%= @evidence_read_error %></p><% end %>
+    <% if !@search_error && !@evidence_read_error && @items.empty? %><p>No records on this page. Clear the phrase or source filter, return to the first page, or import company data.</p><% end %>
+    <% @items.each do |item| %><details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary>
+      <p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %></p>
+      <pre class="evidence-text"><%= item.content %></pre><details><summary>Retained context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
+    </details><% end %>
+    <nav class="workspace-tabs" aria-label="Record pages"><% if @page > 1 %><%= link_to "Previous records", url_for(only_path: true, params: request.query_parameters.merge("page" => @page - 1), anchor: "corpus-records") %><% end %><% if @more %><%= link_to "Next records", url_for(only_path: true, params: request.query_parameters.merge("page" => @page + 1), anchor: "corpus-records") %><% end %></nav>
+  </section>
+</main>

@@ -1,0 +1,45 @@
+<% content_for :title, "Model corpus discovery — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Model corpus discovery</h1><p>Company-specific families and source-backed candidates, not expert decisions.</p></div></div>
+  <p><%= @batch ? "Bounded multi-request discovery sends every complete conversation, repeating all current documents in each discovery batch. At most one reducer receives validated proposals, not human labels or scenarios." : "One request sends the complete records shown below: titles, text and retained context." %> It can propose issue families, high-risk examples and scenario expectations. Quotes prove source links, not correctness. Taxonomy and scenarios still need expert review.</p>
+  <p><%= @batch ? "At most 2000 complete records / 10 MiB, 30 discovery batches, each within 100 records / 256 KiB, and 20 final candidates." : "At most 100 conversation/document records, 256 KiB and 20 candidates." %> No silent sampling or truncation. Traces, existing scenarios and human labels stay local. Email masking is not full PII removal; review these records before disclosure.</p>
+  <% if @relationships %>
+    <p>Selected: cross-batch support relationships · v3. Keep every v2 observation and its uncertainty. The existing reducer may propose up to 100 new relationships using 2–8 exact anchors from at least two batches and two source records. No extra calls, source text or expert authority.</p>
+    <p>Only retained observation quotes can support these relationships; omitted evidence cannot be recovered here. A proposed contradiction, disagreement, reopen or customer variant needs expert review. A stopped attempt publishes no partial global findings.</p>
+  <% elsif @observations %>
+    <p>Selected: source-backed support observations · v2. Retain proposed contradictions, disagreements, closure/reopen, policy exceptions, diagnostics and other support distinctions with uncertainty and every exact source quote, even without a selected candidate. At most 100 observations per discovery request; no extra calls or expert decisions.</p>
+    <% if @batch %><p>The reducer preserves and orders existing observations. It cannot create a new relationship between records in different batches. A stopped attempt publishes no partial global findings.</p><% end %>
+  <% else %><p>Selected: original discovery · v1. This protocol does not request support observations.</p><% end %>
+  <% if @model_input_error %>
+    <p role="status" class="inline-error"><%= @model_input_error %></p><p>Add conversations or use a smaller corpus, then reopen this page. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %>. Local analysis also has complete-record limits.</p>
+  <% else %>
+    <div class="review-layout">
+      <section aria-labelledby="disclosure-preview"><h2 id="disclosure-preview">Exact source preview</h2>
+        <p><%= @model_items.size %> complete records · <%= number_to_human_size(@model_input.to_json.bytesize) %> · confirm again if sources change.</p>
+        <% if @batch %>
+          <h3>Exact allocation and maximum call plan</h3><p><%= @call_plan.fetch("batches").size %> discovery requests + <%= @call_plan.fetch("reducer") ? 1 : 0 %> reducer · maximum <%= @call_plan.fetch("maximum_calls") %> calls. Reducer accepts at most 200 intermediate clusters / 1 MiB; exceeding these stops the attempt without dropping proposals.</p>
+          <p>Each batch has its own once-only UUID. Any abstention, error, interruption or changed authority stops later calls. Receipts cannot be mined until the whole analysis produces global proposals. No retry or crash continuation.</p>
+          <details><summary>Fixed source digest and ordered record references</summary><pre class="evidence-text"><%= JSON.pretty_generate(@call_plan) %></pre></details>
+          <details id="source-record-preview"><summary>Review all <%= @model_items.size %> exact source records</summary>
+        <% end %>
+        <% @model_items.each do |item| %>
+          <details class="source-record"><summary><%= item.title %> · <%= item.source_snapshot.source.kind.humanize %></summary><p><%= link_to "Inspect source snapshot", source_evidence_path(item) %> · corpus-item-<%= item.id %></p><pre class="evidence-text"><%= item.content %></pre><h3>Retained context</h3><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
+        <% end %>
+        <% if @batch %></details><% end %>
+      </section>
+      <section aria-labelledby="model-request"><h2 id="model-request">Request discovery</h2>
+        <p>The operator must approve this exact workspace/endpoint in the separate corpus-processing registry. Target/judge or scenario-proposal approval cannot grant this disclosure. Each attempt claims once; unknown outcomes never retry.</p>
+        <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack config-panel" do |form| %>
+          <%= form.hidden_field :processing_method, value: @relationships ? "model_batch_relationships" : (@observations ? (@batch ? "model_batch_observations" : "model_observations") : (@batch ? "model_batch" : "model")) %><%= form.hidden_field :input_digest, value: ModelCorpusDiscovery.digest(@model_input) %>
+          <% if @batch %><%= form.hidden_field :call_plan_digest, value: ModelCorpusDiscovery.digest(@call_plan) %><% end %>
+          <div class="field"><%= form.label :scenario_limit, "Model candidate limit" %><%= form.number_field :scenario_limit, value: params[:scenario_limit].presence || 5, min: 1, max: 20, required: true %></div>
+          <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 6, maxlength: 10240, required: true, aria: { describedby: "model-config-help" } %><p id="model-config-help">Set endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or a non-negative integer. Never enter credentials.</p></div>
+          <div class="checkbox-field"><%= form.check_box :corpus_disclose %><%= form.label :corpus_disclose, @batch ? "I approve these exact source records, repeated documents and the maximum call plan shown in the preview to the same endpoint, model and settings above." : "I approve sending these exact source records and retained context to the model endpoint above." %></div>
+          <%= form.submit "Request model discovery", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <% end %>
+      </section>
+    </div>
+  <% end %>
+</main>

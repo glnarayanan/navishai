@@ -3,31 +3,12 @@ class Membership < ApplicationRecord
 
   belongs_to :workspace
   belongs_to :user
-  has_many :assigned_support_cases, class_name: "SupportCase", foreign_key: :assigned_membership_id, dependent: :restrict_with_exception
-  has_many :owned_crew_tasks, class_name: "CrewTask", foreign_key: :owner_membership_id,
-    dependent: :restrict_with_exception
-  has_many :proposed_memory_corrections, class_name: "MemoryCorrectionProposal",
-    foreign_key: :proposed_by_membership_id, dependent: :restrict_with_exception
-  has_many :intercom_sync_operations, dependent: :restrict_with_exception
-  has_many :notifications, foreign_key: :recipient_membership_id, dependent: :restrict_with_exception
-  has_many :accountable_customer_success_interventions, class_name: "CustomerSuccessIntervention",
-    foreign_key: :accountable_membership_id, dependent: :restrict_with_exception,
-    inverse_of: :accountable_membership
-  has_many :assigned_knowledge_improvement_candidates, class_name: "KnowledgeImprovementCandidate",
-    foreign_key: :assigned_to_membership_id, dependent: :restrict_with_exception,
-    inverse_of: :assigned_to_membership
-
   enum :role, ROLES.index_by(&:itself), validate: true
-
   scope :owners, -> { where(role: :owner) }
-
   validates :user_id, uniqueness: { scope: :workspace_id }
 
   before_destroy :retain_an_owner
   before_update :retain_an_owner_after_role_change, if: -> { role_changed? && role_was == "owner" }
-
-  before_destroy :disconnect_personal_accounts
-  before_update :disconnect_personal_accounts, if: -> { role_changed? && viewer? }
 
   def can_write?
     !viewer?
@@ -35,18 +16,6 @@ class Membership < ApplicationRecord
 
   def can_manage_work?
     owner? || admin? || manager?
-  end
-
-  def can_inspect_memory?
-    !viewer?
-  end
-
-  def can_configure_integrations?
-    owner? || admin?
-  end
-
-  def can_configure_agents?
-    owner? || admin?
   end
 
   def can_invite_role?(invited_role)
@@ -63,10 +32,6 @@ class Membership < ApplicationRecord
   end
 
   private
-    def disconnect_personal_accounts
-      PersonalProviderConnection.disconnect_membership!(membership: self) if PersonalProviderAccount.exists?(membership_id: id)
-    end
-
     def retain_an_owner
       prevent_last_owner_change if owner?
     end
@@ -76,15 +41,11 @@ class Membership < ApplicationRecord
     end
 
     def prevent_last_owner_change
-      lock_owner_changes
+      lock_name = self.class.connection.quote("navishai-workspace-owners-#{workspace_id}")
+      self.class.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{lock_name}))")
       return if workspace.memberships.owners.where.not(id: id).exists?
 
       errors.add(:base, "Workspace must retain at least one Owner")
       throw :abort
-    end
-
-    def lock_owner_changes
-      lock_name = self.class.connection.quote("navishai-workspace-owners-#{workspace_id}")
-      self.class.connection.execute("SELECT pg_advisory_xact_lock(hashtext(#{lock_name}))")
     end
 end

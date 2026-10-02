@@ -1,0 +1,43 @@
+<% content_for :title, "#{@suite.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Eval suites", workspace_corpus_eval_suites_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @suite.name %></h1><p><%= @suite.kind.humanize %> suite · <%= @cases.size %> unexpired cases</p></div></div>
+  <p>Cases keep exact scenario, contract and grader versions. Membership edits do not change a case or a prior run. A run checks current approval and source evidence again.</p>
+  <% if @corpus.eval_definitions_expired? %><p role="status">Source retention ended. Derived definitions, targets, runs and regressions stay hidden until purge.</p><% end %>
+  <% if @cases.empty? %><p class="empty-state"><%= link_to "Review a scenario", workspace_corpus_scenarios_path(Current.workspace, @corpus) %>, then compile its contract and add it here.</p><% end %>
+  <ul class="workspace-list" role="list"><% @cases.each do |item| %><li class="workspace-card"><%= link_to item.scenario_version.title, workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %><span>Case #<%= item.id %> · definition <%= item.number %></span><% if Current.require_membership!.can_write? %><%= button_to "Remove case #{item.id}", workspace_corpus_eval_suite_path(Current.workspace, @corpus, @suite), method: :patch, params: { remove_case_id: item.id }, class: "button" %><% end %></li><% end %></ul>
+  <% unless @corpus.eval_definitions_expired? %>
+    <section class="section-block config-panel"><h2>Run this suite</h2><p>At most 50 cases and 100 checks. Scripted returns fixtures; recorded replays an output only for identical visible input. HTTP sends visible inputs to its exact approved endpoint. Judge checks without a model abstain.</p>
+      <% if @cases.empty? %><p>Add a compiled case before running.</p><% elsif @targets.empty? %><p><%= link_to "Define an evaluation target", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus) %> before running.</p><% elsif Current.require_membership!.can_write? %>
+        <%= form_with url: workspace_corpus_evaluation_runs_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+          <%= hidden_field_tag :suite_id, @suite.id %>
+          <%= hidden_field_tag :suite_digest, Digest::SHA256.hexdigest(@cases.map(&:id).to_json) %>
+          <div class="field"><%= form.label :target_version_id, "Target version" %><%= form.select :target_version_id, @targets.map { |target| ["#{target.name} · v#{target.current_version.number} · #{target.current_version.adapter}", target.current_version_id] }, { prompt: "Choose a target version" }, required: true %></div>
+          <% if @targets.any? { |target| %w[http http_conversation].include?(target.current_version.adapter) } %>
+            <fieldset class="form-stack">
+              <legend>HTTP disclosure</legend>
+              <p>Inspect the selected target's exact endpoint and each case's visible input before sending. Hidden facts and expectations stay local. Sent data falls under the endpoint's retention policy; local deletion cannot recall it.</p>
+              <ul role="list"><% @targets.select { |target| %w[http http_conversation].include?(target.current_version.adapter) }.each do |target| %><li><%= link_to "#{target.name} v#{target.current_version.number}", workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %>: <%= target.current_version.configuration.fetch("endpoint") %></li><% end %></ul>
+              <% @cases.each do |item| %><details><summary>Case #<%= item.id %> · planned follow-up disclosure</summary><%= render "eval_cases/conversation_plan", version: item.scenario_version %></details><% end %>
+              <div class="checkbox-field"><%= form.check_box :disclose %><%= form.label :disclose, "I approve sending visible inputs to the selected HTTP endpoint for this run." %></div>
+              <p>This approval includes these planned follow-up messages, actual transcript forwarding and each displayed maximum call count for conversation targets. Single-shot targets refuse nonempty plans.</p>
+              <small>Required for HTTP only. Starting another run deliberately sends a new request; refresh never does.</small>
+            </fieldset>
+          <% end %>
+          <% if @judges.any? %>
+            <fieldset class="form-stack">
+              <legend>Separate judge disclosure</legend>
+              <p>The fixed judges receive target outputs, rubrics, requirements, visible context and supporting company evidence. Target consent does not approve this. Hidden facts and expert labels stay local. Inspect each definition and source; local deletion cannot recall sent data.</p>
+              <ul role="list"><% @judges.each do |version| %><li><%= link_to "#{version.grader.name} v#{version.number}", workspace_corpus_grader_path(Current.workspace, @corpus, version.grader, version: version.number) %> · <%= version.definition.dig("execution", "model") %>: <%= version.definition.dig("execution", "endpoint") %></li><% end %></ul>
+              <div class="checkbox-field"><%= form.check_box :judge_disclose %><%= form.label :judge_disclose, "I approve sending outputs, rubrics and company evidence to these fixed judges for this run." %></div>
+              <small>Low confidence abstains. Endpoint-reported confidence, model, usage and cost do not prove accuracy or execution.</small>
+            </fieldset>
+          <% end %>
+          <%= form.submit "Start fixed run", class: "button button-primary", data: { turbo_submits_with: "Queuing…" } %>
+        <% end %>
+      <% else %><p>A workspace writer must start a run.</p><% end %>
+    </section>
+    <section class="section-block"><h2>Recent runs</h2><% if @runs.empty? %><p>No runs yet.</p><% end %><ul class="workspace-list" role="list"><% @runs.each do |run| %><li class="workspace-card"><%= link_to "Run #{run.id}", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run) %><span><%= run.state.humanize %> · <%= l run.created_at, format: :short %></span></li><% end %></ul></section>
+    <% if @suite.kind == "regression" %><section class="section-block"><h2>Reviewed failure admissions</h2><p>These fixed records retain the source result and human reason, even if a case later leaves the suite.</p><% if @regressions.empty? %><p>No reviewed failures yet. Inspect a failed result, then add it here with your reason.</p><% end %><% @regressions.each do |record| %><article class="source-record"><h3><%= link_to "Failed result #{record.evaluation_result_id} · case #{record.eval_case_id}", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, record.evaluation_result) %></h3><p><%= record.rationale %></p><p>Reviewed by expert #<%= record.reviewed_by_id %> · <%= l record.created_at, format: :short %></p></article><% end %></section><% end %>
+  <% end %>
+</main>

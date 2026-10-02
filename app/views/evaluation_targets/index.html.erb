@@ -1,0 +1,16 @@
+<% content_for :title, "Evaluation targets — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Evaluation targets</h1><p>Systems under test, not support teammates. Choose a scripted fixture, recorded production output or an operator-approved HTTPS endpoint.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "targets" %>
+  <% if @targets.empty? %><p class="empty-state">No targets yet. A Manager, Admin or Owner can define one below. Saving a definition does not execute it.</p><% end %>
+  <ul class="workspace-list" role="list"><% @targets.each do |target| %><li class="workspace-card"><%= link_to target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, target) %><span><%= {"http_conversation" => "Bounded HTTP conversation", "http" => "HTTP endpoint", "scripted" => "Scripted fixture", "recorded" => "Recorded production output"}.fetch(target.current_version.adapter) %> · v<%= target.current_version.number %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_manage_work? %><section class="section-block config-panel"><h2>Create target</h2><p>A scripted rule checks one visible fact and returns a fixture. Recorded replays an uploaded output only for identical input. HTTP sends visible context and permitted knowledge to the endpoint you approve when starting a run.</p>
+    <details><summary>Scripted schema</summary><pre class="evidence-text">{
+  "rules": [{"fact": "plan", "equals": "enterprise", "output": {…support-output-v1…}}],
+  "default_output": {…support-output-v1…}
+}</pre><p>Replace each output placeholder with the six-field <%= link_to "support-output-v1 contract", workspace_corpus_graders_path(Current.workspace, @corpus) %>. Configuration must be valid JSON.</p></details>
+    <details><summary>HTTP contract and privacy</summary><pre class="evidence-text">{"endpoint": "https://agent.example.com/evaluate"}</pre><p>Your operator must approve that exact HTTPS URL for this workspace. Port 443 only; no private addresses, URL credentials, query, redirects or inherited proxy. Optional bearer credentials stay in the operator's environment.</p><p>Each POST contains {"schema": "support-target-v1", "input": {"situation": …, "known_facts": …, "knowledge": …}}. Return support-output-v1 JSON. Calls have a 30-second total deadline, 1 MiB input and 100 KiB output bounds. They never retry automatically. Idempotency-Key identifies the fixed case attempt; your endpoint must enforce it if needed.</p><p>Expected behaviour and hidden facts stay out of the request. Review the case's visible preview for answers or sensitive text before disclosure. Deleting local sources cannot recall data already sent to another system.</p></details>
+    <%= render "form", url: workspace_corpus_evaluation_targets_path(Current.workspace, @corpus), method: :post %>
+  </section><% end %>
+</main>

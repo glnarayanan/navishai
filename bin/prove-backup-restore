@@ -1,0 +1,196 @@
+#!/usr/bin/env ruby
+# Operations-only synthetic proof. Never accepts an existing database name/URL.
+require_relative "../config/boot"
+require_relative "../ops/database_recovery"
+require "tmpdir"
+
+abort "Usage: bin/prove-backup-restore (no arguments)" unless ARGV.empty?
+ENV.keys.grep(/\APG/).each { |key| ENV.delete(key) }
+ENV["RAILS_ENV"] = "test"
+ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_SCENARIO_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_CORPUS_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_MATCHING_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_IMPACT_ENDPOINTS"] = "[]"
+ENV["NAVISHAI_TRACE_DISCOVERY_ENDPOINTS"] = "[]"
+recovery = Operations::DatabaseRecovery.new
+ENV["DATABASE_URL"] = recovery.url
+
+def assert_proof(condition, message)
+  raise "Proof failed: #{message}" unless condition
+end
+
+def rejects_sql(sql, error_class, message = nil)
+  connection = ActiveRecord::Base.connection
+  rejected = false
+  connection.transaction(requires_new: true) do
+    begin
+      connection.execute(sql)
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless error.cause.is_a?(error_class) && (!message || error.cause.message.include?(message))
+      rejected = true
+    end
+    raise ActiveRecord::Rollback
+  end
+  assert_proof(rejected, "database accepted prohibited SQL")
+end
+
+begin
+  Dir.mktmpdir("navishai-restore-proof-") do |directory|
+    File.chmod(0o700, directory)
+    recovery.create!
+    puts "SOURCE: disposable databases #{recovery.databases.values.join(', ')}; roles #{recovery.owner}, #{recovery.runtime}."
+    recovery.load_structure!(File.expand_path("../db/structure.sql", __dir__))
+    require_relative "../config/environment"
+    require "active_record/fixtures"
+    require_relative "../test/test_helpers/recorded_evaluation_test_helper"
+    require_relative "../test/test_helpers/batch_discovery_test_helper"
+    ActiveRecord::FixtureSet.create_fixtures(Rails.root.join("test/fixtures"), %w[organizations workspaces users memberships])
+    fixture = Object.new.extend(RecordedEvaluationTestHelper).extend(BatchDiscoveryTestHelper)
+    fixture.define_singleton_method(:memberships) do |name|
+      Membership.find(ActiveRecord::FixtureSet.identify(name))
+    end
+    fixture.define_singleton_method(:workspaces) do |name|
+      Workspace.find(ActiveRecord::FixtureSet.identify(name))
+    end
+    fixture.build_compared_evaluation
+    corpus = fixture.instance_variable_get(:@corpus)
+    membership = fixture.instance_variable_get(:@membership)
+    fixed_case = fixture.instance_variable_get(:@case)
+    before = fixture.instance_variable_get(:@before)
+    after = fixture.instance_variable_get(:@after)
+    trace = fixture.instance_variable_get(:@trace_item)
+    check = fixed_case.eval_case_checks.find_by!(grader_version_id: fixture.instance_variable_get(:@action_grader).current_version_id)
+    set = CalibrationSet.define!(corpus:, membership:, name: "Restore held-out fixture", grader_version_id: check.grader_version_id,
+      false_positive_cost: "1.250001", false_negative_cost: "7.500002", error_cost_unit: "fixture units", error_cost_rationale: "Synthetic assumptions only.")
+    sample = set.add_sample!(membership:, check_id: check.id, cohort: "held_out", output: trace.context.fetch("support_trace").fetch("output"))
+    label = sample.label!(membership:, previous_id: nil, decision: "fail", rationale: "Synthetic expert: expiry was not collected.")
+    correction = sample.label!(membership:, previous_id: label.id, decision: "uncertain", rationale: "Synthetic correction: retain the first decision too.")
+    saved_result = before.evaluation_results.sole
+    saved_set = CalibrationSet.define!(corpus:, membership:, name: "Restore saved-result development fixture", grader_version_id: check.grader_version_id)
+    saved_sample = saved_set.add_sample!(membership:, check_id: check.id, cohort: "development", evaluation_result_id: saved_result.id)
+    association = TraceScenarioDecision.append!(item: trace, version: fixed_case.scenario_version, membership:, decision: "match", reason: "Synthetic association: inspect this exact version.")
+    association_correction = TraceScenarioDecision.append!(item: trace, version: fixed_case.scenario_version, membership:, decision: "uncertain", reason: "Synthetic correction: need diagnostic logs.")
+    scenario = fixed_case.scenario_version.scenario
+    plan = [ { "after_assistant_contains" => "expiry", "message" => "It expired yesterday." } ]
+    version = scenario.revise!(membership:, base_version_id: scenario.current_version_id, attributes: { follow_ups: plan })
+    scenario.review!(membership:, version_id: version.id, decision: "approve", note: "Synthetic expert reviewed this source-backed follow-up.")
+    bindings = fixed_case.eval_case_checks.map do |binding|
+      evidence = version.scenario_evidence.find_by!(corpus_item_id: binding.scenario_evidence.corpus_item_id, kind: binding.scenario_evidence.kind)
+      binding.attributes.slice("requirement_kind", "requirement_index", "grader_version_id").merge("scenario_evidence_id" => evidence.id)
+    end
+    conversation_case = EvalCompiler.call(scenario:, membership:, version_id: version.id, checks: bindings)
+    conversation_suite = corpus.eval_suites.create!(workspace: corpus.workspace, name: "Restore conversation fixture")
+    conversation_suite.add_case!(membership:, case_id: conversation_case.id)
+    conversation = nil
+    conversation_calls = []
+    fixture.with_endpoint_approval do
+      target = EvaluationTarget.define!(corpus:, membership:, name: "Restore conversation endpoint fixture", adapter: "http_conversation", configuration: { "endpoint" => HttpTargetTestHelper::HTTP_ENDPOINT })
+      conversation = EvaluationRun.request!(suite: conversation_suite, membership:, target_version_id: target.current_version_id, disclose: true,
+        suite_digest: Digest::SHA256.hexdigest([ conversation_case.id ].to_json))
+      fixture.with_test_method(EvaluationHttp, :call, ->(**arguments) {
+        conversation_calls << arguments.deep_dup
+        fixture.support_output(text: conversation_calls.size == 1 ? "Please share the expiry date." : "The certificate expired.", tools: [ "collect_expiry" ])
+      }) { 2.times { EvaluationRunJob.perform_now(conversation.id) } }
+    end
+    assert_proof(conversation_calls.size == 2 && !conversation_calls.first.to_json.include?("It expired yesterday.") && !conversation_calls.to_json.include?("private expired certificate"), "two delayed turns, hidden facts absent and no duplicate execution")
+    assert_proof(ENV["NAVISHAI_EVALUATION_ENDPOINTS"] == "[]", "synthetic evaluation approval removed")
+    fixture.build_batch_corpus
+    calls = []
+    analysis = nil
+    # Test-only approval and stubbed transport: never contact a real endpoint.
+    fixture.with_batch_responses(calls:) do
+      analysis = fixture.request_batch_analysis
+      CorpusAnalysisJob.perform_now(analysis.id)
+    end
+    assert_proof(analysis.reload.state == "complete" && calls.size == 3, "two fixed discoveries and reducer")
+    assert_proof(ENV["NAVISHAI_CORPUS_ENDPOINTS"] == "[]", "synthetic purpose approval removed")
+    batch_keys = analysis.corpus_discovery_batches.order(:position).pluck(:request_key)
+    masking_corpus = membership.workspace.corpora.create!(name: "Restore exact masking fixture")
+    masking_bytes = [ { id: "private-fixture", title: "Restore masking", content: "Fixture Private Contact needs metadata." } ].to_json
+    masking_old = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "Fixture Private Contact")
+    masking_current = CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "Fixture Private Contact\nmetadata")
+    require_relative "../ops/current_workflows_proof"
+    current_workflows = Operations::CurrentWorkflowsProof.seed
+    recovery.prepare_auxiliary!(Rails.root, analysis:)
+    ActiveRecord::Base.connection_pool.disconnect!
+    recovery.restore!(directory)
+    recovery.verify_runtime!
+    assert_proof(masking_old.reload.mask_count == 1 && masking_current.reload.mask_count == 2 && masking_old.mask_digest == Digest::SHA256.hexdigest('["Fixture Private Contact"]') && masking_old.mask_digest != masking_current.mask_digest, "exact fixed masking rules fingerprint/count and historical identity")
+    assert_proof(masking_old.corpus_items.sole.content == "[text redacted] needs metadata." && masking_current.corpus_items.sole.content == "[text redacted] needs [text redacted]." && !masking_old.attributes.to_json.include?("Fixture Private Contact"), "masked content survives without raw rule values")
+    assert_proof(CorpusIntake.call(corpus: masking_corpus, membership:, name: "Private fixture", kind: "conversations", bytes: masking_bytes,
+      redaction: "exact", redaction_values: "metadata\nFixture Private Contact").id == masking_current.id, "restored rule-aware snapshot reuse")
+    assert_proof(before.reload.evaluation_results.sole.status == "fail", "recorded failure")
+    assert_proof(after.reload.evaluation_results.sole.status == "pass", "corrected target passes same fixed case")
+    assert_proof(before.evaluation_run_items.sole.eval_case_id == after.evaluation_run_items.sole.eval_case_id, "fixed-case identity")
+    assert_proof(before.evaluation_target_version.trace_item_id == trace.id, "trace target provenance")
+    assert_proof(fixed_case.reload.scenario_review.decision == "approve", "exact expert approval")
+    assert_proof(sample.reload.evaluation_result_id.nil? && sample.eval_case_id == fixed_case.id && sample.cohort == "held_out" && sample.human_labels.order(:id).pluck(:id) == [ label.id, correction.id ], "manual provenance, case and label history/cohort")
+    assert_proof(set.reload.false_positive_cost.to_s("F") == "1.250001" && set.false_negative_cost.to_s("F") == "7.500002" && set.error_cost_unit == "fixture units" && set.error_cost_rationale == "Synthetic assumptions only." && set.created_by_id == membership.user_id && set.grader_version_id == check.grader_version_id, "exact fixed cost assumptions and author/version")
+    assert_proof(CalibrationReport.call(set:)[:assumed_cost].nil? && !saved_set.reload.error_costs_supplied?, "uncertain evidence cannot supply cost; unknown assumptions cannot inherit values")
+    assert_proof(saved_sample.reload.evaluation_result_id == saved_result.id && saved_sample.eval_case_id == fixed_case.id && saved_sample.output == saved_result.reload.output && saved_sample.cohort == "development" && saved_sample.human_labels.empty?, "exact saved-result/case/output provenance, separate explicit cohort and no fabricated label")
+    history = TraceScenarioDecision.where(corpus_item: trace, scenario_version: fixed_case.scenario_version, reviewed_by: membership.user).order(:id)
+    assert_proof(history.pluck(:id, :decision) == [ [ association.id, "match" ], [ association_correction.id, "uncertain" ] ] && history.last.reason == "Synthetic correction: need diagnostic logs.", "exact trace/version/author association history, separate from approval and labels")
+    conversation_result = conversation.reload.evaluation_results.sole
+    assert_proof(conversation_case.reload.scenario_version.follow_ups == plan && conversation_case.scenario_review.decision == "approve", "fixed approved conversation plan")
+    assert_proof(conversation_result.status == "pass" && conversation_result.output.fetch("messages").map { |message| message.fetch("role") } == %w[user assistant user assistant] && conversation_result.output.fetch("messages")[2].fetch("content") == "It expired yesterday.", "actual delayed conversation transcript and result")
+    turn_keys = (0..1).map { |index| Digest::SHA256.hexdigest("#{conversation.evaluation_run_items.sole.request_key}/turn/#{index}") }
+    assert_proof(conversation_result.execution.fetch("termination_reason") == "plan_complete" && conversation_result.execution.fetch("turns").map { |receipt| receipt.fetch("request_key") } == turn_keys, "fixed turn keys and terminal receipts")
+    assert_proof(analysis.reload.summary.fetch("conversations") == 106 && analysis.summary.fetch("clusters") == 2, "complete batch membership")
+    assert_proof(analysis.corpus_discovery_batches.order(:position).pluck(:request_key) == batch_keys && analysis.corpus_discovery_batches.pluck(:state).all? { |state| state == "proposal" }, "fixed UUIDs and terminal batch receipts")
+    sent_again = false
+    fixture.with_test_method(EvaluationHttp, :call, ->(**) { sent_again = true; raise "Restored claimed work must not send" }) do
+      CorpusAnalysisJob.perform_now(analysis.id)
+      EvaluationRunJob.perform_now(conversation.id)
+    end
+    assert_proof(!sent_again && analysis.reload.state == "complete" && conversation.reload.state == "complete", "restored completed analysis/conversation cannot execute again")
+    # Raw SQL bypasses model guards: restored PostgreSQL protections must reject it.
+    %w[source_snapshots corpus_items scenario_versions scenario_evidence scenario_reviews eval_cases eval_case_checks grader_versions calibration_sets calibration_samples calibration_predictions human_labels evaluation_target_versions evaluation_results corpus_analysis_results trace_scenario_decisions].each do |table|
+      assert_proof(ActiveRecord::Base.connection.select_value("SELECT count(*) FROM #{table}").to_i > 0, "#{table} fixture exists")
+      rejects_sql("UPDATE #{table} SET id = id", PG::RaiseException, "lab versions are immutable")
+    end
+    rejects_sql("UPDATE corpus_discovery_batches SET input_digest = repeat('0', 64)", PG::RaiseException, "batch definition, claim and terminal receipt are immutable")
+    rejects_sql("UPDATE corpus_discovery_batches SET state = 'running', result = NULL, finished_at = NULL", PG::RaiseException, "batch definition, claim and terminal receipt are immutable")
+    rejects_sql("UPDATE evaluation_runs SET corpus_id = corpus_id + 1", PG::RaiseException, "evaluation run definition is immutable")
+    rejects_sql("UPDATE evaluation_run_items SET corpus_id = corpus_id + 1", PG::RaiseException, "lab versions are immutable")
+    %w[UPDATE DELETE].each do |operation|
+      sql = { "UPDATE" => "UPDATE audit_events SET action = action", "DELETE" => "DELETE FROM audit_events" }.fetch(operation)
+      rejects_sql(sql, PG::RaiseException, "audit events are append-only")
+    end
+    rejects_sql("TRUNCATE audit_events", PG::InsufficientPrivilege)
+    ActiveRecord::Base.establish_connection(recovery.configuration)
+    ActiveRecord::Base.connection.execute("SET ROLE #{PG::Connection.quote_ident(recovery.owner)}")
+    rejects_sql("TRUNCATE audit_events", PG::RaiseException, "audit events are append-only")
+    ActiveRecord::Base.establish_connection(recovery.configuration(as_runtime: true))
+    foreign_workspace = Workspace.where.not(id: corpus.workspace_id).first!
+    foreign_corpus = foreign_workspace.corpora.create!(name: "Foreign restore fixture")
+    sibling = corpus.workspace.corpora.create!(name: "Sibling restore fixture")
+    [ foreign_corpus, sibling ].each do |other|
+      rejects_sql("INSERT INTO scenario_evidence (workspace_id, corpus_id, scenario_version_id, corpus_item_id, kind, excerpt) VALUES (#{other.workspace_id}, #{other.id}, #{fixed_case.scenario_version_id}, #{trace.id}, 'knowledge', 'Synthetic foreign evidence')", PG::ForeignKeyViolation)
+      rejects_sql("INSERT INTO trace_scenario_decisions (workspace_id, corpus_id, scenario_version_id, corpus_item_id, reviewed_by_id, decision, reason, created_at) VALUES (#{other.workspace_id}, #{other.id}, #{fixed_case.scenario_version_id}, #{trace.id}, #{membership.user_id}, 'match', 'Synthetic foreign association', CURRENT_TIMESTAMP)", PG::ForeignKeyViolation)
+    end
+    last_audit_id = AuditEvent.maximum(:id)
+    event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
+    assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
+    source = trace.source_snapshot.source
+    source.update!(expires_at: 1.minute.ago)
+    assert_proof(corpus.reload.eval_definitions_expired? && source.dependent_versions.empty?, "restored source expiry hides dependent definitions")
+    begin
+      sample.label!(membership:, previous_id: correction.id, decision: "pass", rationale: "Expired proof must not write a label.")
+      raise "Expired sample accepted a label"
+    rescue EvalCase::Invalid => error
+      raise unless error.message.include?("Source retention ended")
+    end
+    SourcePurge.call(source:)
+    assert_proof(!Source.exists?(source.id) && !CorpusItem.exists?(trace.id) && !ScenarioVersion.exists?(fixed_case.scenario_version_id) && !HumanLabel.exists?(label.id) && !EvaluationResult.exists?(saved_result.id) && !TraceScenarioDecision.exists?(association.id), "runtime purge clears restored source and dependent results, labels and associations")
+    assert_proof(AuditEvent.where(workspace_id: corpus.workspace_id, action: "source.deleted", subject_type: "Source", subject_id: source.id).sole.metadata == {}, "minimal purge audit survives without source content")
+    puts "PASS: exact table content/provenance, exact-text masking fingerprints/history/reuse, recorded fail/corrected pass, held-out labels and fixed cost assumptions/unknowns, saved-result development provenance and trace-association history, approved conversation plan/transcript/turn receipts/no resend, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: restored expiry and runtime purge remove source-backed definitions/results/labels/associations while keeping the content-free audit."
+    Operations::CurrentWorkflowsProof.verify(current_workflows)
+  end
+ensure
+  recovery.close
+end
+puts "CLEAN: only this invocation's four disposable databases, two roles and private archives removed."

@@ -1,0 +1,59 @@
+<% content_for :title, "Trace failure discovery — NavishAI" %>
+<% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
+<main class="page-shell">
+  <%= link_to "Trace failure discoveries", workspace_corpus_trace_failure_discoveries_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Trace failure discovery</h1><p><%= @result ? "#{@result.fetch('decision').humanize} · attempt complete" : @discovery.state.humanize %> · <%= @discovery.processing_version %></p></div><%= link_to "Refresh result", workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus, @discovery), class: "button" %></div>
+  <p>Uncalibrated proposals, not labels, verified failures, passes or coverage percentages. Expert decisions, scenario approval and regression admission remain separate.</p>
+  <% if @expired %>
+    <p role="alert" class="inline-error">Source evidence expired. Discovery contents, findings and decisions are hidden until purge. <%= link_to "Inspect the corpus", workspace_corpus_path(Current.workspace, @corpus) %>.</p>
+  <% else %>
+    <% if @stale %><p role="status">Company documents or original scenario definitions changed. This is fixed history, not a current gap assessment. Review a new discovery before accepting findings or creating drafts.</p><% end %>
+    <details><summary>Fixed request and model settings</summary><pre class="evidence-text"><%= JSON.pretty_generate(@discovery.attributes.slice("request_key", "processing_version", "input_digest", "configuration", "started_at", "finished_at")) %></pre></details>
+    <details><summary>Inspect every disclosed input</summary><%= render "preview", input: @input %></details>
+    <% if @discovery.state.in?(%w[queued running]) %>
+      <p role="status">One fixed model attempt is <%= @discovery.state %>. All <%= @input.fetch("traces").size %> disclosed traces remain unassessed until a validated receipt arrives. Refresh sends nothing; no automatic retry.</p>
+      <% if Current.require_membership!.can_write? && (@discovery.state == "queued" || @discovery.started_at < 10.minutes.ago) %><%= button_to "Interrupt discovery attempt", interrupt_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus, @discovery), class: "button" %><% end %>
+    <% elsif @discovery.state == "interrupted" %>
+      <p role="alert" class="inline-error"><%= @discovery.error %></p><p>All <%= @input.fetch("traces").size %> disclosed traces remain unassessed by this attempt. <%= link_to "Review a new preview", new_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus) %>; this does not retry the stopped request.</p>
+    <% end %>
+    <% if @result %>
+      <section class="section-block"><h2><%= @result.fetch("decision").humanize %></h2><p><%= @result.fetch("reason") %></p>
+        <% if @result.fetch("decision") == "error" %>
+          <p role="alert" class="inline-error">All <%= @input.fetch("traces").size %> disclosed traces are unassessed. This is an execution error, not a discovered failure.</p>
+          <% if Current.require_membership!.can_write? %><p><%= link_to "Review a new preview", new_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus) %> before a new deliberate request. This never retries the failed attempt.</p><% end %>
+        <% else %>
+          <% counts = @result.fetch("trace_accounts").group_by { |account| account.fetch("decision") }.transform_values(&:size) %>
+          <p id="trace-accounting"><%= @input.fetch("traces").size %> of <%= @input.fetch("traces").size %> disclosed traces accounted for: <%= pluralize(counts.fetch("proposed_failure", 0), "proposed failure") %>, <%= pluralize(counts.fetch("no_finding", 0), "no finding") %>, <%= pluralize(counts.fetch("abstain", 0), "abstention") %>. No finding does not mean pass. These counts do not measure coverage.</p>
+        <% end %>
+        <details><summary>Immutable response, elapsed time and reported usage/cost</summary><p>Missing usage/cost remains unknown. Endpoint reports are not verified charges or accuracy evidence.</p><pre class="evidence-text"><%= JSON.pretty_generate(@result) %></pre></details>
+      </section>
+      <% @result.fetch("trace_accounts").each do |account| %>
+        <% trace = @input.fetch("traces").find { |record| record.fetch("reference") == account.fetch("reference") }; item = @traces.fetch(trace.fetch("id")); history = @reviews.fetch(item.id, []) %>
+        <section class="section-block" id="trace-<%= item.id %>"><h2><%= item.title %></h2><p><%= account.fetch("decision").humanize %> · <%= account.fetch("reference") %> · uploader reported failure: <%= trace.dig("context", "support_trace", "observed_failure").present? ? "yes (not a label)" : "no" %></p>
+          <p><%= account.fetch("reason") %></p><%= link_to "Inspect fixed trace snapshot", source_evidence_path(item) %>
+          <details class="source-record"><summary>Exact evidence and complete recorded trace</summary><%= render "quotes", evidence: account.fetch("evidence") %><pre class="evidence-text"><%= JSON.pretty_generate(trace) %></pre></details>
+          <% if history.present? %><details><summary>Expert decision history (<%= history.size %>)</summary><% history.each do |review| %><p>Expert #<%= review.reviewed_by_id %> · <%= review.decision %> · <%= review.created_at.utc %></p><p><%= review.reason %></p><% end %></details><% end %>
+          <% if account.fetch("decision") == "proposed_failure" && Current.require_membership!.can_write? && !@stale %>
+            <p>Accept requests further scenario work; it supplies no expected behaviour, label or approval. Rejection and uncertainty remain in history.</p>
+            <% repair = @review_error && params[:corpus_item_id].to_s == item.id.to_s %>
+            <%= form_with url: review_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus, @discovery), class: "form-stack config-panel" do |form| %>
+              <%= form.hidden_field :corpus_item_id, value: item.id %>
+              <div class="field"><%= form.label :decision, "Expert decision", for: "decision-#{item.id}" %><%= form.select :decision, [["Accept for scenario work", "accept"], ["Reject proposal", "reject"], ["Uncertain", "uncertain"]], { include_blank: "Choose a decision", selected: repair ? params[:decision] : nil }, id: "decision-#{item.id}", required: true %></div>
+              <div class="field"><%= form.label :reason, "Your reason", for: "reason-#{item.id}" %><%= form.text_area :reason, value: repair ? params[:reason] : nil, id: "reason-#{item.id}", rows: 3, maxlength: 2000, required: true, aria: { describedby: repair ? "review-error-#{item.id}" : nil, invalid: !!repair } %></div>
+              <% if repair %><p id="review-error-<%= item.id %>" role="alert" class="inline-error"><%= @review_error %></p><% end %>
+              <%= form.submit "Save expert decision", class: "button" %>
+            <% end %>
+            <% accepted = history.select { |review| review.reviewed_by_id == Current.user.id }.last %>
+            <% if accepted&.decision == "accept" %><%= button_to "Open unapproved scenario draft", draft_workspace_corpus_trace_failure_discovery_path(Current.workspace, @corpus, @discovery), params: { review_id: accepted.id }, class: "button button-primary" %><p>The draft uses the recorded starting situation/facts and an exact source quote. Expectations stay empty; machine explanations and uploaded corrections never become authoritative requirements.</p><% end %>
+          <% end %>
+        </section>
+      <% end %>
+      <% { "emerging_families" => "Proposed emerging issue families", "coverage_gaps" => "Proposed coverage gaps" }.each do |key, title| %>
+        <section class="section-block"><h2><%= title %></h2><p>Compared against <%= @input.fetch("scenario_definitions").size %> frozen scenario definitions and <%= @input.fetch("compiled_cases").size %> compiled cases. Family membership may overlap. No label, scenario approval or verified coverage follows.</p>
+          <% if @result.fetch(key).empty? %><p>No proposals retained in this category. This does not prove there are no gaps.</p><% end %>
+          <% @result.fetch(key).each do |group| %><details class="source-record"><summary><%= group.fetch("label") %> · <%= pluralize(group.fetch("members").size, "supporting trace") %></summary><p><%= group.fetch("reason") %></p><p>Fixed members: <% group.fetch("members").each do |reference| %><%= link_to reference, "#trace-#{@input.fetch('traces').find { |trace| trace.fetch('reference') == reference }.fetch('id')}" %> <% end %></p><p>Complete disclosed comparison references: <%= group.fetch("comparison_refs").join(", ").presence || "None; not evidence of company-wide coverage." %></p><%= render "quotes", evidence: group.fetch("evidence") %></details><% end %>
+        </section>
+      <% end %>
+    <% end %>
+  <% end %>
+</main>

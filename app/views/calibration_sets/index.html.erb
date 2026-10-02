@@ -1,0 +1,28 @@
+<% content_for :title, "Calibration — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Calibration</h1><p>Measure a fixed grader against company experts, not against its own predictions.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "calibration" %>
+  <% if @sets.empty? %><p class="empty-state">No calibration sets yet. Compile a scenario, then add output samples for its grader checks.</p><% end %>
+  <ul class="workspace-list" role="list"><% @sets.each do |set| %><li class="workspace-card"><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %><span><%= set.grader_version.grader.name %> · v<%= set.grader_version.number %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_write? %>
+    <section class="section-block config-panel"><h2>Create calibration set</h2>
+      <%= form_with url: workspace_corpus_calibration_sets_path(Current.workspace, @corpus), scope: :calibration_set, class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :name, "Set name" %><%= form.text_field :name, required: true, maxlength: 120, value: params.dig(:calibration_set, :name) %></div>
+        <div class="field"><%= form.label :grader_version_id, "Fixed grader version" %><%= form.select :grader_version_id, @graders.map { |version| [ "#{version.grader.name} · v#{version.number}", version.id ] }, { include_blank: "Choose a grader", selected: params.dig(:calibration_set, :grader_version_id) }, required: true %></div>
+        <details <%= "open" if @cost_errors.present? || %w[false_positive_cost false_negative_cost error_cost_unit error_cost_rationale].any? { |field| params.dig(:calibration_set, field).present? } %>>
+          <summary>Optional error-cost assumptions</summary>
+          <fieldset class="form-stack"><legend class="visually-hidden">Error-cost assumptions</legend>
+            <p id="error-cost-help">Unknown by default. Supply all four fields or leave all blank. Use non-negative plain decimals below 1000000000000, with at most 6 decimal places; zero is valid. Assumptions stay fixed with this set and grader. Changing them requires a new set; no values carry over.</p>
+            <% if @cost_errors.present? %><p id="error-cost-repair" class="inline-error" role="alert"><%= @cost_errors.to_sentence %></p><% end %>
+            <% { false_positive_cost: "False-positive cost", false_negative_cost: "False-negative cost", error_cost_unit: "Common cost unit" }.each do |field, label| %>
+              <div class="field"><%= form.label field, label %><%= form.text_field field, value: params.dig(:calibration_set, field), maxlength: field == :error_cost_unit ? 120 : 19, aria: { describedby: @cost_errors.present? ? "error-cost-help error-cost-repair" : "error-cost-help", invalid: @cost_errors.present? ? true : nil } %></div>
+            <% end %>
+            <div class="field"><%= form.label :error_cost_rationale, "Error-cost rationale" %><%= form.text_area :error_cost_rationale, value: params.dig(:calibration_set, :error_cost_rationale), rows: 4, maxlength: 2000, aria: { describedby: @cost_errors.present? ? "error-cost-help error-cost-repair" : "error-cost-help", invalid: @cost_errors.present? ? true : nil } %></div>
+          </fieldset>
+        </details>
+        <%= form.submit "Create calibration set", class: "button button-primary", data: { turbo_submits_with: "Creating…" } %>
+      <% end %>
+    </section>
+  <% end %>
+</main>

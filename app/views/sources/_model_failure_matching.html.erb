@@ -1,0 +1,79 @@
+<% if @corpus.eval_definitions_expired? %>
+  <p role="status">Matching contents and suggestions stay hidden because a corpus source has expired.</p>
+<% else %>
+  <p>Limits: 1–20 eligible versions, 100 complete linked excerpts, 256 KiB including instructions/settings, one call and a 30-second deadline. Oversized input is refused, never sampled or truncated. Model quality is not proven.</p>
+  <p>Separate operator approval: <code>NAVISHAI_MATCHING_ENDPOINTS</code>. Target, judge, scenario and corpus approval do not cover this purpose. No endpoint is configured by default. Masking is not full PII removal; personal data or secrets may remain. Local deletion cannot recall sent copies.</p>
+  <% if @matching_error %><p class="inline-error" id="matching-error-<%= item.id %>" role="alert"><%= @matching_error %> Review the contents and preview again; confirmation is cleared.</p><% end %>
+  <% if @matching_input %>
+    <h4>Eligible fixed candidate set</h4>
+    <p><%= pluralize(@matching_input.fetch("candidates").size, "eligible version") %> · all eligible current versions, not the literal top five. Trace <%= item.id %> · snapshot <%= @snapshot.number %>.</p>
+    <ul role="list" class="form-stack"><% @matching_input.fetch("candidates").each do |candidate| %>
+      <li><%= link_to "#{candidate.fetch('definition').fetch('title')} · v#{candidate.fetch('number')} · version ID #{candidate.fetch('scenario_version_id')}", workspace_corpus_scenario_path(Current.workspace, @corpus, candidate.fetch("scenario_id"), version: candidate.fetch("number")) %></li>
+    <% end %></ul>
+    <p>Disclosed: full visible trace input, reported output/failure, complete candidate definitions and linked excerpts. Omitted: hidden facts, history, review notes, labels, the trace's separate reported-correction field and unrelated records. Excerpts may still contain private data or reported corrections; read every disclosed field. Definitions and quotes do not prove correctness.</p>
+    <details><summary>Complete matching data preview</summary><pre class="evidence-text"><%= JSON.pretty_generate(@matching_input) %></pre></details>
+    <% if Current.require_membership!.can_write? %>
+      <%= form_with url: preview_model_matching_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel", data: { turbo: false } do |form| %>
+        <%= form.hidden_field :corpus_item_id, value: item.id %>
+        <div class="field">
+          <%= form.label :configuration, "Matching endpoint, model and fixed settings (JSON)", for: "matching-configuration-#{item.id}" %>
+          <%= form.text_area :configuration, id: "matching-configuration-#{item.id}", value: @matching_configuration_text, rows: 6, required: true, spellcheck: false, aria: { describedby: "matching-config-help-#{item.id}", invalid: @matching_error.present? } %>
+          <p id="matching-config-help-<%= item.id %>">Use exactly endpoint, model and settings. Settings need temperature 0, max_output_tokens 256–4096 and seed (null or an integer). Never paste credentials. Previewing does not queue work or call a model.</p>
+        </div>
+        <%= form.button "Preview exact matching request", class: "button button-secondary", data: { turbo_submits_with: "Preparing preview…" } %>
+      <% end %>
+      <% if @matching_payload %>
+        <section aria-labelledby="matching-disclosure-<%= item.id %>" class="section-block">
+          <h4 id="matching-disclosure-<%= item.id %>">Confirm this exact matching disclosure</h4>
+          <dl class="source-metadata"><dt>Endpoint</dt><dd><code><%= @matching_configuration.fetch("endpoint") %></code></dd><dt>Purpose</dt><dd>Model failure matching only; suggestions without expert authority.</dd><dt>Model</dt><dd><%= @matching_configuration.fetch("model") %></dd><dt>Call ceiling</dt><dd>One call · <%= @matching_payload.to_json.bytesize %> bytes of compact JSON.</dd></dl>
+          <details><summary>Complete request JSON, including instructions/settings</summary><pre class="evidence-text"><%= JSON.pretty_generate(@matching_payload) %></pre></details>
+          <%= form_with url: request_model_matching_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel" do |form| %>
+            <%= form.hidden_field :corpus_item_id, value: item.id %>
+            <%= form.hidden_field :configuration, value: @matching_configuration.to_json %>
+            <%= form.hidden_field :input_digest, value: @matching_input_digest %>
+            <%= form.hidden_field :request_digest, value: ModelFailureMatcher.request_digest(@matching_input, @matching_configuration) %>
+            <div class="field"><%= form.label :endpoint_confirmation, "Type the exact endpoint to confirm the destination", for: "matching-endpoint-confirmation-#{item.id}" %><%= form.text_field :endpoint_confirmation, id: "matching-endpoint-confirmation-#{item.id}", required: true, autocomplete: "off" %></div>
+            <div class="checkbox-field"><%= form.check_box :disclose, id: "matching-disclose-#{item.id}", required: true %><%= form.label :disclose, "I reviewed every disclosed field and approve sending this exact trace and candidate set to this endpoint for model failure matching.", for: "matching-disclose-#{item.id}" %></div>
+            <%= form.button "Request matching suggestions once", class: "button button-secondary", data: { turbo_submits_with: "Queuing once…" } %>
+          <% end %>
+        </section>
+      <% end %>
+    <% else %><p>Read-only access. A workspace writer must preview and confirm any model request.</p><% end %>
+  <% else %><p>No eligible bounded preview is available. <%= link_to "Inspect corpus scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus) %> and repair evidence or narrow the corpus; no partial candidate set was sent.</p><% end %>
+
+  <% if @matching_request %>
+    <section class="section-block" aria-labelledby="matching-attempt-<%= @matching_request.id %>">
+      <h4 id="matching-attempt-<%= @matching_request.id %>">Matching attempt <%= @matching_request.id %> · <%= @matching_request.state %></h4>
+      <p><%= @matching_request.processing_version %> · requested <%= @matching_request.created_at.to_fs(:long) %>. One fixed attempt, never an automatic retry. Unknown cost is not zero.</p>
+      <p><%= link_to "Refresh matching state", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, model_matching_item_id: item.id, matching_request_id: @matching_request.id, anchor: "model-matching-#{item.id}") %> does not send data.</p>
+      <% if %w[queued running].include?(@matching_request.state) %>
+        <p role="status">Waiting for the once-claimed worker. A running attempt with no result may have an unknown remote outcome; do not resend it.</p>
+        <% if Current.require_membership!.can_write? && (@matching_request.state == "queued" || @matching_request.started_at < 10.minutes.ago) %>
+          <%= button_to "Stop matching attempt", interrupt_model_matching_workspace_corpus_source_path(Current.workspace, @corpus, @source), params: { corpus_item_id: item.id, matching_request_id: @matching_request.id }, class: "button button-secondary" %>
+        <% end %>
+      <% elsif @matching_request.state == "interrupted" %><p role="alert"><%= @matching_request.error %></p><% end %>
+      <% if @matching_input_digest == @matching_request.input_digest %>
+        <details><summary>Fixed attempt inputs and settings</summary><pre class="evidence-text"><%= JSON.pretty_generate(@matching_request.configuration) %></pre><pre class="evidence-text"><%= JSON.pretty_generate(@matching_request.input) %></pre></details>
+        <% receipt = @matching_request.model_failure_matching_result&.result %>
+        <% if receipt && receipt["decision"] == "error" %><p role="alert"><%= receipt["reason"] %> This is an execution error, not no-match.</p>
+        <% elsif receipt %>
+          <h3>Model suggestions — not expert decisions</h3>
+          <p>Match, no-match and uncertainty compare these exact versions only. Exact quotes prove provenance, not sound reasoning. Open a scenario to review it; no association, label, expectation or regression was written.</p>
+          <% candidates = @matching_request.input.fetch("candidates").index_by { |candidate| candidate.fetch("scenario_version_id") } %>
+          <% receipt.fetch("suggestions").each do |suggestion| %>
+            <% candidate = candidates.fetch(suggestion.fetch("scenario_version_id")) %>
+            <article class="section-block">
+              <h4><%= { "match" => "Match suggestion", "no_match" => "No-match suggestion", "uncertain" => "Uncertain suggestion" }.fetch(suggestion.fetch("decision")) %> · version ID <%= candidate.fetch("scenario_version_id") %></h4>
+              <dl class="source-metadata"><dt>Fixed scenario</dt><dd><%= link_to "Review #{candidate.fetch('definition').fetch('title')} · v#{candidate.fetch('number')}", workspace_corpus_scenario_path(Current.workspace, @corpus, candidate.fetch("scenario_id"), version: candidate.fetch("number")) %></dd><dt>Reason</dt><dd><%= suggestion.fetch("reason") %></dd></dl>
+              <ul role="list" class="form-stack"><% suggestion.fetch("evidence").each do |quote| %><li><code><%= quote.fetch("reference") %></code><blockquote class="evidence-text"><%= quote.fetch("quote") %></blockquote></li><% end %></ul>
+            </article>
+          <% end %>
+          <details><summary>Immutable result and reported usage/cost</summary><pre class="evidence-text"><%= JSON.pretty_generate(receipt) %></pre></details>
+        <% end %>
+      <% else %><p role="status">The fixed candidate set is no longer current or eligible. Its disclosed copies and suggestions stay hidden; inspect the fresh preview above. This does not revise or retry the old attempt.</p><% end %>
+    </section>
+  <% elsif @matching_input %><p>No model attempt retained for this trace. Nothing has been sent by previewing.</p><% end %>
+  <% if @matching_history.present? %>
+    <nav class="workspace-tabs" aria-label="Up to five recent matching attempts"><% @matching_history.each do |id, state| %><%= link_to "Attempt #{id} · #{state}", workspace_corpus_source_path(Current.workspace, @corpus, @source, snapshot: @snapshot.number, page: @page, model_matching_item_id: item.id, matching_request_id: id, anchor: "model-matching-#{item.id}") %><% end %></nav>
+  <% end %>
+<% end %>

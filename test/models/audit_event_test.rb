@@ -56,7 +56,7 @@ class AuditEventTest < ActiveSupport::TestCase
     end
     truncate_error = assert_raises(ActiveRecord::StatementInvalid) do
       AuditEvent.transaction(requires_new: true) do
-        AuditEvent.connection.execute("TRUNCATE customer_success_intervention_due_notices, audit_events")
+        AuditEvent.connection.execute("TRUNCATE audit_events")
       end
     end
 
@@ -135,19 +135,19 @@ class AuditEventTest < ActiveSupport::TestCase
     assert_equal [ own_event ], AuditEvent.for_workspace(workspaces(:acme_support))
   end
 
-  test "helpdesk actions reject customer text and unsupported state values" do
+  test "workspace updates reject content and unsupported value types" do
     safe = AuditEvent.new(
-      action: "case.status_changed",
+      action: "workspace.updated",
       source: :web,
       actor: users(:owner),
       actor_kind: :user,
       occurred_at: Time.current,
-      metadata: { from_status: "triaged", to_status: "investigating" }
+      metadata: { previous_name: "Old lab", name: "New lab" }
     )
     customer_text = safe.dup
-    customer_text.metadata = { from_status: "triaged", to_status: "investigating", body: "customer text" }
+    customer_text.metadata = { name: "New lab", body: "customer text" }
     invalid_state = safe.dup
-    invalid_state.metadata = { from_status: "triaged", to_status: "deleted" }
+    invalid_state.metadata = { name: 42 }
 
     assert safe.valid?
     assert_not customer_text.valid?

@@ -1,0 +1,169 @@
+<% content_for :title, "#{@version.title} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Scenarios", workspace_corpus_scenarios_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @version.title %></h1><p>Version <%= @version.number %> · <%= @version.origin %> · <%= @version.latest_review&.decision || "needs review" %> · <%= @version.importance %></p></div></div>
+  <% if @version.stale? %><p role="status">A linked source changed. This version keeps its prior evidence; check current company guidance before compiling it.</p><% end %>
+  <% if @scenario.merged_into %><p>This scenario merged into <%= link_to @scenario.merged_into.current_version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.merged_into) %>. Its prior versions and evidence remain.</p><% end %>
+  <nav class="workspace-tabs" aria-label="Scenario versions"><% @versions.each do |version| %><%= link_to "Version #{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: version.number), aria: { current: version == @version ? "page" : nil } %><% end %></nav>
+  <p><%= @version.selection_reason %></p>
+  <% if (cluster = @scenario.cluster_member&.issue_cluster) && cluster.proposed_label.length > 500 %>
+    <p><%= link_to "Inspect full source issue family", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, cluster.corpus_analysis_id, cluster) %>. The original proposal and source text stay fixed; a shortened draft is not an expert label.</p>
+  <% end %>
+  <% if @scenario.parent_version %>
+    <section id="variant-receipt" class="config-panel"><p>Variant of <%= link_to "scenario #{@scenario.parent_version.scenario_id}, version #{@scenario.parent_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario.parent_version.scenario_id, version: @scenario.parent_version.number) %>.</p>
+      <p>Controlled counterfactual, not observed company truth. The proposed difference is not an approved expectation. Check the situation and permitted knowledge; write fresh source-backed expectations before review.</p>
+      <details open><summary>Exact changes and proposed difference</summary><pre class="evidence-text"><%= JSON.pretty_generate(@version.mutation) %></pre></details>
+    </section>
+  <% end %>
+  <% if Current.require_membership!.can_write? && @version.approved? && !@version.stale? && @scenario.current_version_id == @version.id %><p><%= link_to "Compile eval", new_workspace_corpus_eval_case_path(Current.workspace, @corpus, scenario_id: @scenario.id), class: "button button-primary" %></p><% end %>
+  <% @version.eval_cases.order(number: :desc).limit(10).each do |item| %><p><%= link_to "Eval case #{item.id} · definition #{item.number}", workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %></p><% end %>
+  <% if @version.draft_notes["method"] == ScenarioMining::DRAFT_METHOD %>
+    <% notes = @version.draft_notes %>
+    <details class="section-block config-panel" id="source-review" <%= "open" if @version.origin == "mined" %>>
+      <summary>Source review questions</summary>
+      <p>Literal cues, not diagnosis, policy or proof of resolution. The opening text is only a starting-situation proposal; remove answers and private data before approval. Facts and expectations need your own source-backed edits.</p>
+      <p><%= notes.fetch("method") %> · scanned <%= notes.fetch("source_length") %> characters · original evidence window starts at character <%= notes.fetch("evidence").first + 1 %>, for <%= notes.fetch("evidence").last %> characters. At most the first and last cue per kind appear below; this is not a complete semantic review.</p>
+      <% if notes["context_omitted"] %><p>Raw source context was not copied into known facts. It may contain answers, reported outcomes or private account data.</p><% end %>
+      <p><%= link_to "Inspect full draft source and context", source_evidence_path(@scenario.corpus_item) %>. Notes keep the original mining offsets even after an expert replaces the evidence quote.</p>
+      <% if notes.fetch("review_spans").empty? %><p>No listed literal cue found. This does not establish a simple or resolved issue; inspect the full source.</p><% end %>
+      <% notes.fetch("review_spans").group_by { |span| span.fetch("kind") }.each do |kind, spans| %>
+        <article class="source-record"><h3><%= kind.humanize %> — question, not a finding</h3><p><%= ScenarioMining::REVIEW_CUES.fetch(kind).last %></p>
+          <details><summary>Inspect <%= kind %> cue context</summary><p>Exact bounded source text; windows may overlap and start or end mid-sentence. These quotes stay hidden from targets.</p>
+            <% spans.each do |span| %><p>Source characters <%= span.fetch("start") + 1 %>–<%= span.fetch("start") + span.fetch("length") %></p><pre class="evidence-text"><%= "…" if span.fetch("start") > 0 %><%= @scenario.corpus_item.content[span.fetch("start"), span.fetch("length")] %><%= "…" if span.fetch("start") + span.fetch("length") < notes.fetch("source_length") %></pre><% end %>
+          </details>
+        </article>
+      <% end %>
+    </details>
+  <% end %>
+  <details class="section-block config-panel" id="model-proposal" <%= "open" if @proposal || action_name == "propose" %>>
+    <summary>Model scenario proposal</summary>
+    <p>A suggestion, not an expert decision. Exact source quotes show where a requirement came from, not whether it is correct. Nothing here changes this scenario or its approval.</p>
+    <% if @proposal %>
+      <p role="status"><%= @proposal.state.humanize %> · fixed version <%= @version.number %> · one attempt, no automatic retry.</p>
+      <p><%= @proposal.configuration.fetch("model") %> · <%= @proposal.configuration.fetch("endpoint") %></p>
+      <details><summary>Fixed settings and attempt</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal.configuration.merge("request_key" => @proposal.request_key, "protocol" => @proposal.processing_version)) %></pre></details>
+      <details><summary>Disclosed starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal.input) %></pre></details>
+      <% if @proposal.error %><p role="alert"><%= @proposal.error %></p><% end %>
+      <% if @proposal.state.in?(%w[queued running]) %>
+        <p><%= link_to "Refresh proposal state", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: @version.number), class: "button" %></p>
+        <% if Current.require_membership!.can_write? && (@proposal.state == "queued" || @proposal.started_at < 10.minutes.ago) %>
+          <%= button_to "Interrupt proposal attempt", interrupt_proposal_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), params: { version_id: @version.id }, class: "button" %>
+        <% end %>
+      <% end %>
+      <% if (result = @proposal.scenario_proposal_result&.result) %>
+        <h2><%= result.fetch("decision").humanize %></h2><p><%= result.fetch("reason") %></p>
+        <% if result["decision"] == "proposal" %>
+          <div class="review-layout">
+            <section aria-labelledby="proposed-definition"><h3 id="proposed-definition">Suggested definition</h3><p>Use the editor below to make your own source-backed revision, then review that exact version.</p><pre class="evidence-text"><%= JSON.pretty_generate(result.fetch("scenario")) %></pre></section>
+            <section aria-labelledby="proposed-evidence"><h3 id="proposed-evidence">Requirement evidence</h3>
+              <% evidence_by_reference = @version.scenario_evidence.index_by { |evidence| "scenario-evidence-#{evidence.id}" } %>
+              <% result.fetch("evidence_links").each do |link| %>
+                <% evidence = evidence_by_reference.fetch(link.fetch("reference")) %>
+                <article class="source-record"><h4><%= link.fetch("kind").humanize %> · requirement <%= link.fetch("index") + 1 %></h4><p><%= result.dig("scenario", "requirements", link.fetch("kind"), link.fetch("index")) %></p><%= link_to "Inspect quoted source", source_evidence_path(evidence.corpus_item) %><pre class="evidence-text"><%= link.fetch("quote") %></pre></article>
+              <% end %>
+            </section>
+          </div>
+        <% end %>
+        <details><summary>Reported usage and cost</summary><p>Endpoint reports are not verified charges. Missing values stay unknown.</p><pre class="evidence-text"><%= JSON.pretty_generate(result.slice("elapsed_ms", "usage", "cost", "usage_and_cost")) %></pre></details>
+      <% end %>
+    <% elsif @proposal_input_error %><p role="status"><%= @proposal_input_error %></p>
+    <% elsif Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+      <p>The model receives this version's starting situation, known facts and exact linked excerpts (up to 20, within 64 KiB). Hidden facts, existing requirements, reviews and labels stay local. It cannot invent starting facts or hidden truth; quotes do not prove correct expectations. Local deletion cannot recall sent data.</p>
+      <details><summary>Preview exact starting context and evidence</summary><pre class="evidence-text"><%= JSON.pretty_generate(@proposal_input) %></pre></details>
+      <%= form_with url: propose_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
+        <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 5, maxlength: 10240, required: true, aria: { describedby: "proposal-settings-help" } %><p id="proposal-settings-help">Set endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or a non-negative integer. The operator must approve this exact endpoint separately for scenario processing. Do not enter credentials.</p></div>
+        <div class="checkbox-field"><%= form.check_box :proposal_disclose %><%= form.label :proposal_disclose, "I approve sending this fixed version's starting context and linked evidence to the model endpoint above." %></div>
+        <%= form.submit "Request model proposal", class: "button", data: { turbo_submits_with: "Queuing…" } %>
+      <% end %>
+    <% else %><p>No model proposal for this version. Only a writer can request one from the current, active version with current company evidence.</p><% end %>
+  </details>
+  <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+    <details id="document-search" class="section-block config-panel" <%= "open" if params[:corpus_query].present? %>>
+      <summary>Find company evidence</summary>
+      <p id="document-search-help">Save edits before searching. Search a literal phrase in current document titles, source record IDs and text, ignoring case. This local lookup changes no version, evidence or approval.</p>
+      <%= form_with url: workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, anchor: "document-search"), method: :get, class: "form-stack", role: "search" do |form| %>
+        <%= form.hidden_field :version, value: @version.number %>
+        <% if @trace_item %><%= form.hidden_field :trace_item_id, value: @trace_item.id %><% end %>
+        <div class="field"><%= form.label :corpus_query, "Company evidence phrase" %><%= form.search_field :corpus_query, value: @document_query, maxlength: 200, aria: { invalid: @document_search_error.present?, describedby: @document_search_error ? "document-search-help document-search-error" : "document-search-help" } %></div>
+        <%= form.submit "Find documents", class: "button" %>
+      <% end %>
+      <p><%= link_to "Clear document search", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario, version: @version.number, trace_item_id: @trace_item&.id, anchor: "document-search") %>. Phrases stay in your browser URL/history; do not paste secrets.</p>
+      <% if @document_search_error %><p id="document-search-error" class="inline-error" role="alert"><%= @document_search_error %></p><% else %><p role="status"><%= pluralize(@document_count, "matching document") %> · first 100 by record ID in the source picker below. Narrow the phrase if needed; counts are not coverage.</p><% end %>
+      <p><%= link_to "Inspect current company records", workspace_corpus_path(Current.workspace, @corpus, corpus_query: @document_query, anchor: "corpus-records") %>. Choose the source record and its exact excerpt yourself, then save a new version for expert review.</p>
+    </details>
+  <% end %>
+  <div class="review-layout">
+    <section aria-labelledby="definition-title"><h2 id="definition-title">Scenario definition</h2>
+      <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+        <%= form_with url: workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), method: :patch, scope: :scenario, class: "form-stack" do |form| %>
+          <%= hidden_field_tag :version_id, params[:version_id] || @version.id %>
+          <%= hidden_field_tag :corpus_query, @document_query, id: nil %>
+          <div class="field"><%= form.label :title %><%= form.text_field :title, value: @form_values.fetch("title", @version.title), required: true, maxlength: 500 %></div>
+          <div class="field"><%= form.label :situation, "Customer starting situation" %><%= form.text_area :situation, value: @form_values.fetch("situation", @version.situation), rows: 4, required: true, maxlength: 10000 %></div>
+          <div class="field-grid"><div class="field"><%= form.label :taxonomy_label, "Issue family" %><%= form.text_field :taxonomy_label, value: @form_values.fetch("taxonomy_label", @version.taxonomy_label), required: true, maxlength: 500 %></div><div class="field"><%= form.label :importance %><%= form.select :importance, %w[normal high critical], selected: @form_values.fetch("importance", @version.importance) %></div></div>
+          <details><summary>Known and hidden facts</summary><p>Known facts go to the target. Hidden facts do not. Keep historical resolution details out of the starting situation.</p>
+            <div class="field"><%= form.label :known_facts, "Known facts (JSON object)" %><%= form.text_area :known_facts, value: @form_values.fetch("known_facts", JSON.pretty_generate(@version.known_facts)), rows: 4 %></div>
+            <div class="field"><%= form.label :hidden_facts, "Hidden facts (JSON object)" %><%= form.text_area :hidden_facts, value: @form_values.fetch("hidden_facts", JSON.pretty_generate(@version.hidden_facts)), rows: 4 %></div>
+          </details>
+          <% ScenarioVersion::REQUIREMENT_TYPES.each do |kind| %><div class="field"><%= form.label kind, "#{kind.humanize} — one requirement per line" %><%= form.text_area kind, value: @form_values.fetch(kind, @version.requirements.fetch(kind).join("\n")), rows: 3 %></div><% end %>
+          <div class="field"><%= form.label :follow_ups, "Expert follow-ups (JSON array)" %><%= form.text_area :follow_ups, value: @form_values.fetch("follow_ups", JSON.pretty_generate(@version.follow_ups)), rows: 8 %><small>At most 10 entries / 10 KiB. Each has exactly after_assistant_contains (nonblank literal, ≤500 characters) and message (user text, ≤2000 characters). No null bytes. Example: [{"after_assistant_contains":"expiry date", "message":"It expired yesterday."}]. Only the latest assistant reply can release the next message. Literals do not prove meaning. Saving creates an unapproved version requiring source-backed expert review.</small></div>
+          <% if @conversation_evidence %>
+            <details id="conversation-evidence" <%= "open" if params[:conversation_excerpt].present? %>>
+              <summary>Replace conversation evidence</summary>
+              <p id="conversation-excerpt-help">Paste 1–4000 exact characters from anywhere in this fixed historical conversation, including later diagnostics. Leave blank to keep the current quote. This evidence stays hidden from the target. A changed quote needs fresh expert review; it does not change expectations for you.</p>
+              <p>Record <%= @conversation_evidence.corpus_item.external_id %> · snapshot <%= @conversation_evidence.corpus_item.source_snapshot.number %>. <%= link_to "Inspect full historical conversation", source_evidence_path(@conversation_evidence.corpus_item) %></p>
+              <div class="field"><%= label_tag :conversation_excerpt, "Historical conversation excerpt" %><%= text_area_tag :conversation_excerpt, params[:conversation_excerpt], rows: 4, maxlength: 4000, aria: { invalid: @conversation_excerpt_error.present?, describedby: @conversation_excerpt_error ? "conversation-excerpt-help conversation-excerpt-error" : "conversation-excerpt-help" } %>
+                <% if @conversation_excerpt_error %><p id="conversation-excerpt-error" class="inline-error" role="alert"><%= @conversation_excerpt_error %>. No version saved. Inspect this fixed conversation, paste a matching quote and save again.</p><% end %>
+              </div>
+            </details>
+          <% end %>
+          <details id="scenario-evidence" <%= "open" if @trace_item || params[:evidence_item_id].present? || @document_query.present? %>><summary>Attach source evidence</summary><p>Choose a current document or the selected retained trace and paste its exact excerpt. A document replaces its prior evidence of the same use; distinct trace records add evidence. Old versions stay fixed. Up to 100 matching current documents are listed; use Find company evidence above to narrow them.</p>
+            <% if @trace_item %>
+              <%= hidden_field_tag :trace_item_id, @trace_item.id %>
+              <p>Selected trace · record <%= @trace_item.external_id %> · snapshot <%= @trace_item.source_snapshot.number %>. <%= link_to "Inspect selected trace: #{@trace_item.title}", source_evidence_path(@trace_item) %></p>
+              <p>Imported failures and corrections are reports, not approved expectations. Edit the starting facts and behaviour yourself; saving still needs fresh expert approval.</p>
+              <details><summary>Read the exact trace record</summary><pre class="evidence-text"><%= @trace_item.content %></pre></details>
+            <% end %>
+            <div class="field"><%= label_tag :evidence_item_id, "Source record" %><%= select_tag :evidence_item_id, options_for_select(@evidence_items.map { |item| [item == @trace_item ? "#{item.title} · trace record #{item.external_id}" : item.title, item.id] }, params[:evidence_item_id] || @trace_item&.id), include_blank: "No added evidence" %></div>
+            <div class="field"><%= label_tag :evidence_kind, "Evidence use" %><%= select_tag :evidence_kind, options_for_select([["Expected behaviour evidence", "expectation"], ["Knowledge available to target", "knowledge"]], params[:evidence_kind]) %></div>
+            <div class="field"><%= label_tag :excerpt, "Exact source excerpt" %><%= text_area_tag :excerpt, params[:excerpt], rows: 4, maxlength: 4000, aria: { invalid: @evidence_error ? true : nil, describedby: @evidence_error ? "evidence-error" : nil } %><% if @evidence_error %><p id="evidence-error" class="inline-error" role="alert"><%= @evidence_error %>. No version saved. Read the exact source record, paste a matching excerpt and save again.</p><% end %></div>
+          </details>
+          <%= form.submit "Save new version", class: "button button-primary" %>
+        <% end %>
+      <% else %><h3>Starting situation</h3><p><%= @version.situation %></p><pre class="evidence-text"><%= JSON.pretty_generate(@version.attributes.slice(*ScenarioVersion::EDITABLE)) %></pre><% end %>
+    </section>
+    <section aria-labelledby="evidence-title"><h2 id="evidence-title">Company evidence</h2><p>Untrusted source text. It supports expert judgment; it is not a ready-made target prompt.</p>
+      <% @version.scenario_evidence.includes(:corpus_item).each do |evidence| %><article class="source-record"><h3><%= evidence.corpus_item.title %></h3><p><%= evidence.kind == "knowledge" ? "Knowledge available to target" : "Expected behaviour evidence — hidden from target" %></p><%= link_to "Inspect source snapshot", source_evidence_path(evidence.corpus_item) %><pre class="evidence-text"><%= evidence.excerpt %></pre></article><% end %>
+      <% @version.scenario_reviews.order(:id).each do |review| %><p>Expert #<%= review.reviewed_by_id %> · <%= review.decision %> · <%= review.created_at.to_fs(:long) %></p><p><%= review.note %></p><% end %>
+    </section>
+  </div>
+  <% if Current.require_membership!.can_write? && @scenario.current_version_id == @version.id && !@scenario.merged_into_id %>
+    <section class="section-block config-panel"><h2>Expert decision</h2><p>Save edits first. Approval binds to exactly version <%= @version.number %>. At least one source-backed outcome is required.</p>
+      <%= form_with url: review_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: @version.id %>
+        <div class="field"><%= form.label :decision %><%= form.select :decision, [["Approve", "approve"], ["Reject", "reject"], ["Merge", "merge"]], selected: params[:decision] %></div>
+        <div class="field"><%= form.label :note, "Decision note" %><%= form.text_area :note, value: params[:note], rows: 3, maxlength: 2000 %></div>
+        <div class="field"><%= form.label :merge_into_id, "Approved scenario ID (only for Merge)" %><%= form.number_field :merge_into_id, value: params[:merge_into_id], min: 1 %></div>
+        <%= form.submit "Save expert decision", class: "button" %>
+      <% end %>
+    </section>
+    <% if @version.approved? || @variant_error %><details id="controlled-variant" class="section-block config-panel" <%= "open" if @variant_error %>><summary>Create a controlled variant</summary>
+      <p>Change 1–5 existing named facts as one controlled set. Keep JSON types, including quotes for text. The child retains this exact parent and evidence; it clears all expectations, hidden facts and follow-ups. No approval carries over.</p>
+      <% if @version.stale? && !@variant_error %><p role="status">Revise and review current company evidence before creating a variant.</p>
+      <% elsif @version.known_facts.empty? && !@variant_error %><p role="status">Add and review named known facts before creating a controlled variant.</p>
+      <% else %>
+      <details><summary>Inspect this version's named known facts</summary><pre class="evidence-text"><%= JSON.pretty_generate(@version.known_facts) %></pre></details>
+      <%= form_with url: variant_workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "form-stack" do |form| %>
+        <%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
+        <div class="field"><%= form.label :mutation, "Named fact changes (JSON object)" %><%= form.text_area :mutation, value: params[:mutation], required: true, rows: 5, maxlength: 10240, aria: { invalid: @variant_error.present?, describedby: @variant_error ? "variant-help variant-error" : "variant-help" } %><p id="variant-help">At most 10 KiB. Include only existing keys and their new values, not before/after wrappers. Each value must differ; no duplicate keys or new facts. Exact before/after and your reason stay local, not in target input.</p>
+          <% if @variant_error %><p id="variant-error" class="inline-error" role="alert"><%= @variant_error %> No variant saved. Correct the named changes and try again. A changed parent needs a fresh review and reload; this form keeps the submitted version.</p><% end %>
+        </div>
+        <div class="field"><%= form.label :reason, "Why this change matters" %><%= form.text_area :reason, value: params[:reason], required: true, rows: 2, maxlength: 2000 %></div>
+        <div class="field"><%= form.label :expected_difference, "Expected behaviour difference" %><%= form.text_area :expected_difference, value: params[:expected_difference], required: true, rows: 2, maxlength: 2000 %></div>
+        <%= form.submit "Create variant", class: "button" %>
+      <% end %>
+      <% end %>
+    </details><% end %>
+  <% end %>
+</main>

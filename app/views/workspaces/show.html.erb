@@ -1,24 +1,26 @@
 <% content_for :title, "#{@workspace.name} — NavishAI" %>
-
 <main class="page-shell">
   <%= link_to "All workspaces", workspaces_path, class: "back-link" %>
-  <div class="workspace-heading">
-    <div class="page-heading">
-      <h1><%= @workspace.name %></h1>
-      <p><%= @workspace.organization.name %></p>
-    </div>
+  <div class="page-heading">
+    <div><p class="repository-path"><%= @workspace.organization.name %> / <%= @workspace.slug %></p>
+      <h1><%= @workspace.name %></h1></div>
     <span class="role-badge"><%= role_label(@membership.role) %></span>
   </div>
-
-  <% if @membership.owner? || @membership.admin? %>
-    <%= render "shared/empty_state",
-      title: "Workspace ready",
-      description: "Customer, policy, and work queues will appear here as they are added.",
-      action_label: "Manage invitations",
-      action_path: workspace_workspace_invitations_path(@workspace) %>
-  <% else %>
-    <%= render "shared/empty_state",
-      title: "Workspace ready",
-      description: "Customer, policy, and work queues will appear here as they are added." %>
-  <% end %>
+  <nav class="workspace-tabs" aria-label="Workspace">
+    <%= link_to "Overview", workspace_path(@workspace), aria: { current: "page" } %>
+    <%= link_to "Corpora", workspace_corpora_path(@workspace) %>
+    <% if @membership.owner? || @membership.admin? %>
+      <%= link_to "People and access", workspace_workspace_invitations_path(@workspace) %>
+    <% end %>
+    <% if @membership.owner? %><%= link_to "Settings", edit_workspace_path(@workspace) %><% end %>
+  </nav>
+  <section class="lab-empty" aria-labelledby="empty-title">
+    <h2 id="empty-title">A clean starting point</h2>
+    <p>Build a corpus from historical conversations and documentation. Each import keeps its source, digest and fixed snapshot.</p>
+    <p class="muted-copy">Intake stays local. Scenario review and evaluation runs are not yet available.</p>
+    <%= link_to "Open corpora", workspace_corpora_path(@workspace), class: "button button-primary" %>
+    <% if @membership.owner? || @membership.admin? %>
+      <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
+    <% end %>
+  </section>
 </main>

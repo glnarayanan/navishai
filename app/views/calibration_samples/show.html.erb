@@ -1,0 +1,51 @@
+<% content_for :title, "Sample #{@sample.id} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set, cohort: @sample.cohort), class: "back-link" %>
+  <div class="page-heading"><div><h1>Sample <%= @sample.id %></h1><p><%= @sample.cohort.humanize %> · <%= @sample.grader_version.grader.name %> v<%= @sample.grader_version.number %></p></div></div>
+  <div class="review-layout">
+    <section><h2>Behaviour to judge</h2><p><%= @check.requirement %></p><p><%= link_to "Fixed contract", workspace_corpus_eval_case_path(Current.workspace, @corpus, @check.eval_case) %></p>
+      <details><summary>Fixed grader definition</summary><pre class="evidence-text"><%= JSON.pretty_generate(@sample.grader_version.definition) %></pre></details>
+      <h3>Company evidence</h3><%= link_to "Supporting source snapshot", source_evidence_path(@check.scenario_evidence.corpus_item) %><pre class="evidence-text"><%= @check.scenario_evidence.excerpt %></pre>
+      <h3>Recorded output</h3><pre class="evidence-text"><%= JSON.pretty_generate(@sample.output) %></pre>
+      <h3>Output provenance</h3>
+      <% if @sample.evaluation_result %>
+        <p>Saved result #<%= @sample.evaluation_result_id %> · fixed case #<%= @sample.eval_case_id %>.</p>
+        <% if @reveal %>
+          <p><%= link_to "Exact saved result", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, @sample.evaluation_result) %> · <%= link_to "Source run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @sample.evaluation_result.evaluation_run_item.evaluation_run) %>. Machine judgments are not expert truth.</p>
+        <% else %>
+          <p>Result and run links stay hidden until your first label to avoid revealing machine judgments.</p>
+        <% end %>
+      <% else %><p>Manually supplied output; no saved result provenance.</p><% end %>
+    </section>
+    <section><h2>Expert judgment</h2>
+      <% if Current.require_membership!.can_write? %><p>Judge this requirement using the company evidence. Your first label hides machine and other expert decisions to reduce anchoring.</p>
+        <%= form_with url: label_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "form-stack" do |form| %>
+          <%= hidden_field_tag :previous_id, @own_label&.id %>
+          <div class="field"><%= form.label :decision, "Your decision" %><%= form.select :decision, [["Pass — meets the requirement", "pass"], ["Fail — breaks the requirement", "fail"], ["Uncertain — more evidence needed", "uncertain"]], { include_blank: "Choose a judgment", selected: params[:decision] || @own_label&.decision }, required: true %></div>
+          <div class="field"><%= form.label :rationale, "Evidence for your decision" %><%= form.text_area :rationale, required: true, maxlength: 2000, rows: 5, value: params[:rationale] || @own_label&.rationale %></div>
+          <%= form.submit "Save expert label", class: "button button-primary", data: { turbo_submits_with: "Saving…" } %>
+        <% end %>
+      <% end %>
+      <% if @sample.grader_version.definition.key?("execution") %><section class="section-block"><h2>Judge execution</h2>
+        <% if @judge_run %>
+          <p role="status"><%= @judge_run.state.humanize %> · one fixed attempt. No automatic retry.</p>
+          <% if @judge_run.error %><p role="alert"><%= @judge_run.error %></p><% end %>
+          <%= link_to "Refresh judge state", workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "button" %>
+          <% if Current.require_membership!.can_write? && (@judge_run.state == "queued" || (@judge_run.state == "running" && @judge_run.started_at < 10.minutes.ago)) %><%= button_to "Interrupt judge attempt", interrupt_judge_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "button" %><% end %>
+        <% elsif @sample.calibration_prediction %><p>A fixed prediction already exists. Use a new calibration set for another attempt.</p>
+        <% elsif Current.require_membership!.can_write? %>
+          <p>The judge receives this output, fixed rubric, requirement, visible context and company evidence. Hidden facts and expert labels stay local. Local deletion cannot recall sent data.</p>
+          <p><%= @sample.grader_version.definition.dig("execution", "model") %> · <%= @sample.grader_version.definition.dig("execution", "endpoint") %></p>
+          <%= form_with url: judge_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, @set, @sample), class: "form-stack" do |form| %>
+            <div class="checkbox-field"><%= form.check_box :judge_disclose %><%= form.label :judge_disclose, "I approve sending this sample, rubric and company evidence to its fixed judge." %></div>
+            <%= form.submit "Request fixed judge", class: "button", data: { turbo_submits_with: "Queuing…" } %>
+          <% end %>
+        <% end %>
+      </section><% end %>
+      <% if @reveal %><section class="section-block"><h2>Machine prediction</h2><% if @sample.calibration_prediction %><pre class="evidence-text"><%= JSON.pretty_generate(@sample.calibration_prediction.result) %></pre><% else %><p>No prediction. A rubric definition alone does not execute a judge.</p><% end %>
+        <h3>Current expert labels</h3><% @labels.each do |label| %><p>Expert #<%= label.labelled_by_id %>: <strong><%= label.decision.humanize %></strong><br><%= label.rationale %></p><% end %>
+        <details><summary>Label history</summary><% @sample.human_labels.order(:id).each do |label| %><p>Expert #<%= label.labelled_by_id %> · <%= label.created_at.to_fs(:long) %> · <%= label.decision.humanize %><br><%= label.rationale %></p><% end %></details>
+      </section><% else %><p class="section-block" role="status">Prediction and other labels stay hidden until you save your first judgment.</p><% end %>
+    </section>
+  </div>
+</main>

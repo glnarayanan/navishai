@@ -1,0 +1,24 @@
+<% content_for :title, "Add calibration sample — NavishAI" %>
+<main class="page-shell config-panel">
+  <%= link_to @set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, @set), class: "back-link" %>
+  <div class="page-heading"><div><h1>Add output sample</h1><p><%= @set.grader_version.grader.name %> · fixed version <%= @set.grader_version.number %></p></div></div>
+  <p>Use support-output-v1 JSON. A set holds at most 100 samples. Duplicate outputs on the same check reuse a sample and cannot move between cohorts.</p>
+  <p>Choose the cohort explicitly. Selected production failures are not a representative held-out evaluation. Keep examples used to tune a grader in development; held-out leakage invalidates measurement.</p>
+  <% if @result %>
+    <p>Saved output from result #<%= @result.id %> · fixed case #<%= @result.eval_case_id %>. This copies the retained output and exact provenance, not machine judgments or expert labels. No provider request is sent.</p>
+    <p><%= link_to "Choose another calibration set", workspace_corpus_calibration_sets_path(Current.workspace, @corpus) %>. To use another result, select it from your evaluation history.</p>
+    <% if @result.status == "error" || @result.output.nil? %><p role="alert">This result has no usable output and cannot seed a sample.</p><% end %>
+  <% end %>
+  <details><summary>Read the case requirements</summary><dl class="source-metadata"><% @checks.each do |check| %><dt><%= link_to "Case #{check.eval_case_id} · #{check.requirement_kind.humanize} #{check.requirement_index + 1}", workspace_corpus_eval_case_path(Current.workspace, @corpus, check.eval_case) %></dt><dd><%= check.requirement %></dd><% end %></dl></details>
+  <%= form_with url: workspace_corpus_calibration_set_calibration_samples_path(Current.workspace, @corpus, @set), class: "form-stack" do |form| %>
+    <%= hidden_field_tag :evaluation_result_id, @result.id if @result %>
+    <div class="field"><%= form.label :check_id, "Case check" %><%= form.select :check_id, @checks.map { |check| [ "Case #{check.eval_case_id} · #{check.requirement_kind.humanize} #{check.requirement_index + 1}", check.id ] }, { include_blank: "Choose a compiled check", selected: params[:check_id] }, required: true %></div>
+    <div class="field"><%= form.label :cohort, "Sample cohort" %><%= form.select :cohort, [["Held out — measure, do not tune", "held_out"], ["Development — tune here", "development"]], { include_blank: "Choose a cohort", selected: params[:cohort] }, required: true %></div>
+    <% if @result %>
+      <h2>Fixed retained output</h2><pre class="evidence-text"><%= JSON.pretty_generate(@result.output) %></pre>
+    <% else %>
+      <div class="field"><%= form.label :output, "Output JSON" %><%= form.text_area :output, required: true, rows: 10, value: params[:output] %><small>Only upload outputs you may retain with this corpus. Source expiry and deletion also remove these copies.</small></div>
+    <% end %>
+    <%= form.submit "Add sample", class: "button button-primary", data: { turbo_submits_with: "Adding…" } %>
+  <% end %>
+</main>

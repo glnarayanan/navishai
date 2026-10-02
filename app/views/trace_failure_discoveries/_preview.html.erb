@@ -1,0 +1,10 @@
+<p><%= pluralize(input.fetch("traces").size, "complete trace") %> · <%= pluralize(input.fetch("documents").size, "complete current document") %> · <%= pluralize(input.fetch("scenario_definitions").size, "current scenario definition") %> · <%= pluralize(input.fetch("compiled_cases").size, "compiled case") %> · <%= number_to_human_size(input.to_json.bytesize) %>.</p>
+<p>Definitions include known and hidden facts, issue-family labels, requirements, follow-up plans and linked excerpts, with current review status. Compiled cases include contracts and versioned checks; eligibility is shown separately. Human labels, review notes, application user identities, targets and other workspaces are excluded. Linked historical sources disclose only the shown excerpts.</p>
+<% { "traces" => "Complete production traces", "documents" => "Complete company documents", "scenario_definitions" => "Current scenario definitions", "compiled_cases" => "Compiled cases on current definitions" }.each do |key, title| %>
+  <details class="source-record"><summary><%= title %> (<%= input.fetch(key).size %>)</summary>
+    <% if input.fetch(key).empty? %><p>No records in this disclosed comparison set. A proposed gap cannot establish company-wide coverage.</p><% end %>
+    <% input.fetch(key).each do |record| %><details class="source-record"><summary><%= record["title"] || record.dig("definition", "title") || record.fetch("reference") %> · <%= record.fetch("reference") %></summary>
+      <pre class="evidence-text"><%= JSON.pretty_generate(record) %></pre>
+    </details><% end %>
+  </details>
+<% end %>

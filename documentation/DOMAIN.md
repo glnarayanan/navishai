@@ -1,79 +1,100 @@
-# Domain language
+# Support evaluation domain
 
-Use these terms in product copy, code, tests, and design notes.
+These terms belong to the 30 September 2026 product reset. They do not rename old helpdesk records.
 
-- **Organisation:** a NavishAI tenant that owns one or more isolated Workspaces.
-- **Workspace:** the access, policy, and data-isolation boundary for daily work.
-- **User:** a person who signs in to NavishAI. A Membership gives a User one role in one Workspace.
-- **Account:** a customer company inside one Workspace. It is not a NavishAI User, Organisation, or login account.
-- **Account health input:** one retained typed renewal, contract, or usage fact supplied through a CSV or authenticated API import. Its source ID makes exact replay idempotent; a changed fact uses a new source ID.
-- **Account health assessment:** one append-only deterministic score snapshot for an Account. It keeps the prior snapshot, risk band, trigger, renewal date, and exact calculation time.
-- **Account health signal:** one typed input to an Account health assessment, with its value, source locator, time range, weight, risk points, and stable `health://` citation.
-- **Health scorecard:** one Workspace’s published choice of deterministic Account health rules. It points to one immutable version for future assessments.
-- **Health scorecard version:** one immutable mapping from retained signals to weights and health bands, with the human’s goal and a plain explanation.
-- **Health scorecard proposal:** one runner-backed configuration suggestion for a Workspace scorecard. It keeps the human prompt, selected runtime, validation outcome, optional parent proposal and run lineage, and a definition restricted to the supported signal catalog. Accepting it creates an unpublished version; it never calculates authoritative health.
-- **Health scorecard backtest:** one immutable replay of a version against up to 500 retained assessments. It keeps the compared results and a digest of the exact source snapshots.
-- **Material health change:** a score change of at least ten points or any risk-band change between retained assessments.
-- **Risk investigation:** the retained review opened by a material health change, a renewal within 90 days, or a human request. Crew analysis stays separate from its deterministic assessment.
-- **Contact:** a customer person inside one Workspace, optionally linked to one Account.
-- **Source identity:** one stable record from one source namespace, linked to an Account or Contact after matching or review.
-- **Source namespace:** an opaque key for one connector instance. It is not a provider name.
-- **Identity key:** an exact normalized email for a Contact or domain for an Account. Names and fuzzy similarity are not identity keys.
-- **Ambiguous identity:** a Source identity whose keys point to more than one canonical record. Automated work stays blocked until an authorised human reviews it.
-- **Merge:** a directed, reversible alias from one Account or Contact to another. Source identities and history stay on their original record.
-- **Canonical record:** the current root reached by following active merge history.
-- **Unmerge:** closure of one active merge. It restores the prior alias split but does not undo facts added after the merge.
-- **Conversation:** one ordered thread with a Contact. Messages in a Conversation are immutable.
-- **Message:** plain-text customer or staff content in a Conversation. Recording an outbound Message does not grant or prove authority to send it.
-- **Case:** the unit of support work for one Conversation. A Case has one current lifecycle state, priority, optional assignee, tags, and private notes.
-- **Case status change:** the durable record of a Case transition, including its prior state, next state, actor, source, time, and reason.
-- **Case note:** private staff context attached to a Case. It is never customer-visible Message content.
-- **Tag:** a Workspace-owned label that staff can apply to Cases.
-- **Resume:** a new inbound Message moves a Case from Waiting on Customer or Resolved to Investigating.
-- **Reopen:** a new inbound Message moves a Closed Case back to Investigating while retaining its assignment, priority, tags, notes, and history.
-- **Service calendar:** one Workspace’s named business hours, time zone, and holiday dates used for SLA calculations.
-- **SLA policy:** the active first-response target, resolution target, and warning threshold for one Case priority. A Case snapshots its policy when its SLA starts. Clock settings, calendars, and holidays become immutable once a Case uses them; later configuration creates a replacement for new Cases.
-- **Case SLA:** the durable first-response and resolution clocks for one Case, including warnings, deadlines, pauses, and outcomes. Reopening a resolved or closed Case reactivates its resolution clock without counting terminal time.
-- **Support quality readout:** one Workspace-scoped, read-only view of live Case and SLA clocks plus the latest retained Account health evidence for reopens, unproofed resolutions, and current contract-blocked drafts. It does not score Accounts or send messages.
-- **First response:** the first recorded outbound Message in a Conversation. Recording it for SLA purposes does not grant authority to send it.
-- **SLA pause:** time in Waiting on Customer. Only business minutes in that interval extend pending SLA deadlines.
-- **SLA escalation task:** an idempotent internal warning or breach item for one Case SLA objective.
-- **Shared email inbox:** one Workspace-owned inbound address and signed webhook endpoint. Its credential key points to deployment-managed secrets; secret values never enter business or audit rows.
-- **Inbound email delivery:** the durable original RFC 5322 source, digest, provider Message-ID, receipt state, and safe failure status for one webhook delivery.
-- **Email thread:** an immutable mapping from email threading identifiers to one Conversation inside one Shared email inbox.
-- **Email draft:** the latest plain-text reply that a workspace writer can edit before sending. A new inbound message lets the writer start the next reply. A draft never grants later send authority.
-- **Outbound email delivery:** the frozen recipient, content, threading headers, human actor, and SMTP result for one fresh Send command. An unknown result blocks resend until a signed-in writer checks SMTP or the shared mailbox and records whether it was accepted.
-- **Intercom connection:** one Workspace-owned link to one Intercom app. Webhook secrets remain deployment-held. Access uses the Admin-enabled Workspace connector’s encrypted service credential after remote workspace verification, or the existing deployment credential reference. Secret values never enter audit rows.
-- **Workspace connector:** Admin-controlled enablement and encrypted service credentials for shared Intercom or Notion access. Personal OAuth accounts belong to one membership and require that connector to remain enabled; they do not automatically publish private resources to shared knowledge.
-- **Synced knowledge:** immutable source origin and content versions, separate sync observations, and product/Intercom applicability. Connection defaults apply until a human override; case retrieval and citation admission enforce the effective mapping.
-- **Personal AI account:** one membership-owned credential identity on the deployed runner. Rails holds status and the tested installation, while execution freezes ownership and approval. Disconnect, role revocation, archive import, and Workspace deletion preserve that boundary.
-- **Intercom webhook delivery:** one durable signed notification, exact source body, digest, attempt history, and safe failure state. Its notification ID makes exact replay idempotent.
-- **Intercom conversation link:** the source-owned mapping from one Intercom conversation to one local Conversation and Case. It keeps remote state and assignment separate from local workflow state.
-- **Intercom part link:** the source-owned mapping for one remote customer reply, teammate reply, or private note. Redaction hides linked content from current case views without rewriting source history.
-- **Intercom tag link:** the source-owned mapping from one remote tag to one Workspace Tag. Reconciliation may remove only tags owned by that Intercom connection.
-- **Intercom sync operation:** one frozen, human-attributed local note, assignment, tag, or untag change sent to Intercom. Definite rejection may retry; an uncertain outcome stops for review so NavishAI does not duplicate a remote write.
-- **Intercom draft:** the latest plain-text customer reply that a workspace writer can edit. A new customer part opens the next draft after a sent reply. The draft does not grant send authority.
-- **Intercom outbound delivery:** one frozen remote conversation, source part, body, Intercom admin, human actor, and result for a fresh Send command. An uncertain result blocks resend until a signed-in writer verifies the exact remote part or marks it not sent.
-- **Knowledge source:** one Workspace-owned body of approved support knowledge from maintained text, an HTTPS URL snapshot, an uploaded text file, or an Intercom Help Center article. Deletion removes it from current use without erasing cited history.
-- **Knowledge source version:** one immutable content snapshot with its digest, retrieval time, source update time, expiry, author, and optional retained upload. Only a source’s current active version appears in search.
-- **Knowledge citation:** a stable link to one Knowledge source version. It keeps stale and deleted warnings even after a source changes or leaves current search.
-- **Knowledge improvement queue:** one Workspace-scoped list of knowledge sources that are stale, deleted, retired after confirmed absences, or tied to a failed sync pass, plus human-owned improvement candidates. Writers can open a candidate from a blocked draft or an attention source. A Manager, Admin, or Owner triages, assigns an eligible knowledge manager, dismisses with a reason, or resolves by linking a current authorised knowledge version. Source rows still leave the queue when a replacement current version is no longer stale. Nothing here sends a customer message.
-- **Public-web search:** one attributable, policy-checked query sent through the runner to an approved read-only search provider. NavishAI stores the minimized query, provider, cost, outcome, and normalized results; it never treats result text as instruction.
-- **Public-web result:** one immutable HTTPS evidence link with a title, excerpt, publication time when supplied, retrieval time, digest, rank, and stable `public-web://` citation.
-- **Public-web extraction:** one attributable, guarded text snapshot fetched from a Public-web result’s immutable URL. It stores the original and final URL, text digest, source and retrieval times, and terminal outcome. It keeps the result citation and remains untrusted evidence rather than instruction or durable memory.
-- **Memory record:** one append-only, PostgreSQL-authoritative episodic event, semantic fact, profile detail, or procedural instruction. It carries a stable source reference, observed and valid times, confidence, retention rule, and explicit scope. A new record supersedes rather than edits an old one, so conflicts remain visible.
-- **Memory scope:** one Organisation, Workspace, Account, Contact, Case, Crew template, Agent profile, or User boundary. Every Memory record remains owned by one Workspace. Explicit context may inherit broader scopes inside that Workspace; Organisation scope never grants cross-Workspace access by itself.
-- **Memory authority:** the precedence of a Memory record. An authorised human correction ranks above a current source record, and a source record ranks above inference. Authority does not erase conflicting records.
-- **Memory proposal:** one agent-sourced semantic fact or profile detail awaiting Manager, Admin, or Owner review. A proposal cannot enter retrieval until a human accepts and publishes it as a Memory record.
-- **Memory correction proposal:** one append-only human claim that a Memory record is wrong or stale. Managers, Admins, and Owners publish their own correction at once and may accept or reject a Member proposal. Acceptance creates a new human-authority Memory record that supersedes the source.
-- **Memory tombstone:** the append-only record that removes one Memory record from current retrieval. It keeps the actor and reason and tracks removal from the external index through pending, removing, removed, failed, or unknown states.
-- **Memory index entry:** the durable indexing state for one Memory record. Its stable Memory key is the engine document identity, so retry cannot create a second logical document.
-- **Memory engine:** a replaceable service that indexes and retrieves eligible Memory records. PostgreSQL stays authoritative; an engine cannot grant scope or change a record.
-- **Execution memory selection:** one append-only record that links an Execution run to a retrieved Memory record with its fixed rank and relevance score. Its `memory://` citation is valid only for that run.
-- **Crew template:** one Workspace’s fixed Support or Customer Success set of specialist roles. It defines accountable work roles, not operating-system processes or runtime sessions.
-- **Agent profile:** the stable identity and bounded authority for one specialist role in a Crew template. It is separate from a runtime, provider account, task, run, or model session.
-- **Agent profile version:** one immutable set of role instructions, approved tools, runtime preferences, budgets, and review policy. A new version replaces current policy without changing prior task evidence.
-- **Runtime profile:** a provider-neutral execution preference selected from the approved registry. It never stores an executable path, command, or subscription credential.
-- **Runtime installation:** one runner-detected adapter executable and version with reported capabilities, compatibility, non-secret account details, and one Workspace’s approval policy. Detection does not grant approval, and approval never stores the subscription credential.
-- **Execution run:** one immutable, numbered attempt to carry out a Crew task through the runner. It freezes the chosen Runtime installation, profile, routing reason, disclosed data classes, retrieved Memory selections, and unit caps. Its ordered events, input, usage, output, failure, and admission checks remain attributable to that attempt.
-- **Crew artifact:** one append-only, cited Support or Customer Success investigation, draft, intervention plan, or quality review published from a completed Execution run. It states uncertainty, and a new version supersedes rather than edits prior output.
+| Term | Meaning |
+|---|---|
+| Organisation | Company that owns workspaces. Organisation ownership alone grants no cross-workspace access. |
+| Workspace | Isolated evaluation lab with its own sources, experts, scenarios, definitions, targets, and runs. |
+| Source | Origin of company evidence: an export, document, policy, or later a read-only connection. |
+| Source snapshot | Fixed source content at one intake time, with digest, origin, redaction policy, and processing version. |
+| Corpus | A named collection of source-backed records to analyse together. |
+| Corpus item | One historical conversation, document or recorded production trace, not a live ticket. |
+| Corpus analysis | One fixed-input discovery method proposing company-specific families and scenario candidates. Model output has no expert authority. |
+| Discovery batch | Fixed source allocation, digest, request UUID and once-only receipt within one consented analysis. The reducer groups existing proposals; it cannot invent definitions or approve them. |
+| Support observation | Proposed support distinction with a summary, explicit uncertainty and every exact source anchor. It is neither a company issue label nor an expert decision. |
+| Support relationship | Proposed connection between exact observation anchors from separate discovery batches and distinct source records. It retains uncertainty and all contributing quotes, not expert truth or exhaustive corpus coverage. |
+| Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
+| Trace association | An expert's match, different or uncertain decision on an exact trace and scenario version, with append-only reasons. It is neither scenario approval nor a calibration label. |
+| Model matching suggestion | A proposed match, no-match or uncertain comparison of one fixed trace with every disclosed eligible scenario version. It cannot create a trace association. |
+| Trace failure discovery | A proposed failure account for every fixed trace, with emerging families and gaps against the disclosed definitions and cases. No finding is not a verified pass. |
+| Trace failure review | An expert's acceptance, rejection or uncertainty about one proposed trace failure. Acceptance permits an empty-expectation draft, not scenario approval or regression admission. |
+| Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
+| Follow-up plan | Expert-authored immutable ordered literal conditions and user messages. Separate from hidden facts; a new plan needs ordinary source-backed approval. |
+| Conversation turn receipt | Content-free request key, input digest, elapsed time and reported attempt outcome. Not proof of remote execution or tool use. |
+| Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
+| Taxonomy version | Fixed expert labels for some or all clusters from one corpus analysis. Unreviewed clusters stay proposals. |
+| Issue cluster | Related corpus items with a proposed issue label, examples, and disclosed selection method. |
+| Scenario | Stable identity of a testable support situation, separate from its evidence and revisions. |
+| Scenario version | Fixed context, facts, expected behaviour, importance, and source evidence at one revision. |
+| Model scenario proposal | Non-authoritative structured suggestion on one fixed scenario version, with exact source quotes, model/settings and a separate disclosure purpose. It cannot change a scenario or human decision. |
+| Scenario family | Real-source scenario and its controlled variants. |
+| Variant | Child scenario with exact named-fact changes, reason and proposed behavioural difference bound to one parent version. Fresh expectations and review remain separate. |
+| Evidence | Link to an exact source snapshot/item and the excerpt that supports a claim. |
+| Review | Expert decision on an exact proposed version: approve, reject, amend, or merge. |
+| Eval contract | Structured requirements and prohibitions compiled from a reviewed scenario version. |
+| Eval case | Fixed compilation of an approved scenario version, its contract, check bindings and grader versions. |
+| Check binding | One contract statement paired with an exact grader version and evidence from that scenario version. |
+| Eval suite | Named selection of cases; a run freezes its membership and versions. |
+| Grader | A check of one behaviour. Deterministic checks and rubric judges have distinct evidence and limits. |
+| Grader version | Fixed check definition, rubric, threshold, and optional model settings. |
+| Human label | Attributable expert judgment on exact evidence/output and definition versions. |
+| Calibration set | Output samples for one fixed grader version; development and held-out samples stay distinct. |
+| Error-cost assumptions | Optional fixed human costs, common unit and rationale for false-positive and false-negative judgments. Not verified business costs or authority to spend. |
+| Calibration sample | Fixed output, explicit cohort and compiled case/check that experts judge; optionally backed by one exact saved result. |
+| Calibration prediction | Machine decision on a fixed sample, distinct from authoritative human labels. |
+| Calibration judge attempt | One consented, once-claimed execution on a fixed sample. It cannot overwrite a prediction or label. |
+| Evaluation target | System under test, not a NavishAI support persona. |
+| Evaluation run | One attributable execution against frozen target settings, cases, and graders. |
+| Evaluation result | Retained target output and individual grader decisions, evidence, uncertainty, and execution errors. |
+| Failure pattern | Failed results grouped by the same contract requirement kind and check type across grader versions. Exact definitions, individual thresholds and nearby uncertainty remain separate. |
+| Source-assumption impact | A proposed affected expectation or assumption from two complete same-source snapshots and explicit fixed scenario versions, including unlinked assumptions. It is not an automatic stale flag or expert revision. |
+| Regression case | Reviewed failed case retained in a suite to test future target versions. |
+| Classifier | Later, a cheaper learned check for a stable repeated judgment, validated against held-out expert labels. |
+
+## Rules
+
+- Human decisions outrank machine proposals. Approval of one version does not approve its next revision.
+- Snapshot reuse requires the same source, input digest, redaction, processing version and masking-rule fingerprint. Changed processing or rules create a new snapshot; masking cannot silently merge keys or record identities. Invalid repeats cannot bypass validation through retained history.
+- Exact-text masks come from an explicit author-supplied list, not inferred PII or disclosure policy. Snapshots retain its fixed fingerprint/count, not the list. Prior snapshots and approvals stay unchanged.
+- A changed source never changes a prior scenario, case, label, or run. A dependent definition may need a new version.
+- Evidence links cannot cross workspaces. A variant must retain both its original evidence and its explicit counterfactual changes.
+- Local source review retains bounded literal questions and exact source offsets, not diagnoses or copied account truth. Experts supply starting facts and supported expectations; draft notes are never target input.
+- A controlled variant changes one to five existing known facts, freezes their typed before/after values and parent, and clears expectations, hidden facts and follow-ups. The proposed difference cannot approve the child.
+- Scenario revisions and variants compare retained JSON values with types intact, including nested numbers. Integer 0 differs from float 0.0; object-key order alone changes nothing, while array order matters. Each changed version still needs expert review.
+- Trace matching uses the same recursive typed comparison for equal and conflicting known facts. Equal literal terms cannot hide nested numeric differences or turn a hint into an expert decision.
+- Merging preserves the rejected/merged identity and provenance; it does not erase why a case entered the corpus.
+- An execution error is not a behavioural failure. An uncalibrated judgment is not a proven label.
+- Frequency, risk, coverage, confidence, and severity are different facts. Counts alone do not measure scenario quality.
+- Expectation evidence stays hidden from a target; knowledge evidence is an explicit excerpt the expert permits it to use.
+- A source-backed human expectation is not a claim that the historic answer was correct. Mining cannot approve it.
+- A mined draft label may shorten a source term to 500 characters. The full proposal and evidence stay fixed and inspectable; shortening supplies no expert label or approval.
+- A document change makes dependent evidence stale. A newer conversation export does not erase a fixed historical case.
+- Compilation covers every contract statement exactly once. A case retains its exact approval and bindings; an edit creates a new definition.
+- A deterministic trace check is not proof that an external tool ran or that a response is semantically correct.
+- A response-scoped check examines each assistant reply after a matching user message, not text anywhere in the transcript. It is not an interactive turn simulation or proof that new facts reached a target incrementally.
+- Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
+- Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
+- Error-cost assumptions belong to one fixed calibration set and grader version. Changing them needs a new set. Observed weighted mistakes use only compared, certain labels within that cohort or preview; absent assumptions or comparisons remain unknown. No defaults or inherited values.
+- Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.
+- Saved results can supply fixed calibration output, not expert labels. A duplicate cannot replace its manual/different-result origin or cohort. Selected failures do not establish held-out representativeness.
+- A run freezes membership and visible inputs at request time. Target, suite and grader edits never rewrite its definitions or results.
+- A claimed run does not retry after an unknown outcome. Another execution requires a deliberate new run.
+- An HTTP run needs exact per-workspace operator endpoint approval and human disclosure confirmation. Credentials are not artifacts; the immutable item UUID identifies its attempt, not proof of remote exactly-once execution.
+- A result passes only when every check passes. An abstention cannot become a pass; an execution error cannot become a support failure.
+- A regression admission retains an exact failed result, fixed case, human and reason. Later membership removal does not erase that decision.
+- Source impact follows exact evidence through all retained snapshots into current and historical versions, fixed cases and current suite membership. It cannot find unlinked assumptions or decide that changed prose has the same meaning.
+- Separate source-assumption analysis may inspect explicit unlinked versions under impact-only approval and endpoint/body consent. It cannot change exact-evidence dependencies, find every affected case or rewrite a prior decision.
+- Run comparisons require the same fixed case and identical frozen visible input. Pass → fail is a reported regression; fail → pass is recovery. Unknown results stay unresolved and changed definitions or inputs stay unmatched.
+- A model proposal quotes only the fixed excerpts disclosed for its version. Quotes do not prove correct expectations. Existing target/judge approval cannot authorise source processing; proposals never inherit expert approval or change human labels.
+- Model corpus discovery needs consent for its exact complete source preview and its own operator purpose. Proposed families must account for every disclosed conversation once. Mining may copy source-backed definitions but grants neither approval nor target-visible knowledge. Abstention and execution error cannot become discovered families or authoritative labels.
+- Batch consent fixes source allocation and the maximum call plan. Stopped or unknown attempts cannot resume, retry or publish partial global families. A later conversation import cannot replace already disclosed historical inputs; changed company documents still block processing.
+- V2 observations retain every anchor and uncertainty even when candidate selection omits their records. Reduction preserves and orders all fixed observations exactly once; it cannot invent relationships between records disclosed in separate batches.
+- Explicit v3 may propose new relationships using only exact retained observation anchors from at least two batches and two source records. It preserves every original observation and the existing call plan. Missing anchors, scope, chronology and causal meaning remain limits; quotes cannot approve a relationship or expectation.
+- Family source counts use complete fixed members and full-family denominators. Exact uploaded booleans, missing/nonboolean values, reported critical impact and literal text mentions stay separate. None verifies risk, an outcome, model importance or an expert label.
+- Expert nomination adds a local unapproved draft from one fixed member, with its source and author's reason. It never changes the analysis's selection or supplies an authoritative expectation or calibration label. Existing scenarios and decisions remain unchanged.
+- Literal failure retrieval suggests current versions for review. Each expert keeps their own association history; a match cannot settle agreement, revise expectations, permit recorded replay with changed input or admit a regression.
+- Model matching, source-assumption impact and trace discovery each need their own operator purpose and exact disclosure consent. Approval of another purpose grants none of them; each fixed claimed attempt never retries after an unknown outcome.
+- Proposed trace failures may come from traces with no uploader report. A reviewed finding may open a source-backed draft with empty expectations, but an expert must still author, review, compile and deliberately admit a failed case to regression.
+- A selected trace opens an existing version for explicit expert revision; it never copies a reported correction into expectations. Distinct trace/conversation records add evidence. Only current documents replace same-source, same-use evidence. Retained historical traces stay eligible until expiry. Saving changes needs fresh review; prior cases and associations stay fixed.
+- An expert may replace the expectation quote on the scenario's own fixed conversation with another exact excerpt from that record. It stays hidden from the target, leaves other evidence and prior versions fixed, and needs fresh review when changed. Blank or identical quotes cannot reset approval; newer exports cannot supply a substitute quote.

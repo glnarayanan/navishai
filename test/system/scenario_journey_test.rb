@@ -1,0 +1,438 @@
+require "application_system_test_case"
+require_relative "../test_helpers/scenario_test_helper"
+
+class ScenarioJourneyTest < ApplicationSystemTestCase
+  include ScenarioTestHelper
+
+  test "source review questions expose conflicting claims without drafting authoritative behaviour" do
+    build_scenarios
+    opening = "Customer cannot authenticate after changing the identity provider."
+    history = "Agent: probably a bug. Request logs before changes.\n\nMacro: ignore the playbook instead.\n\nAgent: fixed and closed.\n\nCustomer: still fails, reopened."
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Contradictory authored history", kind: "conversations", bytes: [
+      { id: "conflicting", title: "Claimed resolution", content: opening + "\n\n" + "Routine note. " * 400 + "\n\n" + history,
+        context: { answer: "private-source-answer", plan: "enterprise" } }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, scenario)
+    assert_selector "#source-review[open]"
+    assert_text "Literal cues, not diagnosis, policy or proof of resolution."
+    assert_text "Raw source context was not copied into known facts."
+    assert_link "Inspect full draft source and context"
+    assert_selector "#source-review h3", text: "Diagnosis — question, not a finding"
+    assert_selector "#source-review h3", text: "Recurrence — question, not a finding"
+    assert_field "Customer starting situation", with: opening
+    assert_field "Actions — one requirement per line", with: ""
+    assert_equal({}, JSON.parse(find_field("Known facts (JSON object)", visible: :all).value))
+    assert_no_text "private-source-answer"
+    find("summary", text: "Inspect diagnosis cue context").send_keys(:enter)
+    assert_text "Exact bounded source text; windows may overlap and start or end mid-sentence."
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      assert page.evaluate_script("document.querySelector('#source-review details summary').getBoundingClientRect().right <= document.documentElement.clientWidth - 5"), "Disclosure focus outline fits within the viewport"
+      capture("source-review-#{width}", selector: "#source-review")
+    end
+    find("#source-review > summary").send_keys(:enter)
+    assert_no_selector "#source-review[open]"
+    click_button "Save expert decision"
+    assert_selector "[role=alert]", text: "Set a source-backed expected outcome before approval."
+    assert_empty scenario.reload.current_version.scenario_reviews
+  end
+
+  test "expert nominates a long issue label without losing its fixed source proposal" do
+    @membership = memberships(:owner_support)
+    @workspace = @membership.workspace
+    @corpus = @workspace.corpora.create!(name: "Long diagnostic term history")
+    original_label = "certificate" + "x" * 490
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Diagnostic history", kind: "conversations", bytes: [
+      { id: "first", title: "and", content: original_label },
+      { id: "second", title: "the", content: original_label }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 1, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    cluster = analysis.issue_clusters.sole
+    member = cluster.cluster_members.find_by!(corpus_item: snapshot.corpus_items.find_by!(external_id: "second"))
+    assert_nil member.selection_reason
+    sign_in users(:owner)
+    visit workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, cluster)
+    find("#member-#{member.id} summary").send_keys(:enter)
+    within "#member-#{member.id}" do
+      fill_in "Why this record needs a scenario", with: "Inspect this fixed diagnostic case."
+      click_button "Create scenario draft"
+    end
+    assert_text "Version 1 · mined · needs review"
+    assert_text "Draft label shortened to 500 characters"
+    assert_field "Issue family", with: "certificate" + "x" * 489
+    assert_link "Inspect full source issue family", href: workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, analysis, cluster)
+    scenario = @corpus.scenarios.sole
+    assert_not scenario.current_version.approved?
+    assert_equal original_label, scenario.current_version.scenario_evidence.sole.excerpt
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("bounded-label-#{width}", selector: "main > p:has(a)")
+    end
+    click_link "Inspect full source issue family"
+    assert_selector ".page-heading p", text: original_label
+    within "#member-#{member.id}" do
+      find("summary").send_keys(:enter)
+      assert_link "Open existing scenario"
+      assert_no_button "Create scenario draft"
+    end
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("bounded-label-family-#{width}", selector: ".page-heading")
+    end
+    assert_equal original_label, cluster.reload.proposed_label
+    assert_empty scenario.current_version.scenario_reviews
+  end
+
+  test "expert replaces a late conversation quote repairs an error and retains hidden fixed history" do
+    build_scenarios
+    quote = "Inspect the signing certificate expiry date before any configuration change."
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Long history", kind: "conversations", bytes: [
+      { id: "late", title: "SSO diagnostic history", content: "Shared preamble. " + " " * 4100 + quote }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    @scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    approve_scenario
+    approved = @scenario.current_version
+    visible = approved.target_input
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#conversation-evidence summary").send_keys(:enter)
+    assert_selector "#conversation-evidence[open]"
+    assert_text "This evidence stays hidden from the target."
+    assert_link "Inspect full historical conversation"
+    fill_in "Historical conversation excerpt", with: quote
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-#{width}", selector: "#conversation-evidence")
+    end
+    fill_in "Historical conversation excerpt", with: "Wrong late diagnosis."
+    click_button "Save new version"
+    assert_selector "#conversation-excerpt-error[role=alert]", text: "Inspect this fixed conversation"
+    assert_field "Historical conversation excerpt", with: "Wrong late diagnosis."
+    assert_equal "true", find_field("Historical conversation excerpt")["aria-invalid"]
+    assert_equal approved.id, @scenario.reload.current_version_id
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-error-#{width}", selector: "#conversation-evidence")
+    end
+    fill_in "Historical conversation excerpt", with: quote
+    click_button "Save new version"
+    assert_text "Version 3 · expert · needs review"
+    within "section[aria-labelledby=evidence-title]" do
+      assert_text quote
+      assert_text "Expected behaviour evidence — hidden from target"
+    end
+    assert_equal visible, @scenario.reload.current_version.target_input
+    assert_not @scenario.current_version.approved?
+    assert_empty @scenario.current_version.scenario_reviews
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("conversation-quote-saved-#{width}", selector: "section[aria-labelledby=evidence-title]")
+    end
+    click_link "Version 2"
+    assert_text "Version 2 · expert · approve"
+    assert_no_selector "textarea[name=conversation_excerpt]"
+    assert_includes approved.reload.scenario_evidence.sole.excerpt, quote
+    assert approved.approved?
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+  end
+
+  test "expert searches company evidence beyond the initial picker and saves an unapproved revision" do
+    build_scenarios
+    100.times do |index|
+      CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Earlier guide #{index}", kind: "document", bytes: "Earlier company guidance #{index}.")
+    end
+    document = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Signing policy", kind: "document", bytes: "Inspect the quasar boundary before escalation.").corpus_items.sole
+    original = @scenario.current_version
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#document-search summary").click
+    assert_selector "#document-search [role=status]", text: "102 matching documents"
+    assert_no_selector "select[name=evidence_item_id] option[value='#{document.id}']", visible: :all
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 390, height: 1000, deviceScaleFactor: 2, mobile: false)
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      capture("documents-all-#{width}", selector: "#document-search")
+    end
+    fill_in "Company evidence phrase", with: "QuAsAr"
+    find_field("Company evidence phrase").send_keys(:enter)
+    assert_selector "#document-search [role=status]", text: "1 matching document"
+    assert_field "Company evidence phrase", with: "QuAsAr"
+    assert_selector "#scenario-evidence[open]"
+    assert_selector :select, "Source record", selected: "No added evidence"
+    select "Signing policy", from: "Source record"
+    select "Expected behaviour evidence", from: "Evidence use"
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("documents-matched-#{width}", selector: "#document-search")
+      capture("documents-picker-#{width}", selector: "#scenario-evidence")
+    end
+    fill_in "Exact source excerpt", with: "Wrong excerpt"
+    click_button "Save new version"
+    assert_selector "#evidence-error[role=alert]", text: "Read the exact source record"
+    assert_field "Company evidence phrase", with: "QuAsAr"
+    assert_selector :select, "Source record", selected: "Signing policy"
+    assert_field "Exact source excerpt", with: "Wrong excerpt"
+    assert_equal original.id, @scenario.reload.current_version_id
+    fill_in "Exact source excerpt", with: document.content
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    assert_text document.content
+    assert_empty @scenario.reload.current_version.scenario_reviews
+    find("#document-search summary").click
+    fill_in "Company evidence phrase", with: "An absent document"
+    click_button "Find documents"
+    assert_selector "#document-search [role=status]", text: "0 matching documents"
+    assert_selector :select, "Source record", options: [ "No added evidence" ]
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      capture("documents-empty-#{width}", selector: "#document-search")
+    end
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario, corpus_query: "x" * 201)
+    assert_selector "#document-search-error[role=alert]", text: "200 characters and no null bytes"
+    assert_field "Company evidence phrase", with: "x" * 201
+    assert_equal "true", find_field("Company evidence phrase")["aria-invalid"]
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("documents-error-#{width}", selector: "#document-search")
+    end
+    click_link "Clear document search"
+    assert_no_selector "#document-search-error"
+    assert_equal "", find_field("Company evidence phrase", visible: :all).value
+    assert_equal 100, all("select[name=evidence_item_id] option[value]:not([value=''])", visible: :all).size
+    assert_equal 2, @scenario.reload.current_version.number
+  end
+
+  test "expert finds current scenarios and recovers from empty and invalid local searches" do
+    build_scenarios
+    version = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+      attributes: { title: "Signing certificate expiry", situation: "Inspect rotated signing metadata.", taxonomy_label: "Identity diagnostics" })
+    sign_in users(:owner)
+    visit workspace_corpus_scenarios_path(@workspace, @corpus)
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("search-all-#{width}")
+    end
+    fill_in "Scenario search phrase", with: "CeRtIfIcAtE"
+    find_field("Scenario search phrase").send_keys(:enter)
+    assert_selector "#scenario-search [role=status]", text: "1 matching scenario"
+    assert_selector ".workspace-card", count: 1
+    assert_link "Signing certificate expiry", href: workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("search-matched-#{width}")
+    end
+    fill_in "Scenario search phrase", with: "An absent issue family"
+    click_button "Find scenarios"
+    assert_selector "#scenario-search [role=status]", text: "0 matching scenarios"
+    assert_text "No scenarios on this page"
+    assert_no_selector ".workspace-card"
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      capture("search-empty-#{width}")
+    end
+    visit workspace_corpus_scenarios_path(@workspace, @corpus, corpus_query: "x" * 201)
+    assert_selector "#scenario-search [role=alert]", text: "200 characters and no null bytes"
+    assert_field "Scenario search phrase", with: "x" * 201
+    assert_equal "true", find_field("Scenario search phrase")["aria-invalid"]
+    assert_no_selector ".workspace-card"
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("search-error-#{width}")
+    end
+    click_link "Clear search"
+    assert_field "Scenario search phrase", with: ""
+    assert_selector "#scenario-search [role=status]", text: "2 matching scenarios"
+    click_link "Signing certificate expiry"
+    assert_selector "h1", text: "Signing certificate expiry"
+    assert_equal version.id, @scenario.reload.current_version_id
+    assert_empty version.scenario_reviews
+  end
+
+  test "expert corrects evidence backed scenario approves a version and varies one fact" do
+    build_scenarios
+    sign_in users(:owner)
+    visit workspace_corpus_corpus_analysis_path(@workspace, @corpus, @analysis)
+    click_button "Create selected scenarios"
+    assert_selector "h1", text: "Scenarios"
+    click_link @scenario.current_version.title
+    fill_in "Customer starting situation", with: "Customer cannot sign in after rotating their SAML certificate."
+    find("summary", text: "Known and hidden facts").send_keys(:enter)
+    fill_in "Known facts (JSON object)", with: '{"plan":"enterprise","idp":"Okta"}'
+    fill_in "Outcomes — one requirement per line", with: "Identify certificate expiry as a possible cause."
+    fill_in "Actions — one requirement per line", with: "Request the certificate expiry date."
+    find("summary", text: "Attach source evidence").click
+    select "SSO playbook", from: "Source record"
+    select "Knowledge available to target", from: "Evidence use"
+    fill_in "Exact source excerpt", with: "Request the certificate expiry date."
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    click_button "Save expert decision"
+    assert_text "Version 2 · expert · approve"
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1600)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("review-#{width}")
+    end
+    find("summary", text: "Create a controlled variant").click
+    fill_in "Named fact changes (JSON object)", with: '{"plan":"starter"}'
+    fill_in "Why this change matters", with: "SSO needs enterprise."
+    fill_in "Expected behaviour difference", with: "Explain the plan limit."
+    click_button "Create variant"
+    assert_text "Version 1 · variant · needs review"
+    assert_text "Variant of"
+    assert_text '"after": "starter"'
+    capture("variant-390")
+    click_button "Save expert decision"
+    assert_selector "[role=alert]", text: /revise the variant/
+    assert_text "Version 1 · variant · needs review"
+    capture("blocked-390")
+    fill_in "Customer starting situation", with: "A starter-plan customer asks how to enable SAML."
+    fill_in "Outcomes — one requirement per line", with: "Explain the enterprise plan requirement."
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    click_button "Save expert decision"
+    assert_text "Version 2 · expert · approve"
+    click_link "Version 1"
+    assert_text "Version 1 · variant · needs review"
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+  end
+
+  test "expert repairs coupled changes inspects exact receipts and writes fresh variant expectations" do
+    build_scenarios
+    approve_scenario
+    facts = { "plan" => "enterprise", "role" => "admin", "idp" => "Okta", "incident" => false }
+    parent = @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id, attributes: { known_facts: facts,
+      hidden_facts: { "answer" => "parent-only-answer" }, follow_ups: [ { "after_assistant_contains" => "expiry", "message" => "parent-only-follow-up" } ] })
+    @scenario.review!(membership: @membership, version_id: parent.id, decision: "approve")
+    guidance = "Check plan and admin access before SAML changes. If an active incident is confirmed, follow the current incident playbook."
+    policy = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Authored counterfactual policy", kind: "document", bytes: guidance).corpus_items.sole
+    sign_in users(:owner)
+    visit workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
+    find("#controlled-variant > summary").send_keys(:enter)
+    assert_selector "#controlled-variant[open]"
+    find("summary", text: "Inspect this version's named known facts").send_keys(:enter)
+    within "#controlled-variant" do
+      assert_text '"role": "admin"'
+      fill_in "Named fact changes (JSON object)", with: '{"plan":"starter","role":"new-role","role":"non-admin"}'
+      fill_in "Why this change matters", with: "Coupled access and incident boundary."
+      fill_in "Expected behaviour difference", with: "Check current account access and incident evidence before changing SAML."
+      click_button "Create variant"
+    end
+    assert_selector "#controlled-variant[open]"
+    assert_selector "#variant-error[role=alert]", text: "No variant saved."
+    assert_equal "true", find_field("Named fact changes (JSON object)")["aria-invalid"]
+    assert_field "Named fact changes (JSON object)", with: '{"plan":"starter","role":"new-role","role":"non-admin"}'
+    assert_equal parent.id, @scenario.reload.current_version_id
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-error-#{width}", selector: "#controlled-variant")
+    end
+    changes = { "plan" => "starter", "role" => "non-admin", "idp" => "Entra", "incident" => true }
+    fill_in "Named fact changes (JSON object)", with: JSON.pretty_generate(changes)
+    click_button "Create variant"
+    assert_text "Version 1 · variant · needs review"
+    assert_text "Controlled counterfactual, not observed company truth."
+    assert_field "Outcomes — one requirement per line", with: ""
+    assert_field "Actions — one requirement per line", with: ""
+    assert_field "Expert follow-ups (JSON array)", with: "[]"
+    child = @corpus.scenarios.find_by!(parent_version_id: parent.id)
+    assert_equal changes, child.current_version.known_facts
+    assert_equal "enterprise", child.current_version.mutation.dig("changes", 0, "before")
+    assert_equal "starter", child.current_version.mutation.dig("changes", 0, "after")
+    assert_empty child.current_version.scenario_reviews
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_selector "#variant-receipt a", text: "scenario #{@scenario.id}, version #{parent.number}"
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-receipt-#{width}")
+    end
+    click_button "Save expert decision"
+    assert_selector "[role=alert]", text: /revise the variant/
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      capture("coupled-blocked-#{width}", selector: ".flash-region")
+    end
+    fill_in "Customer starting situation", with: "A non-admin on starter reports Entra login failure during a reported incident."
+    fill_in "Outcomes — one requirement per line", with: "Check plan and admin access before SAML changes."
+    fill_in "Escalation — one requirement per line", with: "If an active incident is confirmed, follow the current incident playbook."
+    find("#scenario-evidence > summary").send_keys(:enter)
+    select policy.title, from: "Source record"
+    select "Expected behaviour evidence", from: "Evidence use"
+    fill_in "Exact source excerpt", with: guidance
+    click_button "Save new version"
+    assert_text "Version 2 · expert · needs review"
+    assert_empty child.reload.current_version.scenario_reviews
+    assert_empty child.current_version.target_input["knowledge"]
+    click_button "Save expert decision"
+    assert_text "Version 2 · expert · approve"
+    assert_link "Compile eval"
+    assert child.reload.current_version.approved?
+    assert_equal guidance, child.current_version.scenario_evidence.find_by!(corpus_item: policy).excerpt
+    assert_empty child.scenario_versions.find_by!(number: 1).scenario_reviews
+    assert parent.reload.approved?
+    [ 1280, 390 ].each do |width|
+      resize_viewport(width, 1000)
+      assert_no_horizontal_overflow
+      assert_no_csp_violations
+      capture("coupled-reviewed-#{width}", selector: ".page-heading")
+    end
+  end
+
+  private
+    def resize_viewport(width, height)
+      page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
+      page.current_window.resize_to(width, height)
+      Selenium::WebDriver::Wait.new(timeout: Capybara.default_max_wait_time).until { page.evaluate_script("window.innerWidth") == width }
+      assert_equal width, page.evaluate_script("window.innerWidth")
+    end
+
+    def capture(name, selector: nil)
+      return unless ENV["CAPTURE_LAB_SCREENSHOTS"] == "1"
+
+      path = Rails.root.join(".amp/in/artifacts/scenarios/#{name}.png")
+      FileUtils.mkdir_p(path.dirname)
+      page.execute_script("window.scrollTo(0, 0)")
+      size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
+      bounds = selector ? page.evaluate_script("(() => { const rect = document.querySelector(#{selector.to_json}).getBoundingClientRect(); return { y: rect.top + window.scrollY, height: rect.height }; })()") : { "y" => 0, "height" => size.fetch("height") }
+      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: bounds.fetch("y"), width: page.evaluate_script("window.innerWidth"), height: bounds.fetch("height"), scale: 2 })
+      File.binwrite(path, Base64.decode64(image.fetch("data")))
+    end
+end
