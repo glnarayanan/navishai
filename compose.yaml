@@ -1,160 +1,55 @@
-name: navishai
-
-x-rails-environment: &rails-environment
-  RAILS_ENV: production
-  RAILS_SERVE_STATIC_FILES: "true"
-  NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set NAVISHAI_APP_HOST}
-  NAVISHAI_SOURCE_COMMIT: ${NAVISHAI_SOURCE_COMMIT:-}
-  NAVISHAI_DATABASE_HOST: postgres
-  NAVISHAI_DATABASE_PORT: "5432"
-  NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
-  NAVISHAI_RUNNER_ADDRESS: https://runner:8081
-  NAVISHAI_RUNNER_CA_FILE: /run/navishai/runner-ca.crt
-  NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
-  NAVISHAI_BOOTSTRAP_TOKEN: ${NAVISHAI_BOOTSTRAP_TOKEN:-}
-  NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT: ${NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
-  NAVISHAI_SUPERMEMORY_ADDRESS: http://127.0.0.1:6767
-  NAVISHAI_SUPERMEMORY_API_KEY: ${NAVISHAI_SUPERMEMORY_API_KEY:-}
-  NAVISHAI_MEMORY_PENDING: ${NAVISHAI_MEMORY_PENDING:-}
-  NAVISHAI_OIDC_ISSUER: ${NAVISHAI_OIDC_ISSUER:-}
-  NAVISHAI_OIDC_CLIENT_ID: ${NAVISHAI_OIDC_CLIENT_ID:-}
-  NAVISHAI_OIDC_CLIENT_SECRET: ${NAVISHAI_OIDC_CLIENT_SECRET:-}
-  NAVISHAI_ATTACHMENT_SCANNER: ${NAVISHAI_ATTACHMENT_SCANNER:-}
-  NAVISHAI_CLAMD_ADDRESS: ${NAVISHAI_CLAMD_ADDRESS:-}
-  NAVISHAI_INTEGRATION_ENCRYPTION_KEY: ${NAVISHAI_INTEGRATION_ENCRYPTION_KEY:-}
-  NAVISHAI_INTEGRATION_ENCRYPTION_SALT: ${NAVISHAI_INTEGRATION_ENCRYPTION_SALT:-}
-  NAVISHAI_INTERCOM_OAUTH_CLIENT_ID: ${NAVISHAI_INTERCOM_OAUTH_CLIENT_ID:-}
-  NAVISHAI_INTERCOM_OAUTH_CLIENT_SECRET: ${NAVISHAI_INTERCOM_OAUTH_CLIENT_SECRET:-}
-  NAVISHAI_INTERCOM_OAUTH_REDIRECT_URI: ${NAVISHAI_INTERCOM_OAUTH_REDIRECT_URI:-}
-  NAVISHAI_NOTION_OAUTH_CLIENT_ID: ${NAVISHAI_NOTION_OAUTH_CLIENT_ID:-}
-  NAVISHAI_NOTION_OAUTH_CLIENT_SECRET: ${NAVISHAI_NOTION_OAUTH_CLIENT_SECRET:-}
-  NAVISHAI_NOTION_OAUTH_REDIRECT_URI: ${NAVISHAI_NOTION_OAUTH_REDIRECT_URI:-}
-  NAVISHAI_SYSTEM_SMTP_ADDRESS: ${NAVISHAI_SYSTEM_SMTP_ADDRESS:-}
-  NAVISHAI_SYSTEM_SMTP_PORT: ${NAVISHAI_SYSTEM_SMTP_PORT:-}
-  NAVISHAI_SYSTEM_SMTP_USER_NAME: ${NAVISHAI_SYSTEM_SMTP_USER_NAME:-}
-  NAVISHAI_SYSTEM_SMTP_PASSWORD: ${NAVISHAI_SYSTEM_SMTP_PASSWORD:-}
-  NAVISHAI_SYSTEM_SMTP_FROM: ${NAVISHAI_SYSTEM_SMTP_FROM:-}
-  SECRET_KEY_BASE: ${NAVISHAI_SECRET_KEY_BASE:?set NAVISHAI_SECRET_KEY_BASE}
-
-x-rails-service: &rails-service
-  build:
-    context: .
-    dockerfile: Dockerfile
-  image: navishai-rails:local
+name: navishai-lab
+x-rails: &rails
+  build: .
+  image: navishai-lab:local
   restart: unless-stopped
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
-  environment: *rails-environment
-  volumes:
-    - rails_storage:/rails/storage
-    - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/ca.crt:/run/navishai/runner-ca.crt:ro
+  environment:
+    RAILS_ENV: production
+    NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set NAVISHAI_APP_HOST}
+    NAVISHAI_DATABASE_HOST: postgres
+    NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
+    SECRET_KEY_BASE: ${NAVISHAI_SECRET_KEY_BASE:?set NAVISHAI_SECRET_KEY_BASE}
+    NAVISHAI_BOOTSTRAP_TOKEN: ${NAVISHAI_BOOTSTRAP_TOKEN:-}
+    NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT: ${NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT:-}
+    NAVISHAI_OIDC_ISSUER: ${NAVISHAI_OIDC_ISSUER:-}
+    NAVISHAI_OIDC_CLIENT_ID: ${NAVISHAI_OIDC_CLIENT_ID:-}
+    NAVISHAI_OIDC_CLIENT_SECRET: ${NAVISHAI_OIDC_CLIENT_SECRET:-}
+    NAVISHAI_SYSTEM_SMTP_ADDRESS: ${NAVISHAI_SYSTEM_SMTP_ADDRESS:-}
+    NAVISHAI_SYSTEM_SMTP_PORT: ${NAVISHAI_SYSTEM_SMTP_PORT:-}
+    NAVISHAI_SYSTEM_SMTP_USER_NAME: ${NAVISHAI_SYSTEM_SMTP_USER_NAME:-}
+    NAVISHAI_SYSTEM_SMTP_PASSWORD: ${NAVISHAI_SYSTEM_SMTP_PASSWORD:-}
+    NAVISHAI_SYSTEM_SMTP_FROM: ${NAVISHAI_SYSTEM_SMTP_FROM:-}
   depends_on:
     postgres:
       condition: service_healthy
-    runner:
-      condition: service_started
-    app-net:
-      condition: service_started
-
+  networks: [control, edge]
+  volumes: [rails_storage:/rails/storage]
 services:
   postgres:
-    image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
-    restart: unless-stopped
+    image: postgres:16
     environment:
       POSTGRES_USER: navishai
       POSTGRES_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
-      POSTGRES_DB: navishai_production
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_DB: navishai_lab_production
+    volumes: [lab_postgres_data:/var/lib/postgresql/data]
+    networks: [control]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U navishai -d navishai_production"]
+      test: [CMD-SHELL, "pg_isready -U navishai -d navishai_lab_production"]
       interval: 5s
       timeout: 5s
       retries: 20
-    networks: [control]
-
-  runner:
-    build:
-      context: .
-      dockerfile: ops/docker/runner.Dockerfile
-    image: navishai-runner:local
-    restart: unless-stopped
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    environment:
-      NAVISHAI_RUNNER_BIND_ADDRESS: 0.0.0.0:8081
-      NAVISHAI_RUNNER_SHARED_SECRET: ${NAVISHAI_RUNNER_SHARED_SECRET:?set NAVISHAI_RUNNER_SHARED_SECRET}
-      NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET: ${NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET:?set NAVISHAI_RUNNER_PROVIDER_VAULT_SECRET}
-      NAVISHAI_PERSONAL_ACCOUNTS_ROOT: ${NAVISHAI_PERSONAL_ACCOUNTS_ROOT:-}
-      NAVISHAI_RUNNER_STATE_PATH: /var/lib/navishai/admissions.json
-      NAVISHAI_RUNNER_EXECUTION_CONFIG: /etc/navishai/execution.json
-      NAVISHAI_CONTROL_PLANE_ADDRESS: http://app-net:3000
-      NAVISHAI_CONTROL_PLANE_ALLOW_PRIVATE_HTTP: "true"
-      PATH: /opt/navishai/runtimes:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      NAVISHAI_RUNNER_TLS_CERT_FILE: /run/navishai/tls.crt
-      NAVISHAI_RUNNER_TLS_KEY_FILE: /run/navishai/tls.key
-      # Optional public-web search: searxng (self-hosted), exa, or tavily. Keys stay on the runner.
-      NAVISHAI_WEB_SEARCH_PROVIDER: ${NAVISHAI_WEB_SEARCH_PROVIDER:-}
-      NAVISHAI_WEB_SEARCH_PROVIDERS: ${NAVISHAI_WEB_SEARCH_PROVIDERS:-}
-      NAVISHAI_SEARXNG_URL: ${NAVISHAI_SEARXNG_URL:-}
-      NAVISHAI_EXA_API_KEY: ${NAVISHAI_EXA_API_KEY:-}
-      NAVISHAI_TAVILY_API_KEY: ${NAVISHAI_TAVILY_API_KEY:-}
-    volumes:
-      - runner_data:/var/lib/navishai
-      - ${NAVISHAI_RUNNER_EXECUTION_CONFIG_PATH:-./ops/runner/execution.example.json}:/etc/navishai/execution.json:ro
-      - ${NAVISHAI_RUNTIME_EXECUTABLES_PATH:-./ops/runtime-executables}:/opt/navishai/runtimes:ro
-      # Subscription logins are provisioned on the host; the runner needs read access only.
-      - ${NAVISHAI_RUNTIME_STATE_PATH:-./ops/runtime-state}:/var/lib/navishai/runtime:ro
-      - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.crt:/run/navishai/tls.crt:ro
-      - ${NAVISHAI_RUNNER_CERTS_PATH:-./ops/secrets/runner}/server.key:/run/navishai/tls.key:ro
-    networks: [control]
-
-  app-net:
-    image: debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
-    restart: unless-stopped
-    read_only: true
-    user: "65534:65534"
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    command: ["/bin/sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 2147483647 & wait $!; done"]
-    networks: [control, edge]
-
-  supermemory:
-    build:
-      context: .
-      dockerfile: ops/docker/supermemory.Dockerfile
-    image: navishai-supermemory:0.0.8
-    restart: unless-stopped
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    volumes:
-      - supermemory_data:/var/lib/supermemory
-    network_mode: service:app-net
-
   web:
-    <<: *rails-service
-    command: ["bin/rails", "server", "-b", "0.0.0.0"]
-    network_mode: service:app-net
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3000/up"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
+    <<: *rails
+    command: [bin/rails, server, -b, 0.0.0.0]
+    ports: ["127.0.0.1:3000:3000"]
   jobs:
-    <<: *rails-service
-    command: ["bin/jobs"]
-    network_mode: service:app-net
-    depends_on:
-      web:
-        condition: service_healthy
-
+    <<: *rails
+    command: [bin/jobs]
 volumes:
-  postgres_data:
+  lab_postgres_data:
   rails_storage:
-  runner_data:
-  supermemory_data:
-
 networks:
   control:
     internal: true

@@ -40,8 +40,6 @@ class WorkspaceInvitation < ApplicationRecord
       raise AcceptanceError, "invitation is no longer pending" unless pending?
 
       workspace.with_lock do
-        raise AcceptanceError, "workspace is no longer active" if workspace.deletion_requested?
-
         accepted_user = resolve_user(user, password, password_confirmation)
         raise AcceptanceError, "user is already a member" if workspace.memberships.exists?(user: accepted_user)
 

@@ -38,35 +38,28 @@
     <%= javascript_importmap_tags %>
   </head>
 
-  <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="<%= body_controllers %>">
+  <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="theme">
     <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
-    <% if authenticated? %>
-      <div class="app-stage">
-        <div class="app-shell">
-          <%= render "layouts/app_sidebar" %>
-          <div class="app-canvas">
-            <%= render "layouts/app_mobile_bar" %>
-            <%= render "layouts/app_pagebar" %>
-            <%= render "shared/flash_messages" %>
-            <div class="app-content" id="main-content" tabindex="-1">
-              <%= yield %>
-            </div>
-          </div>
-        </div>
+    <header class="lab-header">
+      <%= link_to "NavishAI", root_path, class: "wordmark", aria: { label: "Homepage" } %>
+      <div class="header-tools">
+        <%= render "layouts/theme_control" %>
+        <details class="lab-navigation">
+          <summary>Navigation</summary>
+          <nav aria-label="Main navigation">
+            <% if authenticated? %>
+              <%= link_to "Workspaces", workspaces_path %>
+              <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
+            <% else %>
+              <%= link_to "Sign in", new_session_path %>
+            <% end %>
+          </nav>
+        </details>
       </div>
-      <%= render "layouts/app_nav_drawer" %>
-    <% else %>
-      <div class="<%= landing_page? ? "marketing-shell" : "site-frame" %>">
-        <% unless landing_page? %>
-          <div class="site-rail site-rail-start" aria-hidden="true"></div>
-          <div class="site-rail site-rail-end" aria-hidden="true"></div>
-        <% end %>
-        <%= render "layouts/public_header" %>
-        <%= render "shared/flash_messages" %>
-        <div class="app-container" id="main-content" tabindex="-1">
-          <%= yield %>
-        </div>
-      </div>
-    <% end %>
+    </header>
+    <div class="lab-container" id="main-content" tabindex="-1">
+      <%= render "shared/flash_messages" %>
+      <%= yield %>
+    </div>
   </body>
 </html>
