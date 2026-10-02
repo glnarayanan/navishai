@@ -61,6 +61,6 @@
       <p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %></p>
       <pre class="evidence-text"><%= item.content %></pre><details><summary>Retained context</summary><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre></details>
     </details><% end %>
-    <nav class="workspace-tabs" aria-label="Record pages"><% if @page > 1 %><%= link_to "Previous records", url_for(request.query_parameters.merge(page: @page - 1, anchor: "corpus-records")) %><% end %><% if @more %><%= link_to "Next records", url_for(request.query_parameters.merge(page: @page + 1, anchor: "corpus-records")) %><% end %></nav>
+    <nav class="workspace-tabs" aria-label="Record pages"><% if @page > 1 %><%= link_to "Previous records", url_for(only_path: true, params: request.query_parameters.merge("page" => @page - 1), anchor: "corpus-records") %><% end %><% if @more %><%= link_to "Next records", url_for(only_path: true, params: request.query_parameters.merge("page" => @page + 1), anchor: "corpus-records") %><% end %></nav>
   </section>
 </main>

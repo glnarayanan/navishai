@@ -40,6 +40,11 @@ Queries are capped at 200 characters and filtered from Rails parameter/path logs
 The no-referrer policy prevents outbound referrers, not browser URL/history storage.
 Do not put secrets in a search phrase.
 
+Corpus, source-impact and shared record pagination force local paths. Query values
+remain query data, never routing options such as host or protocol. Fixed fragments,
+filters, snapshot selection and independent page positions remain intact. Crafted
+queries and actual next/previous navigation are tested without relaxing CSP.
+
 Corpus pages disable Turbo cached previews: a fresh navigation cannot replace
 a phrase entered into a cached form. A controlled pending-response browser test
 reproduced the loss before this guard; search still submits through the native form.

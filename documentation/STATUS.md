@@ -81,8 +81,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   abstention rules without tuning or changing predictions/labels.
 - [#177](https://github.com/glnarayanan/navishai/pull/177), based on #176: pre-load complete-record
   bounds for current and fixed analysis, with read-only blocked-state recovery.
-- `rebuild/38-family-selection-review`, based on #177: fixed-family selection
+- [#178](https://github.com/glnarayanan/navishai/pull/178), based on #177: fixed-family selection
   review, whole-analysis counts and read-only focus/pagination.
+- `rebuild/39-local-evidence-pagination`, based on #178: local corpus/source-impact
+  pagination that cannot interpret query data as routing authority.
 
 ## Built and checked
 
@@ -921,6 +923,29 @@ complete alerts, links and controls. Those two focused journeys pass again with
 the layout's legitimate sign-out form; they now check analysis controls separately.
 Direct risk review/native audits used; named reviews remain unavailable. No schema,
 provider, customer data, dependency, label, merge, release or deployment changed.
+
+GitHub CI for #178 passed at exact head
+[`199059f`](https://github.com/glnarayanan/navishai/commit/199059f4809bb76209b14a4da9fe98d9a0bfe00e)
+([run](https://github.com/glnarayanan/navishai/actions/runs/36845529840), completed
+09:56:27 UTC on 1 October). It remains open and unmerged; failed #155/#158 runs
+remain failed.
+
+Two failing native tests reproduced javascript-scheme pagination links on corpus
+and source-impact pages when a query supplied host/protocol. Those pages now keep
+query values under params and force local paths, with fixed fragments. No wrapper,
+security-policy relaxation or unrelated route change. Tests follow next/previous
+links and preserve phrase/source filters, snapshot/record position and independent
+dependency/case pages. The shared record helper's return navigation also passes;
+it needed no change. All remaining query merges in views use the safe pattern.
+
+`bin/ci` passed in 4m17.70s: 295 Ruby files clean, native audits clean, Brakeman
+zero warnings/errors and eager loading passed; 381 Rails tests / 4443 assertions
+and 37 browser tests / 1601 assertions, no failures, errors or skips. Focused checks
+pass with eleven access tests / 223 assertions and four browser journeys / 127
+assertions. The crafted-query browser journey uses Enter for next and returns to
+page one at the same origin with retained filters, no writes and no overflow/CSP
+violations. Appearance is unchanged. Direct risk review/native audits used; named
+reviews remain unavailable. No schema, provider, customer data or dependency changed.
 
 ## Next and limits
 

@@ -106,7 +106,8 @@ class ImpactComparisonAccessTest < ActionDispatch::IntegrationTest
         definition_digest: Digest::SHA256.hexdigest("pagination-#{index}"), contract: @case.contract, created_at: Time.current)
     end
     source = @knowledge.source_snapshot.source
-    get workspace_corpus_source_path(@workspace, @corpus, source, snapshot: 1, page: 2)
+    path = workspace_corpus_source_path(@workspace, @corpus, source)
+    get path, params: { snapshot: 1, page: 2, protocol: "javascript", host: "alert(1)//" }
     assert_response :success
     assert_select "#source-impact .workspace-card", count: 50
     assert_select "#source-impact .source-record", count: 50
@@ -115,10 +116,31 @@ class ImpactComparisonAccessTest < ActionDispatch::IntegrationTest
       assert_includes links.sole["href"], "snapshot=1"
       assert_includes links.sole["href"], "page=2"
     end
-    get workspace_corpus_source_path(@workspace, @corpus, source, snapshot: 1, dependency_page: 2, case_page: 2)
+    [ "Dependency pages", "Dependent case pages" ].each do |label|
+      link = css_select("nav[aria-label='#{label}'] a").sole["href"]
+      assert URI(link).relative?, link
+      assert_equal path, URI(link).path
+      assert_equal "source-impact", URI(link).fragment
+    end
+    get css_select("nav[aria-label='Dependency pages'] a").sole["href"]
+    assert_response :success
+    assert_select "#source-impact .workspace-card", count: 1
+    assert_select "#source-impact .source-record", count: 50
+    get css_select("nav[aria-label='Dependent case pages'] a").sole["href"]
     assert_response :success
     assert_select "#source-impact .workspace-card", count: 1
     assert_select "#source-impact .source-record", count: 1
     assert_select "#source-impact a[href='#{workspace_corpus_eval_case_path(@workspace, @corpus, @case)}']"
+    [ [ "Dependency pages", "dependency_page", "case_page" ], [ "Dependent case pages", "case_page", "dependency_page" ] ].each do |label, changed, retained|
+      link = css_select("nav[aria-label='#{label}'] a").sole["href"]
+      assert URI(link).relative?, link
+      assert_equal path, URI(link).path
+      assert_equal "source-impact", URI(link).fragment
+      query = Rack::Utils.parse_query(URI(link).query)
+      assert_equal "1", query[changed]
+      assert_equal "2", query[retained]
+      assert_equal "1", query["snapshot"]
+      assert_equal "2", query["page"]
+    end
   end
 end

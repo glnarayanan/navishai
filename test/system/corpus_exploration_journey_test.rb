@@ -56,6 +56,38 @@ class CorpusExplorationJourneyTest < ApplicationSystemTestCase
     end
   end
 
+  test "filtered next and previous links stay local when a query supplies route options" do
+    membership = memberships(:owner_support)
+    workspace = membership.workspace
+    corpus = workspace.corpora.create!(name: "Local pagination fixture")
+    snapshot = CorpusIntake.call(corpus:, membership:, name: "Diagnostic export", kind: "conversations",
+      bytes: 51.times.map { |index| { id: "diagnostic-#{index}", title: "Certificate evidence #{index}", content: "Collect current certificate diagnostics." } }.to_json)
+    sign_in users(:owner)
+    visit workspace_corpus_path(workspace, corpus, corpus_query: "certificate", source_id: snapshot.source_id, protocol: "javascript", host: "alert(1)//", anchor: "corpus-records")
+    origin = URI(page.current_url).then { |url| [ url.scheme, url.host, url.port ] }
+    assert_no_difference [ "CorpusItem.count", "AuditEvent.count", "Scenario.count" ] do
+      within "#corpus-records" do
+        assert_selector "[role=status]", text: "51 matching records"
+        assert_selector "details.source-record", count: 50
+        assert_selector "a[href^='/workspaces/']", text: "Next records"
+        find("a", text: "Next records").send_keys(:enter)
+      end
+      within "#corpus-records" do
+        assert_selector "details.source-record", count: 1
+        assert_text "diagnostic-50 · Certificate evidence 50"
+        assert_field "Search phrase", with: "certificate"
+        assert_field "Search source", with: snapshot.source_id.to_s
+        assert_selector "a[href^='/workspaces/']", text: "Previous records"
+        click_link "Previous records"
+        assert_selector "details.source-record", count: 50
+        assert_selector "[role=status]", text: "51 matching records · page 1"
+      end
+    end
+    assert_equal origin, URI(page.current_url).then { |url| [ url.scheme, url.host, url.port ] }
+    assert_no_horizontal_overflow
+    assert_no_csp_violations
+  end
+
   test "a fresh corpus navigation cannot replace a phrase typed into its cached preview" do
     membership = memberships(:owner_support)
     workspace = membership.workspace

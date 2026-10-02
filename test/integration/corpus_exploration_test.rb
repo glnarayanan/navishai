@@ -105,7 +105,8 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
   test "filtered pagination retains search and provenance reaches records beyond the first source page" do
     snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Large export", kind: "conversations",
       bytes: 51.times.map { |index| { id: "paging-#{index}", title: "Certificate pagination #{index}", content: "Collect certificate evidence." } }.to_json)
-    get workspace_corpus_path(@workspace, @corpus), params: { corpus_query: "certificate", source_id: snapshot.source_id }
+    path = workspace_corpus_path(@workspace, @corpus)
+    get path, params: { corpus_query: "certificate", source_id: snapshot.source_id, protocol: "javascript", host: "alert(1)//" }
     assert_response :success
     assert_select "#corpus-records > details", count: 50
     assert_select "#corpus-records [role=status]", text: /51 matching records/
@@ -113,10 +114,20 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
       assert_includes links.sole["href"], "corpus_query=certificate"
       assert_includes links.sole["href"], "source_id=#{snapshot.source_id}"
       assert_includes links.sole["href"], "#corpus-records"
+      assert URI(links.sole["href"]).relative?, links.sole["href"]
+      assert_equal path, URI(links.sole["href"]).path
     end
-    get workspace_corpus_path(@workspace, @corpus), params: { corpus_query: "certificate", source_id: snapshot.source_id, page: 2 }
+    get css_select("nav[aria-label='Record pages'] a").sole["href"]
     assert_response :success
     assert_select "#corpus-records > details > summary", text: "paging-50 · Certificate pagination 50", count: 1
+    assert_select "nav[aria-label='Record pages'] a", text: "Previous records" do |links|
+      assert URI(links.sole["href"]).relative?, links.sole["href"]
+      assert_equal path, URI(links.sole["href"]).path
+      query = Rack::Utils.parse_query(URI(links.sole["href"]).query)
+      assert_equal "certificate", query["corpus_query"]
+      assert_equal snapshot.source_id.to_s, query["source_id"]
+      assert_equal "1", query["page"]
+    end
     item = snapshot.corpus_items.order(:id).last
     assert_select "#corpus-records a[href='#{workspace_corpus_source_path(@workspace, @corpus, snapshot.source, snapshot: 1, page: 2, anchor: "record-#{item.id}")}']"
     get workspace_corpus_source_path(@workspace, @corpus, snapshot.source, snapshot: 1, page: 2)
@@ -124,6 +135,12 @@ class CorpusExplorationTest < ActionDispatch::IntegrationTest
     assert_select "article#record-#{item.id}", text: /Certificate pagination 50/
     assert_select "nav[aria-label='Record pages'] a", text: "Previous records" do |links|
       assert_not_includes links.sole["href"], "record_id"
+      query = Rack::Utils.parse_query(URI(links.sole["href"]).query)
+      assert_equal "1", query["page"]
+      assert_equal "1", query["snapshot"]
     end
+    get css_select("nav[aria-label='Record pages'] a").sole["href"]
+    assert_response :success
+    assert_select "#source-evidence > article", count: 50
   end
 end
