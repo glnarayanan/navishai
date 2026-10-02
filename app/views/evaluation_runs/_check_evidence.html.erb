@@ -1,0 +1,19 @@
+<% grader = check.grader_version %>
+<% evidence = check.scenario_evidence %>
+<% source_item = evidence.corpus_item %>
+<dl class="source-metadata">
+  <dt>Fixed contract requirement · <%= check.requirement_kind.humanize %> #<%= check.requirement_index + 1 %></dt>
+  <dd><%= check.requirement %></dd>
+  <dt>Saved check outcome</dt><dd><strong><%= decision["decision"].humanize %></strong> · <%= decision["reason"] %></dd>
+  <dt>Exact grader</dt><dd><%= link_to "#{grader.grader.name} v#{grader.number}", workspace_corpus_grader_path(Current.workspace, @corpus, grader.grader, version: grader.number) %> · version #<%= grader.id %> · <%= grader.processing_version %>.</dd>
+  <dt>Grader confidence</dt>
+  <dd><% if grader.kind == "deterministic" %>Not applicable: deterministic condition, not a probability.<% else %><%= decision["confidence"].nil? ? "Not supplied" : decision["confidence"] %> · fixed abstention threshold <%= grader.definition.fetch("confidence_threshold") %>. Below the threshold, a pass/fail becomes abstention; equality does not. This report does not establish accuracy.<% end %></dd>
+  <dt>Exact company/check evidence · evidence #<%= evidence.id %> · <%= evidence.kind %></dt>
+  <dd><%= link_to "Source snapshot #{source_item.source_snapshot.number} · record #{source_item.external_id} · item ##{source_item.id}", source_evidence_path(source_item) %></dd>
+</dl>
+<pre class="evidence-text"><%= evidence.excerpt %></pre>
+<details><summary>Fixed check definition and saved decision</summary>
+  <p>These are retained definitions and reports, not inferred causes. Reported tools do not prove execution; literal text checks do not prove a sound diagnosis. Judge quotes prove presence in the supplied inputs, not a sound judgment.</p>
+  <h4>Fixed grader definition</h4><pre class="evidence-text"><%= JSON.pretty_generate(grader.definition) %></pre>
+  <h4>Saved decision, confidence and judge quotes</h4><pre class="evidence-text"><%= JSON.pretty_generate(decision) %></pre>
+</details>

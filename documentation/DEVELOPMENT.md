@@ -721,8 +721,11 @@ membership locks. Unavailable processing versions stop rather than reinterpret h
 Results retain output and each exact check's pass, fail or abstention, reason and
 confidence. Rubrics without a judge abstain. A case fails on any failed check,
 passes only when all pass, otherwise stays incomplete. Schema/worker errors are
-not behavioural failures. Groups share exact grader versions; they are not semantic
-failure clusters or coverage measures. Trace checks do not attest tool execution.
+not behavioural failures. Patterns group fixed requirement kinds and check types
+across grader versions; each check links its exact definition and source evidence.
+Abstentions and judge errors stay separate, with individual confidence/thresholds.
+These are not semantic failure clusters, root causes or coverage measures. Trace
+checks do not attest tool execution. See [FAILURE_PATTERNS](./FAILURE_PATTERNS.md).
 
 Experts can add a failed result to a regression suite with a reason. Each fixed
 admission retains the result, case, human and rationale; repeat submissions reuse

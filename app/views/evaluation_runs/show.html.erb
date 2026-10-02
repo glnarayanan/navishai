@@ -27,9 +27,6 @@
     <% end %>
   </section>
   <section class="section-block"><h2>Case results</h2><ul class="workspace-list" role="list"><% @items.each do |item| %><li class="workspace-card"><% if item.evaluation_result %><%= link_to item.eval_case.scenario_version.title, workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %><strong><%= item.evaluation_result.status.humanize %></strong><% else %><span><%= item.eval_case.scenario_version.title %></span><strong>Not executed</strong><% end %><span><%= item.eval_case.scenario_version.importance.humanize %> importance · case #<%= item.eval_case_id %></span></li><% end %></ul></section>
-  <section class="section-block"><h2>Failure patterns</h2><p>Groups share an exact grader version. Counts are observed failed checks, not semantic clusters or measured corpus coverage.</p>
-    <% if @failures.empty? %><p>No reported behavioural failures yet. Missing, incomplete and error results do not prove a pass.</p><% end %>
-    <% @failures.each do |grader_id, failures| %><article class="source-record"><h3><%= @graders.fetch(grader_id).grader.name %> · v<%= @graders.fetch(grader_id).number %></h3><p><%= failures.size %> failed checks across <%= failures.map { |item, _decision| item.eval_case_id }.uniq.size %> cases.</p><ul role="list"><% failures.each do |item, decision| %><li><%= link_to "Case #{item.eval_case_id}: #{decision['reason']}", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %></li><% end %></ul></article><% end %>
-  </section>
+  <%= render "failure_patterns" %>
   <% if Current.require_membership!.can_write? && (@run.state == "queued" || (@run.state == "running" && @run.started_at < 10.minutes.ago)) %><section class="section-block"><h2>Stop without retrying</h2><p>Interrupt this run. Retain prior results and start a separate run only if you intend another execution.</p><%= button_to "Interrupt run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run), method: :patch, class: "button" %></section><% end %>
 </main>
