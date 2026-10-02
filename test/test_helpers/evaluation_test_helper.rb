@@ -15,8 +15,8 @@ module EvaluationTestHelper
     { "rules" => [], "default_output" => output }
   end
 
-  def request_run(suite: @suite, version: @target.current_version)
-    EvaluationRun.request!(suite:, membership: @membership, target_version_id: version.id)
+  def request_run(suite: @suite, version: @target.current_version, **consent)
+    EvaluationRun.request!(suite:, membership: @membership, target_version_id: version.id, suite_digest: Digest::SHA256.hexdigest(suite.eval_cases.order(:id).pluck(:id).to_json), **consent)
   end
 
   def with_scripted_call(replacement)

@@ -51,7 +51,7 @@ class EvaluationDeliveryTest < ActiveSupport::TestCase
     worker = nil
     with_endpoint_approval do
       target = define_http_target
-      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
+      run = request_run(version: target.current_version, disclose: true)
       with_test_method(HttpTarget, :call, ->(**) { calls += 1; entered << true; release.pop; support_output }) do
         worker = Thread.new { ActiveRecord::Base.connection_pool.with_connection { EvaluationRunJob.perform_now(run.id) } }
         Timeout.timeout(5) { entered.pop }

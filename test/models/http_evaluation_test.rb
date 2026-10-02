@@ -18,7 +18,7 @@ class HttpEvaluationTest < ActiveSupport::TestCase
         assert_raises(EvalCase::Invalid) { request_run(version: target.current_version) }
         assert_raises(EvalCase::Invalid) { EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: "true") }
       end
-      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
+      run = request_run(version: target.current_version, disclose: true)
       item = run.evaluation_run_items.sole
       sent = []
       with_test_method(HttpTarget, :call, ->(**args) { sent << args; support_output }) do
@@ -46,7 +46,7 @@ class HttpEvaluationTest < ActiveSupport::TestCase
   test "operator revocation before dispatch returns an error without disclosure and timeout does not retry" do
     with_endpoint_approval do
       target = define_http_target
-      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
+      run = request_run(version: target.current_version, disclose: true)
       ENV["NAVISHAI_EVALUATION_ENDPOINTS"] = "[]"
       with_test_method(EvaluationHttp, :perform, ->(*) { flunk "Revoked endpoint cannot connect" }) { EvaluationRunJob.perform_now(run.id) }
       result = run.evaluation_results.sole
@@ -55,12 +55,12 @@ class HttpEvaluationTest < ActiveSupport::TestCase
       assert_empty result.decisions
       assert_nil result.output
       assert_no_difference "EvaluationRun.count" do
-        assert_raises(HttpTarget::Error) { EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true) }
+        assert_raises(HttpTarget::Error) { request_run(version: target.current_version, disclose: true) }
       end
     end
     with_endpoint_approval do
       target = define_http_target
-      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
+      run = request_run(version: target.current_version, disclose: true)
       calls = 0
       with_test_method(Resolv, :getaddresses, ->(*) { [ "93.184.216.34" ] }) do
         with_test_method(EvaluationHttp, :perform, ->(*) { calls += 1; raise Net::ReadTimeout, "private-token-response" }) do
@@ -80,13 +80,33 @@ class HttpEvaluationTest < ActiveSupport::TestCase
   test "revoked scenario during target call prevents retaining output or repeating execution" do
     with_endpoint_approval do
       target = define_http_target
-      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true)
+      run = request_run(version: target.current_version, disclose: true)
       with_test_method(HttpTarget, :call, ->(**) { @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "reject"); support_output }) do
         EvaluationRunJob.perform_now(run.id)
       end
       assert_equal "interrupted", run.reload.state
       assert_empty run.evaluation_results
       with_test_method(HttpTarget, :call, ->(**) { flunk "An interrupted run must not retry" }) { EvaluationRunJob.perform_now(run.id) }
+    end
+  end
+
+  test "HTTP only consent cannot disclose a case added after the form was reviewed" do
+    old_digest = Digest::SHA256.hexdigest([ @case.id ].to_json)
+    added = add_unseen_http_case
+    assert_equal "Entra", added.scenario_version.target_input.fetch("known_facts").fetch("idp")
+    assert @suite.eval_cases.flat_map(&:eval_case_checks).none? { |check| check.grader_version.definition.key?("execution") }
+    with_endpoint_approval do
+      target = define_http_target
+      assert_no_difference "EvaluationRun.count" do
+        [ nil, old_digest ].each do |suite_digest|
+          error = assert_raises(EvalCase::Invalid) { EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true, suite_digest:) }
+          assert_includes error.message, "Suite membership changed"
+        end
+      end
+      digest = Digest::SHA256.hexdigest([ @case.id, added.id ].sort.to_json)
+      run = EvaluationRun.request!(suite: @suite, membership: @membership, target_version_id: target.current_version_id, disclose: true, suite_digest: digest)
+      assert_equal [ @case.id, added.id ].sort, run.evaluation_run_items.order(:eval_case_id).pluck(:eval_case_id)
+      assert_equal %w[Entra Okta], run.evaluation_run_items.map { |item| item.target_input.fetch("known_facts").fetch("idp") }.sort
     end
   end
 end

@@ -59,6 +59,8 @@ case, human and reason; adding it never silently rewrites the case.
 HTTP definitions bind only an endpoint. The operator's private environment
 allowlists exact HTTPS port-443 URLs per workspace and holds optional bearer tokens;
 an expert must also confirm visible-input disclosure for each requested run.
+The confirmation binds the reviewed case list; a membership change blocks any
+external run, not only runs with configured judges.
 The versioned support-target-v1 interface sends only that preview and receives
 support-output-v1. Each run item has an immutable request UUID. The worker claims
 once, checks access/evidence under short locks, releases them before execution,
