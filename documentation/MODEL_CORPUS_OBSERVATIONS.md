@@ -157,8 +157,12 @@ selection, repair, keyboard consent, all quotes, empty and stopped global result
 at desktop/mobile widths. These checks do not establish customer usefulness.
 
 Only sources disclosed together can ground a new observation. The reducer retains
-and orders existing findings; it does not establish new relationships between
-records split across discoveries. The existing bounds remain explicit refusals,
-not a claim to cover every corpus size. Live model quality, expert acceptance and
-the owner's unseen-customer acceptance demo still need separate evidence. No live
-disclosure, training, deployment or provider-call increase occurs here.
+and orders existing findings in v2; it does not create relationships between
+records split across discoveries. Explicit
+[batch v3](./CROSS_BATCH_RELATIONSHIPS.md) adds proposed relationships over only
+retained exact observation anchors while preserving every original and the same
+call plan. V1/v2 remain unchanged. The bounds remain explicit refusals, not a claim
+to cover every corpus size or unseen relationship. Live model quality, expert
+acceptance and the owner's unseen-customer acceptance demo still need separate
+evidence. No live disclosure, training, deployment or provider-call increase
+occurs here.

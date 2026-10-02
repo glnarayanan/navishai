@@ -342,3 +342,11 @@ completed. The IPv4/IPv6 kernel denials, four hook-priority mutation refusals,
 trusted simulated TLS/control/loopback checks and unchanged host firewall passed.
 CLEAN removed the exact private daemons/project/namespace/images/volumes/secrets
 and archive. Full combined application CI remains separate from this proof.
+
+After slice 81, both database proofs pass/CLEAN again with the explicit v3
+cross-batch relationship result and every original observation. Their exact
+fingerprints survive backup/restore; current runtime checks reject changes to the
+v3 definition, result and batch receipts, block completed resend and remove all
+private copies on expiry/purge. This adds no table or grant. The earlier tracked
+Compose proof remains attributed to its own image; it is not a v3 transport or
+live-quality claim.

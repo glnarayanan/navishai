@@ -1,6 +1,6 @@
 # Original rebuild acceptance checklist
 
-Updated 1 October 2026 for the joined rebuild through slice 80. The source of truth
+Updated 1 October 2026 for the joined rebuild through slice 81. The source of truth
 is the owner's entire original prompt, sections 0–25 and A–F/P0–P2, in
 [the source thread](https://ampcode.com/threads/T-01a0f3b9-4f9a-706a-90a2-fcee6f822501).
 This map supplements [PRODUCT](./PRODUCT.md), [ARCHITECTURE](./ARCHITECTURE.md),
@@ -20,6 +20,13 @@ implementation or engineering evidence. **G** means evidence needs authorized da
 experts, endpoints, costs or a host. An E contract does not imply semantic quality.
 The owner's example counts and percentages are illustrations, not measured claims.
 
+This map has 45 check groups: 41 E, zero M and four G. That is 41/45 groups
+(91.1%) with engineering evidence, including all 41 ungated engineering groups.
+It is not a feature-count, quality or customer-acceptance score. The four G groups
+remain unproved; conditional P2 below stays separately gated and is not counted
+as delivered. The stack through [#222](https://github.com/glnarayanan/navishai/pull/222)
+is committed, pushed and open, not merged, released or deployed.
+
 ## A — Demolition, architecture and delivery
 
 | Check | Evidence and limit |
@@ -28,7 +35,7 @@ The owner's example counts and percentages are illustrations, not measured claim
 | E — Remove the old product and its unused dependencies | [lab_baseline_test](../test/integration/lab_baseline_test.rb) checks old routes/tables are gone. Inbox, tickets/assignment, customer drafts/sends, SLAs, account-health/renewals, crews, broad memory/Supermemory, process runners and old deployment machinery do not remain behind flags. Git preserves history. |
 | E — Re-derived tenant/source/eval domain and safe fresh setup | [database_preflight_test](../test/services/database_preflight_test.rb), [security_baseline_test](../test/integration/security_baseline_test.rb). Setup refuses obsolete databases and never resets customer data. |
 | E — Atomic Conventional Commits and stacked PRs | [STATUS delivered stack](./STATUS.md#delivered-stack). Implementation branches use the rebuild predecessor, not obsolete main. The owner lockfile checksum remains unstaged and unchanged. |
-| M — Final combined handoff | Tracked-image/runtime proofs pass. Full native `bin/ci` found two stale mining-prefix expectations; corrected scale/draft tests pass 13/818. Combined browser tests pass. Fresh full CI follows the remaining relationship slice; no green CI claim yet. |
+| E — Final combined engineering handoff | Fresh native `bin/ci` passes in 17m48.72s: Rails 640/10520 and browser 71/3561, no failures/errors/skips; style, eager loading and audits pass. Recovery/upgrade pass with v3 receipts; image-specific Compose proof passes. The stack through #222 is pushed/open, not merged/deployed. Remote CI is separate. |
 
 ## B — Corpus and scenario foundation (all P0)
 
@@ -38,6 +45,7 @@ The owner's example counts and percentages are illustrations, not measured claim
 | E — Exploration, source history, literal search, exact context and pagination | [corpus_exploration_test](../test/integration/corpus_exploration_test.rb), [corpus_exploration_journey_test](../test/system/corpus_exploration_journey_test.rb). Literal search is not semantic retrieval. |
 | E — Company family/taxonomy proposals, expert labels, representative/rare-risk selection and explainable counts | [corpus_discovery_test](../test/services/corpus_discovery_test.rb), [issue_clusters_test](../test/integration/issue_clusters_test.rb), [family_evidence_journey_test](../test/system/family_evidence_journey_test.rb). Full fixed members and source-signal denominators stay separate from model importance, coverage and human truth. |
 | E — Source-backed support-observation contract and retention | [MODEL_CORPUS_OBSERVATIONS](./MODEL_CORPUS_OBSERVATIONS.md), [model_corpus_discovery_test](../test/services/model_corpus_discovery_test.rb), [batch_corpus_discovery_test](../test/services/batch_corpus_discovery_test.rb), [support_observations_journey_test](../test/system/support_observations_journey_test.rb). Explicit v2 preserves every exact anchor and uncertainty independent of candidate selection; v1 meanings stay fixed. |
+| E — New cross-batch relationships over retained source anchors | [CROSS_BATCH_RELATIONSHIPS](./CROSS_BATCH_RELATIONSHIPS.md), [cross_batch_relationships_test](../test/services/cross_batch_relationships_test.rb), [access tests](../test/integration/cross_batch_relationships_access_test.rb), [browser journeys](../test/system/cross_batch_relationships_journey_test.rb). Explicit v3 can connect records no discovery saw together, preserves every original observation and adds no calls or authority. Unseen evidence and semantic quality remain limits. |
 | E — Safer reviewable local drafts and structured extraction | [SCENARIO_QUALITY](./SCENARIO_QUALITY.md), [scenario_quality_test](../test/services/scenario_quality_test.rb), [scenario_extractor_test](../test/services/scenario_extractor_test.rb). Bounded opening/cue-rich source questions replace copied raw facts/actions; experts author starting facts and expectations. Structured proposals require fixed excerpts/quotes and supplied typed facts, not invented visible or hidden truth. |
 | E — Expert approve/reject/merge/edit/relabel/importance/expectations with immutable versions | [scenario_test](../test/models/scenario_test.rb), [scenario_access_test](../test/integration/scenario_access_test.rb), [scenario_journey_test](../test/system/scenario_journey_test.rb). Every changed version needs fresh source-backed review. |
 | E — Basic and coupled controlled variants (P0/P1) | [scenario_variant_test](../test/models/scenario_variant_test.rb), [SCENARIO_QUALITY](./SCENARIO_QUALITY.md). One to five expert-named facts, typed before/after, fixed parent/reason/proposed difference; expectations, hidden facts and follow-ups clear. No machine policy or inherited approval. |
@@ -54,15 +62,14 @@ support distinctions, not universal company labels. Both sides of conflicting or
 reopened claims stay quoted. Local English cues do not establish their meaning.
 Emerging/high-volume/rare-risk families remain source-backed proposals.
 
-**M — General cross-batch relationship discovery is not implemented.** The v2
-reducer may preserve/order findings from each disclosed batch, not infer a new
-relationship between records split across batches. Shared complete documents can
-anchor each batch; arbitrary corpus-wide contradiction/causality is not proved.
-This is a real scope limit, not a customer-data permission blocker or a claim that
-the whole corpus-understanding job is solved. The integration thread reserves its
-closure after the active combined checks: an explicit versioned reducer mode over
-already-disclosed fixed observations and anchors, with no extra call or expert
-authority. No duplicate worker is assigned; v1/v2 stay frozen.
+V1/v2 stay frozen: the v2 reducer only preserves/orders existing observations.
+Explicit v3 closes that engineering gap with new source-quoted relationship
+proposals from retained anchors in separate batches and distinct source records.
+Every original remains unchanged. One batch or a repeated shared document alone
+cannot supply a cross-batch relationship. This does not prove arbitrary corpus-wide
+contradiction, causality, exhaustive coverage or company meaning. Relationships
+whose evidence was never retained remain outside this bounded method. Authorized
+unseen data, experts and live-quality checks must establish useful understanding.
 
 ## C — Eval Compiler, graders and human calibration (all P0)
 
@@ -150,14 +157,31 @@ source-review contract intentionally chooses cue-rich late evidence. Corrected
 scale tests assert exact late quotes, historical identity, empty known facts and
 empty expert expectations. Their native focused run, including draft quality and
 both actual 100,000-input proofs, passed 13 tests / 818 assertions with no
-failures/errors/skips at seed 64405. Fresh full CI follows the relationship slice;
-no full green CI claim yet.
+failures/errors/skips at seed 64405. V3 focused checks pass 48 tests / 1083
+assertions; v2/v3 browser checks pass 4 / 193, including inspected desktop/mobile
+preview, originals, relationships, empty/stopped and repair states. Recovery and
+upgrade pass/CLEAN again with exact v3 history, runtime SQL guards, no resend and
+purge. Ruby style passes 375 files, eager loading and native audits pass.
+
+Fresh final command:
+
+```sh
+DATABASE_URL=postgresql:///navishai_lab_ci81_test CHROME_ARGS=--no-sandbox \
+  BUNDLE_FROZEN=true bin/ci
+```
+
+Passed in 17m48.72s on the
+[implementation head](https://github.com/glnarayanan/navishai/commit/1563e52).
+Rails: 640 tests / 10520 assertions, seed 31409, two native processes.
+Browser: 71 tests / 3561 assertions, seed 52776. No failures, errors or skips.
+Ruby style 375 files, eager loading, gem/importmap audits and Brakeman pass with
+zero errors/warnings. Final documentation-only delivery updates do not change
+that implementation. Remote PR CI is not this local run.
 Ponytail Audit/CE Code Review tools were unavailable; direct risk review and native
 checks were used. No static warning exclusions were added.
 
-Remaining: finish those combined checks; general cross-batch relationships remain
-an explicit implementation limit; then the owner must supply permitted unseen
-B2B SaaS data, named expert expectations/held-out labels, exact endpoint approval,
+Remaining: the owner must supply permitted unseen B2B SaaS data,
+named expert expectations/held-out labels, exact endpoint approval,
 disclosure/retention terms and spend limits for the whole live demo. Measure useful
 taxonomy, representative/risky case coverage, correction effort, judge accuracy
 and next-agent regressions there. Public-host acceptance needs separate authority.

@@ -3,6 +3,7 @@ require Rails.root.join("test/test_helpers/model_failure_matching_test_helper")
 require Rails.root.join("test/test_helpers/assumption_impact_test_helper")
 require Rails.root.join("test/test_helpers/trace_failure_discovery_test_helper")
 require Rails.root.join("test/test_helpers/batch_discovery_test_helper")
+require Rails.root.join("test/test_helpers/relationship_discovery_test_helper")
 
 module Operations
   module CurrentWorkflowsProof
@@ -70,6 +71,20 @@ module Operations
       end
       raise "V2 observation retention" unless batch.reload.state == "complete" && batch.processing_method == BatchCorpusDiscovery::OBSERVATIONS_VERSION &&
         batch.corpus_analysis_result.result.fetch("observations").size == 2 && batch.corpus_analysis_result.result.fetch("observations").all? { |entry| entry.fetch("evidence").size == 2 }
+      relationships = fixture(RelationshipDiscoveryTestHelper, membership)
+      relationships.build_relationship_corpus
+      related = nil
+      calls = []
+      relationships.with_relationship_responses(calls:) do
+        related = relationships.request_relationship_analysis
+        CorpusAnalysisJob.perform_now(related.id)
+      end
+      relationship_result = related.reload.corpus_analysis_result&.result
+      raise "V3 cross-batch relationships" unless related.state == "complete" && calls.size == 3 &&
+        relationship_result.fetch("schema") == BatchCorpusDiscovery::GLOBAL_RELATIONSHIPS_VERSION &&
+        relationship_result.fetch("observations").size == 2 &&
+        relationship_result.fetch("relationships").sole.fetch("evidence").pluck("quote") ==
+          [ "Agent: Rotate first, then collect expiry.", "Playbook: Collect expiry before rotation." ]
       large = CorpusAnalysis.request!(corpus: parent.corpus, membership: impact.instance_variable_get(:@membership),
         scenario_limit: 2, processing_method: "local_large_full_text")
       CorpusAnalysisJob.perform_now(large.id)
@@ -89,12 +104,12 @@ module Operations
       end
       records["ScenarioVersion"] = [ mined, variant.current_version, draft.current_version ]
       records["Scenario"] = [ variant ]
-      records["CorpusAnalysis"] = [ batch, large ]
-      records["CorpusAnalysisResult"] = [ batch.corpus_analysis_result, large.corpus_analysis_result ].compact
-      records["CorpusDiscoveryBatch"] = batch.corpus_discovery_batches.order(:id).to_a
+      records["CorpusAnalysis"] = [ batch, related, large ]
+      records["CorpusAnalysisResult"] = [ batch.corpus_analysis_result, related.corpus_analysis_result, large.corpus_analysis_result ].compact
+      records["CorpusDiscoveryBatch"] = batch.corpus_discovery_batches.order(:id).to_a + related.corpus_discovery_batches.order(:id).to_a
       manifest.merge("records" => records.transform_values { |rows| rows.map { |row| { "id" => row.id, "digest" => fingerprint(row.reload) } } },
-        "sources" => [ match.corpus, change.corpus, found.corpus, batch.corpus ].map { |corpus| corpus.sources.order(:id).first.id },
-        "variant" => variant.id, "parent_version" => parent.current_version_id)
+        "sources" => [ match.corpus, change.corpus, found.corpus, batch.corpus, related.corpus ].map { |corpus| corpus.sources.order(:id).first.id },
+        "variant" => variant.id, "parent_version" => parent.current_version_id, "relationship_analysis" => related.id)
     end
 
     def self.fingerprint(record)
@@ -136,6 +151,10 @@ module Operations
       end
       reject_sql("UPDATE scenarios SET parent_version_id=NULL WHERE id=#{manifest.fetch('variant')}", PG::RaiseException)
       reject_sql("UPDATE scenario_versions SET draft_notes='{}'::jsonb WHERE id=#{manifest.fetch('parent_version')}", PG::RaiseException)
+      relationship_id = manifest.fetch("relationship_analysis")
+      reject_sql("UPDATE corpus_analyses SET processing_method='support-corpus-batch-v2' WHERE id=#{relationship_id}", PG::RaiseException)
+      reject_sql("UPDATE corpus_analysis_results SET result='{}'::jsonb WHERE corpus_analysis_id=#{relationship_id}", PG::RaiseException)
+      reject_sql("UPDATE corpus_discovery_batches SET result='{}'::jsonb WHERE corpus_analysis_id=#{relationship_id}", PG::RaiseException)
       match = ModelFailureMatching.find(manifest.fetch("requests").fetch("ModelFailureMatching"))
       other = match.corpus.workspace.corpora.create!(name: "Foreign current-workflow proof")
       variant_version = Scenario.find(manifest.fetch("variant")).current_version_id
@@ -162,7 +181,7 @@ module Operations
       manifest.fetch("records").each do |name, rows|
         raise "Retained #{name} private copy after purge" if name.constantize.where(id: rows.pluck("id")).exists?
       end
-      puts "PASS: current matching/impact/trace receipts, source-review notes/coupled variants, v2 observations and complete-text versions retain exact history under runtime; 12 new-table immutable/trigger guards, tenant lineage, no resend, expiry and corpus-wide purge."
+      puts "PASS: current matching/impact/trace receipts, source-review notes/coupled variants, v2 observations, v3 cross-batch relationships and complete-text versions retain exact history under runtime; 12 new-table and v3 immutable/trigger guards, tenant lineage, no resend, expiry and corpus-wide purge."
     end
 
     def self.verify_queued(manifest)

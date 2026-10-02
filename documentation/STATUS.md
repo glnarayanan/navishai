@@ -1,7 +1,9 @@
 # Rebuild status
 
 Updated 1 October 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
-milestones. The rebuild is not complete. Nothing has merged, released or deployed.
+milestones. The P0/P1 engineering stack is built and full local CI passes.
+Live/customer and public-host acceptance remain unproved. Nothing has merged,
+released or deployed.
 
 ## Delivered stack
 
@@ -128,8 +130,30 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   filters for definitions and receipts, without changing stored company text.
 - [#210](https://github.com/glnarayanan/navishai/pull/210), based on #209: original sections
   0–25 and A–F/P0–P2 mapped to exact-base evidence and remaining requirements.
-- `rebuild/70-support-eval-landing`, based on #210: technical-Support evaluation
+- [#211](https://github.com/glnarayanan/navishai/pull/211), based on #210: technical-Support evaluation
   landing, truthful examples/privacy limits and native responsive/auth checks.
+- [#212](https://github.com/glnarayanan/navishai/pull/212), based on #211: private source
+  identity/name SQL bind filtering without changing retained evidence.
+- [#213](https://github.com/glnarayanan/navishai/pull/213), based on #212: indexed frozen
+  membership queries shared by expiry, bounds and processing; historical CI attribution remains conditional.
+- [#214](https://github.com/glnarayanan/navishai/pull/214), based on #213: explicit complete
+  100,000-record local v4 within fixed byte/work caps and unchanged evidence/model bounds.
+- [#215](https://github.com/glnarayanan/navishai/pull/215), based on #214: cue-rich source
+  review and coupled fact variants with empty fresh expert expectations.
+- [#216](https://github.com/glnarayanan/navishai/pull/216), based on #215: explicit v2
+  support observations with every exact anchor and uncertainty retained.
+- [#217](https://github.com/glnarayanan/navishai/pull/217), based on #216: cross-grader
+  failure patterns with exact definitions, thresholds and nearby uncertainty.
+- [#218](https://github.com/glnarayanan/navishai/pull/218), based on #217: separately
+  approved fixed-set model failure matching with no expert association writes.
+- [#219](https://github.com/glnarayanan/navishai/pull/219), based on #218: separately
+  approved source-assumption impact with exact endpoint/body consent.
+- [#220](https://github.com/glnarayanan/navishai/pull/220), based on #219: complete-trace
+  failure proposals, emerging families/gaps and expert-only empty drafts.
+- [#221](https://github.com/glnarayanan/navishai/pull/221), based on #220: combined
+  recovery, real upgrade/backup rollback and private native-runtime/network proofs.
+- [#222](https://github.com/glnarayanan/navishai/pull/222), based on #221: explicit v3
+  source-quoted relationships across batches, preserving all originals and call limits.
 
 ## Built and checked
 
@@ -1989,9 +2013,58 @@ not the joined cue-rich source-review contract. Strengthened scale assertions no
 check late evidence without copied expert facts/expectations. Native focused scale
 and draft-quality tests passed 13 tests / 818 assertions with no failures/errors/skips
 at seed 64405, including both actual 100,000-input proofs. This fixes the two
-integration assertions; a fresh full CI follows the remaining relationship slice.
-No full green CI result is claimed yet. See
+integration assertions. Fresh full CI with slice 81 passes below. See
 [OPERATIONS_ACCEPTANCE](./OPERATIONS_ACCEPTANCE.md).
+
+### Slice 81 — source-quoted relationships across discovery batches
+
+Explicit `model_batch_relationships` fixes a v3 plan but retains v2 discovery,
+all original observations and the same call limit. The existing final reducer
+may propose 0–100 relationships with required uncertainty and 2–8 exact anchors
+from at least two discovery receipts and two distinct source records. Local
+composition resolves original quotes and retains their observation/evidence
+indexes. A single batch has no reducer or relationships; v1/v2 stay unchanged.
+
+Native focused/adjacent checks passed 48 tests / 1083 assertions; v2/v3 browser
+journeys passed 4 / 193 with no failures, errors or skips. They exercise an
+asymmetric relationship between records no discovery saw together, all-original
+retention, every anchor/wire bound, versioned consent/repair, no extra calls,
+revocation/expiry/document changes, historical viewer access, SQL immutability,
+tenant lineage, purge and real DEBUG result filtering. Preview, repair, originals,
+new relationships and empty/stopped results were inspected at 1280/390px, with
+320px relationship wrapping; keyboard source links, CSP and overflow passed.
+
+Four-database recovery and real checkpoint upgrade/backup rollback pass/CLEAN
+again with exact v3 receipts, actual runtime grants/SQL guards, no resend and
+purge. Ruby style passes 375 files; eager loading, gem/importmap audits and
+Brakeman pass with zero warnings/errors. No migration, dependency, disclosure
+purpose, authority, live call or training was added. See
+[CROSS_BATCH_RELATIONSHIPS](./CROSS_BATCH_RELATIONSHIPS.md).
+Relationships use only retained observation anchors, not unseen evidence or
+exhaustive company understanding. Fixtures do not establish semantic quality.
+
+### Final combined engineering evidence
+
+```sh
+DATABASE_URL=postgresql:///navishai_lab_ci81_test CHROME_ARGS=--no-sandbox \
+  BUNDLE_FROZEN=true bin/ci
+```
+
+Passed in 17m48.72s on the
+[implementation head](https://github.com/glnarayanan/navishai/commit/1563e52):
+Ruby style 375 files clean, gem/importmap audits clean, Brakeman zero errors/warnings,
+eager loading passed; Rails 640 tests / 10520 assertions (seed 31409, two native
+processes) and system 71 / 3561 (seed 52776), no failures, errors or skips.
+The fresh disposable worker databases were distinct. Read-only catalogs show zero
+remaining operations-proof databases/roles. Temporary prompt exports were removed.
+
+The stack through #222 is committed, pushed and open for review, not merged,
+released or deployed. Remote PR CI remains distinct from this executed local run.
+The original acceptance map has 41 engineering-evidence groups, zero missing
+engineering groups and four owner-authority acceptance groups still unproved.
+Those are 41/45 checklist groups (91.1%), not a product-quality score. All 41
+ungated engineering groups have checks; conditional P2 remains separately gated.
+No customer data, real endpoint, paid call or customer-quality claim was added.
 
 ## Next and limits
 
@@ -2015,10 +2088,11 @@ Model discovery stays 100 complete records / 256 KiB per discovery, or at most
 2000 / 10 MiB and 31 calls across a fixed batch plan. Explicit v2 observations
 retain every summary, uncertainty and exact source anchor independent of candidate
 selection. The reducer preserves/orders existing observations, not new relationships
-between split records. General cross-batch relationship discovery remains missing
-engineering, reserved in this integration thread after active combined checks;
-no duplicate worker is assigned. V1/v2 stay frozen and any new mode must use the
-existing call plan and already-disclosed anchors, not more calls or authority.
+between split records in v2. Explicit v3 can propose new relationships from exact
+retained observation anchors in separate batches and distinct source records,
+keeping all originals and the existing call plan. V1/v2 stay frozen. Missing
+anchors, scope, chronology, causal meaning and exhaustive coverage remain limits;
+source-quoted proposals are not expert truth or live-quality acceptance.
 
 Local scenario mining now offers bounded opening/cue-rich source review questions,
 not copied raw account facts or action-derived expectations. Experts write starting
@@ -2035,13 +2109,13 @@ runtime DML/immutability, no resend, expiry and purge. Tracked-image Compose pas
 in 434.17 seconds before exact cleanup: separate native jobs refuse unapproved
 matching/impact/discovery before/after restart, local analyses finish, and IPv4/IPv6
 kernel deny, hook priority, simulated TLS/control/loopback and host-state checks pass.
-Combined browser checks and the corrected scale assertions pass; fresh full
-application CI follows the remaining relationship slice.
+Combined full Rails/browser CI and the corrected scale assertions pass with the
+relationship implementation. Earlier image-specific proofs keep their own scope.
 
 The landing page now describes built Support-eval capabilities, real next actions
 and limits in inspected desktop/mobile/light/dark states. The complete
 [original acceptance map](./REBUILD_ACCEPTANCE.md) distinguishes engineering,
-missing cross-batch relationships, live-quality gates and conditional P2. No real
+live-quality gates and conditional P2. No real
 customer dataset, live model/target, SMTP/OIDC provider, training or customer
 validation ran. All registries remain empty. Public-host ingress/useful-egress,
 public TLS/proxy and live recovery still need an authorized host; private proofs

@@ -14,7 +14,7 @@ class ModelCorpusDiscovery
   def self.protocol_for(analysis)
     case analysis.processing_method
     when VERSION, BatchCorpusDiscovery::VERSION then VERSION
-    when OBSERVATIONS_VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION then OBSERVATIONS_VERSION
+    when OBSERVATIONS_VERSION, BatchCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::RELATIONSHIPS_VERSION then OBSERVATIONS_VERSION
     else raise CorpusIntake::Invalid, "Unsupported fixed model discovery protocol."
     end
   end

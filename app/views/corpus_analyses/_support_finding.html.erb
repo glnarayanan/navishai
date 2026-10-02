@@ -1,0 +1,12 @@
+<details class="source-record">
+  <summary><%= finding.fetch("kind").humanize %> · <%= finding.fetch("status").humanize %></summary>
+  <p><%= finding.fetch("summary") %></p><h3>Uncertainty</h3><p><%= finding.fetch("uncertainty") %></p>
+  <% finding.fetch("evidence").each do |anchor| %>
+    <% item = @fixed_items.fetch(anchor.fetch("reference").delete_prefix("corpus-item-").to_i) %>
+    <article>
+      <p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %> · <%= anchor.fetch("reference") %></p>
+      <% if anchor["observation_ref"] %><p>Fixed observation: <%= anchor.fetch("observation_ref") %> · evidence index <%= anchor.fetch("evidence_index") %></p><% end %>
+      <pre class="evidence-text"><%= anchor.fetch("quote") %></pre>
+    </article>
+  <% end %>
+</details>

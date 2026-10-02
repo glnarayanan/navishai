@@ -28,22 +28,22 @@
     <% if @model_result %>
       <h2><%= @model_result.fetch("decision").humanize %></h2><p><%= @model_result.fetch("reason") %></p>
       <details><summary>Fixed model response and reported cost</summary><p>Missing usage/cost stays unknown. Endpoint reports are not verified charges or quality evidence.<% if @analysis.batch? %> This response reports only the final call, not the total. Inspect each batch receipt for its own reported usage/cost; unknown reports prevent a known total.<% end %></p><pre class="evidence-text"><%= JSON.pretty_generate(@model_result) %></pre></details>
-      <% if @model_result["schema"] == ModelCorpusDiscovery::OBSERVATIONS_VERSION %>
+      <% if @model_result["schema"] == BatchCorpusDiscovery::GLOBAL_RELATIONSHIPS_VERSION %>
+        <section class="section-block" id="support-relationships" aria-labelledby="support-relationships-title">
+          <h2 id="support-relationships-title">Cross-batch support relationships</h2>
+          <p>New proposals from fixed observation anchors in separate batches, not expert truth. Every quote comes from an original observation retained below. Missing evidence, account scope, chronology and causality need expert review; this is not exhaustive corpus understanding.</p>
+          <% if @model_result.fetch("relationships").empty? %><p role="status">No cross-batch relationships proposed. This does not establish that no contradiction or support issue exists; one discovery batch cannot supply a cross-batch relationship.</p><% end %>
+          <% @model_result.fetch("relationships").each do |relationship| %><%= render "support_finding", finding: relationship %><% end %>
+        </section>
+      <% elsif @analysis.relationships? %><p role="status">No global support relationships published. Intermediate receipts are not partial global findings.</p><% end %>
+      <% if @model_result["schema"].in?([ ModelCorpusDiscovery::OBSERVATIONS_VERSION, BatchCorpusDiscovery::GLOBAL_RELATIONSHIPS_VERSION ]) %>
         <section class="section-block" id="support-observations" aria-labelledby="support-observations-title">
           <h2 id="support-observations-title">Source-backed support observations</h2>
           <p>Proposals, not verified findings or expert decisions. Every anchor links the fixed source disclosed for this attempt. Candidate selection does not remove observations; quotes do not prove a diagnosis, resolution or correct policy.</p>
-          <% if @analysis.batch? %><p>The reducer preserves existing findings; it cannot create new relationships across batches.</p><% end %>
+          <% if @analysis.relationships? %><p>All original observations remain unchanged, independent of new relationships or selected candidates.</p>
+          <% elsif @analysis.batch? %><p>The reducer preserves existing findings; it cannot create new relationships across batches.</p><% end %>
           <% if @model_result.fetch("observations").empty? %><p role="status">No observations retained. This does not establish that no support issue exists.</p><% end %>
-          <% @model_result.fetch("observations").each do |observation| %>
-            <details class="source-record">
-              <summary><%= observation.fetch("kind").humanize %> · <%= observation.fetch("status").humanize %></summary>
-              <p><%= observation.fetch("summary") %></p><h3>Uncertainty</h3><p><%= observation.fetch("uncertainty") %></p>
-              <% observation.fetch("evidence").each do |anchor| %>
-                <% item = @fixed_items.fetch(anchor.fetch("reference").delete_prefix("corpus-item-").to_i) %>
-                <article><p><%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %> · <%= anchor.fetch("reference") %></p><pre class="evidence-text"><%= anchor.fetch("quote") %></pre></article>
-              <% end %>
-            </details>
-          <% end %>
+          <% @model_result.fetch("observations").each do |observation| %><%= render "support_finding", finding: observation %><% end %>
         </section>
       <% elsif @analysis.observations? %><p role="status">No global support observations published. Any retained batch proposal remains an intermediate receipt, not a partial global finding.</p>
       <% else %><p>This v1 protocol did not request support observations. Missing findings do not establish that no support issue exists.</p><% end %>

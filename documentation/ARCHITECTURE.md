@@ -403,6 +403,17 @@ distinguish published observations, intermediate receipts, empty v2 and legacy v
 No expert label, approval or training follows. See
 [MODEL_CORPUS_OBSERVATIONS.md](./MODEL_CORPUS_OBSERVATIONS.md).
 
+Explicit batch v3 keeps v2 discoveries and uses the same final reducer to propose
+0–100 new relationships over retained observation anchors. Each needs required
+uncertainty and 2–8 distinct exact anchors from at least two discovery UUIDs and
+two source records. Resolve quotes locally, retain their original observation and
+evidence indexes, and copy every original observation unchanged. The versioned
+plan binds this choice; a single batch has no reducer or relationships. Validate
+all new proposals before the existing publication transaction. No new calls,
+source text, expert authority, migration or disclosure purpose follows. Missing
+anchors and semantic quality remain limits, not exhaustive corpus understanding.
+See [CROSS_BATCH_RELATIONSHIPS.md](./CROSS_BATCH_RELATIONSHIPS.md).
+
 ## Production failures
 
 Treat uploaded production traces as source records, not a tracing service. The

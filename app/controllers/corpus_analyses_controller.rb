@@ -9,7 +9,7 @@ class CorpusAnalysesController < ApplicationController
   end
 
   def create
-    model = params[:processing_method].in?(%w[model model_batch model_observations model_batch_observations])
+    model = params[:processing_method].in?(%w[model model_batch model_observations model_batch_observations model_batch_relationships])
     if model
       raise CorpusIntake::Invalid, "Model configuration must be JSON of at most 10 KiB." if params[:configuration].to_s.bytesize > 10.kilobytes
       configuration = JSON.parse(params[:configuration].to_s)
@@ -82,10 +82,12 @@ class CorpusAnalysesController < ApplicationController
     end
 
     def prepare_preview
-      @batch = params[:processing_method].in?(%w[model_batch model_batch_observations])
-      @observations = params[:processing_method].in?(%w[model_observations model_batch_observations])
+      @batch = params[:processing_method].in?(%w[model_batch model_batch_observations model_batch_relationships])
+      @observations = params[:processing_method].in?(%w[model_observations model_batch_observations model_batch_relationships])
+      @relationships = params[:processing_method] == "model_batch_relationships"
       @model_items = CorpusAnalysis.current_inputs(corpus: @corpus, model: true, batch: @batch)
-      @call_plan = BatchCorpusDiscovery.plan(@model_items, version: @observations ? BatchCorpusDiscovery::OBSERVATIONS_VERSION : BatchCorpusDiscovery::VERSION) if @batch
+      version = @relationships ? BatchCorpusDiscovery::RELATIONSHIPS_VERSION : (@observations ? BatchCorpusDiscovery::OBSERVATIONS_VERSION : BatchCorpusDiscovery::VERSION)
+      @call_plan = BatchCorpusDiscovery.plan(@model_items, version:) if @batch
       @model_input = ModelCorpusDiscovery.input(@model_items, bounded: !@batch)
     rescue CorpusIntake::Invalid => error
       @model_input_error = error.message
