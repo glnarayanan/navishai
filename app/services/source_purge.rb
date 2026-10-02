@@ -11,6 +11,7 @@ class SourcePurge
         workspace: source.workspace, actor: membership&.user, actor_kind: "system", subject: source)
       source.corpus.evaluation_runs.delete_all(:delete_all)
       source.corpus.evaluation_targets.delete_all(:delete_all)
+      source.corpus.scenarios.delete_all(:delete_all)
       source.corpus.corpus_analyses.delete_all(:delete_all)
       source.corpus.graders.delete_all(:delete_all)
       source.delete

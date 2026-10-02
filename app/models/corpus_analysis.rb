@@ -14,9 +14,10 @@ class CorpusAnalysis < ApplicationRecord
   def self.request!(corpus:, membership:, scenario_limit:)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
-      raise CorpusIntake::Invalid, "This baseline analyses at most 10 MiB of source text. Use a smaller corpus." if corpus.current_items.sum("octet_length(content)") > 10.megabytes
-      items = corpus.current_items.order(:id).limit(MAX_ITEMS + 1).to_a
-      raise CorpusIntake::Invalid, "Analysis needs 1–2000 current records. Use a smaller corpus for this local baseline." unless items.size.between?(1, MAX_ITEMS)
+      inputs = corpus.current_items.where(sources: { kind: %w[conversations document] })
+      raise CorpusIntake::Invalid, "This baseline analyses at most 10 MiB of source text. Use a smaller corpus." if inputs.sum("octet_length(content)") > 10.megabytes
+      items = inputs.order(:id).limit(MAX_ITEMS + 1).to_a
+      raise CorpusIntake::Invalid, "Analysis needs 1–2000 current conversation/document records. Production traces use separate review." unless items.size.between?(1, MAX_ITEMS)
       analysis = corpus.corpus_analyses.create!(workspace: corpus.workspace, requested_by: membership.user, processing_method: METHOD, scenario_limit:)
       items.each { |item| analysis.corpus_analysis_inputs.create!(workspace: corpus.workspace, corpus:, corpus_item: item) }
       CorpusAnalysisJob.perform_later(analysis.id)

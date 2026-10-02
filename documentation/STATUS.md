@@ -29,8 +29,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   disclosure consent, once-claimed calibration attempts and quoted result evidence.
 - [#151](https://github.com/glnarayanan/navishai/pull/151), based on #150: prevent stale HTTP-only consent
   from sending cases added after review.
-- `rebuild/12-p0-workflow-proof`, based on #151: fresh technical-Support fixture
+- [#152](https://github.com/glnarayanan/navishai/pull/152), based on #151: fresh technical-Support fixture
   through the whole engineering loop, including held-out calibration and replay.
+- `rebuild/13-production-traces`, based on #152: bounded production-trace intake,
+  immutable reports and source-backed proposals that require expert expectations.
 
 ## Built and checked
 
@@ -204,9 +206,28 @@ This tests the connected pipeline, not live-model accuracy or discovery quality.
 No product code changed in this proof slice; direct risk review checked independent
 expected inputs, imperfect judge predictions, fixed provenance and call counts.
 
+Production-trace intake `bin/ci`: passed in 2m5.70s; 215 Ruby files clean,
+gem/importmap audits clean, Brakeman zero warnings/errors and eager loading passes.
+218 Rails tests / 1929 assertions and 12 browser tests / 405 assertions, no
+failures/errors/skips. Checks cover exact schemas and byte limits, malformed and
+partial batches, redaction expansion, retained versions, empty reports, approval
+gates, repeat proposals, access/expiry, trace exclusion from term discovery and
+purge of proposals with no analysis parent. The browser journey imports a fixture,
+blocks premature approval, then records an expert correction and fixed approval.
+Desktop/390px source and blocked/reviewed captures were inspected; no page
+overflow or CSP violations. Native single-line inputs scroll long values; full
+titles remain visible in headings. Imported source reports retain their original
+unreviewed wording after approval of a separate scenario version. Early checks
+found an input-key ordering error; fixed it. Two independent test commands shared
+the test database and deadlocked on fixtures; sequential checks and full native CI
+pass. Direct risk review/native audits replace unavailable Ponytail Audit and CE
+Code Review. No provider call or customer data was used.
+
 ## Next and limits
 
-The P0 engineering loop passes with fixtures. Next: customer acceptance with a
+The P0 engineering loop passes with fixtures. Phase E engineering continues with
+recorded-output replay, exact-case matching, source-change impact and target-version
+comparison. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
 authoritative expert corrections and approved target/judge endpoints.
 The endpoint registry has no configured entries. Analysis remains bounded to

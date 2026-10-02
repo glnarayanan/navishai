@@ -9,7 +9,9 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Source | Origin of company evidence: an export, document, policy, or later a read-only connection. |
 | Source snapshot | Fixed source content at one intake time, with digest, origin, redaction policy, and processing version. |
 | Corpus | A named collection of source-backed records to analyse together. |
-| Corpus item | One historical conversation or document, not a live ticket. |
+| Corpus item | One historical conversation, document or recorded production trace, not a live ticket. |
+| Production trace | Fixed visible input and reported agent output, target version, observation time, reported failure and correction. Reports are source data, not authoritative labels. |
+| Recorded replay | Local grading of an exact source output against identical visible case input, not a new agent execution. |
 | Taxonomy | Company's reviewed issue families; a proposal has no expert authority until reviewed. |
 | Taxonomy version | Fixed expert labels for some or all clusters from one corpus analysis. Unreviewed clusters stay proposals. |
 | Issue cluster | Related corpus items with a proposed issue label, examples, and disclosed selection method. |

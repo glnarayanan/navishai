@@ -83,6 +83,27 @@ retains one immutable prediction beside human label history. Endpoint operators
 own model execution, settings enforcement, deduplication and remote retention.
 There is no direct vendor integration or proof of live judge quality.
 
+## Production failures
+
+Treat uploaded production traces as source records, not a tracing service. The
+bounded `support-trace-v1` format retains visible input, a `support-output-v1`
+output, target version, observation time, reported failure and reported correction.
+Reuse immutable snapshots, email masking, provenance and source retention. A report
+is not an expert label. Creating a candidate copies the starting situation and
+known facts, leaves requirements empty and requires the existing expert review.
+Experts attach current company evidence and choose permitted knowledge themselves.
+Do not fold trace payloads into the term-discovery baseline.
+
+Recorded replay will bind a target version to an exact trace item through a
+same-corpus foreign key. It may return that output only for identical visible
+input; changed context must not inherit an old answer. Replay is local, not a new
+agent execution. Judges retain their separate disclosure gate. Existing fixed
+results and human regression admission own the failure-to-regression path.
+Source purge must clear all corpus scenarios, including trace proposals that have
+no analysis parent, before deleting their evidence. No semantic failure matching,
+automatic authoritative correction, provider call or classifier training follows
+from importing a trace.
+
 ## Isolation, deletion, and hosting
 
 Every controller and job starts from a checked workspace. Composite relationships prevent foreign evidence and definitions. These checks are not PostgreSQL RLS and must not be described as such. Source retention/deletion must remove content and dependent disclosed copies under explicit policy while preserving a minimal non-content audit. Raw data, redacted snapshots, labels, and outputs have separate lifetimes.

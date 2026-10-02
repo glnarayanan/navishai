@@ -13,7 +13,7 @@
     <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
   </section>
   <section class="section-block config-panel"><h2>Corpus analysis</h2>
-    <p>Discover term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage.</p>
+    <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
     <% if Current.require_membership!.can_write? %>
       <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
         <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
@@ -24,11 +24,11 @@
   </section>
   <% if Current.require_membership!.can_write? %>
     <section class="section-block config-panel"><h2>Add company data</h2>
-      <p>UTF-8 JSON conversation exports, or plain text/Markdown documents. 10 MiB and 2000 records per upload. A changed upload with the same name adds a snapshot; an exact repeat reuses it.</p>
+      <p>UTF-8 JSON conversation exports or production traces, or plain text/Markdown documents. 10 MiB and 2000 records per upload. A changed upload with the same name adds a snapshot; an exact repeat reuses it.</p>
       <%= form_with url: workspace_corpus_sources_path(Current.workspace, @corpus), multipart: true, class: "form-stack" do |form| %>
         <div class="field"><%= form.label :name, "Source name" %><%= form.text_field :name, required: true, maxlength: 180 %></div>
         <div class="field-grid">
-          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Text / Markdown", "document"]] %></div>
+          <div class="field"><%= form.label :kind, "Source type" %><%= form.select :kind, [["Conversation export", "conversations"], ["Text / Markdown", "document"], ["Production traces", "traces"]] %></div>
           <div class="field"><%= form.label :redaction, "Redaction" %><%= form.select :redaction, [["Mask email addresses", "email"], ["Keep original text", "none"]] %></div>
         </div>
         <p class="field-hint">Email masking is not full PII removal. Review names, phone numbers, credentials and other sensitive text before upload. Original files are not stored; snapshots retain normalised text and an input digest.</p>
@@ -41,6 +41,7 @@
       <details class="section-block"><summary>Conversation export format</summary><p>A JSON array of objects with id, title, content and an optional context object. Intercom conversations with source/parts and Zendesk tickets with description/comments also work. HTML inside export fields stays untrusted text.</p>
         <pre class="evidence-text">[{"id":"sso-42","title":"SAML certificate expired","content":"Customer reports login failure.","context":{"plan":"enterprise"}}]</pre>
       </details>
+      <details class="section-block"><summary>Production trace format</summary><p>A JSON array of support-trace-v1 objects, at most 100 KiB each. Fields: schema, id, title, target_version, observed_at (ISO 8601 with timezone), input, output, observed_failure and human_correction. Input has situation, known_facts and knowledge; output uses support-output-v1. Failure/correction may be empty text. Extra fields, hidden expectations and malformed outputs are rejected. Reports do not create authoritative labels or run an agent.</p></details>
     </section>
   <% end %>
   <section class="section-block"><h2>Current corpus records</h2><p>Page <%= @page %> · up to 50 records from current, unexpired snapshots.</p>
