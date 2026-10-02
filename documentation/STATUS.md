@@ -2199,8 +2199,9 @@ tests / 3,561 assertions, no failures/errors/skips. Ruby style (383 files), nati
 audits, Brakeman and eager loading passed. The fresh core 16 / 145 run adds two
 ownership-boundary fixtures after the combined run's 14 core tests.
 
-This work is committed on `feat/vps-cli`, not pushed, merged or deployed. Combined
-entrypoint/Rails/jobs/Caddy/rollback proof is in progress. Public
+This work is committed/pushed as draft
+[#226](https://github.com/glnarayanan/navishai/pull/226) on `feat/vps-cli`, not
+merged or deployed. Combined entrypoint/Rails/jobs/Caddy/rollback proof is in progress. Public
 ACME/ingress, real host reboot, SMTP/OIDC delivery and live-host recovery remain
 unproved; no owner VPS or provider ran. Host packages, DNS/ports and storage policy
 need owner inputs, not guessed installation commands or weaker egress controls.
