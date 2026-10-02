@@ -31,6 +31,16 @@ module RecordedEvaluationTestHelper
     @target = EvaluationTarget.define!(corpus: @corpus, membership: @membership, name: "Recorded SSO failure", adapter: "recorded", configuration: {}, trace_item_id: @trace_item.id)
   end
 
+  def compile_replay_history(situations:)
+    situations.map.with_index do |situation, index|
+      @scenario.revise!(membership: @membership, base_version_id: @scenario.current_version_id,
+        attributes: { title: "Replay fixture case #{index + 1}", situation: })
+      @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "approve", note: "Synthetic replay history, not pilot judgments.")
+      evidence = @scenario.current_version.scenario_evidence.find_by!(corpus_item: @knowledge, kind: "expectation")
+      compile_case(checks: @checks.map { |check| check.merge("scenario_evidence_id" => evidence.id) })
+    end
+  end
+
   def build_compared_evaluation
     build_recorded_evaluation
     @before = request_run

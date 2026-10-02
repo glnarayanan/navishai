@@ -37,11 +37,15 @@ class SourcesController < ApplicationController
     @suite_memberships = EvalSuiteCase.where(corpus: @corpus, eval_case_id: @dependent_cases.map(&:id)).includes(:eval_suite).order(:id).group_by(&:eval_case_id)
     if @source.kind == "traces"
       @trace_scenarios = @corpus.scenarios.where(corpus_item_id: @items.map(&:id), parent_version_id: nil).index_by(&:corpus_item_id)
-      cases = @corpus.eval_definitions_expired? ? [] : @corpus.eval_cases.includes(:scenario_version).order(:id).limit(100)
-      inputs = cases.to_h { |item| [ item, item.scenario_version.target_input ] }
+      @matching_item_id = params[:matching_item_id].to_s
+      @matching_page = params[:matching_page].to_i.clamp(1, 10000)
+      @trace_match_counts = {}
+      @trace_matching_blocked = @corpus.eval_definitions_expired?
       @trace_matches = @items.to_h do |item|
-        recorded_input = SupportTrace.payload(item)["input"]
-        [ item.id, inputs.select { |_eval_case, input| input == recorded_input }.keys ]
+        cases = @trace_matching_blocked ? @corpus.eval_cases.none : @corpus.eval_cases.matching_trace(item)
+        @trace_match_counts[item.id] = cases.count
+        matching_page = @matching_item_id == item.id.to_s ? @matching_page : 1
+        [ item.id, cases.order(:id).offset((matching_page - 1) * 50).limit(50).pluck(:id, "scenario_versions.title") ]
       end
       @failure_candidates = TraceScenarioMatching.call_all(items: @items)
       @decision_page = params[:decision_page].to_i.clamp(1, 10000)

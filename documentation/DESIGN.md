@@ -163,6 +163,13 @@ even across pages. No-match states offer a separate scenario proposal, not a fal
 match. Viewers inspect without decision controls. Mobile stacks the same evidence;
 copy keeps association separate from approval, replay, labels and regressions.
 
+Exact replay matches use a separate native disclosure with the full match count
+and 50 case links per page. It searches all fixed cases, not the first hundred.
+The selected trace stays open on paging/refresh; links retain its historical
+snapshot and other page positions. Empty-page recovery stays within that trace.
+Expiry hides matches without a false zero count. Copy separates compatible input
+from common meaning and current execution eligibility. No new tokens or controls.
+
 "Revise with this trace" opens that exact scenario version's evidence disclosure.
 The selected record/snapshot and full linked trace title remain visible outside the
 native single-line picker. The excerpt starts empty; copy warns that imported
