@@ -7,6 +7,15 @@
       <details><summary>Fixed grader definition</summary><pre class="evidence-text"><%= JSON.pretty_generate(@sample.grader_version.definition) %></pre></details>
       <h3>Company evidence</h3><%= link_to "Supporting source snapshot", source_evidence_path(@check.scenario_evidence.corpus_item) %><pre class="evidence-text"><%= @check.scenario_evidence.excerpt %></pre>
       <h3>Recorded output</h3><pre class="evidence-text"><%= JSON.pretty_generate(@sample.output) %></pre>
+      <h3>Output provenance</h3>
+      <% if @sample.evaluation_result %>
+        <p>Saved result #<%= @sample.evaluation_result_id %> · fixed case #<%= @sample.eval_case_id %>.</p>
+        <% if @reveal %>
+          <p><%= link_to "Exact saved result", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, @sample.evaluation_result) %> · <%= link_to "Source run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @sample.evaluation_result.evaluation_run_item.evaluation_run) %>. Machine judgments are not expert truth.</p>
+        <% else %>
+          <p>Result and run links stay hidden until your first label to avoid revealing machine judgments.</p>
+        <% end %>
+      <% else %><p>Manually supplied output; no saved result provenance.</p><% end %>
     </section>
     <section><h2>Expert judgment</h2>
       <% if Current.require_membership!.can_write? %><p>Judge this requirement using the company evidence. Your first label hides machine and other expert decisions to reduce anchoring.</p>

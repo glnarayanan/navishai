@@ -17,6 +17,7 @@ class CalibrationJourneyTest < ApplicationSystemTestCase
     assert_text "Not enough evidence"
     click_link "Add output sample"
     select "Case #{item.id} · Actions 1", from: "Case check"
+    select "Held out — measure, do not tune", from: "Sample cohort"
     fill_in "Output JSON", with: "{unfinished"
     click_button "Add sample"
     assert_selector "[role=alert]", text: /valid JSON/

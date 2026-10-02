@@ -20,6 +20,19 @@
         </article>
       <% end %>
       <h3>Calibration evidence</h3><p>An authored rubric or self-reported confidence does not establish accuracy. <%= link_to "Review calibration", workspace_corpus_calibration_sets_path(Current.workspace, @corpus) %>.</p><% @sets.each do |set| %><p><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %> · grader version #<%= set.grader_version_id %></p><% end %>
+      <h3>Add this saved output to calibration</h3>
+      <% if @result.status == "error" || @result.output.nil? %>
+        <p>This result has no usable output. Execution errors cannot seed calibration samples.</p>
+      <% elsif !Current.require_membership!.can_write? %>
+        <p>A workspace writer can select a set, fixed check and cohort for this output.</p>
+      <% elsif @sets.empty? %>
+        <p>Create a calibration set for one of this case's fixed grader versions, then return here.</p>
+      <% else %>
+        <p>Select a set below, then explicitly choose its case check and cohort. Selected failures can bias held-out measurement; examples used for tuning belong in development. Saved judgments are not authoritative labels.</p>
+        <% @sets.each do |set| %>
+          <p><%= link_to "Select #{set.name} · #{set.grader_version.grader.name} v#{set.grader_version.number}", new_workspace_corpus_calibration_set_calibration_sample_path(Current.workspace, @corpus, set, evaluation_result_id: @result.id) %></p>
+        <% end %>
+      <% end %>
     </section>
     <section><h2>Recorded target output</h2><% if @result.output %><pre class="evidence-text"><%= JSON.pretty_generate(@result.output) %></pre><% else %><p>No valid output retained. An execution error is not a support-quality label.</p><% end %><details><summary>Exact target-visible input</summary><pre class="evidence-text"><%= JSON.pretty_generate(@item.target_input) %></pre></details></section>
   </div>

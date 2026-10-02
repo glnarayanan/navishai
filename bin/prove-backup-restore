@@ -87,6 +87,9 @@ begin
     sample = set.add_sample!(membership:, check_id: check.id, cohort: "held_out", output: trace.context.fetch("support_trace").fetch("output"))
     label = sample.label!(membership:, previous_id: nil, decision: "fail", rationale: "Synthetic expert: expiry was not collected.")
     correction = sample.label!(membership:, previous_id: label.id, decision: "uncertain", rationale: "Synthetic correction: retain the first decision too.")
+    saved_result = before.evaluation_results.sole
+    saved_set = CalibrationSet.define!(corpus:, membership:, name: "Restore saved-result development fixture", grader_version_id: check.grader_version_id)
+    saved_sample = saved_set.add_sample!(membership:, check_id: check.id, cohort: "development", evaluation_result_id: saved_result.id)
     association = TraceScenarioDecision.append!(item: trace, version: fixed_case.scenario_version, membership:, decision: "match", reason: "Synthetic association: inspect this exact version.")
     association_correction = TraceScenarioDecision.append!(item: trace, version: fixed_case.scenario_version, membership:, decision: "uncertain", reason: "Synthetic correction: need diagnostic logs.")
     fixture.build_batch_corpus
@@ -116,7 +119,8 @@ begin
     assert_proof(before.evaluation_run_items.sole.eval_case_id == after.evaluation_run_items.sole.eval_case_id, "fixed-case identity")
     assert_proof(before.evaluation_target_version.trace_item_id == trace.id, "trace target provenance")
     assert_proof(fixed_case.reload.scenario_review.decision == "approve", "exact expert approval")
-    assert_proof(sample.reload.cohort == "held_out" && sample.human_labels.order(:id).pluck(:id) == [ label.id, correction.id ], "label history/cohort")
+    assert_proof(sample.reload.evaluation_result_id.nil? && sample.eval_case_id == fixed_case.id && sample.cohort == "held_out" && sample.human_labels.order(:id).pluck(:id) == [ label.id, correction.id ], "manual provenance, case and label history/cohort")
+    assert_proof(saved_sample.reload.evaluation_result_id == saved_result.id && saved_sample.eval_case_id == fixed_case.id && saved_sample.output == saved_result.reload.output && saved_sample.cohort == "development" && saved_sample.human_labels.empty?, "exact saved-result/case/output provenance, separate explicit cohort and no fabricated label")
     history = TraceScenarioDecision.where(corpus_item: trace, scenario_version: fixed_case.scenario_version, reviewed_by: membership.user).order(:id)
     assert_proof(history.pluck(:id, :decision) == [ [ association.id, "match" ], [ association_correction.id, "uncertain" ] ] && history.last.reason == "Synthetic correction: need diagnostic logs.", "exact trace/version/author association history, separate from approval and labels")
     assert_proof(analysis.reload.summary.fetch("conversations") == 106 && analysis.summary.fetch("clusters") == 2, "complete batch membership")
@@ -147,7 +151,7 @@ begin
     last_audit_id = AuditEvent.maximum(:id)
     event = AuditEvent.record!(action: "calibration.labelled", source: :task, workspace: corpus.workspace, actor: membership.user, subject: sample)
     assert_proof(event.id > last_audit_id, "restored sequence supports new audit appends")
-    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out labels and trace-association history, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
+    puts "PASS: exact table content/provenance, recorded fail/corrected pass, held-out labels, saved-result development provenance and trace-association history, 16 immutable tables, fixed batch UUIDs/terminal receipts/no resend, frozen run/item definitions, workspace/corpus isolation, audit update/delete/truncate rejection and append sequence."
   end
 ensure
   ActiveRecord::Base.connection_pool.disconnect! if defined?(ActiveRecord::Base)

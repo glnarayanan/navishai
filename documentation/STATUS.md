@@ -521,6 +521,24 @@ corrected check now derives expected masked text independently. Direct risk revi
 and native audits used; named review tools remain unavailable. No customer data,
 live provider or dependency was introduced.
 
+Saved-result calibration retains one exact result/case/output, with explicitly
+chosen cohort and fixed grader check. Forged JSON, wrong/foreign cases, stale or
+unapproved definitions, expiry and execution errors are refused. Manual or other
+result provenance cannot be replaced by deduplication. Migration backfills existing
+manual samples' cases while preserving outputs, cohorts, predictions and labels;
+composite foreign keys bind optional saved results to the same case/workspace/corpus.
+No provider, judge or expert label runs automatically.
+
+The live browser selects a result and development cohort, retains a concurrent
+manual-provenance error, labels a fresh blind sample, then reveals exact result/run
+links and the separate prediction. Desktop/390px captures were inspected, with no
+overflow/CSP failures. The combined CI evidence above includes this slice.
+`bin/prove-backup-restore` passes with exact saved-result development provenance,
+unchanged manual held-out label history, all table fingerprints, 16 populated
+immutable tables, foreign isolation and no resend. It removes only its disposable
+databases/archive. This connects results to calibration intake; testing revised
+graders against development data still needs a separate engineering slice.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -552,7 +570,7 @@ Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by lab
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
 Independent engineering includes executable multi-turn cases,
-connected result-to-calibration improvement and clean-host/Compose/egress proof.
+grader-revision calibration improvement and clean-host/Compose/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
 isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
