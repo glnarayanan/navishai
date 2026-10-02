@@ -4,14 +4,14 @@ class ScenarioMining
       analysis.corpus.authorize_writer!(membership)
       analysis.reload
       raise Scenario::Invalid, "Finish an unexpired analysis first." unless analysis.state == "complete" && !analysis.expired?
-      members = ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).includes(:issue_cluster, :corpus_item)
+      source_items = analysis.fixed_inputs.index_by { |item| "corpus-item-#{item.id}" }
+      members = ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).includes(:issue_cluster)
       model_candidates = analysis.model? ? analysis.corpus_analysis_result.result.fetch("candidates", []) : nil
-      source_items = analysis.corpus_items.index_by { |item| "corpus-item-#{item.id}" } if model_candidates
       members.map do |member|
         existing = analysis.corpus.scenarios.find_by(cluster_member: member)
         next existing if existing
 
-        item = member.corpus_item
+        item = source_items.fetch("corpus-item-#{member.corpus_item_id}")
         scenario = analysis.corpus.scenarios.create!(workspace: analysis.workspace, corpus_item: item, cluster_member: member)
         requirements = ScenarioVersion::REQUIREMENT_TYPES.index_with { [] }
         requirements["actions"] = item.content.split(/(?<=[.!?])\s+/).select { |sentence| sentence.match?(/\b(ask|request|collect|verify|reproduce)\b/i) }.first(10).map { |sentence| sentence.first(2000) }

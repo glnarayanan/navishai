@@ -26,6 +26,12 @@ with fixed settings/input/result disclosures and exact member quotes. Selection
 counts are not verified coverage. Experts use existing taxonomy and scenario review
 controls; machine output cannot approve them. No new tokens, assets or controls.
 
+Oversized retained context blocks current previews and fixed history before full
+source rows load. These states name the complete-record bound, show an explicit
+corpus-return link and keep refresh read-only. No partial examples, taxonomy form
+or mining action appears. The accessible analysis still renders as a page; POST
+validation remains an error response. No CSP relaxation or nonce changes.
+
 Multi-request discovery shows the complete preview and actual call ceiling before
 consent in document/mobile order; desktop keeps preview and request side by side.
 A native disclosure contains the full record list without forcing a long mobile

@@ -207,7 +207,14 @@ Desktop/mobile expanded, empty and invalid captures live under
 
 Request analysis with a 1–100 candidate limit. The job freezes current source-backed
 inputs, rechecks workspace access and commits cluster proposals atomically. A
-duplicate job does not recreate them. Limits: 2000 records and 10 MiB of source text.
+duplicate job does not recreate them. Limits: 2000 complete records and 10 MiB of
+retained IDs, titles, text and PostgreSQL context JSON bytes. SQL counts and byte
+sums run before complete rows load, under the same short corpus lock as the load.
+Current previews/requests, fixed jobs, mining and the analysis overview use this
+guard; old oversized analyses cannot bypass it. Exact model JSON/per-call limits
+remain separate. No sampling, truncation or fixed-input rewrites occur.
+Blocked previews/history show a corpus recovery link and no partial source records
+or mining controls. Refresh changes nothing; a new analysis needs smaller inputs.
 TF-IDF seed clustering uses titles plus the first 4000 conversation characters;
 cosine similarity ≥0.3 joins a seed cluster. Explicit critical/risk/reopen mentions
 precede nearest-centroid representatives. Every selection retains its reason.
