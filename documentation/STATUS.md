@@ -71,8 +71,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   calibration and restored conversation/no-resend proof.
 - [#172](https://github.com/glnarayanan/navishai/pull/172), based on #171: repeatable private-namespace
   Compose preparation/runtime, published ingress and control/edge proof.
-- `rebuild/33-trace-scenario-revision`, based on #172: matched-trace evidence
+- [#173](https://github.com/glnarayanan/navishai/pull/173), based on #172: matched-trace evidence
   revision, fresh expert review/compilation and fixed-case regression proof.
+- `rebuild/34-family-evidence`, based on #173: complete fixed-family source counts,
+  filtered exploration and historical provenance without new judgments.
 
 ## Built and checked
 
@@ -780,6 +782,36 @@ clean, Brakeman zero warnings/errors and eager loading passed; 352 Rails tests /
 receipts and no resend survived restore. Only its disposable databases/archive
 were removed. No customer data, provider, dependency, merge, release or deployment.
 
+GitHub CI for #173 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36832587143), completed
+07:52:44 UTC on 1 October). The PR remains open and unmerged; failed #155/#158
+runs remain failed.
+
+Family evidence now explores every fixed member with full-family denominators,
+exact true/false/missing-nonboolean reports, reported critical impact and separate
+literal mentions on complete retained text. Local/model families use the same
+rules; proposed importance cannot supply source counts. Filters paginate 50 records
+and preserve historical source links after a new export. Foreign/expired inputs
+and oversized text/context are refused. Inspection writes no records, audits or jobs.
+
+The browser follows record 51 from a refreshed filtered page to snapshot 1, then
+repairs empty and invalid filters. Desktop/390px captures were inspected, with
+intact controls, complete escaped text/context, no overflow and no CSP failures.
+The desktop uses the existing compact field grid; mobile keeps source order.
+Two first-run failures concerned a missing job-test helper and an immediate URL
+assertion racing Turbo; the corrected journey passes with 66 assertions.
+
+Full CI first failed Brakeman's refresh-link check. A crafted query reproduced an
+actual javascript-scheme link; the same routing pattern affected shared pagination.
+Refresh now uses the fixed family route, and pagination passes filters only as
+query data with a local path. The regression checks both links. The final combined
+working-tree `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 5m24.88s: 295 Ruby files
+clean, native audits clean, Brakeman zero warnings/errors, eager loading passed;
+370 Rails tests / 4104 assertions and 33 browser tests / 1481 assertions, no failures,
+errors or skips. These totals also include the separate pending calibration-cost
+slice; they are not a remote-CI claim. Direct risk review used; named review tools
+remain unavailable. No provider, customer data or dependency was introduced.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -811,9 +843,10 @@ Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by lab
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
 Connected fresh revised-judge calibration, matched-trace → existing-scenario
-evidence revision and private Compose ingress/control/edge proof now pass.
-Family-level source-signal counts/drill-down and optional expert-supplied calibration
-error-cost assumptions remain independent engineering, not pilot-data gates.
+evidence revision, family-level source-signal counts/drill-down and private Compose
+ingress/control/edge proof now pass. Optional expert-supplied calibration error-cost
+assumptions and report-local judge-threshold disclosure remain independent
+engineering, not pilot-data gates.
 Public ingress/egress/deny-policy and clean-host acceptance still need a suitable
 authorised host; private namespace probes cannot establish them.
 Reviewable failure matching, bounded multi-request discovery, image execution and

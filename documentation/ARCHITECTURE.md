@@ -45,6 +45,25 @@ links, not semantic ranking or coverage. Filter search phrases from request logs
 the existing no-referrer policy applies. No model call, search service or new index
 is needed for the current intake bounds.
 
+### Family evidence and error-cost decisions (1 October 2026)
+
+Explore every fixed cluster member through a read-only, scoped and paginated family
+page. Count exact uploaded boolean context fields (escalated, reopened, failed)
+separately from missing/nonboolean values, literal mentions and reported critical
+impact. Apply the same source rules to local/model families without changing fixed
+discovery results. A source report or keyword is not a verified support outcome,
+risk or label. Filters narrow records, never family denominators or expert authority.
+
+Calibration sets may fix optional human-supplied false-positive/false-negative
+costs, common units and rationale with the existing creator/version attribution.
+No defaults, inferred values, currency choices or live-spend authority. Store exact
+non-negative bounded decimals, reject unsupported precision rather than round it,
+and require the whole assumption group or none. Existing sets remain unknown.
+Report weighted observed mistakes only among comparable certain labels, separately
+by cohort and candidate; zero comparable samples remain unknown. These are supplied
+assumptions, not verified business costs, deployment decisions or a universal score.
+Changing assumptions requires a new set; no labels/predictions/history are rewritten.
+
 Machine proposals never approve themselves. Experts correct taxonomy and scenario expectations before compilation. Calibration binds labels to exact grader/output versions and separates held-out examples. Store individual decisions, not an opaque score.
 
 Calibration review uses the same latest-per-expert labels and fixed predictions as

@@ -40,6 +40,14 @@ them. Native disclosures show retained text/context and exact source/snapshot li
 Pagination keeps filters; clear, empty and invalid states offer recovery. Copy warns
 that phrases remain in browser history despite request-log filtering.
 
+Family evidence separates uploaded boolean reports from literal mentions and
+reported critical impact. Counts use complete fixed members, not model importance
+or ten overview examples. The existing two-column field grid stacks on mobile.
+A labelled GET picker narrows records, not family denominators. Its full selected
+name stays visible outside the native single-line picker. Record disclosures show
+complete escaped text/context and historical source links. Refresh keeps the page;
+empty/invalid states offer recovery. Viewers have the same read-only evidence.
+
 Scenario review places the starting situation and behavioural requirements beside
 exact company evidence on desktop; mobile stacks them. Facts, document attachment
 and controlled variants use native disclosures. Evidence marks what stays hidden

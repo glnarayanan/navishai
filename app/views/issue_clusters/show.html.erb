@@ -1,0 +1,36 @@
+<% content_for :title, "Family source evidence — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Corpus analysis", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), class: "back-link" %>
+  <div class="page-heading"><div><h1>Family source evidence</h1><p><%= @cluster.label %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh evidence", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, @cluster, signal: @filter, page: @page), class: "button" %></div>
+  <p>Read-only inspection of <%= pluralize(@total, "fixed family record") %>. Uploaded reports and literal mentions are not verified outcomes, risk or expert labels. Model importance does not supply these counts.</p>
+  <section class="section-block" aria-labelledby="source-counts-heading" id="source-counts">
+    <h2 id="source-counts-heading">Full-family source counts</h2>
+    <p>Exact context booleans stay separate from missing, null, strings and numbers. Critical impact requires exactly <code>context.impact == "critical"</code>. Mentions use the local discovery literal patterns on complete retained text, not titles or context. Groups can overlap; filtering never changes the denominator.</p>
+    <dl class="source-metadata field-grid">
+      <% @groups.except("All records").each do |name, members| %>
+        <div><dt><%= name %></dt><dd><%= members.size %> / <%= @total %> records</dd></div>
+      <% end %>
+    </dl>
+  </section>
+  <section class="section-block" aria-labelledby="family-records-heading" id="family-records">
+    <h2 id="family-records-heading">Complete source records</h2>
+    <%= form_with url: request.path, method: :get, class: "form-stack config-panel" do |form| %>
+      <div class="field"><%= form.label :signal, "Source signal filter" %><%= form.select :signal, @groups.map { |name, members| [ "#{name} (#{members.size} / #{@total})", name ] }, { selected: @filter }, { aria: { invalid: @invalid_filter, describedby: @invalid_filter ? "signal-error" : nil } } %></div>
+      <%= form.submit "Filter source records", class: "button" %>
+    <% end %>
+    <% if @invalid_filter %><p role="alert" class="inline-error" id="signal-error">Unknown source signal filter. Choose a listed group or clear the filter.</p><% end %>
+    <p>Current filter: <strong><%= @filter %></strong>.</p>
+    <p role="status"><%= pluralize(@matching.size, "matching record") %> of <%= @total %> fixed family records · page <%= @page %> · at most 50 complete records per page.</p>
+    <%= link_to "Clear filter", request.path %>
+    <% if @members.empty? %><p>No records on this page. Choose another source signal or <%= link_to "return to the first page", url_for(signal: @invalid_filter ? nil : @filter, page: 1) %>.</p><% end %>
+    <% @members.each do |member| %>
+      <% item = member.corpus_item %>
+      <details class="source-record"><summary><%= item.external_id %> · <%= item.title %></summary>
+        <%= link_to "#{item.source_snapshot.source.name} · snapshot #{item.source_snapshot.number} · record #{item.external_id}", source_evidence_path(item) %>
+        <h3>Retained text</h3><pre class="evidence-text"><%= item.content %></pre>
+        <h3>Retained context</h3><pre class="evidence-text"><%= JSON.pretty_generate(item.context) %></pre>
+      </details>
+    <% end %>
+    <%= render "shared/record_pagination", more: @more, page_number: @page %>
+  </section>
+</main>

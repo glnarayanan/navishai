@@ -46,7 +46,7 @@
             <pre class="evidence-text"><%= member.corpus_item.content %></pre>
           </details>
         <% end %>
-        <% if cluster.cluster_members.size > 10 %><p>Showing 10 examples. Inspect the source pages for all records.</p><% end %>
+        <p><% if cluster.cluster_members.size > 10 %>Showing 10 examples. <% end %><%= link_to "Explore all family records and source counts", workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, cluster) %></p>
         <% if Current.require_membership!.can_write? %>
           <%= form_with url: workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis), method: :patch, class: "form-stack config-panel section-block" do |form| %>
             <%= form.hidden_field :cluster_id, value: cluster.id %>
