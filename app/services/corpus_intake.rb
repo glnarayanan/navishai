@@ -23,8 +23,7 @@ class CorpusIntake
     end
 
     corpus.with_lock do
-      membership.lock!
-      raise Current::RoleAccessDenied unless membership.workspace_id == corpus.workspace_id && membership.can_write?
+      corpus.authorize_writer!(membership)
       source = corpus.sources.find_or_initialize_by(name: name.to_s.strip, kind:)
       source.workspace = corpus.workspace
       source.expires_at = retention_days.to_i.days.from_now

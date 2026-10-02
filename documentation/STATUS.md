@@ -11,8 +11,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   demolition. Removed 820 tracked files, about 135,000 lines, including helpdesk,
   messaging, SLAs, CS workflows, crews, Supermemory, process runner, obsolete tests,
   installers and docs. Kept auth, workspace access, audit and relevant security.
-- `rebuild/03-corpus-provenance`, based on #142: first Phase B slice. Corpus intake,
+- [#143](https://github.com/glnarayanan/navishai/pull/143), based on #142: first Phase B slice. Corpus intake,
   snapshots, source evidence, pagination, email masking, retention and deletion.
+- `rebuild/04-corpus-discovery`, based on #143: frozen local analysis, term clusters,
+  risk-prioritised candidate selection and immutable expert taxonomy revisions.
 
 ## Built and checked
 
@@ -25,7 +27,8 @@ locking, CSP, headers, log filters and append-only audit remain. No PostgreSQL R
 Bounded JSON conversation exports and text/Markdown intake retain input digest,
 processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
-links. Machine proposals, scenarios and evaluation execution are not built yet.
+links. Local term analysis and expert label revisions are built; scenarios and
+evaluation execution are not built yet.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -43,11 +46,19 @@ content. Email masking is not complete PII removal; original files are not kept.
   captures confirm both records and all recovery controls. No horizontal overflow
   or CSP violations. `git diff --check` passes.
 - Direct risk-based review used; Ponytail Audit and CE Code Review are unavailable.
+- Local discovery `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 53.05s; 132 Ruby files clean, audits clean,
+  Brakeman zero warnings/errors, eager load passes; 134 Rails tests / 791 assertions
+  and 4 browser tests / 84 assertions, no failures/errors/skips. Tests distinguish
+  related company terms from unrelated families, minority critical risk from
+  volume, frozen inputs from later imports, human revisions from proposals,
+  duplicate jobs, expired input and revoked access. A Rails association deletion
+  default initially tried to null a required corpus ID; the purge now uses explicit
+  SQL deletion. Desktop/mobile taxonomy captures inspected.
 
 ## Next and limits
 
-Next: disclosed local taxonomy/clustering and representative/risk scenario mining,
-then expert review/versioning and controlled variants. Compiler/calibration,
+Next: convert selected candidates into source-backed scenarios with expert
+review/versioning and controlled variants. Compiler/calibration,
 generic target execution, failure inspection and regressions follow those checks.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.

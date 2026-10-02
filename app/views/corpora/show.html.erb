@@ -11,6 +11,16 @@
     </ul>
     <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
   </section>
+  <section class="section-block config-panel"><h2>Corpus analysis</h2>
+    <p>Discover term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage.</p>
+    <% if Current.require_membership!.can_write? %>
+      <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+        <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
+        <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
+      <% end %>
+    <% end %>
+    <ul class="workspace-list" role="list"><% @analyses.each do |analysis| %><li class="workspace-card"><%= link_to "Analysis #{analysis.id} · #{analysis.state}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></li><% end %></ul>
+  </section>
   <% if Current.require_membership!.can_write? %>
     <section class="section-block config-panel"><h2>Add company data</h2>
       <p>UTF-8 JSON conversation exports, or plain text/Markdown documents. 10 MiB and 2000 records per upload. A changed upload with the same name adds a snapshot; an exact repeat reuses it.</p>

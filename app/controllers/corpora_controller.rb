@@ -24,6 +24,7 @@ class CorporaController < ApplicationController
   def show
     @corpus = Current.workspace.corpora.find(params[:id])
     @sources = @corpus.sources.includes(:current_snapshot).order(:name)
+    @analyses = @corpus.corpus_analyses.order(id: :desc).limit(10)
     @page = [ params[:page].to_i, 1 ].max
     @items = @corpus.current_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
     @more = @items.size > 50

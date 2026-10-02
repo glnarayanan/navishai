@@ -93,6 +93,40 @@ ALTER SEQUENCE public.audit_events_id_seq OWNED BY public.audit_events.id;
 
 
 --
+-- Name: cluster_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cluster_members (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    issue_cluster_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    signals jsonb DEFAULT '[]'::jsonb NOT NULL,
+    selection_reason text
+);
+
+
+--
+-- Name: cluster_members_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.cluster_members_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: cluster_members_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.cluster_members_id_seq OWNED BY public.cluster_members.id;
+
+
+--
 -- Name: corpora; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -122,6 +156,77 @@ CREATE SEQUENCE public.corpora_id_seq
 --
 
 ALTER SEQUENCE public.corpora_id_seq OWNED BY public.corpora.id;
+
+
+--
+-- Name: corpus_analyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpus_analyses (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    requested_by_id bigint NOT NULL,
+    processing_method character varying NOT NULL,
+    state character varying DEFAULT 'queued'::character varying NOT NULL,
+    scenario_limit integer NOT NULL,
+    error text,
+    summary jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_eb878e98a6 CHECK ((((state)::text = ANY ((ARRAY['queued'::character varying, 'complete'::character varying, 'failed'::character varying])::text[])) AND ((scenario_limit >= 1) AND (scenario_limit <= 100))))
+);
+
+
+--
+-- Name: corpus_analyses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpus_analyses_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpus_analyses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpus_analyses_id_seq OWNED BY public.corpus_analyses.id;
+
+
+--
+-- Name: corpus_analysis_inputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.corpus_analysis_inputs (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_analysis_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL
+);
+
+
+--
+-- Name: corpus_analysis_inputs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.corpus_analysis_inputs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: corpus_analysis_inputs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.corpus_analysis_inputs_id_seq OWNED BY public.corpus_analysis_inputs.id;
 
 
 --
@@ -192,6 +297,39 @@ CREATE SEQUENCE public.installation_states_id_seq
 --
 
 ALTER SEQUENCE public.installation_states_id_seq OWNED BY public.installation_states.id;
+
+
+--
+-- Name: issue_clusters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.issue_clusters (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_analysis_id bigint NOT NULL,
+    proposed_label character varying NOT NULL,
+    signals jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- Name: issue_clusters_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.issue_clusters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: issue_clusters_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.issue_clusters_id_seq OWNED BY public.issue_clusters.id;
 
 
 --
@@ -355,7 +493,7 @@ CREATE TABLE public.source_snapshots (
     processing_version character varying NOT NULL,
     imported_by_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY ((ARRAY['email'::character varying, 'none'::character varying])::text[]))))
+    CONSTRAINT chk_rails_75987cdd84 CHECK (((number > 0) AND ((digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((redaction)::text = ANY (ARRAY[('email'::character varying)::text, ('none'::character varying)::text]))))
 );
 
 
@@ -392,7 +530,7 @@ CREATE TABLE public.sources (
     expires_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT chk_rails_5a3ed6bc52 CHECK (((kind)::text = ANY ((ARRAY['conversations'::character varying, 'document'::character varying])::text[])))
+    CONSTRAINT chk_rails_5a3ed6bc52 CHECK (((kind)::text = ANY (ARRAY[('conversations'::character varying)::text, ('document'::character varying)::text])))
 );
 
 
@@ -413,6 +551,41 @@ CREATE SEQUENCE public.sources_id_seq
 --
 
 ALTER SEQUENCE public.sources_id_seq OWNED BY public.sources.id;
+
+
+--
+-- Name: taxonomy_versions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.taxonomy_versions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_analysis_id bigint NOT NULL,
+    reviewed_by_id bigint NOT NULL,
+    number integer NOT NULL,
+    labels jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: taxonomy_versions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.taxonomy_versions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: taxonomy_versions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.taxonomy_versions_id_seq OWNED BY public.taxonomy_versions.id;
 
 
 --
@@ -531,10 +704,31 @@ ALTER TABLE ONLY public.audit_events ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: cluster_members id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cluster_members ALTER COLUMN id SET DEFAULT nextval('public.cluster_members_id_seq'::regclass);
+
+
+--
 -- Name: corpora id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.corpora ALTER COLUMN id SET DEFAULT nextval('public.corpora_id_seq'::regclass);
+
+
+--
+-- Name: corpus_analyses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analyses ALTER COLUMN id SET DEFAULT nextval('public.corpus_analyses_id_seq'::regclass);
+
+
+--
+-- Name: corpus_analysis_inputs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_inputs ALTER COLUMN id SET DEFAULT nextval('public.corpus_analysis_inputs_id_seq'::regclass);
 
 
 --
@@ -549,6 +743,13 @@ ALTER TABLE ONLY public.corpus_items ALTER COLUMN id SET DEFAULT nextval('public
 --
 
 ALTER TABLE ONLY public.installation_states ALTER COLUMN id SET DEFAULT nextval('public.installation_states_id_seq'::regclass);
+
+
+--
+-- Name: issue_clusters id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_clusters ALTER COLUMN id SET DEFAULT nextval('public.issue_clusters_id_seq'::regclass);
 
 
 --
@@ -594,6 +795,13 @@ ALTER TABLE ONLY public.sources ALTER COLUMN id SET DEFAULT nextval('public.sour
 
 
 --
+-- Name: taxonomy_versions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taxonomy_versions ALTER COLUMN id SET DEFAULT nextval('public.taxonomy_versions_id_seq'::regclass);
+
+
+--
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -631,11 +839,35 @@ ALTER TABLE ONLY public.audit_events
 
 
 --
+-- Name: cluster_members cluster_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cluster_members
+    ADD CONSTRAINT cluster_members_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: corpora corpora_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.corpora
     ADD CONSTRAINT corpora_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: corpus_analyses corpus_analyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analyses
+    ADD CONSTRAINT corpus_analyses_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: corpus_analysis_inputs corpus_analysis_inputs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_inputs
+    ADD CONSTRAINT corpus_analysis_inputs_pkey PRIMARY KEY (id);
 
 
 --
@@ -652,6 +884,14 @@ ALTER TABLE ONLY public.corpus_items
 
 ALTER TABLE ONLY public.installation_states
     ADD CONSTRAINT installation_states_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: issue_clusters issue_clusters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_clusters
+    ADD CONSTRAINT issue_clusters_pkey PRIMARY KEY (id);
 
 
 --
@@ -711,6 +951,14 @@ ALTER TABLE ONLY public.sources
 
 
 --
+-- Name: taxonomy_versions taxonomy_versions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taxonomy_versions
+    ADD CONSTRAINT taxonomy_versions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -732,6 +980,13 @@ ALTER TABLE ONLY public.workspace_invitations
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_on_corpus_analysis_id_corpus_item_id_454c89de9d; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_corpus_analysis_id_corpus_item_id_454c89de9d ON public.corpus_analysis_inputs USING btree (corpus_analysis_id, corpus_item_id);
 
 
 --
@@ -777,6 +1032,13 @@ CREATE INDEX index_audit_events_on_workspace_id_and_occurred_at ON public.audit_
 
 
 --
+-- Name: index_cluster_members_on_issue_cluster_id_and_corpus_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cluster_members_on_issue_cluster_id_and_corpus_item_id ON public.cluster_members USING btree (issue_cluster_id, corpus_item_id);
+
+
+--
 -- Name: index_corpora_on_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -788,6 +1050,20 @@ CREATE INDEX index_corpora_on_workspace_id ON public.corpora USING btree (worksp
 --
 
 CREATE UNIQUE INDEX index_corpora_on_workspace_id_and_id ON public.corpora USING btree (workspace_id, id);
+
+
+--
+-- Name: index_corpus_analyses_on_requested_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_corpus_analyses_on_requested_by_id ON public.corpus_analyses USING btree (requested_by_id);
+
+
+--
+-- Name: index_corpus_analyses_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_corpus_analyses_on_workspace_id_and_corpus_id_and_id ON public.corpus_analyses USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -809,6 +1085,13 @@ CREATE UNIQUE INDEX index_corpus_items_on_workspace_id_and_corpus_id_and_id ON p
 --
 
 CREATE UNIQUE INDEX index_installation_states_on_singleton ON public.installation_states USING btree (singleton);
+
+
+--
+-- Name: index_issue_clusters_on_workspace_id_and_corpus_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_issue_clusters_on_workspace_id_and_corpus_id_and_id ON public.issue_clusters USING btree (workspace_id, corpus_id, id);
 
 
 --
@@ -931,6 +1214,20 @@ CREATE UNIQUE INDEX index_sources_on_workspace_id_and_corpus_id_and_id ON public
 
 
 --
+-- Name: index_taxonomy_versions_on_corpus_analysis_id_and_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_taxonomy_versions_on_corpus_analysis_id_and_number ON public.taxonomy_versions USING btree (corpus_analysis_id, number);
+
+
+--
+-- Name: index_taxonomy_versions_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_taxonomy_versions_on_reviewed_by_id ON public.taxonomy_versions USING btree (reviewed_by_id);
+
+
+--
 -- Name: index_users_on_lower_email_address; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -994,6 +1291,20 @@ CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON public.audit_events F
 
 
 --
+-- Name: cluster_members cluster_members_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER cluster_members_immutable BEFORE UPDATE ON public.cluster_members FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: corpus_analysis_inputs corpus_analysis_inputs_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER corpus_analysis_inputs_immutable BEFORE UPDATE ON public.corpus_analysis_inputs FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: corpus_items corpus_items_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1001,10 +1312,48 @@ CREATE TRIGGER corpus_items_immutable BEFORE UPDATE ON public.corpus_items FOR E
 
 
 --
+-- Name: issue_clusters issue_clusters_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER issue_clusters_immutable BEFORE UPDATE ON public.issue_clusters FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: source_snapshots source_snapshots_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER source_snapshots_immutable BEFORE UPDATE ON public.source_snapshots FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: taxonomy_versions taxonomy_versions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER taxonomy_versions_immutable BEFORE UPDATE ON public.taxonomy_versions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
+-- Name: taxonomy_versions fk_rails_099165acfd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taxonomy_versions
+    ADD CONSTRAINT fk_rails_099165acfd FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: taxonomy_versions fk_rails_268a492cb1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taxonomy_versions
+    ADD CONSTRAINT fk_rails_268a492cb1 FOREIGN KEY (reviewed_by_id) REFERENCES public.users(id);
+
+
+--
+-- Name: cluster_members fk_rails_2db3654de9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cluster_members
+    ADD CONSTRAINT fk_rails_2db3654de9 FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1021,6 +1370,22 @@ ALTER TABLE ONLY public.source_snapshots
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT fk_rails_3e6d59991e FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: corpus_analysis_inputs fk_rails_5940e5b0b1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_inputs
+    ADD CONSTRAINT fk_rails_5940e5b0b1 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: corpus_analyses fk_rails_5ea0a55698; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analyses
+    ADD CONSTRAINT fk_rails_5ea0a55698 FOREIGN KEY (workspace_id, corpus_id) REFERENCES public.corpora(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1064,6 +1429,14 @@ ALTER TABLE ONLY public.source_snapshots
 
 
 --
+-- Name: issue_clusters fk_rails_8102c9b2a4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.issue_clusters
+    ADD CONSTRAINT fk_rails_8102c9b2a4 FOREIGN KEY (workspace_id, corpus_id, corpus_analysis_id) REFERENCES public.corpus_analyses(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: memberships fk_rails_99326fb65d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1077,6 +1450,14 @@ ALTER TABLE ONLY public.memberships
 
 ALTER TABLE ONLY public.corpus_items
     ADD CONSTRAINT fk_rails_a030d050b9 FOREIGN KEY (workspace_id, corpus_id, source_snapshot_id) REFERENCES public.source_snapshots(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: cluster_members fk_rails_a10aa346f5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cluster_members
+    ADD CONSTRAINT fk_rails_a10aa346f5 FOREIGN KEY (workspace_id, corpus_id, issue_cluster_id) REFERENCES public.issue_clusters(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1128,11 +1509,27 @@ ALTER TABLE ONLY public.memberships
 
 
 --
+-- Name: corpus_analyses fk_rails_ed547a04e8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analyses
+    ADD CONSTRAINT fk_rails_ed547a04e8 FOREIGN KEY (requested_by_id) REFERENCES public.users(id);
+
+
+--
 -- Name: oidc_identities fk_rails_f976bdec82; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.oidc_identities
     ADD CONSTRAINT fk_rails_f976bdec82 FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: corpus_analysis_inputs fk_rails_fc77184e40; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.corpus_analysis_inputs
+    ADD CONSTRAINT fk_rails_fc77184e40 FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -1142,6 +1539,7 @@ ALTER TABLE ONLY public.oidc_identities
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260930020000'),
 ('20260930010000'),
 ('20260824230700'),
 ('20260823200303'),
