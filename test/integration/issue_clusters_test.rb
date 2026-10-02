@@ -115,6 +115,74 @@ class IssueClustersTest < ActionDispatch::IntegrationTest
             assert_includes links.sole["href"], "signal=context.failed"
           end
         end
+        post nominate_workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, @analysis, @cluster), params: { member_id: @cluster.cluster_members.first.id, selection_reason: "Viewer cannot nominate" }
+        assert_response :forbidden
+      end
+    end
+  end
+
+  test "expert nominates a fixed unselected record with attribution and repeated posts cannot revise it" do
+    refresh_family_export
+    member = @cluster.cluster_members.find_by!(corpus_item: @items[50])
+    definition = @analysis.attributes
+    path = nominate_workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, @analysis, @cluster)
+    assert_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ], 1) do
+      assert_no_enqueued_jobs do
+        post path, params: { member_id: member.id, selection_reason: "Expert fixture: investigate this retained failure.", page: 2 }
+        assert_response :see_other
+      end
+    end
+    scenario = @corpus.scenarios.sole
+    assert_redirected_to workspace_corpus_scenario_path(@workspace, @corpus, scenario)
+    version = scenario.current_version
+    assert_equal @items[50], version.scenario_evidence.sole.corpus_item
+    assert_not version.approved?
+    assert_equal @membership.user, version.created_by
+    assert_equal definition, @analysis.reload.attributes
+    assert_nil member.reload.selection_reason
+    saved = version.attributes
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      post path, params: { member_id: member.id, selection_reason: "A changed reason must not change the existing draft." }
+      assert_response :see_other
+    end
+    assert_equal saved, version.reload.attributes
+    get family_path, params: { page: 2 }
+    assert_select "details#member-#{member.id} a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, scenario)}']", text: "Open existing scenario"
+    assert_select "details#member-#{member.id} textarea[name=selection_reason]", count: 0
+  end
+
+  test "invalid nomination retains exact record page and raw reason with an accessible repair and queues nothing" do
+    member = @cluster.cluster_members.find_by!(corpus_item: @items[50])
+    reason = "é" * 2001
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        post nominate_workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, @analysis, @cluster), params: { member_id: member.id, selection_reason: reason, signal: "diagnostic evidence mention", page: 2 }
+        assert_response :unprocessable_content
+        assert_select "details#member-#{member.id}[open]"
+        assert_select "textarea#reason-#{member.id}[aria-invalid=true][aria-describedby='nomination-error-#{member.id}']", text: reason
+        assert_select "#nomination-error-#{member.id}[role=alert]", text: /1–2000 characters.*no null bytes/
+        assert_select "#family-records [role=status]", text: /55 matching records of 55.*page 2/
+      end
+    end
+    filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+    assert_equal "[FILTERED]", filter.filter("selection_reason" => "Private expert reason")["selection_reason"]
+  end
+
+  test "foreign-member foreign-family foreign-workspace and expired nominations create no records" do
+    member = @cluster.cluster_members.first
+    other_analysis, other_cluster = build_fixed_family(CorpusAnalysis::METHOD)
+    path = nominate_workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, @analysis, @cluster)
+    assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_no_enqueued_jobs do
+        post path, params: { member_id: other_cluster.cluster_members.first.id, selection_reason: "Wrong analysis" }
+        assert_response :not_found
+        post nominate_workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, other_analysis, @cluster), params: { member_id: member.id, selection_reason: "Wrong family" }
+        assert_response :not_found
+        post nominate_workspace_corpus_corpus_analysis_issue_cluster_path(workspaces(:beta_support), @corpus, @analysis, @cluster), params: { member_id: member.id, selection_reason: "Foreign workspace" }
+        assert_response :not_found
+        @snapshot.source.update!(expires_at: 1.minute.ago)
+        post path, params: { member_id: member.id, selection_reason: "Expired evidence" }
+        assert_response :not_found
       end
     end
   end

@@ -1,4 +1,6 @@
+<% pagination_path = local_assigns.fetch(:path, request.path) %>
+<% pagination_query = local_assigns.fetch(:query, request.query_parameters) %>
 <nav class="workspace-tabs" aria-label="Record pages">
-  <% if page_number > 1 %><%= link_to "Previous records", url_for(only_path: true, params: request.query_parameters.merge(page: page_number - 1)) %><% end %>
-  <% if more %><%= link_to "Next records", url_for(only_path: true, params: request.query_parameters.merge(page: page_number + 1)) %><% end %>
+  <% if page_number > 1 %><%= link_to "Previous records", "#{pagination_path}?#{pagination_query.merge(page: page_number - 1).to_query}" %><% end %>
+  <% if more %><%= link_to "Next records", "#{pagination_path}?#{pagination_query.merge(page: page_number + 1).to_query}" %><% end %>
 </nav>

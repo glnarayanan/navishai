@@ -203,6 +203,18 @@ are refused without partial counts. GETs create no records, jobs or provider cal
 Desktop/mobile expanded, empty and invalid captures live under
 `.amp/in/artifacts/family-evidence/`.
 
+Writers can expand a fixed record and **Create scenario draft** with a reason
+(1–2000 characters, no null bytes). This works for records the method did not
+select, including retained historical exports. It creates one local unapproved
+draft with exact source evidence and author attribution. Correct its starting
+context and source-backed outcomes before approval. No model call or human label
+occurs; fixed selection and analysis totals stay unchanged. Repeated requests open
+the existing scenario without revising it. Viewers have no nomination controls.
+Errors retain the reason, open record, filter and page; navigation returns to the
+read-only evidence route, never the POST action. Nomination reasons stay filtered
+from request logs. Desktop/mobile form, repair and existing-scenario crops live
+beside the full source-inspection captures.
+
 On a complete analysis, **Review family selection** shows all fixed families, those
 with selected candidates or those with none. Counts use actual member selection,
 not proposed importance or existing scenarios. The list paginates ten families;

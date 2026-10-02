@@ -1,12 +1,19 @@
 class ScenarioMining
-  def self.call(analysis:, membership:)
+  def self.call(analysis:, membership:, member_id: nil, reason: nil)
     analysis.corpus.with_lock do
       analysis.corpus.authorize_writer!(membership)
       analysis.reload
       raise Scenario::Invalid, "Finish an unexpired analysis first." unless analysis.state == "complete" && !analysis.expired?
+      nominating = !member_id.nil?
+      members = ClusterMember.where(issue_cluster: analysis.issue_clusters).includes(:issue_cluster)
+      if nominating
+        raise Scenario::Invalid, "Explain why this record needs a scenario (1–2000 characters, with no null bytes)." unless reason.is_a?(String) && reason.strip.present? && reason.length <= 2000 && !reason.include?("\0")
+        members = [ members.find(member_id) ]
+      else
+        members = members.selected
+      end
       source_items = analysis.fixed_inputs.index_by { |item| "corpus-item-#{item.id}" }
-      members = ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).includes(:issue_cluster)
-      model_candidates = analysis.model? ? analysis.corpus_analysis_result.result.fetch("candidates", []) : nil
+      model_candidates = analysis.model? && !nominating ? analysis.corpus_analysis_result.result.fetch("candidates", []) : nil
       members.map do |member|
         existing = analysis.corpus.scenarios.find_by(cluster_member: member)
         next existing if existing
@@ -21,7 +28,7 @@ class ScenarioMining
         candidate = model_candidates&.find { |entry| entry.fetch("reference") == "corpus-item-#{item.id}" }
         values = candidate.fetch("scenario").merge("taxonomy_label" => member.issue_cluster.label) if candidate
         version = scenario.scenario_versions.create!(values.merge(workspace: analysis.workspace, corpus: analysis.corpus,
-          created_by: membership.user, number: 1, origin: "mined", selection_reason: member.selection_reason, created_at: Time.current))
+          created_by: membership.user, number: 1, origin: "mined", selection_reason: nominating ? "Expert nominated this fixed record for review: #{reason.strip}" : member.selection_reason, created_at: Time.current))
         if candidate
           quotes = ModelCorpusDiscovery.evidence_for(candidate, cluster: member.issue_cluster.signals, sources: source_items.transform_values(&:content))
           quotes.each do |quote|

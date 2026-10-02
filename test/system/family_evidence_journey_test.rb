@@ -17,6 +17,7 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
         click_link "Explore all family records and source counts"
         assert_selector "h1", text: "Family source evidence"
         assert_text "not verified outcomes, risk or expert labels"
+        assert_no_button "Create scenario draft"
         select "diagnostic evidence mention (55 / 55)", from: "Source signal filter"
         find("select[name=signal]").send_keys(:enter)
         # Enter on a native select commits its option; submitting the GET with the
@@ -57,8 +58,66 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
     end
   end
 
+  test "expert repairs nomination then opens one unapproved historical draft without changing selection" do
+    build_family_evidence_fixture
+    refresh_family_export
+    member = @cluster.cluster_members.find_by!(corpus_item: @items[50])
+    fixed_analysis = @analysis.attributes
+    path = workspace_corpus_corpus_analysis_issue_cluster_path(@workspace, @corpus, @analysis, @cluster, signal: "diagnostic evidence mention", page: 2)
+    sign_in users(:owner)
+    assert_no_enqueued_jobs do
+      visit path
+      find("#member-#{member.id} summary").send_keys(:enter)
+      within "#member-#{member.id}" do
+        assert_text "does not change the method's selection"
+        fill_in "Why this record needs a scenario", with: "   "
+      end
+      [ 1280, 390 ].each { |width| capture(width, name: "nomination", selector: "#member-#{member.id} form") }
+      assert_no_difference [ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count", "HumanLabel.count" ] do
+        within("#member-#{member.id}") { find("input[value='Create scenario draft']").send_keys(:enter) }
+        assert_selector "#nomination-error-#{member.id}[role=alert]", text: "1–2000 characters"
+        assert_selector "#member-#{member.id}[open] textarea[aria-invalid=true]"
+        assert_equal "   ", find("#reason-#{member.id}").value
+        assert_selector "#family-records [role=status]", text: "55 matching records of 55 fixed family records · page 2"
+      end
+      [ 1280, 390 ].each { |width| capture(width, name: "nomination-error", selector: "#member-#{member.id} form") }
+      click_link "Previous records"
+      assert_selector "#family-records > details", count: 50
+      assert_includes page.current_url, "signal=diagnostic"
+      click_link "Next records"
+      assert_selector "#family-records > details", count: 5
+      assert_selector "html:not([aria-busy=true]):not([data-turbo-preview])"
+      find("#member-#{member.id} summary").send_keys(:enter)
+      assert_selector "#member-#{member.id}[open] textarea"
+      reason = "Fixture expert: verify this reported failure against retained company evidence."
+      assert_difference([ "Scenario.count", "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ], 1) do
+        within "#member-#{member.id}" do
+          fill_in "Why this record needs a scenario", with: reason
+          find("input[value='Create scenario draft']").send_keys(:enter)
+        end
+        assert_selector "h1", text: "Diagnostic 51"
+        assert_text "needs review"
+        assert_text "Expert nominated this fixed record for review: #{reason}"
+      end
+      scenario = @corpus.scenarios.sole
+      assert_not scenario.current_version.approved?
+      assert_empty scenario.current_version.requirements["outcomes"]
+      assert_equal @items[50], scenario.current_version.scenario_evidence.sole.corpus_item
+      assert_equal fixed_analysis, @analysis.reload.attributes
+      assert_nil member.reload.selection_reason
+      assert_equal 0, HumanLabel.where(corpus: @corpus).count
+      visit path
+      find("#member-#{member.id} summary").send_keys(:enter)
+      within "#member-#{member.id}" do
+        assert_no_button "Create scenario draft"
+        assert_link "Open existing scenario", href: workspace_corpus_scenario_path(@workspace, @corpus, scenario)
+      end
+      [ 1280, 390 ].each { |width| capture(width, name: "existing-scenario", selector: "#member-#{member.id} p") }
+    end
+  end
+
   private
-    def capture(width, name: "records")
+    def capture(width, name: "records", selector: nil)
       page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width:, height: 1000, deviceScaleFactor: 2, mobile: false)
       assert_no_horizontal_overflow
       assert_no_csp_violations
@@ -68,7 +127,13 @@ class FamilyEvidenceJourneyTest < ApplicationSystemTestCase
       FileUtils.mkdir_p(path.dirname)
       page.execute_script("window.scrollTo(0, 0)")
       size = page.driver.browser.execute_cdp("Page.getLayoutMetrics").fetch("cssContentSize")
-      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip: { x: 0, y: 0, width:, height: size.fetch("height"), scale: 1 })
+      clip = { x: 0, y: 0, width:, height: size.fetch("height"), scale: 1 }
+      if selector
+        bounds = page.evaluate_script("(() => { const node = document.querySelector(#{selector.to_json}); const record = node.closest('.source-record'); return { top: record.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom }; })()")
+        clip[:y] = bounds.fetch("top").floor
+        clip[:height] = (bounds.fetch("bottom") - clip[:y] + 80).ceil
+      end
+      image = page.driver.browser.execute_cdp("Page.captureScreenshot", captureBeyondViewport: true, clip:)
       File.binwrite(path, Base64.decode64(image.fetch("data")))
     end
 end

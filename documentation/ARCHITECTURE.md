@@ -72,6 +72,13 @@ families. Filtering and refresh change no definitions, selection, totals or jobs
 new exports do not replace fixed membership. These groups describe this method's
 selection, not test coverage across the company or other analyses.
 
+Writers may nominate one fixed family record with a bounded reason through an
+explicit POST. Reuse mining's corpus lock, fresh role/lifetime/bounds checks and
+unique member identity. Create only a local unapproved draft and exact source
+evidence; never change fixed selection, model results, expert labels or prior
+versions. Repeated nomination opens the existing scenario unchanged. This path
+does not reuse a model's proposed expectations or request a provider call.
+
 Calibration sets may fix optional human-supplied false-positive/false-negative
 costs, common units and rationale with the existing creator/version attribution.
 No defaults, inferred values, currency choices or live-spend authority. Store exact

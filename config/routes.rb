@@ -9,7 +9,9 @@ Rails.application.routes.draw do
       end
       resources :corpus_analyses, only: %i[new create show update] do
         post :interrupt, on: :member
-        resources :issue_clusters, only: :show
+        resources :issue_clusters, only: :show do
+          post :nominate, on: :member
+        end
       end
       resources :graders, only: %i[index create show update]
       resources :eval_cases, only: %i[new create show]
