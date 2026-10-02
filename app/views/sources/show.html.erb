@@ -60,6 +60,17 @@
     <%= render "shared/record_pagination", more: @more, page_number: @page %>
   </section>
   <% if Current.require_membership!.can_manage_work? %>
+    <details class="section-block" id="source-download" <%= "open" if @download_error %>><summary>Download retained snapshot <%= @snapshot.number %></summary>
+      <p>Complete normalized records from this exact snapshot, including titles, text and context, with source identity and processing provenance. This is retained data, not original raw files or a vendor export. No external provider receives it.</p>
+      <p>Email masking is incomplete: other personal or sensitive data may remain. Downloaded copies fall outside local purge; you are responsible for their storage and deletion.</p>
+      <p>Limit: 2000 records and 10 MiB of complete JSON. Larger downloads are refused, never sampled or truncated.</p>
+      <% if @download_error %><p role="alert"><%= @download_error %></p><% end %>
+      <%= form_with url: download_snapshot_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel", data: { turbo: false } do |form| %>
+        <%= form.hidden_field :snapshot_id, value: @snapshot.id %>
+        <div class="field"><%= form.label :download_confirmation, "Type #{@source.name} to confirm download" %><%= form.text_field :download_confirmation, value: @download_confirmation, required: true, autocomplete: "off" %></div>
+        <%= form.submit "Download snapshot #{@snapshot.number} JSON", class: "button" %>
+      <% end %>
+    </details>
     <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record, plus all analyses, taxonomy revisions, scenarios, compiled cases, graders, calibration labels/outputs, targets, runs, results and regressions in this corpus. They may contain copies of company evidence. Suite names remain, with no cases. This cannot be undone.</p>
       <%= form_with url: workspace_corpus_source_path(Current.workspace, @corpus, @source), method: :delete, class: "form-stack config-panel" do |form| %>
         <div class="field"><%= form.label :confirmation, "Type #{@source.name} to confirm" %><%= form.text_field :confirmation, required: true, autocomplete: "off" %></div>

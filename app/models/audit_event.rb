@@ -17,6 +17,7 @@ class AuditEvent < ApplicationRecord
     "corpus.analysis_completed" => {},
     "corpus.analysis_interrupted" => {},
     "source.deleted" => {},
+    "source.downloaded" => {},
     "taxonomy.reviewed" => { "version" => Integer },
     "scenario.mined" => { "version" => Integer },
     "scenario.revised" => { "version" => Integer },

@@ -51,8 +51,15 @@ job deletes source snapshots/items. Explicit source deletion needs a managing ro
 and typed confirmation; it keeps only a non-content audit event. Backups have a
 separate operator-controlled retention policy.
 
-There is no source export. External evaluation disclosure requires operator and
-expert approval; it is off by default.
+Managers/Admins/Owners may download one exact retained snapshot by POST with typed
+source-name confirmation. Membership, source expiry and snapshot scope are checked
+under the corpus lock. Complete normalized JSON is bounded to 2000 records / 10 MiB;
+oversized snapshots are refused, never sampled. Attachments use ID-only filenames,
+JSON/nosniff and no-store headers. A content-free snapshot audit records preparation,
+not client receipt. Copies retain the snapshot's masking limits and fall outside
+local purge; the recipient owns their storage/deletion. No raw files are restored
+and no provider receives the download. External evaluation disclosure still needs
+operator and expert approval; it is off by default.
 Scenario versions, exact-source evidence and expert decisions are immutable
 in Ruby and SQL, with composite workspace/corpus relationships. Current-version
 pointers cannot refer to another scenario. All writes recheck a locked membership;
