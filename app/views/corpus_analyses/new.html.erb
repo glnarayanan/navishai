@@ -5,6 +5,10 @@
   <div class="page-heading"><div><h1>Model corpus discovery</h1><p>Company-specific families and source-backed candidates, not expert decisions.</p></div></div>
   <p><%= @batch ? "Bounded multi-request discovery sends every complete conversation, repeating all current documents in each discovery batch. At most one reducer receives validated proposals, not human labels or scenarios." : "One request sends the complete records shown below: titles, text and retained context." %> It can propose issue families, high-risk examples and scenario expectations. Quotes prove source links, not correctness. Taxonomy and scenarios still need expert review.</p>
   <p><%= @batch ? "At most 2000 complete records / 10 MiB, 30 discovery batches, each within 100 records / 256 KiB, and 20 final candidates." : "At most 100 conversation/document records, 256 KiB and 20 candidates." %> No silent sampling or truncation. Traces, existing scenarios and human labels stay local. Email masking is not full PII removal; review these records before disclosure.</p>
+  <% if @observations %>
+    <p>Selected: source-backed support observations · v2. Retain proposed contradictions, disagreements, closure/reopen, policy exceptions, diagnostics and other support distinctions with uncertainty and every exact source quote, even without a selected candidate. At most 100 observations per discovery request; no extra calls or expert decisions.</p>
+    <% if @batch %><p>The reducer preserves and orders existing observations. It cannot create a new relationship between records in different batches. A stopped attempt publishes no partial global findings.</p><% end %>
+  <% else %><p>Selected: original discovery · v1. This protocol does not request support observations.</p><% end %>
   <% if @model_input_error %>
     <p role="status" class="inline-error"><%= @model_input_error %></p><p>Add conversations or use a smaller corpus, then reopen this page. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %>. Local analysis also has complete-record limits.</p>
   <% else %>
@@ -25,7 +29,7 @@
       <section aria-labelledby="model-request"><h2 id="model-request">Request discovery</h2>
         <p>The operator must approve this exact workspace/endpoint in the separate corpus-processing registry. Target/judge or scenario-proposal approval cannot grant this disclosure. Each attempt claims once; unknown outcomes never retry.</p>
         <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack config-panel" do |form| %>
-          <%= form.hidden_field :processing_method, value: @batch ? "model_batch" : "model" %><%= form.hidden_field :input_digest, value: ModelCorpusDiscovery.digest(@model_input) %>
+          <%= form.hidden_field :processing_method, value: @observations ? (@batch ? "model_batch_observations" : "model_observations") : (@batch ? "model_batch" : "model") %><%= form.hidden_field :input_digest, value: ModelCorpusDiscovery.digest(@model_input) %>
           <% if @batch %><%= form.hidden_field :call_plan_digest, value: ModelCorpusDiscovery.digest(@call_plan) %><% end %>
           <div class="field"><%= form.label :scenario_limit, "Model candidate limit" %><%= form.number_field :scenario_limit, value: params[:scenario_limit].presence || 5, min: 1, max: 20, required: true %></div>
           <div class="field"><%= form.label :configuration, "Model configuration (JSON)" %><%= form.text_area :configuration, value: params[:configuration], rows: 6, maxlength: 10240, required: true, aria: { describedby: "model-config-help" } %><p id="model-config-help">Set endpoint, model and settings: temperature 0, max_output_tokens 256–4096, seed null or a non-negative integer. Never enter credentials.</p></div>

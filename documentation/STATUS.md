@@ -1864,6 +1864,27 @@ the native schema dump matches them. See [SCENARIO_QUALITY.md](./SCENARIO_QUALIT
 for the worker's broader 100 / 1868 checks and literal-method limits. No live
 model, training, customer-quality or semantic-coverage claim follows.
 
+## Source-backed support observations (slice 75)
+
+Explicit single/batch v2 choices retain source-backed support distinctions with
+proposed status, required uncertainty and all exact anchors, independently of
+selected scenarios. V1 defaults and meanings stay fixed. Preview, request and
+processing rechecks bind the versioned batch plan. Existing once-only jobs and
+publication transactions apply; no extra calls, receipt tables or expert writes.
+The reducer preserves/orders originals and cannot create cross-batch relationships.
+
+Parent focused/adjacent checks passed 48 tests / 877 assertions, including native
+v2 registration without worker substitutes, actual request/job execution, wrong
+plan refusal, revocation, fixed history, expiry/purge and v1 inspection. Browser
+journeys passed 4 / 184 with keyboard consent/source links, desktop/mobile quotes,
+repair, empty and stopped results. All four result anchors and uncertainty were
+rendered and inspected; native CSP and overflow checks passed. Earlier test-only
+helper/snapshot assumptions failed and were corrected without changing product
+guards. Ruby style passed 316 files, eager loading passed, Brakeman reported zero
+warnings/errors and dependency/importmap audits passed. See
+[MODEL_CORPUS_OBSERVATIONS.md](./MODEL_CORPUS_OBSERVATIONS.md). Fixtures prove
+retention/contracts, not company-wide semantic understanding or model quality.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
