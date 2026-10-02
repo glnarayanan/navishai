@@ -25,6 +25,16 @@ class SourcesController < ApplicationController
     @items = @snapshot.corpus_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
     @more = @items.size > 50
     @items = @items.first(50)
+    @dependency_page = params[:dependency_page].to_i.clamp(1, 10000)
+    dependencies = @source.dependent_versions
+    @dependencies = dependencies.includes(:scenario).order(id: :desc).offset((@dependency_page - 1) * 50).limit(51).to_a
+    @more_dependencies = @dependencies.size > 50
+    @dependencies = @dependencies.first(50)
+    @case_page = params[:case_page].to_i.clamp(1, 10000)
+    @dependent_cases = @corpus.eval_cases.where(scenario_version_id: dependencies.select(:id)).includes(:scenario_version).order(id: :desc).offset((@case_page - 1) * 50).limit(51).to_a
+    @more_cases = @dependent_cases.size > 50
+    @dependent_cases = @dependent_cases.first(50)
+    @suite_memberships = EvalSuiteCase.where(corpus: @corpus, eval_case_id: @dependent_cases.map(&:id)).includes(:eval_suite).order(:id).group_by(&:eval_case_id)
     if @source.kind == "traces"
       @trace_scenarios = @corpus.scenarios.where(corpus_item_id: @items.map(&:id), parent_version_id: nil).index_by(&:corpus_item_id)
       cases = @corpus.eval_definitions_expired? ? [] : @corpus.eval_cases.includes(:scenario_version).order(:id).limit(100)

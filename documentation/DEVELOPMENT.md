@@ -103,6 +103,29 @@ outputs/labels, targets, runs, results and regression admissions. Suite names re
 without cases. Source records from other sources remain. Expiry blocks derived
 reads and writes before the hourly purge.
 
+## Source impact and saved-run comparison
+
+Every source page lists exact evidence dependencies across all retained snapshots,
+not just the snapshot being viewed. Versions and fixed cases paginate separately
+at 50 records. Follow the version, case and current suite links to review affected
+expectations. A policy/document upload marks prior linked document evidence stale;
+it never rewrites fixed contracts or results. A newer conversation or trace export
+does not invalidate history. These links cannot detect unlinked assumptions or
+semantic equivalence. Corpus expiry hides dependencies before purge.
+
+On a run page, choose a baseline under **Compare fixed cases**. The current run is
+after; the baseline is before. The picker lists the latest 100 other corpus runs.
+The `baseline_id` query also accepts an older same-corpus run; selecting it keeps
+it in the picker. Refresh preserves the comparison. This GET reads saved records
+without queuing work, transmitting data or changing regression suites.
+
+Pairs need the same fixed case ID and equal frozen visible input. Changed case
+definitions, graders or inputs are unmatched, even with the same title. Object
+key order does not matter; missing values, null, false, zero and array order do.
+Pass → fail is a reported regression; fail → pass is recovery. Missing, error or
+incomplete outcomes are unresolved. Links retain both exact results, importance
+and unmatched inputs. Observed grader decisions do not establish agent quality.
+
 ## Scenario review
 
 Create candidates from a completed analysis; repeating this action reuses the

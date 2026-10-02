@@ -60,3 +60,5 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - An HTTP run needs exact per-workspace operator endpoint approval and human disclosure confirmation. Credentials are not artifacts; the immutable item UUID identifies its attempt, not proof of remote exactly-once execution.
 - A result passes only when every check passes. An abstention cannot become a pass; an execution error cannot become a support failure.
 - A regression admission retains an exact failed result, fixed case, human and reason. Later membership removal does not erase that decision.
+- Source impact follows exact evidence through all retained snapshots into current and historical versions, fixed cases and current suite membership. It cannot find unlinked assumptions or decide that changed prose has the same meaning.
+- Run comparisons require the same fixed case and identical frozen visible input. Pass → fail is a reported regression; fail → pass is recovery. Unknown results stay unresolved and changed definitions or inputs stay unmatched.

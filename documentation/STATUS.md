@@ -33,8 +33,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   through the whole engineering loop, including held-out calibration and replay.
 - [#153](https://github.com/glnarayanan/navishai/pull/153), based on #152: bounded production-trace intake,
   immutable reports and source-backed proposals that require expert expectations.
-- `rebuild/14-recorded-replay`, based on #153: exact-input-compatible recorded
+- [#154](https://github.com/glnarayanan/navishai/pull/154), based on #153: exact-input-compatible recorded
   targets, fixed replay results and human failure-to-regression admission.
+- `rebuild/15-impact-comparisons`, based on #154: source-backed change impact and
+  saved-run comparisons that retain exact case/input identity.
 
 ## Built and checked
 
@@ -243,10 +245,29 @@ captures were inspected with no page overflow or CSP violations. Impeccable foun
 no new issues. Direct risk review/native audits used; Ponytail Audit and CE Code
 Review unavailable. No live agent, judge or customer data was used.
 
+Source impact/comparison `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 2m31.37s;
+225 Ruby files clean, gem/importmap audits clean, Brakeman zero warnings/errors
+and eager loading passes. 242 Rails tests / 2265 assertions and 14 browser tests /
+515 assertions, no failures/errors/skips. Checks cover exact snapshots and deduped
+evidence, all-source historical/current dependencies, unchanged records after policy
+refresh, foreign/expired reads, independent 50-record pagination, both comparison
+directions, changed graders/inputs, object ordering, missing/null/false/zero,
+unknown outcomes and older baselines outside the 100-run picker. GET comparisons
+queue nothing and write no records. Viewers can inspect them, not execute runs.
+The browser submits the comparison with Enter, preserves it on refresh and follows
+stale policy links. Seven desktop/390px captures were inspected. One scoped CSS
+pass aligned dependency columns and reduced mobile comparison spacing; final
+captures confirm the fix with no overflow or CSP violations. The first browser
+check used a shortened fixture title; corrected the expectation, not product data.
+Impeccable found no new issues. Direct risk review/native audits used; Ponytail
+Audit and CE Code Review remain unavailable. No provider call, dependency or
+schema change. GitHub CI for #153 and #154 also passed.
+
 ## Next and limits
 
-The P0 engineering loop passes with fixtures. Phase E engineering continues with
-source-change impact and target-version comparison. Trace matching currently means
+The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
+regression, exact source-change impact and fixed-case target-version comparison.
+This does not finish the full rebuild or establish customer value. Trace matching currently means
 exact input compatibility among 100 cases, not semantic failure matching. Recorded
 replay uses one fixed output and cannot answer unrelated cases. Customer acceptance still needs a
 privacy-approved, previously unseen technical-Support dataset,
@@ -274,3 +295,15 @@ retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md)
 The user-owned Bundler checksum in Gemfile.lock remains unstaged and outside the
 rebuild commits. Phase A removed obsolete gems and capped JSON below 3 after tests
 proved JSON 3 incompatible with this Rails version. No new dependency was added.
+
+## Pending owner decisions
+
+1. Approve rights, redaction and retention for a previously unseen technical-Support
+   pilot corpus. No customer data has been imported or disclosed.
+2. Name the authoritative pilot experts and obtain their expectations/held-out
+   labels. Fixture judgments cannot establish taxonomy quality or grader accuracy.
+3. Approve exact target/judge endpoints, disclosure scope and cost limits before
+   live execution. The private endpoint registry still has zero entries.
+
+Classifier work remains gated by enough labelled data and measured economics.
+Independent local engineering and fixture checks can continue without these gates.

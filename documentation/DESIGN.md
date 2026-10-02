@@ -66,6 +66,14 @@ retain judge quotes, raw/effective decisions and reported usage/cost in an inspe
 record beside source evidence. Mobile stacks the same sections. A judge error or
 abstention cannot pass; neither establishes a behavioural failure on its own.
 
+Source impact shows exact current/historical version links, stale document status,
+fixed cases and current suite membership across all retained snapshots. Versions
+and cases paginate separately. Desktop dependency columns align; mobile stacks
+them. Saved-run comparison uses a labelled baseline picker and a GET. Each pair
+links before/after results and importance, with frozen input disclosures for
+unmatched entries. Compact desktop columns stack on mobile. Unresolved and
+unmatched results cannot appear as recoveries; refresh retains the baseline.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,
