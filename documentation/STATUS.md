@@ -1485,6 +1485,25 @@ The #196 run reports `bin/ci` in progress and does not yet expose its logs;
 no cause is established. Earlier #155/#158 failures remain failures. Nothing was
 cancelled, rerun, merged, released or deployed.
 
+Slice 59 is committed/pushed as open stacked
+[#199](https://github.com/glnarayanan/navishai/pull/199), based on #198.
+
+## Exact expert lookup (slice 60)
+
+A real GET red test proved that Rails cast a decimal input to an existing integer
+scenario ID. The lookup now accepts one bounded digit string before querying.
+Decimals, exponents, suffixes and parameter collections cannot open another
+scenario or supply its decision form. Whole IDs still use the same corpus scope,
+fresh eligibility and separate expert decisions.
+
+Focused access checks pass 7 tests / 150 assertions. All integration checks pass
+112 tests / 2171 assertions. All rendered browser journeys pass 47 tests /
+2142 assertions, no failures/errors/skips. The native number field retains an
+exponent value on GET but offers no decision form; replacing it with the whole ID
+opens the intended version and completes the existing expert workflow. Native
+style, eager loading and Brakeman pass (zero warnings/errors). No appearance,
+labels, approvals, provider calls, schema or dependency changed.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

@@ -78,7 +78,8 @@ class SourcesController < ApplicationController
           raise ActiveRecord::RecordNotFound unless @selected_trace
 
           @corpus.with_lock do
-            @selected_scenario = @corpus.scenarios.find_by(id: params[:selected_scenario_id])
+            selected_id = params[:selected_scenario_id]
+            @selected_scenario = @corpus.scenarios.find_by(id: selected_id) if selected_id.is_a?(String) && selected_id.match?(/\A[0-9]{1,19}\z/)
             @selected_version = if @decision_form
               @selected_scenario&.scenario_versions&.find_by(id: @decision_form["scenario_version_id"])
             else

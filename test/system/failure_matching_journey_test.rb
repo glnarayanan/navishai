@@ -155,6 +155,13 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
     visit source_path
     assert_text "No candidates share at least two meaningful terms"
     find("summary", text: "Inspect an existing scenario").click
+    fill_in "Scenario ID for trace rate-failure", with: "#{missed.scenario_id}e1"
+    assert_field "Scenario ID for trace rate-failure", with: "#{missed.scenario_id}e1"
+    find("input[value='Inspect selected scenario']").send_keys(:enter)
+    assert_selector "#selected-scenario-#{@item.id} [role=status]", text: "Choose a scenario in this corpus"
+    assert_field "Scenario ID for trace rate-failure", with: "#{missed.scenario_id}e1"
+    assert_no_field "Decision for scenario #{missed.scenario_id} v1"
+    assert_empty TraceScenarioDecision.where(corpus: @corpus)
     fill_in "Scenario ID for trace rate-failure", with: missed.scenario_id
     find("input[value='Inspect selected scenario']").send_keys(:enter)
     assert_selector "#selected-scenario-#{@item.id} h5", text: "Expert-selected scenario"
