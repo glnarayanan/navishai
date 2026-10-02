@@ -48,6 +48,8 @@ class ScenariosController < ApplicationController
     @versions = @scenario.scenario_versions.order(number: :desc)
     @version = params[:version] ? @versions.find_by!(number: params[:version]) : @scenario.current_version
     raise ActiveRecord::RecordNotFound if @version.expired?
+    @conversation_evidence = @version.scenario_evidence.joins(corpus_item: { source_snapshot: :source })
+      .find_by(corpus_item_id: @scenario.corpus_item_id, kind: "expectation", sources: { kind: "conversations" })
     @document_query = params[:corpus_query].to_s
     query = @document_query.strip
     @corpus.with_lock do
@@ -102,7 +104,7 @@ class ScenariosController < ApplicationController
     values["requirements"] = ScenarioVersion::REQUIREMENT_TYPES.to_h { |kind| [ kind, values.delete(kind).to_s.lines.map(&:strip).reject(&:empty?) ] }
     previous_id = scenario.current_version_id
     version = scenario.revise!(membership: Current.require_membership!, base_version_id: params[:version_id], attributes: values,
-      evidence_item_id: params[:evidence_item_id], excerpt: params[:excerpt], evidence_kind: params[:evidence_kind])
+      evidence_item_id: params[:evidence_item_id], excerpt: params[:excerpt], evidence_kind: params[:evidence_kind], conversation_excerpt: params[:conversation_excerpt])
     message = version.id == previous_id ? "No changes. Kept the same version and review." : "Version saved. This version needs expert review."
     redirect_to workspace_corpus_scenario_path(Current.workspace, @corpus, scenario), notice: message, status: :see_other
   end
@@ -132,7 +134,13 @@ class ScenariosController < ApplicationController
       end
       if params[:id]
         show
-        @evidence_error = error.record.errors.full_messages.to_sentence if error.is_a?(ActiveRecord::RecordInvalid) && error.record.is_a?(ScenarioEvidence)
+        if error.is_a?(ActiveRecord::RecordInvalid) && error.record.is_a?(ScenarioEvidence)
+          if params[:conversation_excerpt].present? && error.record.corpus_item_id == @scenario.corpus_item_id
+            @conversation_excerpt_error = error.record.errors.full_messages.to_sentence
+          else
+            @evidence_error = error.record.errors.full_messages.to_sentence
+          end
+        end
         flash.now[:alert] = message
         render :show, status: :unprocessable_content
       else

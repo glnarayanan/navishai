@@ -9,7 +9,7 @@ class Scenario < ApplicationRecord
   belongs_to :merged_into, class_name: "Scenario", optional: true
   has_many :scenario_versions
 
-  def revise!(membership:, base_version_id:, attributes:, evidence_item_id: nil, excerpt: nil, evidence_kind: nil)
+  def revise!(membership:, base_version_id:, attributes:, evidence_item_id: nil, excerpt: nil, evidence_kind: nil, conversation_excerpt: nil)
     corpus.with_lock do
       corpus.authorize_writer!(membership)
       reload
@@ -18,18 +18,24 @@ class Scenario < ApplicationRecord
       raise Invalid, "Source evidence expired." if current_version.expired?
       previous = current_version
       values = previous.attributes.slice(*ScenarioVersion::EDITABLE).merge(attributes.stringify_keys.slice(*ScenarioVersion::EDITABLE))
+      raise Invalid, "Conversation excerpt must be text." unless conversation_excerpt.nil? || conversation_excerpt.is_a?(String)
+      conversation = previous.scenario_evidence.joins(corpus_item: { source_snapshot: :source }).find_by(corpus_item_id:, kind: "expectation", sources: { kind: "conversations" }) if conversation_excerpt.present?
+      raise Invalid, "This version has no linked historical conversation excerpt to replace." if conversation_excerpt.present? && !conversation
+      conversation_changed = conversation && conversation.excerpt != conversation_excerpt
       item = corpus.evidence_items.find(evidence_item_id) if evidence_item_id.present?
       raise Invalid, "This record already supports the version with that evidence kind." if item && previous.scenario_evidence.exists?(corpus_item: item, kind: evidence_kind)
-      return previous if !item && values.eql?(previous.attributes.slice(*ScenarioVersion::EDITABLE))
+      return previous if !item && !conversation_changed && values.eql?(previous.attributes.slice(*ScenarioVersion::EDITABLE))
 
       version = scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
         mutation: previous.mutation, created_at: Time.current))
       previous.scenario_evidence.each do |evidence|
+        next if conversation_changed && evidence.id == conversation.id
         next if item && item.source_snapshot.source.kind == "document" && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
 
         version.scenario_evidence.create!(workspace:, corpus:, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt)
       end
+      version.scenario_evidence.create!(workspace:, corpus:, corpus_item: conversation.corpus_item, kind: "expectation", excerpt: conversation_excerpt) if conversation_changed
       version.scenario_evidence.create!(workspace:, corpus:, corpus_item: item, kind: evidence_kind, excerpt:) if item
       update!(current_version: version)
       audit!("scenario.revised", membership, version)

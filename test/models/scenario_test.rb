@@ -111,6 +111,95 @@ class ScenarioTest < ActiveSupport::TestCase
     end
   end
 
+  test "expert replaces late historical conversation evidence without approval or target disclosure" do
+    quote = "Inspect the signing certificate expiry date before any configuration change."
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Long export", kind: "conversations", bytes: [
+      { id: "late", title: "SSO diagnostic history", content: "Shared preamble. " + " " * 4100 + quote }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3, processing_method: "local_full_text")
+    CorpusAnalysisJob.perform_now(analysis.id)
+    scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    approve_scenario(scenario)
+    scenario.revise!(membership: @membership, base_version_id: scenario.current_version_id, attributes: {},
+      evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+    scenario.review!(membership: @membership, version_id: scenario.current_version_id, decision: "approve")
+    approved = scenario.current_version
+    original_quote = approved.scenario_evidence.find_by!(kind: "expectation").excerpt
+    visible = approved.target_input
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Long export", kind: "conversations", bytes: [
+      { id: "late", title: "Changed export", content: "A newer answer must not replace historical evidence." }
+    ].to_json)
+    assert_not @corpus.current_items.exists?(scenario.corpus_item_id)
+    revision = nil
+    assert_no_difference [ "ScenarioReview.count", "HumanLabel.count", "ScenarioProposal.count", "EvaluationRun.count" ] do
+      assert_difference [ "ScenarioVersion.count", "AuditEvent.count" ], 1 do
+        assert_difference "ScenarioEvidence.count", 2 do
+          revision = scenario.revise!(membership: @membership, base_version_id: approved.id, attributes: {}, conversation_excerpt: quote)
+        end
+      end
+    end
+    assert_equal quote, revision.scenario_evidence.find_by!(kind: "expectation").excerpt
+    assert_equal snapshot.id, revision.scenario_evidence.find_by!(kind: "expectation").corpus_item.source_snapshot_id
+    assert_equal @knowledge.content, revision.scenario_evidence.find_by!(kind: "knowledge").excerpt
+    assert_equal visible, revision.target_input
+    assert_equal approved.requirements, revision.requirements
+    assert_equal @membership.user, revision.created_by
+    assert_not revision.approved?
+    assert_empty revision.scenario_reviews
+    assert approved.reload.approved?
+    assert_equal original_quote, approved.scenario_evidence.find_by!(kind: "expectation").excerpt
+    assert_not_includes original_quote, quote
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: quote)
+      assert_equal revision, scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: "")
+    end
+  end
+
+  test "conversation replacement validates exact retained text bounds authority and atomic attachment" do
+    original = @scenario.current_version
+    other_quote = (@scenarios - [ @scenario ]).sole.corpus_item.content
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      [ "Invented diagnosis", other_quote, "x" * 4001 ].each do |quote|
+        assert_raises(ActiveRecord::RecordInvalid) do
+          @scenario.revise!(membership: @membership, base_version_id: original.id, attributes: { title: "Must roll back" },
+            conversation_excerpt: quote, evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+        end
+      end
+      assert_raises(Scenario::Invalid) { @scenario.revise!(membership: @membership, base_version_id: original.id, attributes: {}, conversation_excerpt: [ "Not text" ]) }
+      assert_raises(Current::RoleAccessDenied) { @scenario.revise!(membership: memberships(:outsider_beta), base_version_id: original.id, attributes: {}, conversation_excerpt: "Customer") }
+      assert_raises(Scenario::Invalid) { @scenario.revise!(membership: @membership, base_version_id: 0, attributes: {}, conversation_excerpt: "Customer") }
+    end
+    revision = @scenario.revise!(membership: @membership, base_version_id: original.id, attributes: {}, conversation_excerpt: "C",
+      evidence_item_id: @knowledge.id, evidence_kind: "knowledge", excerpt: @knowledge.content)
+    assert_equal "C", revision.scenario_evidence.find_by!(kind: "expectation").excerpt
+    assert_equal @knowledge.content, revision.scenario_evidence.find_by!(kind: "knowledge").excerpt
+    assert_equal @scenario.corpus_item.content, original.reload.scenario_evidence.sole.excerpt
+    @snapshot.source.update!(expires_at: 1.minute.ago)
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_raises(Scenario::Invalid) { @scenario.revise!(membership: @membership, base_version_id: revision.id, attributes: {}, conversation_excerpt: "Customer") }
+    end
+  end
+
+  test "conversation replacement accepts the 4000 Unicode character edge but rejects 4001 exact characters" do
+    text = "é " * 2000 + "é"
+    snapshot = CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Unicode history", kind: "conversations", bytes: [
+      { id: "unicode", title: "Unicode record", content: text }
+    ].to_json)
+    analysis = CorpusAnalysis.request!(corpus: @corpus, membership: @membership, scenario_limit: 3)
+    CorpusAnalysisJob.perform_now(analysis.id)
+    scenario = ScenarioMining.call(analysis:, membership: @membership).find { |candidate| candidate.corpus_item.source_snapshot_id == snapshot.id }
+    original = scenario.current_version
+    short = scenario.revise!(membership: @membership, base_version_id: original.id, attributes: {}, conversation_excerpt: "é")
+    boundary = scenario.revise!(membership: @membership, base_version_id: short.id, attributes: {}, conversation_excerpt: "é " * 2000)
+    assert_equal "é", short.scenario_evidence.sole.excerpt
+    assert_equal "é " * 2000, boundary.scenario_evidence.sole.excerpt
+    assert_no_difference [ "ScenarioVersion.count", "ScenarioEvidence.count", "AuditEvent.count" ] do
+      assert_equal boundary, scenario.revise!(membership: @membership, base_version_id: boundary.id, attributes: {}, conversation_excerpt: "é " * 2000)
+      assert_raises(ActiveRecord::RecordInvalid) { scenario.revise!(membership: @membership, base_version_id: boundary.id, attributes: {}, conversation_excerpt: text) }
+    end
+    assert_equal "é " * 2000, scenario.reload.current_version.scenario_evidence.sole.excerpt
+  end
+
   test "retained historical traces add distinct evidence without replacing records or inheriting approval" do
     approve_scenario
     approved = @scenario.current_version

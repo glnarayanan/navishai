@@ -166,6 +166,16 @@ document bodies/context. Retain the filter on failed revisions and preserve an
 explicitly selected trace separately. Lookup cannot attach evidence, change a
 version or copy a requirement; the existing expert revision owns those actions.
 
+Experts may replace the expectation excerpt from a scenario's own fixed historical
+conversation. A separate field names that exact linked record, accepts at most
+4000 characters from anywhere in its complete retained text and leaves it unchanged
+when blank. Validate the exact quote in the existing corpus-locked revision; retain
+other evidence and old versions. Identical evidence and definitions remain a no-op.
+Changed evidence creates an unapproved expert version, never target-visible knowledge,
+an inferred expectation, a label or a provider call. Historical conversation snapshots
+stay eligible until expiry; newer exports cannot substitute their records. Keep this
+path separate from document/trace attachment so it grants no broader source access.
+
 ### Family evidence and error-cost decisions (1 October 2026)
 
 Explore every fixed cluster member through a read-only, scoped and paginated family
