@@ -7,6 +7,7 @@ class ScenarioVersion < ImmutableRecord
   belongs_to :created_by, class_name: "User"
   has_many :scenario_evidence, class_name: "ScenarioEvidence"
   has_many :scenario_reviews
+  has_many :eval_cases
   scope :unexpired, -> { where.not(id: ScenarioEvidence.joins(corpus_item: { source_snapshot: :source }).where("sources.expires_at <= ?", Time.current).select(:scenario_version_id)) }
   validates :title, :situation, :taxonomy_label, :selection_reason, presence: true
   validates :title, :taxonomy_label, length: { maximum: 500 }
@@ -30,6 +31,11 @@ class ScenarioVersion < ImmutableRecord
 
   def expired?
     scenario_evidence.joins(corpus_item: { source_snapshot: :source }).where("sources.expires_at <= ?", Time.current).exists?
+  end
+
+  def target_input
+    { "situation" => situation, "known_facts" => known_facts,
+      "knowledge" => scenario_evidence.where(kind: "knowledge").order(:id).map { |evidence| { "reference" => "corpus-item-#{evidence.corpus_item_id}", "content" => evidence.excerpt } } }
   end
 
   private

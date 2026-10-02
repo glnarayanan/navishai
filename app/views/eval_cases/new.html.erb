@@ -1,0 +1,22 @@
+<% content_for :title, "Compile eval — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Scenario", workspace_corpus_scenario_path(Current.workspace, @corpus, @scenario), class: "back-link" %>
+  <div class="page-heading"><div><h1>Compile eval</h1><p><%= @version.title %> · scenario version <%= @version.number %></p></div></div>
+  <p>Choose a fixed grader and exact source reference for every statement. Compilation freezes the expert approval, requirements and check versions. It makes no model call.</p>
+  <% if !@version.approved? || @version.stale? %><p role="status">This scenario needs approval and current document evidence before compilation. Return to its review page.</p>
+  <% elsif @graders.empty? %><p>No graders yet. <%= link_to "Define a grader", workspace_corpus_graders_path(Current.workspace, @corpus) %>, then return to this scenario.</p>
+  <% else %>
+    <%= form_with url: workspace_corpus_eval_cases_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+      <%= form.hidden_field :scenario_id, value: @scenario.id %><%= form.hidden_field :version_id, value: params[:version_id] || @version.id %>
+      <% row = 0; @version.requirements.each do |kind, statements| %><% statements.each_with_index do |statement, index| %>
+        <section class="source-record"><h2><%= kind.humanize %> · <%= index + 1 %></h2><p><%= statement %></p>
+          <%= hidden_field_tag "checks[#{row}][requirement_kind]", kind %><%= hidden_field_tag "checks[#{row}][requirement_index]", index %>
+          <div class="field-grid"><div class="field"><%= label_tag "grader_#{row}", "Grader for #{kind} #{index + 1}" %><%= select_tag "checks[#{row}][grader_version_id]", options_for_select(@graders.map { |grader| ["#{grader.name} · v#{grader.current_version.number}", grader.current_version_id] }, @submitted_checks.fetch(row.to_s, {})["grader_version_id"]), id: "grader_#{row}", include_blank: "Choose a grader", required: true %></div>
+          <div class="field"><%= label_tag "evidence_#{row}", "Source for #{kind} #{index + 1}" %><%= select_tag "checks[#{row}][scenario_evidence_id]", options_for_select(@evidence.map { |evidence| ["#{evidence.corpus_item.title} · #{evidence.kind}", evidence.id] }, @submitted_checks.fetch(row.to_s, {})["scenario_evidence_id"]), id: "evidence_#{row}", include_blank: "Choose source evidence", required: true %></div></div>
+        </section>
+      <% row += 1; end; end %>
+      <p>Up to 100 graders are listed. <%= link_to "Inspect grader definitions", workspace_corpus_graders_path(Current.workspace, @corpus) %> before mapping a check.</p>
+      <%= form.submit "Compile fixed case", class: "button button-primary" %>
+    <% end %>
+  <% end %>
+</main>

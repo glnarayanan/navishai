@@ -15,8 +15,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   snapshots, source evidence, pagination, email masking, retention and deletion.
 - [#144](https://github.com/glnarayanan/navishai/pull/144), based on #143: frozen local analysis, term clusters,
   risk-prioritised candidate selection and immutable expert taxonomy revisions.
-- `rebuild/05-scenario-review`, based on #144: scenario mining, source-backed expert
+- [#145](https://github.com/glnarayanan/navishai/pull/145), based on #144: scenario mining, source-backed expert
   edits/review/merge, fixed versions, document knowledge and controlled variants.
+- `rebuild/06-eval-compiler`, based on #145: fixed contracts, exact check/evidence
+  bindings, versioned deterministic/rubric definitions and bounded suite membership.
 
 ## Built and checked
 
@@ -29,8 +31,9 @@ locking, CSP, headers, log filters and append-only audit remain. No PostgreSQL R
 Bounded JSON conversation exports and text/Markdown intake retain input digest,
 processing/redaction version and fixed records. Repeat uploads reuse a snapshot;
 changed uploads add one. Composite foreign keys prevent foreign-workspace/corpus
-links. Local term analysis, expert labels, versioned scenarios and controlled
-variants are built; evaluation execution is not built yet.
+links. Local term analysis, expert labels, versioned scenarios, controlled variants,
+fixed eval definitions and deterministic checks are built; evaluation execution
+and grader calibration are not built yet.
 Expiry hides source content immediately; an hourly job deletes snapshots/items.
 Managing roles can delete sources with typed confirmation. Audit retains no source
 content. Email masking is not complete PII removal; original files are not kept.
@@ -68,15 +71,30 @@ content. Email masking is not complete PII removal; original files are not kept.
   required weakening the product guards. Impeccable found only the established
   Geist/Geist Mono font warnings; retained the pinned local design rather than
   changing the product identity. Direct risk review and native audits used.
+- Compiler `CAPTURE_LAB_SCREENSHOTS=1 bin/ci`: passed in 1m10.69s; 161 Ruby files
+  clean, gem/importmap audits clean, Brakeman zero warnings/errors and eager load
+  passes. 158 Rails tests / 1087 assertions and 6 browser tests / 150 assertions,
+  no failures/errors/skips. Tests cover omitted/duplicate/malformed mappings,
+  the 100-statement and 50-case boundaries, repeated compilation, fixed older
+  graders, foreign and wrong-version evidence, revoked/current approval, immutable
+  SQL updates, expiry/purge, trace schemas, false/zero fields, ordered tools,
+  user-only text and exact knowledge citations. Browser journey covers grader
+  creation/error/revision, compilation, target-input preview, suite membership
+  and rejected-scenario blocking, with no overflow/CSP issues. Inspected desktop/
+  mobile contract and mapping captures plus error/blocked states. Early checks
+  exposed two fixture expectations and Rails' unpermitted missing-parameter
+  fallback; corrected them without weakening coverage or approval guards.
 
 ## Next and limits
 
-Next: compiler/calibration, then generic target execution, failure inspection and
+Next: expert calibration, then generic target execution, failure inspection and
 regressions. Scenario mining is a title/context/sentence baseline, not model-based
 semantic extraction. Experts supply source-backed outcomes. Controlled variants
 need an expert revision before approval. Changed documents flag stale evidence;
 new snapshots replace evidence only in new versions. Source purge deletes scenarios
-and descendants because their analysis depends on the full corpus.
+and descendants because their analysis depends on the full corpus. Purge also
+clears fixed cases and corpus graders; suite names remain without cases. Judge
+definitions are versioned but do not yet execute or establish grader accuracy.
 Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by labels
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 

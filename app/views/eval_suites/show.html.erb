@@ -1,0 +1,8 @@
+<% content_for :title, "#{@suite.name} — NavishAI" %>
+<main class="page-shell">
+  <%= link_to "Eval suites", workspace_corpus_eval_suites_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1><%= @suite.name %></h1><p><%= @suite.kind.humanize %> suite · <%= @cases.size %> unexpired cases</p></div></div>
+  <p>Cases keep exact scenario, contract and grader versions. Membership edits do not change a case. Execution is the next slice; no agent has run against this suite.</p>
+  <% if @cases.empty? %><p class="empty-state"><%= link_to "Review a scenario", workspace_corpus_scenarios_path(Current.workspace, @corpus) %>, then compile its contract and add it here.</p><% end %>
+  <ul class="workspace-list" role="list"><% @cases.each do |item| %><li class="workspace-card"><%= link_to item.scenario_version.title, workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %><span>Case #<%= item.id %> · definition <%= item.number %></span><% if Current.require_membership!.can_write? %><%= button_to "Remove case #{item.id}", workspace_corpus_eval_suite_path(Current.workspace, @corpus, @suite), method: :patch, params: { remove_case_id: item.id }, class: "button" %><% end %></li><% end %></ul>
+</main>

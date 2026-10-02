@@ -9,7 +9,7 @@ The workspace overview links to corpus intake and source evidence. Import forms
 name supported formats, bounds, email masking limits and retention. Source pages
 show the fixed snapshot, input digest, processing version and historical versions;
 record lists paginate. Errors state the rejected input and recovery path. No target
-processing or eval actions exist yet. Analysis pages distinguish term
+execution exists yet. Analysis pages distinguish term
 proposals from expert taxonomy revisions, disclose bounds and selection reasons,
 and link each example to its source snapshot. Queued jobs have a refresh action;
 failures have a recovery message. Light and dark modes retain the native
@@ -26,6 +26,13 @@ Variants show the parent version, named fact change, reason and expected differe
 Unedited variants cannot inherit approval. Source changes flag affected evidence;
 replacing a document excerpt creates a new version. Merge uses an approved scenario
 ID shown in the paginated scenario list, retaining the source identity and decisions.
+
+Compiler rows pair each statement with a named grader version and source reference.
+The fixed contract sits beside its target-visible preview on desktop and stacks on
+mobile. Grader edits keep prior definitions visible and preserve invalid input.
+Native labelled fieldsets distinguish deterministic checks from judge rubrics;
+copy names each check's limits. Suites show case membership, not invented scores
+or run buttons. Approval, source changes and expiry block unsafe compilation.
 
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are

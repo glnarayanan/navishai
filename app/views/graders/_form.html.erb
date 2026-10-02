@@ -1,0 +1,15 @@
+<%= form_with url: url, method: method, scope: :grader, class: "form-stack config-panel" do |form| %>
+  <% if @grader %><%= hidden_field_tag :version_id, params[:version_id] || @grader.current_version_id %><% else %><div class="field"><%= form.label :name, "Grader name" %><%= form.text_field :name, value: @values["name"], required: true, maxlength: 120 %></div><% end %>
+  <div class="field"><%= form.label :kind, "Grader kind" %><%= form.select :kind, [["Deterministic check", "deterministic"], ["Rubric judge", "rubric_judge"]], selected: @values["kind"] %></div>
+  <fieldset><legend>Deterministic definition</legend><p>Use this section for a deterministic check. Tool names, fields, teams and policy branches match exactly. Text checks match assistant text only, without case sensitivity; they do not prove meaning.</p>
+    <div class="field"><%= form.label :check_type, "Check type" %><%= form.select :check_type, DeterministicGrader::TYPES.map { |type| [type.humanize, type] }, selected: @values["check_type"] %></div>
+    <div class="field"><%= form.label :value, "Check value" %><%= form.text_area :value, value: @values["value"], rows: 2, maxlength: 1001 %></div>
+    <p class="field-hint">For Tool before, put the two distinct tool names on separate lines, in required order. Citation present needs a corpus-item reference and an exact quote from the permitted knowledge, not just a claimed citation.</p>
+  </fieldset>
+  <fieldset><legend>Judge definition</legend><p>Use this section for a rubric judge. Define one behaviour and its pass/fail boundaries. A written rubric is not evidence of accuracy.</p>
+    <div class="field"><%= form.label :rubric, "Company rubric" %><%= form.text_area :rubric, value: @values["rubric"], rows: 5, maxlength: 10000 %></div>
+    <div class="field"><%= form.label :confidence_threshold, "Judge abstention threshold" %><%= form.number_field :confidence_threshold, value: @values["confidence_threshold"], min: 0, max: 1, step: 0.01 %></div>
+    <p class="field-hint">Self-reported judge confidence is not a calibrated probability. Low-confidence decisions must remain uncertain. No model call occurs when you save.</p>
+  </fieldset>
+  <%= form.submit @grader ? "Save grader version" : "Create grader", class: "button button-primary" %>
+<% end %>

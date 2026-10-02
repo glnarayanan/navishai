@@ -9,7 +9,7 @@
     <%= render "shared/record_pagination", more: @more, page_number: @page %>
   </section>
   <% if Current.require_membership!.can_manage_work? %>
-    <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record, plus all analyses, taxonomy revisions and scenarios in this corpus because they depend on the full collection. This cannot be undone.</p>
+    <details class="section-block"><summary>Delete this source</summary><p>This removes every snapshot and record, plus all analyses, taxonomy revisions, scenarios, compiled cases and graders in this corpus. They depend on the full collection; grader text may contain company evidence. Suite names remain, with no cases. This cannot be undone.</p>
       <%= form_with url: workspace_corpus_source_path(Current.workspace, @corpus, @source), method: :delete, class: "form-stack config-panel" do |form| %>
         <div class="field"><%= form.label :confirmation, "Type #{@source.name} to confirm" %><%= form.text_field :confirmation, required: true, autocomplete: "off" %></div>
         <%= form.submit "Delete source and records", class: "button" %>

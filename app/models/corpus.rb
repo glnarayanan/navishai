@@ -5,11 +5,19 @@ class Corpus < ApplicationRecord
   has_many :corpus_items
   has_many :corpus_analyses
   has_many :scenarios
+  has_many :graders
+  has_many :grader_versions
+  has_many :eval_cases
+  has_many :eval_suites
   normalizes :name, with: ->(name) { name.strip }
   validates :name, presence: true, length: { maximum: 100 }
 
   def current_items
     corpus_items.joins(source_snapshot: :source).where("sources.current_snapshot_id = source_snapshots.id AND sources.expires_at > ?", Time.current)
+  end
+
+  def eval_definitions_expired?
+    sources.where("expires_at <= ?", Time.current).exists?
   end
 
   def authorize_writer!(membership, manage: false)

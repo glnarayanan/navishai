@@ -5,6 +5,9 @@ Rails.application.routes.draw do
     resources :corpora, only: %i[index create show] do
       resources :sources, only: %i[create show destroy]
       resources :corpus_analyses, only: %i[create show update]
+      resources :graders, only: %i[index create show update]
+      resources :eval_cases, only: %i[new create show]
+      resources :eval_suites, only: %i[index create show update]
       resources :scenarios, only: %i[index create show update] do
         post :review, on: :member
         post :variant, on: :member

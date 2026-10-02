@@ -1,0 +1,15 @@
+<% content_for :title, "Eval suites — NavishAI" %>
+<main class="page-shell">
+  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
+  <div class="page-heading"><div><h1>Eval suites</h1><p>Named groups of fixed support cases. A run will freeze their membership.</p></div></div>
+  <%= render "shared/corpus_navigation", active: "suites" %>
+  <% if @suites.empty? %><p class="empty-state">No suites yet. Review a scenario, compile its checks, and add the fixed case to a named suite.</p><% end %>
+  <ul class="workspace-list" role="list"><% @suites.each do |suite| %><li class="workspace-card"><%= link_to suite.name, workspace_corpus_eval_suite_path(Current.workspace, @corpus, suite) %><span><%= suite.kind.humanize %></span></li><% end %></ul>
+  <% if Current.require_membership!.can_write? %><section class="section-block config-panel"><h2>Create a suite</h2>
+    <%= form_with url: workspace_corpus_eval_suites_path(Current.workspace, @corpus), scope: :eval_suite, class: "form-stack" do |form| %>
+      <div class="field"><%= form.label :name, "Suite name" %><%= form.text_field :name, value: params.dig(:eval_suite, :name), required: true, maxlength: 120 %></div>
+      <div class="field"><%= form.label :kind, "Suite purpose" %><%= form.select :kind, [["Evaluation", "evaluation"], ["Regression", "regression"]], selected: params.dig(:eval_suite, :kind) %></div>
+      <%= form.submit "Create suite", class: "button button-primary" %>
+    <% end %>
+  </section><% end %>
+</main>
