@@ -1379,6 +1379,21 @@ Slice 53 is committed/pushed as open
 At 16:14 UTC, #193 and #187–189/#191–192 remained in progress; #190 was green.
 Earlier failed #155/#158 runs remain failed. No merge/release/deployment occurred.
 
+## Authored retrieval evidence (slice 55)
+
+Seven synthetic tests specify exact intended identities and literal ranks without
+using matcher scores to derive expectations. Real intake/scenario APIs expose
+diagnosis-versus-symptom ranking, conflicting facts, negation, facts-only overlap,
+top-five displacement, paraphrase misses and unrelated document vocabulary.
+Trace corrections/outputs, trace expectation quotes and knowledge quotes do not
+enter matching. Retrieval writes no decisions, reviews or audit events.
+
+Native style passes; the matrix and existing matching checks pass 17 tests /
+190 assertions. This proves method behaviour, including deliberate misses, not
+semantic retrieval quality, expert truth or customer coverage. No algorithm,
+label, approval, provider call or dependency changed. Meaningful matching remains
+an engineering/quality gap; it is not made complete by these fixture assertions.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
