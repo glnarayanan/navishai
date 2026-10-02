@@ -1,9 +1,11 @@
 # Rebuild status
 
-Updated 1 October 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
-milestones. The P0/P1 engineering stack is built and full local CI passes.
-Live/customer and public-host acceptance remain unproved. Nothing has merged,
-released or deployed.
+Updated 2 October 2026. [PRODUCT.md](./PRODUCT.md) replaces the old helpdesk
+milestones. All 82 rebuild PRs (#141–#223 except the separate setup PR #208)
+merged into main in dependency order. The resulting tree matches the CI-green
+integrated rebuild: 644 Rails tests / 10,552 assertions and 71 browser tests /
+3,561 assertions, with no failures, errors or skips. No release or deployment ran.
+Live/customer and public-host acceptance remain unproved.
 
 ## Delivered stack
 
@@ -2148,9 +2150,27 @@ is application-side. See [development](./DEVELOPMENT.md), [security](./SECURITY.
 [deployment](./DEPLOYMENT.md), [operations](./OPERATIONS_ACCEPTANCE.md) and
 [design](./DESIGN.md).
 
-The user-owned Bundler checksum in Gemfile.lock remains unstaged and outside the
-rebuild commits. Phase A removed obsolete gems and capped JSON below 3 after tests
-proved JSON 3 incompatible with this Rails version. No new dependency was added.
+The owner's Bundler checksum has a separate dependency-file commit. It matches the
+cached Bundler 4.0.20 gem and changes no dependency version. Phase A removed obsolete
+gems and capped JSON below 3 after tests proved JSON 3 incompatible with this Rails
+version. No new dependency was added.
+
+## Orb setup follow-up (#208)
+
+Conflict resolution keeps the rebuilt main tree, including its Rails-only setup,
+JSON 2.21.2 lock and removed Go/pgvector/demo paths. Setup now times Ruby, gems and
+application preparation and uses frozen Bundler installs for both gem installation
+and application preparation. Resume remains unchanged.
+
+On 2 October, the actual setup hook prepared a fresh disposable database in 3.13
+seconds, then reran in 4.03 seconds with retained typed JSONB unchanged and no
+seeded users, organisations or workspaces. Both runs reused installed packages;
+these are not cold-machine timings. The lockfile stayed unchanged. Resume took
+0.06 seconds. A clean non-interactive login shell found Ruby 4.0.6, Bundler 4.0.20
+and bundled JSON 2.21.2. Native preflight/workspace/bootstrap tests passed: 12 tests,
+47 assertions, no failures, errors or skips. Shell syntax, focused RuboCop,
+gem audit and eager loading passed; eager loading retains its existing optional
+mailer-preview warning. No project snapshot or public-host proof is claimed.
 
 ## Pending owner decisions
 

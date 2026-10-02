@@ -49,6 +49,12 @@ then run `bin/setup --skip-server`. Default databases are `navishai_lab_developm
 and `navishai_lab_test`. Setup creates/prepares them; it does not reset databases or
 seed accounts. `--reset` is rejected.
 
+Orb setup uses frozen Bundler installs and reports separate times for the Ruby
+toolchain, gems and application preparation. A changed Gemfile must have a matching
+lockfile; setup cannot resolve it or rewrite the lockfile. Warm setup still checks
+installed dependencies rather than using a custom cache marker. Resume only repairs
+PostgreSQL; it installs no packages or gems.
+
 Never point this rebuild at an old helpdesk database. Preserve/archive that database
 and choose a fresh name. Database task preflight checks effective configuration
 (including DATABASE_URL overrides) before migration/schema load, rejecting old
@@ -65,8 +71,8 @@ remain separate Rails-native production databases. No RLS is installed.
 - Outside an orb: `bin/dev` starts Rails only.
 - In Amp: `.agents/setup` installs/prepares prerequisites, `.agents/resume` checks
   PostgreSQL, and `amp orb services ensure` supervises the web service and returns
-  its authenticated portal. Lifecycle files are not active for future checkouts
-  until delivered to the default branch.
+  its authenticated portal. Future checkouts use the lifecycle files on the default
+  branch.
 - `bin/ci` runs setup, RuboCop, gem/importmap audits, Brakeman, eager-load checks,
   full Rails tests and system tests. No checks reference deleted Go code.
 - `bin/prove-container-runtime` uses a separately prepared private Docker daemon
@@ -1069,5 +1075,5 @@ Dependencies were removed with native `bundle lock --local` / `bundle install`:
 pdf-reader, image_processing, ruby-vips and their orphaned dependencies. BigDecimal
 remains transitively required by Rails. JSON is constrained below 3 because Rails
 8.1.3.1 passes parse options positionally; JSON 3 breaks tokens, sessions and JSONB.
-The pre-existing Bundler checksum addition in Gemfile.lock is user-owned, not part
-of this slice's staged changes.
+The owner's checksum for already-locked Bundler 4.0.20 matches the cached gem
+archive and now has its own dependency-file commit. It changes no gem version.
