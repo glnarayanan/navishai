@@ -135,6 +135,13 @@ binds values; do not replace it with interpolated SQL. Active Record shares the
 request filter list, including retained content/context. This does not sanitize
 PostgreSQL, proxy, browser-history or operator logs outside Rails.
 
+Scenario lookup uses the same private literal bind over current title, situation
+and taxonomy label only. Trim the phrase, accept at most 200 characters without
+null bytes, and escape SQL wildcards. Under the corpus lock, count the whole
+unexpired filter, then load at most fifty scenario IDs and current list metadata
+in ID order. Facts, requirements, quotes and old versions stay outside search.
+Keep review, merge and source-change states visible; a match grants no authority.
+
 ### Family evidence and error-cost decisions (1 October 2026)
 
 Explore every fixed cluster member through a read-only, scoped and paginated family
