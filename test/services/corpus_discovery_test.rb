@@ -15,6 +15,39 @@ class CorpusDiscoveryTest < ActiveSupport::TestCase
     @snapshot = intake(@records.to_json)
   end
 
+  test "scalar batches keep global frequencies full-text risk and seed-order centroid ties without source objects" do
+    records = 110.times.map do |index|
+      { id: format("%03d", 110 - index), title: "Nimbus certificate metadata", content: "Nimbus certificate metadata expiry.", context: { reopened: "true", impact: "Critical" } }
+    end
+    records[107] = { id: "003", title: "Quasar webhook replay", content: "Quasar webhook replay." + " " * 4100 + " data loss engineering", context: { impact: "critical" } }
+    snapshot = intake(records.to_json)
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Duplicate external ID", kind: "conversations", bytes: [ records.last ].to_json)
+    CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Current policy", kind: "document", bytes: "Certificate metadata expiry.")
+    analysis = request(2)
+    loaded, scanned = [], []
+    materialization = ->(event) { loaded << event.payload[:record_count] if event.payload[:class_name] == "CorpusItem" }
+    queries = ->(event) { scanned << event.payload[:row_count] if event.payload[:sql].start_with?('SELECT "corpus_items"."id", "corpus_items"."external_id", "corpus_items"."title"') }
+    ActiveSupport::Notifications.subscribed(materialization, "instantiation.active_record") do
+      ActiveSupport::Notifications.subscribed(queries, "sql.active_record") { 2.times { CorpusAnalysisJob.perform_now(analysis.id) } }
+    end
+    assert_empty loaded
+    assert_equal [ 100, 12 ], scanned
+    assert_equal "complete", analysis.reload.state
+    assert_equal 111, analysis.summary["conversations"]
+    assert_equal 1, analysis.summary["documents"]
+    assert_equal 2, analysis.summary["clusters"]
+    assert_equal 111, ClusterMember.where(issue_cluster: analysis.issue_clusters).count
+    selected = ClusterMember.selected.where(issue_cluster: analysis.issue_clusters).pluck(:corpus_item_id)
+    assert_equal [ snapshot.corpus_items.find_by!(external_id: "003").id, snapshot.corpus_items.find_by!(external_id: "001").id ].sort, selected.sort
+    common = analysis.issue_clusters.find_by!(signals: { count: 110, possible_documentation_gap: false })
+    assert_equal 110, common.cluster_members.count
+    assert_not common.cluster_members.pluck(:signals).flatten.include?("reported reopen")
+    rare = analysis.issue_clusters.where.not(id: common.id).sole
+    assert rare.signals["possible_documentation_gap"]
+    assert_includes rare.cluster_members.sole.signals, "risk mention"
+    assert_equal 2, analysis.summary["represented_clusters"]
+  end
+
   test "company terms group related records and critical minority beats volume" do
     analysis = request(1)
     CorpusAnalysisJob.perform_now(analysis.id)

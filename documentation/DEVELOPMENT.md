@@ -271,6 +271,13 @@ or mining controls. Refresh changes nothing; a new analysis needs smaller inputs
 TF-IDF seed clustering uses titles plus the first 4000 conversation characters;
 cosine similarity ≥0.3 joins a seed cluster. Explicit critical/risk/reopen mentions
 precede nearest-centroid representatives. Every selection retains its reason.
+Processing reads scalar batches of 100 in fixed external-ID/ID order, keeps sparse
+term counts and global document frequencies, and skips only zero-overlap seeds.
+It never clusters each batch independently. Full-text signals stay separate from
+the 4000-character term window; only exact JSON critical/reopen values qualify.
+Cluster membership writes use bounded bulk inserts under the checked job
+transaction. No complete source objects or whole context payloads load during
+processing. Limits, selection rules and the existing method version stay fixed.
 Keyword signals, term clusters and document-term gaps are hypotheses, not measured
 issue coverage, diagnosis or proof of failures. Experts rename labels in fixed
 taxonomy revisions. Refresh queued results; production needs the jobs service.
