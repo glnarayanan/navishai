@@ -39,8 +39,9 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   saved-run comparisons that retain exact case/input identity.
 - [#156](https://github.com/glnarayanan/navishai/pull/156), based on #155: local literal corpus search,
   source filters, retained context and exact paginated provenance.
-- `rebuild/17-calibration-review`, based on #156: personal expert review focus,
+- [#157](https://github.com/glnarayanan/navishai/pull/157), based on #156: personal expert review focus,
   exact calibration provenance and native corpus exploration navigation.
+- `rebuild/18-restore-proof`, based on #157: isolated synthetic backup/restore proof.
 
 ## Built and checked
 
@@ -306,6 +307,23 @@ nothing and preserves Enter search. Both regressions failed before their fixes a
 pass in the final full checks above. No schema, provider, training or dependency
 change; no real data or live endpoint ran.
 
+GitHub CI for #157 passed in 2m39s
+([run](https://github.com/glnarayanan/navishai/actions/runs/36796393741));
+the earlier failed #155 run remains failed.
+
+`bin/prove-backup-restore` passed locally with exact table fingerprints, recorded
+failure/corrected success on one fixed case, trace/approval provenance, held-out
+label history, SQL immutability, workspace/corpus foreign keys and append-only
+audit. It removed only its two unique disposable databases and private archive;
+existing lab and legacy databases were untouched. This proof omits production
+roles/ACLs, separate queue/cache/cable databases, backup retention, PITR, image
+builds, TLS and clean-host acceptance. See [deployment](./DEPLOYMENT.md).
+The operations slice's `bin/ci` passed in 2m12.80s: 252 Rails tests / 2433
+assertions and 16 browser tests / 606 assertions, no failures/errors/skips;
+style, native security audits and eager loading passed. The proof script's focused
+RuboCop check passed too. Direct risk review found no new dependency or disclosure;
+Ponytail Audit and CE Code Review remain unavailable.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -332,11 +350,12 @@ and economics. Fixture checks do not establish discovery quality or judge accura
 
 Independent engineering still includes stronger support-specific corpus/scenario
 analysis beyond the term/title baseline, larger bounded intake/processing and
-clean-host/backup/restore fixture proof. The current UI/report slices do not finish
+clean-host/image/TLS proof. The isolated backup/restore fixture proof now passes.
+The current UI/report slices do not finish
 those tasks. Keep the full product scope; these are not owner-approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
-validation ran. Clean-host/Compose image/TLS/backup/restore acceptance is unverified.
+validation ran. Clean-host/Compose image/TLS and production backup acceptance are unverified.
 Current Compose PostgreSQL tag is not digest-pinned. Database administrators can
 bypass triggers; last-Owner protection is application-side. Backups need their own
 retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),

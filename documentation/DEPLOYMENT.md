@@ -31,3 +31,42 @@ network boundaries and upgrades. Compose's PostgreSQL tag currently tracks 16;
 this is a known reproducibility gap, not a certified release. Database owners and
 superusers can bypass triggers; application roles must not be superusers or have
 privileges to disable audit protections.
+
+## Disposable backup/restore fixture proof
+
+Run `bin/prove-backup-restore` from the repository with the installed Ruby/bundle
+and PostgreSQL tools (`psql`, `pg_dump`, `pg_restore`). It requires a local
+PostgreSQL socket at `/var/run/postgresql` with peer authentication for the current
+Unix user and permission to create/drop databases. This is an operations test,
+not `bin/ci`, a deployment command or a production role recommendation.
+
+The script accepts no database names or arguments, ignores inherited libpq
+settings and overrides `DATABASE_URL`/Rails environment inside its own process.
+It creates two unique `navishai_lab_restore_<pid>_<random>` databases from
+`template0`, loads the checked-in structure and synthetic authentication and
+recorded-evaluation fixtures only into its source database, then creates a custom
+format archive and restores it transactionally to the fresh destination. It never
+dumps development, test, production or legacy data and changes no shared service.
+Endpoint approval is empty; recorded/scripted evaluations run locally.
+
+After restore it compares canonical SHA-256 fingerprints of every public table's
+complete rows, checks recorded failure and corrected success on the same fixed
+case, exact trace/approval provenance and held-out expert label/correction history.
+Raw SQL must reject updates to 14 populated immutable definition/result/label
+tables, run/item rebinding, foreign-workspace and same-workspace foreign-corpus
+evidence inserts, and audit update/delete/truncate. A new audit append checks the
+restored sequence. Unexpected SQL errors fail rather than masquerade as protection.
+
+Success prints `PASS` and `CLEAN`; failure exits nonzero. The private temporary
+directory/archive and only successfully created database names are cleaned on
+normal completion or Ruby exception. Uncatchable termination (such as SIGKILL or
+host loss) can leave disposable resources; inspect that invocation's exact names
+before manual removal, never drop databases using a broad prefix wildcard.
+
+Local orb execution on 1 October 2026 passed this fixture proof. This covers the
+primary lab schema, not separate production queue/cache/cable databases, backup
+encryption/retention, PITR, role/ACL restoration (owner and ACL data are omitted),
+RLS, all possible composite relationships, live targets or model quality. Owners
+and superusers still can bypass triggers. Clean-host, Compose image build/digest,
+HTTPS/proxy and production network/role acceptance remain unverified; this local
+socket proof supplies none of those claims.
