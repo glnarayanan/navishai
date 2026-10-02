@@ -221,7 +221,7 @@ dropped its databases/roles but left their configuration on `ActiveRecord::Base`
 The test now saves the prior pool configuration and restores it in `ensure`, or
 removes the proof pool if none existed. Every teardown asserts exact restoration.
 That assertion failed on all four ops tests before the fix. The proof helper and
-standalone operations scripts remain unchanged.
+standalone operations scripts did not change in that fix.
 
 A one-off wrapper created fresh names through `Operations::DatabaseRecovery`,
 loaded the lab structure, set its generated `DATABASE_URL`, `RAILS_ENV=test` and
@@ -242,6 +242,41 @@ disposable databases received work; no existing test database was reset.
 `mise exec -- ruby test/ops/runtime_database_access_test.rb --seed 1` passed 4 tests
 and 25 assertions standalone. RuboCop, Ruby syntax and diff checks passed. This
 checks mixed fixture execution, not the parent's full integrated-schema suite.
+
+### Local TCP test administrator
+
+The GitHub job supplies PostgreSQL over TCP, not the orb's peer socket. A separate
+password-only PostgreSQL 16 instance, with a different administrator name and port
+56282, exposed a test gap: ops ignored the declared test connection and used
+`/var/run/postgresql`. The new administrator/port regression failed before the fix
+with one test, two assertions and one host mismatch. That is a local reproduction,
+not attribution of a remote CI failure.
+
+Ops tests now take only host, port, username and password from the prior Rails
+test configuration, or its native `DATABASE_URL` parser when no pool exists.
+The proof helper accepts only the fixed peer socket or loopback hosts; it still
+creates random disposable database/role names and never accepts an existing name.
+Default standalone recovery/upgrade scripts still use peer access. Every SQL,
+Rails, libpq URL and PostgreSQL tool connection shares the same declared port.
+Only PostgreSQL tools receive the administrator password; tool failures redact
+all three secrets. Other child processes receive none. Privilege and exact pool
+restoration checks remain intact; no test is skipped.
+
+Executed on 2 October 2026 against that fresh private cluster:
+
+```sh
+DATABASE_URL="$DISPOSABLE_TCP_TEST_URL" mise exec -- ruby test/ops/runtime_database_access_test.rb --seed 1
+env -u DATABASE_URL mise exec -- ruby test/ops/runtime_database_access_test.rb --seed 1
+bin/prove-backup-restore
+bin/prove-upgrade
+```
+
+Both transport runs passed seven tests / 42 assertions, no failures/errors/skips.
+They checked real runtime authentication and DML, owner-password refusal, exact
+ACL changes, declared administrator/port through Rails/libpq/psql, nonlocal refusal
+and secret handling. Recovery and upgrade passed/CLEAN again with current v3
+receipts, actual runtime SQL denials, no resend and expiry/purge. The temporary
+TCP cluster carries synthetic data only and has no portal or public listener.
 
 ## Remaining host gate
 

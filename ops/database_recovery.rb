@@ -5,14 +5,18 @@ require "json"
 require "open3"
 require "pg"
 require "securerandom"
+require "uri"
 
 module Operations
   class DatabaseRecovery
     attr_reader :databases, :owner, :runtime, :admin
 
-    def initialize
-      @socket = "/var/run/postgresql"
-      @user = Etc.getpwuid.name
+    def initialize(administrator: {})
+      @administrator = { host: administrator[:host] || "/var/run/postgresql", port: administrator[:port] || 5432,
+        user: administrator[:username] || Etc.getpwuid.name, password: administrator[:password] }.compact.freeze
+      unless [ "/var/run/postgresql", "localhost", "127.0.0.1", "::1" ].include?(@administrator.fetch(:host))
+        raise ArgumentError, "Proof administrator must use the fixed local socket or loopback"
+      end
       @prefix = "navishai_ops_#{Process.pid}_#{SecureRandom.hex(6)}"
       @owner = "#{@prefix}_owner"
       @runtime = "#{@prefix}_runtime"
@@ -21,7 +25,7 @@ module Operations
       @databases = %w[primary cache queue cable].to_h { |name| [ name, "#{@prefix}_#{name}" ] }
       @created = []
       @roles = []
-      @admin = PG.connect(host: @socket, user: @user, dbname: "postgres")
+      @admin = PG.connect(**@administrator, dbname: "postgres")
     end
 
     def create!
@@ -41,32 +45,41 @@ module Operations
 
     def configuration(name = "primary", as_runtime: false)
       if as_runtime
-        { adapter: "postgresql", host: "127.0.0.1", username: runtime, password: @runtime_password, database: databases.fetch(name) }
+        { adapter: "postgresql", host: "127.0.0.1", port: @administrator.fetch(:port), username: runtime, password: @runtime_password, database: databases.fetch(name) }
       else
-        { adapter: "postgresql", host: @socket, username: @user, database: databases.fetch(name) }
+        @administrator.except(:user).merge(adapter: "postgresql", username: @administrator.fetch(:user), database: databases.fetch(name))
       end
     end
 
     def url
-      "postgresql:///#{databases.fetch('primary')}?host=#{@socket}&user=#{@user}"
+      "postgresql:///#{databases.fetch('primary')}?#{URI.encode_www_form(@administrator)}"
     end
 
     def connect(name)
-      connection = PG.connect(host: @socket, user: @user, dbname: databases.fetch(name))
+      connection = PG.connect(**@administrator, dbname: databases.fetch(name))
       yield connection
     ensure
       connection&.close
     end
 
     def tool(*command, input: "")
-      output, status = Open3.capture2e({ "PATH" => ENV.fetch("PATH"), "HOME" => "/tmp" }, *command,
-        stdin_data: input, unsetenv_others: true)
-      raise "PostgreSQL tool failed: #{output.gsub(@owner_password, '<REDACTED>').gsub(@runtime_password, '<REDACTED>')}" unless status.success?
+      environment = { "PATH" => ENV.fetch("PATH"), "HOME" => "/tmp" }
+      if %w[psql pg_dump pg_restore].include?(command.first)
+        environment.merge!("PGHOST" => @administrator.fetch(:host), "PGPORT" => @administrator.fetch(:port).to_s,
+          "PGUSER" => @administrator.fetch(:user), "PGPASSWORD" => @administrator[:password])
+      end
+      output, status = Open3.capture2e(environment, *command, stdin_data: input, unsetenv_others: true)
+      unless status.success?
+        [ @owner_password, @runtime_password, @administrator[:password] ].compact.each do |password|
+          output = output.gsub(password, "<REDACTED>") unless password.empty?
+        end
+        raise "PostgreSQL tool failed: #{output}"
+      end
       output
     end
 
     def load_structure!(path)
-      tool("psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-h", @socket, "-U", @user, "-d", databases.fetch("primary"),
+      tool("psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-d", databases.fetch("primary"),
         input: "SET ROLE #{PG::Connection.quote_ident(owner)};\n#{File.read(path)}")
     end
 
@@ -129,7 +142,7 @@ module Operations
       File.write(manifest, JSON.generate(role_snapshot), perm: 0o600)
       expected = databases.keys.to_h { |name| [ name, snapshot(name) ] }
       databases.each do |name, database|
-        tool("pg_dump", "-h", @socket, "-U", @user, "-d", database, "--format=custom", "--create", "--file", File.join(directory, "#{name}.dump"))
+        tool("pg_dump", "-d", database, "--format=custom", "--create", "--file", File.join(directory, "#{name}.dump"))
         File.chmod(0o600, File.join(directory, "#{name}.dump"))
       end
       expected
@@ -144,7 +157,7 @@ module Operations
       databases.each do |name, database|
         # Record only the exact name that this archive is permitted to create.
         @created << database
-        tool("pg_restore", "-h", @socket, "-U", @user, "-d", "postgres", "--create", "--exit-on-error", File.join(directory, "#{name}.dump"))
+        tool("pg_restore", "-d", "postgres", "--create", "--exit-on-error", File.join(directory, "#{name}.dump"))
         raise "Restored #{name} rows, owners or ACLs differ" unless snapshot(name) == expected.fetch(name)
       end
       puts "PASS: four complete database fingerprints, database/schema/table/sequence/default ACLs, separate recreated non-elevated owner/runtime roles; no --no-owner/--no-acl."
@@ -153,7 +166,7 @@ module Operations
     def verify_runtime!
       config = configuration(as_runtime: true)
       begin
-        PG.connect(host: config.fetch(:host), dbname: config.fetch(:database), user: owner, password: config.fetch(:password)) { }
+        PG.connect(host: config.fetch(:host), port: config.fetch(:port), dbname: config.fetch(:database), user: owner, password: config.fetch(:password)) { }
         raise "Runtime credential authenticated as owner"
       rescue PG::ConnectionBad => error
         raise unless error.message.include?("password authentication failed")
