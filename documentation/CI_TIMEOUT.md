@@ -327,5 +327,27 @@ optimizable ID subquery. Full counts, bytes, expiry, frozen membership and the
 shared production relation without changing any expectation or assertion.
 
 Focused native regression/model/access checks passed 21 tests / 252 assertions
-at seed 1, with zero failures/errors/skips. Full joined TCP CI remains a separate
-check. This finding does not establish the cause of historical #187.
+at seed 1, with zero failures/errors/skips. A separate committed native replay
+also passes complete counts/signals, tenant, snapshot and the last fifty rows
+under five seconds per statement. It uses only the owned disposable database;
+automatic statistics refresh was disabled on its two generated tables to keep
+the empty-statistics case fixed. Neither the app nor the regression changes that
+setting. On the same native data/statistics, the original COUNT times out at one
+second; the fixed COUNT returns exactly 20,000 within that same bound.
+
+Two obsolete local full checks were stopped after recording their slow queries:
+the original assertion join and the insufficient ID-only lateral version. Neither
+is a passing check. Final joined password-only TCP `bin/ci` passed in 40m32.01s
+on the complete-key fix: Ruby style 376 files, clean gem/importmap audits, Brakeman
+zero errors/warnings, eager loading, Rails 644 tests / 10552 assertions (seed 12974)
+and browser 71 / 3561 (seed 48910), zero failures/errors/skips. It retained two
+native workers and every scale assertion, including both 100,000-record proofs.
+The run initially overlapped the obsolete checks; their time is not a throughput
+benchmark. No remote workflow was cancelled. Historical #187 remains unattributed.
+
+Executed against the owned password-only PostgreSQL 16 instance:
+
+```sh
+RAILS_ENV=test DATABASE_URL="$DISPOSABLE_TCP_TEST_URL" \
+  CHROME_ARGS=--no-sandbox BUNDLE_FROZEN=true bin/ci
+```
