@@ -177,8 +177,18 @@ per source page, not once per trace. A bounded SQL count now refuses version
 overflow before candidate definitions and associations load. The corpus lock spans
 that count and loading; it prevents scenario writes/purge changing the collection
 between them. The requested trace still validates its own source lifetime.
-The searched-text byte check still follows association loading; it is not a
-complete retained-field preflight. Expired, merged, rejected or stale-document
+SQL byte lengths and link/review metadata now check the same eligible versions
+before searched strings or excerpts load. Count UTF-8 bytes and joining newlines,
+not characters or known facts; overflow keeps the exact overflowing prefix count.
+After refusal checks, fetch only matching fields, typed known facts and searched
+quotes. Source-link records omit content/context; candidate versions omit hidden
+facts, requirements and selection reasons. Ignored knowledge/trace excerpts stay
+unloaded. These are read projections, not complete artifact objects: follow their
+exact version/source links for full definitions. Explicit target-input inspection
+still queries permitted knowledge separately; all evidence links remain available
+for fresh decision checks. Stored data, scope, rank and authority stay unchanged.
+Metadata reads are not a universal process-memory or semantic-quality guarantee.
+Expired, merged, rejected or stale-document
 versions cannot appear. Exact links, shared terms and equal/conflicting/missing
 facts help experts compare evidence; null, false, zero and absence differ.
 

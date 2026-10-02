@@ -44,12 +44,35 @@ class TraceScenarioMatching
     versions = ScenarioVersion.where(corpus:, id: corpus.scenarios.where(merged_into_id: nil).select(:current_version_id))
     return [ [], 0, "Candidate corpus exceeds 2000 current versions; no text searched. Narrow the corpus." ] if versions.limit(MAX_VERSIONS + 1).count > MAX_VERSIONS
 
-    versions = versions
-      .includes(:scenario_reviews, scenario: { corpus_item: { source_snapshot: :source } }, scenario_evidence: { corpus_item: { source_snapshot: :source } })
-      .order(:id).limit(MAX_VERSIONS + 1).to_a
+    metadata = versions.select(:id, :workspace_id, :corpus_id, :scenario_id,
+      Arel.sql("octet_length(title) + octet_length(situation) + octet_length(taxonomy_label) + 2 AS matching_bytes"))
+      .includes(:scenario).order(:id).to_a
+    preload_source_links(metadata, evidence_scope: ScenarioEvidence.select(:id, :scenario_version_id, :corpus_item_id, :kind,
+      Arel.sql("octet_length(excerpt) AS matching_bytes")))
+    checked = {}
+    quoted_ids = []
+    bytes = 0
+    metadata.select { |version| eligible?(version, refresh: false) }.each do |version|
+      evidence = version.scenario_evidence.select do |entry|
+        entry.kind == "expectation" && entry.corpus_item.source_snapshot.source.kind != "traces"
+      end
+      bytes += version["matching_bytes"] + evidence.sum { |entry| entry["matching_bytes"] + 1 }
+      return [ [], bytes, "Candidate text exceeds 10 MiB; no text searched or truncated. Narrow the corpus." ] if bytes > MAX_BYTES
+      checked[version.id] = version
+      quoted_ids.concat(evidence.map(&:id))
+    end
+
+    loaded = versions.where(id: checked.keys).select(:id, :workspace_id, :corpus_id, :scenario_id,
+      :number, :title, :situation, :taxonomy_label, :known_facts).includes(:scenario).order(:id).to_a
+    excerpt = Arel::Nodes::Case.new.when(ScenarioEvidence.arel_table[:id].in(quoted_ids))
+      .then(ScenarioEvidence.arel_table[:excerpt]).else(nil).as("excerpt")
+    preload_source_links(loaded, evidence_scope: ScenarioEvidence.select(:id, :workspace_id, :corpus_id,
+      :scenario_version_id, :corpus_item_id, :kind, excerpt))
     bytes = 0
     inputs = []
-    versions.select { |version| eligible?(version, refresh: false) }.each do |version|
+    loaded.each do |version|
+      next unless eligible?(checked.fetch(version.id), refresh: false)
+
       # Trace excerpts can contain imported corrections and outputs; never search them.
       evidence = version.scenario_evidence.select do |entry|
         entry.kind == "expectation" && entry.corpus_item.source_snapshot.source.kind != "traces"
@@ -62,6 +85,17 @@ class TraceScenarioMatching
     [ inputs.map { |version, evidence, text| [ version, evidence, terms(text) ] }, bytes, nil ]
   end
   private_class_method :searchable_versions
+
+  def self.preload_source_links(versions, evidence_scope:)
+    ActiveRecord::Associations::Preloader.new(records: versions, associations: :scenario_reviews,
+      scope: ScenarioReview.select(:id, :scenario_version_id, :decision)).call
+    ActiveRecord::Associations::Preloader.new(records: versions, associations: :scenario_evidence, scope: evidence_scope).call
+    owners = versions.map(&:scenario) + versions.flat_map { |version| version.scenario_evidence.to_a }
+    ActiveRecord::Associations::Preloader.new(records: owners, associations: :corpus_item,
+      scope: CorpusItem.select(:id, :workspace_id, :corpus_id, :source_snapshot_id, :external_id, :title)
+        .includes(source_snapshot: :source)).call
+  end
+  private_class_method :preload_source_links
 
   def self.eligible?(version, refresh: true)
     scenario = refresh ? version.scenario.reload : version.scenario

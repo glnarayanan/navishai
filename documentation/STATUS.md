@@ -1331,6 +1331,36 @@ Running-job log requests were unavailable (CLI refused; API returned BlobNotFoun
 No internal step or cause is established. Failed #155/#158 runs remain failed. No PR was merged,
 released or deployed; the owner-owned lockfile stays unstaged and unchanged.
 
+## Projected matching inputs (slice 53)
+
+Two red tests reproduced unused contract reads and a real UTF-8 corpus exceeding
+10 MiB after full candidate/source/evidence rows loaded. Matching now reads SQL
+byte lengths and source/review links first, with the same eligibility and ordered
+overflowing-prefix bytes. Only then does it load searched text, typed known facts
+and searched quotes. Native scoped preloading omits source content/context, hidden
+facts, requirements, selection reasons, review notes and ignored quote text.
+Every evidence ID/source remains for fresh decision checks. Returned records are
+read projections; complete definitions remain on their fixed version/source pages.
+Stored evidence and full permitted-knowledge reads stay unchanged.
+
+The initial focused checks passed 16 tests / 168 assertions with native style clean.
+The final tests also check the exact joined UTF-8 byte edge, independent permitted
+knowledge expectations and stale-knowledge refusal on a projected candidate.
+Final `CAPTURE_LAB_SCREENSHOTS=1 bin/ci` passed in 7m40.38s: native style/security
+audits/eager loading clean, 434 Rails tests / 6030 assertions and 44 browser tests /
+2023 assertions, no failures/errors/skips. Existing matching/revision/regression
+journeys pass; final desktop/390px conflict/history captures show unchanged exact
+links, typed facts, review status and intact controls. The empty reason field after
+successful append is intentional, not missing data. No appearance, definition, label, rank, schema, provider or
+dependency changed. This closes the prior count/text/body overread findings;
+it does not prove semantic retrieval, arbitrary-metadata memory or customer quality.
+
+Slice 52 is committed/pushed as open
+[#192](https://github.com/glnarayanan/navishai/pull/192), stacked on #191.
+At 16:04 UTC, #187/#188/#189/#191/#192 remained in progress at their exact heads;
+#190 remained green. Earlier failed #155/#158 runs remain failed. No remote
+rerun/cancellation, merge, release, deployment or live disclosure/spend occurred.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed

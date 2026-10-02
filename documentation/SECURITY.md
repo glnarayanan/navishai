@@ -112,6 +112,15 @@ filter scenario text, decisions, excerpts and mutations. Local scripted targets
 receive only approved visible context and permitted knowledge, not hidden facts
 or expectation evidence. Experts must keep answers out of the starting context.
 
+Local failure matching counts versions, then reads only byte lengths and scoped
+link/review metadata before its 10-MiB searched-text check. Source-link rows omit
+content/context. Matching versions omit hidden facts, requirements and selection
+reasons; ignored knowledge/trace excerpt text does not load. All evidence IDs and
+source lifetime/current-document checks remain, including fresh decision checks
+on these projections. Full artifact views and deliberate permitted-knowledge
+inspection use separate reads. These controls preserve rank and stored data; they
+do not prove semantic retrieval quality or cap every metadata allocation.
+
 Compiled cases/check bindings and grader versions reject updates in Ruby and SQL.
 Composite relationships bind evidence and approval to the exact scenario version
 and keep graders within the corpus/workspace. Compilation checks full coverage,
