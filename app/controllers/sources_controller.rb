@@ -25,7 +25,15 @@ class SourcesController < ApplicationController
     @items = @snapshot.corpus_items.order(:id).offset((@page - 1) * 50).limit(51).to_a
     @more = @items.size > 50
     @items = @items.first(50)
-    @trace_scenarios = @corpus.scenarios.where(corpus_item_id: @items.map(&:id), parent_version_id: nil).index_by(&:corpus_item_id) if @source.kind == "traces"
+    if @source.kind == "traces"
+      @trace_scenarios = @corpus.scenarios.where(corpus_item_id: @items.map(&:id), parent_version_id: nil).index_by(&:corpus_item_id)
+      cases = @corpus.eval_definitions_expired? ? [] : @corpus.eval_cases.includes(:scenario_version).order(:id).limit(100)
+      inputs = cases.to_h { |item| [ item, item.scenario_version.target_input ] }
+      @trace_matches = @items.to_h do |item|
+        recorded_input = SupportTrace.payload(item)["input"]
+        [ item.id, inputs.select { |_eval_case, input| input == recorded_input }.keys ]
+      end
+    end
   end
 
   def destroy

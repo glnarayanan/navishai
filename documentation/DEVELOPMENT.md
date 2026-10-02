@@ -206,6 +206,35 @@ hides them, including suite history, before purge. Inspected browser captures li
 under `.amp/in/artifacts/evaluation/`. Configured rubric judges require separate
 disclosure confirmation; their errors do not become behavioural failures.
 
+## Recorded production replay
+
+A trace source page lists cases with identical visible input among the first 100
+fixed corpus cases, including prior versions. This is input compatibility, not
+semantic failure matching or an expert decision. Inspect the contract; execution
+still requires its current approved scenario and current company evidence.
+
+A managing role can follow the trace's target-definition link, name the target
+and save the prefilled record ID. Choose `Recorded · uploaded trace`; no JSON
+configuration is used. A same-corpus foreign key binds each immutable target
+version to that exact item. A later trace upload or target revision cannot change
+an old run. Old trace snapshots remain historical evidence, not changed policy.
+
+Starting a suite requires every case's situation, known facts and permitted
+knowledge (including references) to match the recorded input. Object key order
+does not matter. Changed values, omitted fields or changed knowledge refuse to
+queue a run. This single-output adapter does not answer unrelated cases; use an
+actual target for those. The worker checks again and reads current source expiry.
+It grades the retained output locally, never executes the production agent.
+Configured rubric judges still require their own consent, case-list token and
+operator endpoint approval; replay cannot bypass disclosure.
+
+Results link to the exact trace and retain existing check evidence. Imported
+failure/correction text cannot determine pass/fail. Experts can admit an observed
+failed result to a regression suite with the normal fixed-case human decision.
+A later target tests that same case. Trace expiry hides derived records before
+purge; source purge removes target/run/output and regression copies too. Fixture
+browser captures live under `.amp/in/artifacts/recorded-replay/`.
+
 ## Generic HTTP target
 
 The operator sets `NAVISHAI_EVALUATION_ENDPOINTS` in both web and jobs as a JSON

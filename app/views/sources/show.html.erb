@@ -11,7 +11,7 @@
         <h3><%= item.title %></h3><p class="muted-copy">Source record <%= item.external_id %></p>
         <% if @source.kind == "traces" %>
           <% trace = SupportTrace.payload(item) %>
-          <dl class="source-metadata"><dt>Reported target version</dt><dd><%= trace["target_version"] %></dd><dt>Observed at</dt><dd><%= trace["observed_at"] %></dd></dl>
+          <dl class="source-metadata"><dt>Trace record ID</dt><dd><%= item.id %></dd><dt>Reported target version</dt><dd><%= trace["target_version"] %></dd><dt>Observed at</dt><dd><%= trace["observed_at"] %></dd></dl>
           <h4>Reported failure</h4><p><%= trace["observed_failure"].presence || "None reported." %></p>
           <h4>Reported correction</h4><p><%= trace["human_correction"].presence || "None reported." %></p>
           <% if @trace_scenarios[item.id] %>
@@ -20,6 +20,11 @@
             <%= button_to "Propose scenario from trace", workspace_corpus_scenarios_path(Current.workspace, @corpus), params: { trace_item_id: item.id }, class: "button", data: { turbo_submits_with: "Creating…" } %>
           <% end %>
           <p>Proposals keep the situation and known facts, with no approved requirements. Experts choose current documentation and permitted knowledge.</p>
+          <details><summary>Cases with identical visible input (<%= @trace_matches[item.id].size %>)</summary><p>Checks the first 100 fixed corpus cases, including prior versions. Input compatibility is not proof of the same issue or expected behaviour. Review the contract; execution rechecks its current approval and evidence.</p>
+            <% if @trace_matches[item.id].empty? %><p>No exact match in this bounded search. Create and review a scenario, or inspect other fixed cases.</p><% end %>
+            <ul role="list"><% @trace_matches[item.id].each do |eval_case| %><li><%= link_to "Case #{eval_case.id} · #{eval_case.scenario_version.title}", workspace_corpus_eval_case_path(Current.workspace, @corpus, eval_case) %></li><% end %></ul>
+          </details>
+          <% if Current.require_membership!.can_manage_work? && !@corpus.eval_definitions_expired? %><p><%= link_to "Define recorded target from this trace", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus, adapter: "recorded", trace_item_id: item.id) %>. Saving does not execute or send data.</p><% end %>
           <div class="review-layout">
             <section><h4>Recorded visible input</h4><pre class="evidence-text"><%= JSON.pretty_generate(trace["input"]) %></pre></section>
             <section><h4>Recorded output</h4><p>Tool calls and actions are reported, not attested.</p><pre class="evidence-text"><%= JSON.pretty_generate(trace["output"]) %></pre></section>

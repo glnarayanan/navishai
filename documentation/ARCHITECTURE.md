@@ -94,7 +94,7 @@ known facts, leaves requirements empty and requires the existing expert review.
 Experts attach current company evidence and choose permitted knowledge themselves.
 Do not fold trace payloads into the term-discovery baseline.
 
-Recorded replay will bind a target version to an exact trace item through a
+Recorded replay binds a target version to an exact trace item through a
 same-corpus foreign key. It may return that output only for identical visible
 input; changed context must not inherit an old answer. Replay is local, not a new
 agent execution. Judges retain their separate disclosure gate. Existing fixed

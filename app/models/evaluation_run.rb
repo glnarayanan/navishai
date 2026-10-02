@@ -22,6 +22,7 @@ class EvaluationRun < ApplicationRecord
       items = suite.eval_cases.order(:id).to_a
       raise EvalCase::Invalid, "Run a suite with 1–50 cases and at most 100 checks." unless items.size.between?(1, 50) && items.sum { |item| item.eval_case_checks.count } <= 100
       items.each(&:eligible!)
+      items.each { |item| RecordedTarget.validate_input!(trace_item: target.trace_item, input: item.scenario_version.target_input) } if target.adapter == "recorded"
       judges = items.flat_map { |item| item.eval_case_checks.includes(:grader_version).map(&:grader_version) }.select { |version| version.kind == "rubric_judge" && version.definition.key?("execution") }.uniq(&:id)
       if judges.any?
         raise EvalCase::Invalid, "Run not started. Separately confirm disclosure of outputs, rubrics, context and company evidence to the fixed judges." unless judge_disclose == true
