@@ -4,8 +4,8 @@
   <div class="page-heading"><div><h1>Corpus analysis</h1><p><%= @analysis.model? && @model_result ? "#{@model_result.fetch('decision').humanize} · attempt complete" : @analysis.state.humanize %> · <%= @analysis.processing_method %></p></div><%= link_to "Refresh result", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, @analysis, family_focus: @family_focus, page: @page), class: "button" %></div>
   <% if @analysis_input_error %>
     <p role="alert" class="inline-error"><%= @analysis_input_error %></p>
-    <p>This fixed analysis has not changed. No partial source preview or candidates are shown. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %> to inspect sources<%= @analysis.streaming? ? "." : " or prepare smaller inputs and request a new analysis." %></p>
-    <% if @analysis.streaming? && @analysis.state == "complete" %>
+    <p>This fixed analysis has not changed. No partial source preview or candidates are shown. <%= link_to "Return to the corpus", workspace_corpus_path(Current.workspace, @corpus) %> to inspect sources<%= @analysis.large? ? "." : " or prepare smaller inputs and request a new analysis." %></p>
+    <% if @analysis.large? && @analysis.state == "complete" %>
       <p>Only this evidence preview is blocked. Explore fixed families within their page bounds; narrow a source signal filter if needed. No new analysis or disclosure is required.</p>
       <ul id="bounded-family-links" role="list"><% @clusters.each do |cluster| %><li><%= link_to cluster.label, workspace_corpus_corpus_analysis_issue_cluster_path(Current.workspace, @corpus, @analysis, cluster) %></li><% end %></ul>
       <%= render "shared/record_pagination", more: @more, page_number: @page %>
@@ -31,7 +31,7 @@
     <% end %>
   <% else %>
     <p>Local term clustering, not semantic diagnosis. It uses titles and <%= @analysis.full_text? ? "the complete text" : "the first 4000 characters" %> of each conversation, with a 0.3 cosine threshold. Labels come from your corpus, not a fixed taxonomy. Keyword mentions do not prove failures or risk.</p>
-    <% if @analysis.streaming? || @analysis.full_text? %><p><%= @analysis.full_text? ? "Full-text local limits: 2000 complete records / 10 MiB" : "Streaming local limits: 100,000 complete records / 1 GiB" %>, 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. A budget failure retains no proposals and never retries automatically. Complete evidence reads remain bounded to 10 MiB. These bounds do not grant model disclosure or prove discovery quality.</p><% end %>
+    <% if @analysis.large? || @analysis.full_text? %><p><%= @analysis.large_full_text? ? "Large full-text local limits: 100,000 complete records / 1 GiB" : (@analysis.full_text? ? "Full-text local limits: 2000 complete records / 10 MiB" : "Streaming local limits: 100,000 complete records / 1 GiB") %>, 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. A budget failure retains no proposals and never retries automatically. Complete evidence reads remain bounded to 10 MiB. These bounds do not grant model disclosure or prove discovery quality.</p><% end %>
   <% end %>
   <% if @analysis.state == "failed" %><p role="alert" class="inline-error"><%= @analysis.error %></p><% end %>
   <% if @analysis.state.in?(%w[queued running]) %>

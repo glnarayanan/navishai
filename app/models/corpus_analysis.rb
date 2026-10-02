@@ -2,6 +2,7 @@ class CorpusAnalysis < ApplicationRecord
   METHOD = "tfidf-seed-centroid-selection-v1"
   STREAM_METHOD = "tfidf-stream-seed-centroid-selection-v2"
   FULL_TEXT_METHOD = "tfidf-full-text-seed-centroid-selection-v3"
+  LARGE_FULL_TEXT_METHOD = "tfidf-large-full-text-seed-centroid-selection-v4"
   MAX_ITEMS = 2_000
   MAX_RECORD_BYTES = 10.megabytes
   LARGE_MAX_ITEMS = 100_000
@@ -26,10 +27,12 @@ class CorpusAnalysis < ApplicationRecord
       batch = processing_method == "model_batch"
       streaming = processing_method == "local_stream"
       full_text = processing_method == "local_full_text"
+      large_full_text = processing_method == "local_large_full_text"
       raise CorpusIntake::Invalid, "Batch discovery requires fixed model settings." if batch && !model
       raise CorpusIntake::Invalid, "Streaming local discovery cannot use model settings or disclosure." if streaming && model
       raise CorpusIntake::Invalid, "Full-text local discovery cannot use model settings or disclosure." if full_text && (model || disclose)
-      items = current_inputs(corpus:, model:, batch:, streaming:, ids_only: !model)
+      raise CorpusIntake::Invalid, "Large full-text local discovery cannot use model settings or disclosure." if large_full_text && (model || disclose)
+      items = current_inputs(corpus:, model:, batch:, streaming:, large_full_text:, ids_only: !model)
       plan = batch ? BatchCorpusDiscovery.plan(items) : {}
       if model
         raise CorpusIntake::Invalid, "The prior request did not start. Confirm disclosure of the exact corpus preview before model discovery." unless disclose == true
@@ -40,7 +43,11 @@ class CorpusAnalysis < ApplicationRecord
         raise CorpusIntake::Invalid, "The call plan changed. Reload and confirm the exact allocation." if batch && ModelCorpusDiscovery.digest(plan) != call_plan_digest
         EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id: corpus.workspace_id, purpose: :corpus)
       end
-      local_method = full_text ? FULL_TEXT_METHOD : (streaming ? STREAM_METHOD : METHOD)
+      local_method = if large_full_text
+        LARGE_FULL_TEXT_METHOD
+      else
+        full_text ? FULL_TEXT_METHOD : (streaming ? STREAM_METHOD : METHOD)
+      end
       analysis = corpus.corpus_analyses.create!(workspace: corpus.workspace, requested_by: membership.user,
         processing_method: batch ? BatchCorpusDiscovery::VERSION : (model ? ModelCorpusDiscovery::VERSION : local_method), configuration: model ? configuration : {}, input_digest: model ? input_digest : nil, call_plan: plan, scenario_limit:)
       ids = model ? items.map(&:id) : items
@@ -73,12 +80,14 @@ class CorpusAnalysis < ApplicationRecord
     SQL
   end
 
-  def self.current_inputs(corpus:, model: false, batch: false, streaming: false, ids_only: false)
+  def self.current_inputs(corpus:, model: false, batch: false, streaming: false, large_full_text: false, ids_only: false)
     corpus.with_lock do
       raise CorpusIntake::Invalid, "Streaming local discovery cannot use model settings or disclosure." if streaming && model
+      raise CorpusIntake::Invalid, "Large full-text local discovery cannot use model settings or disclosure." if large_full_text && model
+      large = streaming || large_full_text
       inputs = corpus.current_items.where(sources: { kind: %w[conversations document] }).order(:id)
-      records = load_inputs(inputs, limit: streaming ? LARGE_MAX_ITEMS : (model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS),
-        byte_limit: streaming ? LARGE_MAX_RECORD_BYTES : MAX_RECORD_BYTES, item_ids: ids_only ? [] : nil)
+      records = load_inputs(inputs, limit: large ? LARGE_MAX_ITEMS : (model && !batch ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS),
+        byte_limit: large ? LARGE_MAX_RECORD_BYTES : MAX_RECORD_BYTES, item_ids: ids_only ? [] : nil)
       ids_only ? inputs.pluck(:id) : records
     end
   end
@@ -107,12 +116,20 @@ class CorpusAnalysis < ApplicationRecord
     processing_method == STREAM_METHOD
   end
 
+  def large_full_text?
+    processing_method == LARGE_FULL_TEXT_METHOD
+  end
+
+  def large?
+    streaming? || large_full_text?
+  end
+
   def full_text?
-    processing_method == FULL_TEXT_METHOD
+    processing_method == FULL_TEXT_METHOD || large_full_text?
   end
 
   def input_limits
-    streaming? ? [ LARGE_MAX_ITEMS, LARGE_MAX_RECORD_BYTES ] : [ model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, MAX_RECORD_BYTES ]
+    large? ? [ LARGE_MAX_ITEMS, LARGE_MAX_RECORD_BYTES ] : [ model? && !batch? ? ModelCorpusDiscovery::MAX_ITEMS : MAX_ITEMS, MAX_RECORD_BYTES ]
   end
 
   def model?
@@ -139,7 +156,7 @@ class CorpusAnalysis < ApplicationRecord
       raise CorpusIntake::Invalid, "Fixed call plan changed." if batch? && BatchCorpusDiscovery.plan(items) != call_plan
       EvaluationHttp.validate!(configuration.slice("endpoint"), workspace_id:, purpose: :corpus)
     else
-      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method.in?([ METHOD, STREAM_METHOD, FULL_TEXT_METHOD ])
+      raise CorpusIntake::Invalid, "Unsupported discovery method." unless processing_method.in?([ METHOD, STREAM_METHOD, FULL_TEXT_METHOD, LARGE_FULL_TEXT_METHOD ])
     end
     true
   end
