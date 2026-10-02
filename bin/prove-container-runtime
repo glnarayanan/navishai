@@ -1,0 +1,211 @@
+#!/usr/bin/env ruby
+# Orb-only synthetic runtime proof using the private image-proof Docker daemon.
+require "open3"
+require "securerandom"
+require "shellwords"
+require "tmpdir"
+
+abort "Usage: bin/prove-container-runtime (no arguments)" unless ARGV.empty?
+root = File.expand_path("..", __dir__)
+socket = File.join(root, "tmp/navishai-image-proof/docker.sock")
+abort "Start the private image-proof daemon and build navishai-runtime-proof:local first." unless File.socket?(socket)
+docker = [ "sudo", "-n", "docker", "--host", "unix://#{socket}" ]
+postgres = "postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54"
+image = "navishai-runtime-proof:local"
+prefix = "lab-#{SecureRandom.hex(6)}"
+services = []
+directory = nil
+run = lambda do |*command, input: nil|
+  output, status = Open3.capture2e(*command, stdin_data: input.to_s)
+  raise "Runtime proof command failed:\n#{output}" unless status.success?
+  output
+end
+start = lambda do |suffix, arguments|
+  name = "#{prefix}-#{suffix}"
+  services << name
+  run.call("amp", "orb", "service", "start", name, "--command", Shellwords.join(docker + arguments))
+  name
+end
+
+begin
+  directory = Dir.mktmpdir("navishai-runtime-proof-", File.join(root, "tmp"))
+  data = File.join(directory, "data")
+  database_socket = File.join(directory, "socket")
+  Dir.mkdir(data)
+  Dir.mkdir(database_socket)
+  File.chmod(0o770, database_socket)
+  run.call("sudo", "-n", "chown", "999:999", data)
+  run.call("sudo", "-n", "chown", "999:1000", database_socket)
+  owner_password = SecureRandom.hex(32)
+  runtime_password = SecureRandom.hex(32)
+  common = { "NAVISHAI_APP_HOST" => "example.invalid", "NAVISHAI_DATABASE_HOST" => "/var/run/postgresql",
+    "SECRET_KEY_BASE" => SecureRandom.hex(64), "NAVISHAI_EVALUATION_ENDPOINTS" => "[]",
+    "NAVISHAI_SCENARIO_ENDPOINTS" => "[]", "NAVISHAI_CORPUS_ENDPOINTS" => "[]" }
+  files = {
+    "postgres.env" => { "POSTGRES_USER" => "navishai_setup", "POSTGRES_PASSWORD" => owner_password,
+      "POSTGRES_DB" => "navishai_lab_production", "NAVISHAI_DATABASE_PASSWORD" => runtime_password,
+      "POSTGRES_INITDB_ARGS" => "--auth-local=scram-sha-256 --auth-host=scram-sha-256" },
+    "prepare.env" => common.merge("NAVISHAI_DATABASE_USERNAME" => "navishai_setup", "NAVISHAI_DATABASE_PASSWORD" => owner_password),
+    "runtime.env" => common.merge("NAVISHAI_DATABASE_PASSWORD" => runtime_password)
+  }
+  files.each { |name, values| File.write(File.join(directory, name), values.map { |key, value| "#{key}=#{value}\n" }.join, perm: 0o600) }
+  isolation = [ "--network", "none", "--cap-drop", "ALL", "--security-opt", "no-new-privileges" ]
+  socket_mount = [ "--volume", "#{database_socket}:/var/run/postgresql" ]
+  pg_name = "#{prefix}-postgres"
+  start.call("postgres", [ "run", "--rm", "--name", pg_name, "--user", "999:999", *isolation,
+    "--env-file", File.join(directory, "postgres.env"), "--volume", "#{data}:/var/lib/postgresql/data", *socket_mount,
+    "--volume", "#{root}/db/initialize_runtime_role.sh:/docker-entrypoint-initdb.d/10-navishai-runtime.sh:ro",
+    postgres, "postgres", "-c", "listen_addresses=" ])
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+  loop do
+    begin
+      ready = run.call(*docker, "exec", pg_name, "sh", "-c", 'export PGPASSWORD="$POSTGRES_PASSWORD"; exec "$@"', "--",
+        "psql", "-X", "-qAt", "-U", "navishai_setup", "-d", "navishai_lab_production", "-c", "SELECT count(*) FROM pg_roles WHERE rolname = 'navishai'")
+      break if ready.strip == "1"
+    rescue RuntimeError
+      # Only this fresh local database readiness probe may repeat, not a provider call.
+    end
+    raise "Disposable PostgreSQL did not initialize in 60 seconds." if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    sleep 1
+  end
+  puts "PASS: pinned PostgreSQL initializes a separate restricted runtime role."
+  puts run.call(*docker, "run", "--rm", *isolation, *socket_mount, "--env-file", File.join(directory, "prepare.env"), image,
+    "bin/rails", "db:prepare", "db:grant_runtime")
+  web = "#{prefix}-web"
+  start.call("web", [ "run", "--rm", "--name", web, *isolation, *socket_mount,
+    "--env-file", File.join(directory, "runtime.env"), image, "bin/rails", "server", "-b", "127.0.0.1" ])
+  start.call("jobs", [ "run", "--rm", "--name", "#{prefix}-jobs", *isolation, *socket_mount,
+    "--env-file", File.join(directory, "runtime.env"), image, "bin/jobs" ])
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+  loop do
+    begin
+      run.call(*docker, "exec", web, "ruby", "-rnet/http", "-e", 'request = Net::HTTP::Get.new("/up"); request["Host"] = "example.invalid"; abort unless Net::HTTP.new("127.0.0.1", 3000, nil).request(request).code == "200"')
+      break
+    rescue RuntimeError
+      raise "Disposable web did not become healthy in 60 seconds." if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 1
+    end
+  end
+  puts run.call(*docker, "exec", "-i", web, "bin/rails", "runner", "-", input: <<~'RUBY')
+    raise "UID" unless Process.uid == 1000
+    raise "Administrator secret entered runtime" if ENV.key?("POSTGRES_PASSWORD") || ENV.key?("NAVISHAI_POSTGRES_PASSWORD") || ENV.key?("NAVISHAI_DATABASE_USERNAME")
+    %w[NAVISHAI_EVALUATION_ENDPOINTS NAVISHAI_SCENARIO_ENDPOINTS NAVISHAI_CORPUS_ENDPOINTS].each { |key| raise "Disclosure registry" unless ENV.fetch(key) == "[]" }
+    connection = ActiveRecord::Base.connection
+    raise "Runtime role" unless connection.select_value("SELECT current_user") == "navishai"
+    %w[rolsuper rolcreatedb rolcreaterole rolreplication rolbypassrls].each { |flag| raise flag if connection.select_value("SELECT #{flag} FROM pg_roles WHERE rolname = current_user") }
+    [ "ALTER TABLE audit_events DISABLE TRIGGER ALL", "ALTER TABLE corpus_items DISABLE TRIGGER ALL", "CREATE TABLE forbidden_runtime (id integer)", "CREATE ROLE forbidden_runtime", "CREATE DATABASE forbidden_runtime", "SET ROLE navishai_setup" ].each do |sql|
+      begin
+        connection.execute(sql)
+        raise "Prohibited SQL accepted: #{sql}"
+      rescue ActiveRecord::StatementInvalid => error
+        raise unless error.cause.is_a?(PG::InsufficientPrivilege)
+      end
+    end
+    organization = Organization.create!(name: "Synthetic runtime proof", slug: "synthetic-runtime")
+    workspace = organization.workspaces.create!(name: "Synthetic lab", slug: "synthetic-lab")
+    user = User.create!(email_address: "synthetic-runtime@example.invalid", password: SecureRandom.hex(24), verified_at: Time.current)
+    membership = workspace.memberships.create!(user:, role: "owner")
+    corpus = workspace.corpora.create!(name: "Synthetic SSO corpus")
+    records = [{ id: "sso", title: "Certificate rotation", content: "SSO certificate expired; ask for metadata before changing configuration." },
+      { id: "api", title: "API outage", content: "Critical production API requests return 500; escalate to Engineering with logs." }]
+    CorpusIntake.call(corpus:, membership:, name: "Synthetic conversations", kind: "conversations", bytes: records.to_json)
+    CorpusIntake.call(corpus:, membership:, name: "Synthetic policy", kind: "document", bytes: "Ask for certificate expiry before changing configuration. Engineering needs reproducible API logs.")
+    analysis = CorpusAnalysis.request!(corpus:, membership:, scenario_limit: 2)
+    File.write(Rails.root.join("tmp/proof-analysis-id"), analysis.id)
+    raise "Cache write" unless Rails.cache.write("synthetic-proof", "local-only")
+    raise "Cache read" unless Rails.cache.read("synthetic-proof") == "local-only"
+    SolidCable::Message.count
+    begin
+      connection.execute("UPDATE audit_events SET action = action")
+      raise "Audit rewrite accepted"
+    rescue ActiveRecord::StatementInvalid => error
+      raise unless error.cause.is_a?(PG::RaiseException) && error.cause.message.include?("append-only")
+    end
+    puts "PASS: UID 1000, empty disclosure registries, non-owner role, six privilege denials, intake, audit immutability and separate queue/cache/cable access."
+  RUBY
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60
+  loop do
+    state = run.call(*docker, "exec", web, "bin/rails", "runner", 'a = CorpusAnalysis.find(File.read(Rails.root.join("tmp/proof-analysis-id"))); raise a.error.to_s if a.state == "failed"; raise "Incorrect complete analysis" if a.state == "complete" && (a.summary.fetch("conversations") != 2 || a.summary.fetch("clusters") != 2); puts a.state')
+    break if state.lines.any? { |line| line.strip == "complete" }
+    raise "Native jobs did not complete in 60 seconds." if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+    sleep 1
+  end
+  puts "PASS: separate native jobs process completed the queued corpus analysis."
+  puts run.call(*docker, "exec", "-i", web, "ruby", "-", input: <<~'RUBY')
+    require "net/http"
+    require "openssl"
+    require "json"
+    # A finite private TLS proxy test, not a public certificate or deployment.
+    Thread.new { sleep 30; abort "Private TLS probe exceeded 30 seconds." }
+    key = OpenSSL::PKey::RSA.new(2048)
+    cert = OpenSSL::X509::Certificate.new
+    cert.version = 2; cert.serial = 1
+    cert.subject = cert.issuer = OpenSSL::X509::Name.parse("/CN=example.invalid")
+    cert.public_key = key.public_key; cert.not_before = Time.now - 60; cert.not_after = Time.now + 3600
+    factory = OpenSSL::X509::ExtensionFactory.new
+    factory.subject_certificate = factory.issuer_certificate = cert
+    cert.add_extension(factory.create_extension("subjectAltName", "DNS:example.invalid"))
+    cert.sign(key, OpenSSL::Digest::SHA256.new)
+    context = OpenSSL::SSL::SSLContext.new
+    context.cert = cert; context.key = key
+    listener = TCPServer.new("127.0.0.1", 0)
+    port = listener.addr[1]
+    tls = OpenSSL::SSL::SSLServer.new(listener, context)
+    paths = ["/session/new", "/assets/#{JSON.parse(File.read('public/assets/.manifest.json')).fetch('application.css').fetch('digested_path')}", "/session/new"]
+    proxy = Thread.new do
+      paths.each do
+        client = tls.accept
+        client.sync_close = true
+        request = client.gets
+        headers = {}
+        while (line = client.gets) && line != "\r\n"
+          name, value = line.split(":", 2); headers[name.downcase] = value.strip
+        end
+        upstream = Net::HTTP::Get.new(request.split[1])
+        upstream["Host"] = headers.fetch("host")
+        upstream["X-Forwarded-Proto"] = "https"
+        response = Net::HTTP.new("127.0.0.1", 3000, nil).request(upstream)
+        client.write("HTTP/1.1 #{response.code} #{response.message}\r\n")
+        response.each_header { |name, value| client.write("#{name}: #{value}\r\n") unless %w[transfer-encoding content-length connection].include?(name) }
+        client.write("Content-Length: #{response.body.bytesize}\r\nConnection: close\r\n\r\n#{response.body}")
+        client.close
+      end
+    end
+    store = OpenSSL::X509::Store.new; store.add_cert(cert)
+    paths.each_with_index do |path, index|
+      client_context = OpenSSL::SSL::SSLContext.new
+      client_context.verify_mode = OpenSSL::SSL::VERIFY_PEER; client_context.cert_store = store
+      client = OpenSSL::SSL::SSLSocket.new(TCPSocket.new("127.0.0.1", port), client_context)
+      client.hostname = "example.invalid"; client.sync_close = true; client.connect; client.post_connection_check("example.invalid")
+      host = index == 2 ? "foreign.invalid" : "example.invalid"
+      client.write("GET #{path} HTTP/1.1\r\nHost: #{host}\r\nConnection: close\r\n\r\n")
+      response = client.read; client.close
+      expected = index == 2 ? "403" : "200"
+      raise "HTTP status #{index}" unless response.start_with?("HTTP/1.1 #{expected}")
+      if index == 0
+        raise "Sign-in content" unless response.include?("Sign in")
+        raise "HSTS" unless response.match?(/strict-transport-security:/i)
+        raise "CSP" unless response.match?(/content-security-policy:/i)
+        raise "Secure cookie" unless response.match?(/set-cookie:.*; secure;.*httponly/i)
+      elsif index == 1
+        raise "Asset type" unless response.match?(/content-type: text\/css/i)
+        cache = response.lines.find { |line| line.match?(/\Acache-control:/i) }.to_s
+        raise "Asset cache" unless cache.include?("public") && cache[/max-age=(\d+)/, 1].to_i >= 31_536_000
+        puts cache.strip
+      end
+    end
+    proxy.value; listener.close
+    puts "PASS: verified private TLS hostname/chain, production sign-in, HSTS/CSP/secure cookie, compiled CSS/cache and foreign Host rejection."
+  RUBY
+ensure
+  begin
+    services.reverse_each { |name| run.call("amp", "orb", "service", "stop", name) }
+    services.each do |name|
+      remaining = run.call(*docker, "ps", "--all", "--filter", "name=^/#{name}$", "--format", "{{.Names}}")
+      run.call(*docker, "rm", "--force", name) if remaining.lines.any? { |line| line.strip == name }
+    end
+  ensure
+    run.call("sudo", "-n", "rm", "-rf", "--", directory) if directory
+  end
+end
+puts "CLEAN: only this invocation's private containers, synthetic databases and generated test secrets removed."

@@ -50,8 +50,10 @@ milestones. The rebuild is not complete. Nothing has merged, released or deploye
   build-context exclusions and exact runtime-directory markers.
 - [#162](https://github.com/glnarayanan/navishai/pull/162), based on #161: frozen multi-request corpus discovery,
   once-only receipts, strict proposal reduction and explicit allocation/call consent.
-- `rebuild/23-failure-matching`, based on #162: bounded local failure candidates,
+- [#163](https://github.com/glnarayanan/navishai/pull/163), based on #162: bounded local failure candidates,
   exact fact/evidence comparisons and append-only expert association history.
+- `rebuild/24-production-boundary`, based on #163: separate preparation/runtime
+  database roles, explicit schema preparation and disposable production-runtime proof.
 
 ## Built and checked
 
@@ -467,6 +469,36 @@ without changing expert approval, calibration labels or fixed-case identity.
 Its focused RuboCop and `git diff --check` pass. No provider, real data or dependency
 was introduced. Direct risk review/native audits used; named review tools unavailable.
 
+GitHub CI for #163 passed
+([run](https://github.com/glnarayanan/navishai/actions/runs/36809475233)).
+
+Production-boundary `bin/ci` passed in 4m5.46s: 267 Ruby files clean, native
+audits clean, Brakeman zero warnings/errors, eager loading passed; 309 Rails tests /
+3083 assertions and 24 browser tests / 903 assertions, no failures/errors/skips.
+Four focused configuration tests check runtime secret/role separation, equal-password
+rejection without secret output and refusal to grant outside production. The deleted
+web-start migration wrapper cannot race jobs. Preparation explicitly precedes both.
+
+`bin/prove-container-runtime` passed against the built Rails image and pinned
+PostgreSQL 16.15 image in three private network-disabled, capability-free containers.
+Real preparation/grants cover primary/cache/queue/cable. Runtime is UID 1000 and
+cannot disable audit/item triggers, create tables/roles/databases or become the
+preparation role. Synthetic intake queues native work; a separate jobs process
+completes the expected two-family analysis. Cache write/read, cable access and
+audit rewrite rejection pass. No administrator credential reaches web/jobs.
+
+A finite private TLS proxy validates its generated chain/hostname, production
+sign-in, HSTS/CSP/secure cookies, compiled CSS (public cache max-age 31556952) and
+foreign Host rejection. The proof cleans only its own containers, databases,
+directory and generated test secrets; the global daemon and lab/legacy databases
+stay untouched. Initial proof errors concerned service-name bounds, the pinned
+initializer clearing PGHOST, asynchronous container readiness and the cache-year
+expectation. No security guard was weakened. Stopped created-state test containers
+are explicitly removed. Focused proof-script RuboCop and diff checks pass.
+This is not Compose, an external clean host, public TLS, egress-policy, SMTP/OIDC,
+production backup or upgrade acceptance. No production service or dependency was
+added, and no real credential, customer data or live provider was used.
+
 ## Next and limits
 
 The P0 engineering loop passes with fixtures. Phase E now includes trace-to-reviewed
@@ -498,15 +530,15 @@ Continuous-learning P1 follows a proved P0 loop; classifiers remain gated by lab
 and economics. Fixture checks do not establish discovery quality or judge accuracy.
 
 Independent engineering includes executable multi-turn cases, source export,
-connected result-to-calibration improvement and clean-host/production/TLS proof.
+connected result-to-calibration improvement and clean-host/Compose/egress proof.
 Reviewable failure matching, bounded multi-request discovery, image execution and
-isolated backup/restore pass; inputs beyond those bounds and retrieval
+isolated backup/restore/private production-runtime/TLS checks pass; inputs beyond those bounds and retrieval
 quality need further evidence, not a coverage claim. Keep the full product scope;
 engineering gaps are not customer-data or expert-label approval blockers.
 
 No real customer dataset, live model/target, SMTP/OIDC provider, training or customer
-validation ran. Clean-host/Compose image/TLS and production backup acceptance are unverified.
-Compose PostgreSQL now has a verified manifest pin, not runtime acceptance. Database administrators can
+validation ran. Clean-host/Compose/public TLS and production backup acceptance are unverified.
+Pinned-image execution and isolated runtime roles pass, not deployment acceptance. Database administrators can
 bypass triggers; last-Owner protection is application-side. Backups need their own
 retention policy. See [development](./DEVELOPMENT.md), [security](./SECURITY.md),
 [deployment](./DEPLOYMENT.md) and [design](./DESIGN.md).

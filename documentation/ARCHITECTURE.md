@@ -238,6 +238,13 @@ Every controller and job starts from a checked workspace. Composite relationship
 
 Keep deployment boring: web, jobs, PostgreSQL, and only the execution worker actually needed. No runtime CDN or telemetry. Existing installer/live-host proof does not transfer to this topology. Validate backup/restore, network policy, TLS, and clean-host setup before claiming deployment readiness.
 
+Prepare production schemas once under a separate database owner before starting
+web/jobs. Runtime uses a distinct password and a non-superuser, non-owner role with
+table DML, sequence usage and schema usage only. It cannot create databases/roles,
+change schemas, assume the preparation role or disable audit/version triggers.
+Never run migrations from web startup or pass the preparation credential to a
+persistent app process. The three-service topology stays unchanged.
+
 ## Alternatives rejected
 
 - Preserve and rename crews: carries persona, helpdesk, and policy state into eval ownership.

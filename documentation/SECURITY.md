@@ -19,6 +19,15 @@ read-only and PostgreSQL rejects update/delete/truncate. No expiry exception,
 notification fanout or old-domain audit vocabulary remains. Tests exercise model
 and direct-SQL failures. Database administrators can still disable triggers.
 
+Production separates PostgreSQL preparation from Rails runtime. The fresh Compose
+volume creates `navishai_setup` for preparation and `navishai` for web/jobs, with
+distinct passwords. Preparation owns all four schemas and grants runtime DML and
+sequence/schema usage. Runtime has no database/role creation, replication, RLS
+bypass, schema ownership or trigger-disable rights. Startup never migrates. The
+disposable pinned-image proof checks six privilege denials and audit immutability;
+it is not production network, operator-role or upgrade acceptance. Do not reuse an
+older volume whose app role owned tables or was a superuser.
+
 Corpus, sources, snapshots and items use composite workspace/corpus foreign keys.
 Intake rechecks a locked membership before committing; viewers cannot write.
 Snapshots and items reject updates in Ruby and SQL. HTML remains escaped evidence,

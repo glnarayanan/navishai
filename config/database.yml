@@ -15,7 +15,7 @@ production:
   primary: &primary_production
     <<: *default
     database: navishai_lab_production
-    username: navishai
+    username: <%= ENV.fetch("NAVISHAI_DATABASE_USERNAME", "navishai") %>
     password: <%= ENV["NAVISHAI_DATABASE_PASSWORD"] %>
     host: <%= ENV["NAVISHAI_DATABASE_HOST"] %>
     port: <%= ENV["NAVISHAI_DATABASE_PORT"] %>

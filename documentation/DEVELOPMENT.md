@@ -32,6 +32,9 @@ remain separate Rails-native production databases. No RLS is installed.
   until delivered to the default branch.
 - `bin/ci` runs setup, RuboCop, gem/importmap audits, Brakeman, eager-load checks,
   full Rails tests and system tests. No checks reference deleted Go code.
+- `bin/prove-container-runtime` uses a separately prepared private Docker daemon
+  and reviewed image for a disposable production-role, native-jobs and private
+  HTTPS proof. It is orb-only, never a deploy command; see [hosting](./DEPLOYMENT.md#disposable-imageruntime-proof).
 - `bin/rails test test/services/support_lab_acceptance_test.rb` checks one fresh
   technical-Support fixture through intake, discovery, expert taxonomy/scenario
   review, mixed deterministic/judge checks, held-out labels, HTTP execution and
