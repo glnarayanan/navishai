@@ -1,0 +1,9 @@
+<% retained = @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && @decision_form["scenario_version_id"] == version.id.to_s ? @decision_form : {} %>
+<% field_suffix = "#{item.id}-#{version.id}#{selected_scenario_id ? '-selected' : ''}" %>
+<%= form_with url: decide_trace_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel" do |form| %>
+  <%= form.hidden_field :corpus_item_id, value: item.id, id: nil %><%= form.hidden_field :scenario_version_id, value: version.id, id: nil %>
+  <%= form.hidden_field :selected_scenario_id, value: selected_scenario_id, id: nil if selected_scenario_id %>
+  <div class="field"><%= form.label :decision, "Decision for scenario #{version.scenario_id} v#{version.number}", for: "decision-#{field_suffix}" %><%= form.select :decision, [["Match", "match"], ["Different issue", "different"], ["Uncertain", "uncertain"]], { selected: retained["decision"] || "uncertain" }, id: "decision-#{field_suffix}" %></div>
+  <div class="field"><%= form.label :reason, "Reason for this association", for: "reason-#{field_suffix}" %><%= form.text_area :reason, value: retained["reason"], id: "reason-#{field_suffix}", required: true, maxlength: 2000 %></div>
+  <%= form.submit "Append trace decision", class: "button", data: { turbo_submits_with: "Saving…" } %>
+<% end %>

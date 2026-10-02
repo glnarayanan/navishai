@@ -371,6 +371,13 @@ can suggest a review but cannot establish the same issue, diagnosis or expectati
 no semantic accuracy, probability or coverage follows from it. Hide expired derived
 content. Do not use imported corrections as labels or send data to a provider.
 
+Keep explicit human selection separate from retrieval. A scoped scenario-ID GET
+inspects one chosen current version for a trace on the displayed source page,
+without a write or a search-cap change. Reuse the existing association validator
+and revision editor. Failed stale writes retain the submitted fixed version;
+never substitute a newer version for that decision. Foreign IDs reveal no title,
+and rejected/merged/stale choices cannot gain a decision form.
+
 Count current unmerged version IDs in SQL before loading candidate definitions
 or evidence associations. Refuse above 2000; never take the first 2000 as a sample.
 Hold the corpus lock through count and loading so normal scenario writes/purge

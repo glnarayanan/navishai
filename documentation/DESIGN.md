@@ -192,6 +192,14 @@ even across pages. No-match states offer a separate scenario proposal, not a fal
 match. Viewers inspect without decision controls. Mobile stacks the same evidence;
 copy keeps association separate from approval, replay, labels and regressions.
 
+An **Inspect an existing scenario** disclosure gives a corpus-list link and one
+labelled native #ID input. GET selection opens the chosen current version outside
+literal ranking; it creates nothing. The selected version offers the same decision
+form and an exact trace-preserving revision link. Stale writes retain the old
+version/reason outside an unavailable form, with explicit reselection for recovery.
+Viewers can inspect without write/revision controls. The full linked trace title
+and record identity stay outside the native picker, whose long option may truncate.
+
 Exact replay matches use a separate native disclosure with the full match count
 and 50 case links per page. It searches all fixed cases, not the first hundred.
 The selected trace stays open on paging/refresh; links retain its historical
