@@ -1583,6 +1583,43 @@ ALTER SEQUENCE public.taxonomy_versions_id_seq OWNED BY public.taxonomy_versions
 
 
 --
+-- Name: trace_scenario_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trace_scenario_decisions (
+    id bigint NOT NULL,
+    workspace_id bigint NOT NULL,
+    corpus_id bigint NOT NULL,
+    corpus_item_id bigint NOT NULL,
+    scenario_version_id bigint NOT NULL,
+    reviewed_by_id bigint NOT NULL,
+    decision character varying NOT NULL,
+    reason text NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT chk_rails_a0c71cf02f CHECK ((((decision)::text = ANY ((ARRAY['match'::character varying, 'different'::character varying, 'uncertain'::character varying])::text[])) AND ((length(btrim(reason)) >= 1) AND (length(btrim(reason)) <= 2000))))
+);
+
+
+--
+-- Name: trace_scenario_decisions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.trace_scenario_decisions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: trace_scenario_decisions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.trace_scenario_decisions_id_seq OWNED BY public.trace_scenario_decisions.id;
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1971,6 +2008,13 @@ ALTER TABLE ONLY public.taxonomy_versions ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: trace_scenario_decisions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_scenario_decisions ALTER COLUMN id SET DEFAULT nextval('public.trace_scenario_decisions_id_seq'::regclass);
+
+
+--
 -- Name: users id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2325,6 +2369,14 @@ ALTER TABLE ONLY public.sources
 
 ALTER TABLE ONLY public.taxonomy_versions
     ADD CONSTRAINT taxonomy_versions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trace_scenario_decisions trace_scenario_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_scenario_decisions
+    ADD CONSTRAINT trace_scenario_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3031,6 +3083,13 @@ CREATE INDEX index_taxonomy_versions_on_reviewed_by_id ON public.taxonomy_versio
 
 
 --
+-- Name: index_trace_scenario_decisions_on_reviewed_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_trace_scenario_decisions_on_reviewed_by_id ON public.trace_scenario_decisions USING btree (reviewed_by_id);
+
+
+--
 -- Name: index_users_on_lower_email_address; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3077,6 +3136,13 @@ CREATE INDEX index_workspaces_on_organization_id ON public.workspaces USING btre
 --
 
 CREATE UNIQUE INDEX index_workspaces_on_organization_id_and_slug ON public.workspaces USING btree (organization_id, slug);
+
+
+--
+-- Name: trace_decision_history; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX trace_decision_history ON public.trace_scenario_decisions USING btree (corpus_item_id, scenario_version_id, reviewed_by_id, id);
 
 
 --
@@ -3283,6 +3349,13 @@ CREATE TRIGGER taxonomy_versions_immutable BEFORE UPDATE ON public.taxonomy_vers
 
 
 --
+-- Name: trace_scenario_decisions trace_scenario_decisions_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trace_scenario_decisions_immutable BEFORE UPDATE ON public.trace_scenario_decisions FOR EACH ROW EXECUTE FUNCTION public.prevent_lab_version_update();
+
+
+--
 -- Name: calibration_sets fk_rails_03578f8e6c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3323,11 +3396,27 @@ ALTER TABLE ONLY public.calibration_samples
 
 
 --
+-- Name: trace_scenario_decisions fk_rails_14082b44a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_scenario_decisions
+    ADD CONSTRAINT fk_rails_14082b44a9 FOREIGN KEY (workspace_id, corpus_id, corpus_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: evaluation_target_versions fk_rails_1a3b9e6b69; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.evaluation_target_versions
     ADD CONSTRAINT fk_rails_1a3b9e6b69 FOREIGN KEY (workspace_id, corpus_id, trace_item_id) REFERENCES public.corpus_items(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_scenario_decisions fk_rails_1c9db42685; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_scenario_decisions
+    ADD CONSTRAINT fk_rails_1c9db42685 FOREIGN KEY (workspace_id, corpus_id, scenario_version_id) REFERENCES public.scenario_versions(workspace_id, corpus_id, id) ON DELETE CASCADE;
 
 
 --
@@ -3424,6 +3513,14 @@ ALTER TABLE ONLY public.evaluation_targets
 
 ALTER TABLE ONLY public.evaluation_run_items
     ADD CONSTRAINT fk_rails_4dcbbf54ce FOREIGN KEY (workspace_id, corpus_id, eval_case_id) REFERENCES public.eval_cases(workspace_id, corpus_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: trace_scenario_decisions fk_rails_52888c45b0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trace_scenario_decisions
+    ADD CONSTRAINT fk_rails_52888c45b0 FOREIGN KEY (reviewed_by_id) REFERENCES public.users(id);
 
 
 --
@@ -3921,6 +4018,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261001030000'),
 ('20261001020000'),
 ('20261001010000'),
 ('20261001000000'),

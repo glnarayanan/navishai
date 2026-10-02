@@ -25,6 +25,7 @@ class AuditEvent < ApplicationRecord
     "scenario.proposal_requested" => {},
     "scenario.proposal_completed" => {},
     "scenario.proposal_interrupted" => {},
+    "trace.scenario_decided" => {},
     "grader.version_created" => { "version" => Integer },
     "eval.compiled" => { "version" => Integer },
     "eval_suite.created" => {},

@@ -1,0 +1,43 @@
+<section aria-labelledby="matching-<%= item.id %>">
+  <h4 id="matching-<%= item.id %>">Reviewable failure candidates</h4>
+  <% result = @failure_candidates.fetch(item.id) %>
+  <p><%= TraceScenarioMatching::METHOD %> Suggestions are not proof of the same issue. A human match cannot approve, edit, compile or execute a scenario, grant knowledge, label calibration or admit a regression.</p>
+  <p>Same corpus only · up to 2000 current, unmerged versions and 10 MiB of complete searched text · top 5 candidates. Rejected, expired and stale evidence is excluded. Titles, situations, taxonomy and exact non-trace expectation excerpts are searched; imported corrections and hidden facts are not. Taxonomy may still be an unreviewed proposal. <%= result.searched_versions %> versions searched; <%= result.searched_bytes %> bytes.</p>
+  <% if result.message %><p role="status"><%= result.message %></p><% end %>
+  <% if @decision_error && @decision_form["corpus_item_id"] == item.id.to_s %><p role="alert"><%= @decision_error %> Your decision and reason are retained below. Reload stale evidence before submitting again.</p><% end %>
+  <% unless @corpus.eval_definitions_expired? %>
+    <% if result.candidates.empty? && !result.message %><p>No candidates share at least two meaningful terms. Open an existing scenario or use Propose scenario from trace for a new case.</p><% end %>
+    <% result.candidates.each_with_index do |candidate, index| %>
+      <% version = candidate.version %>
+      <article class="section-block">
+        <h5><%= index + 1 %>. <%= link_to "#{version.title} · v#{version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, version.scenario, version: version.number) %></h5>
+        <p><%= version.approved? ? "Expert-approved scenario version" : "Scenario version needs expert review" %>. Matching does not change its review.</p>
+        <p>Exact shared terms: <%= candidate.shared_terms.join(", ") %></p>
+        <div class="review-layout">
+          <section><h6>Equal known facts</h6><pre class="evidence-text"><%= JSON.pretty_generate(candidate.equal_facts) %></pre></section>
+          <section><h6>Conflicting known facts — review caution</h6><pre class="evidence-text"><%= JSON.pretty_generate(candidate.conflicting_facts) %></pre></section>
+        </div>
+        <% if candidate.missing_facts.any? %><details><summary>Missing facts are not null or equal</summary><pre class="evidence-text"><%= JSON.pretty_generate(candidate.missing_facts) %></pre></details><% end %>
+        <p><%= link_to "Scenario origin · record #{version.scenario.corpus_item.external_id}", source_evidence_path(version.scenario.corpus_item) %>. Facts belong to this exact version; trace facts belong to source record <%= item.external_id %>.</p>
+        <details><summary>Exact expectation evidence searched</summary>
+          <% if candidate.evidence.empty? %><p>No non-trace expectation excerpts; only the version's title, situation and taxonomy were searched.</p><% end %>
+          <% candidate.evidence.each do |entry| %><p><%= link_to "Source record #{entry.corpus_item.external_id} · snapshot #{entry.corpus_item.source_snapshot.number}", source_evidence_path(entry.corpus_item) %></p><pre class="evidence-text"><%= entry.excerpt %></pre><% end %>
+        </details>
+        <% if Current.require_membership!.can_write? %>
+          <% retained = @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && @decision_form["scenario_version_id"] == version.id.to_s ? @decision_form : {} %>
+          <%= form_with url: decide_trace_workspace_corpus_source_path(Current.workspace, @corpus, @source), class: "form-stack config-panel" do |form| %>
+            <%= form.hidden_field :corpus_item_id, value: item.id %><%= form.hidden_field :scenario_version_id, value: version.id %>
+            <div class="field"><%= form.label :decision, "Decision for scenario #{version.scenario_id} v#{version.number}", for: "decision-#{item.id}-#{version.id}" %><%= form.select :decision, [["Match", "match"], ["Different issue", "different"], ["Uncertain", "uncertain"]], { selected: retained["decision"] || "uncertain" }, id: "decision-#{item.id}-#{version.id}" %></div>
+            <div class="field"><%= form.label :reason, "Reason for this association", for: "reason-#{item.id}-#{version.id}" %><%= form.text_area :reason, value: retained["reason"], id: "reason-#{item.id}-#{version.id}", required: true, maxlength: 2000 %></div>
+            <%= form.submit "Append trace decision", class: "button", data: { turbo_submits_with: "Saving…" } %>
+          <% end %>
+        <% end %>
+      </article>
+    <% end %>
+    <% history = @trace_decisions.fetch(item.id, []) %>
+    <h5>Expert associations and history</h5><p>History page <%= @decision_page %> · up to 50 decisions across these source records. Each expert's latest decision stays distinct. Disagreement is not resolved; corrections append. Historical associations do not imply current approval or replay compatibility.</p>
+    <% if history.empty? %><p>No decisions for this trace on this history page.</p><% end %>
+    <% history.each do |entry| %><article class="source-record"><p><strong><%= entry.decision %></strong> · <%= entry.reviewed_by.email_address %> · <%= entry.created_at.to_fs(:long) %> · <%= @latest_decision_ids.include?(entry.id) ? "Latest for this expert and version" : "Earlier decision" %></p><p><%= link_to "#{entry.scenario_version.title} · v#{entry.scenario_version.number}", workspace_corpus_scenario_path(Current.workspace, @corpus, entry.scenario_version.scenario, version: entry.scenario_version.number) %></p><p><%= entry.reason %></p></article><% end %>
+    <% if @decision_form && @decision_form["corpus_item_id"] == item.id.to_s && result.candidates.none? { |candidate| candidate.version.id.to_s == @decision_form["scenario_version_id"] } %><details open><summary>Retained decision on unavailable version</summary><p><%= @decision_form["decision"] %> · version ID <%= @decision_form["scenario_version_id"] %></p><pre class="evidence-text"><%= @decision_form["reason"] %></pre><p>This version is no longer an eligible candidate. Open the current scenario and review fresh evidence; nothing was saved.</p></details><% end %>
+  <% end %>
+</section>

@@ -114,6 +114,15 @@ links before/after results and importance, with frozen input disclosures for
 unmatched entries. Compact desktop columns stack on mobile. Unresolved and
 unmatched results cannot appear as recoveries; refresh retains the baseline.
 
+Trace failure suggestions keep their literal method and limits visible. Each
+candidate links its exact version and evidence, with shared terms and distinct
+equal/conflicting/missing facts. Native disclosures hold source details. Writers
+use labelled decision/reason fields; errors retain their input. Append-only history
+shows the author, exact trace/version and whether that author's decision is latest,
+even across pages. No-match states offer a separate scenario proposal, not a false
+match. Viewers inspect without decision controls. Mobile stacks the same evidence;
+copy keeps association separate from approval, replay, labels and regressions.
+
 System evidence covers desktop, 390px and 320px, auth success/error, empty lab,
 permission denial, themes, keyboard access, CSP and horizontal overflow. These are
 browser-emulated widths, not real mobile devices. Screenshots are review evidence,
