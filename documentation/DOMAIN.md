@@ -35,6 +35,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 | Grader version | Fixed check definition, rubric, threshold, and optional model settings. |
 | Human label | Attributable expert judgment on exact evidence/output and definition versions. |
 | Calibration set | Output samples for one fixed grader version; development and held-out samples stay distinct. |
+| Error-cost assumptions | Optional fixed human costs, common unit and rationale for false-positive and false-negative judgments. Not verified business costs or authority to spend. |
 | Calibration sample | Fixed output, explicit cohort and compiled case/check that experts judge; optionally backed by one exact saved result. |
 | Calibration prediction | Machine decision on a fixed sample, distinct from authoritative human labels. |
 | Calibration judge attempt | One consented, once-claimed execution on a fixed sample. It cannot overwrite a prediction or label. |
@@ -61,6 +62,7 @@ These terms belong to the 30 September 2026 product reset. They do not rename ol
 - A response-scoped check examines each assistant reply after a matching user message, not text anywhere in the transcript. It is not an interactive turn simulation or proof that new facts reached a target incrementally.
 - Labels retain each expert's history. Reports use their latest decisions; disagreement or uncertainty cannot supply ground truth.
 - Calibration treats failure as positive. False positives flag good behaviour; false negatives miss bad behaviour. Undefined rates remain unknown.
+- Error-cost assumptions belong to one fixed calibration set and grader version. Changing them needs a new set. Observed weighted mistakes use only compared, certain labels within that cohort or preview; absent assumptions or comparisons remain unknown. No defaults or inherited values.
 - Held-out samples measure a fixed grader; development samples support changes. Neither cohort proves accuracy across the corpus.
 - Saved results can supply fixed calibration output, not expert labels. A duplicate cannot replace its manual/different-result origin or cohort. Selected failures do not establish held-out representativeness.
 - A run freezes membership and visible inputs at request time. Target, suite and grader edits never rewrite its definitions or results.

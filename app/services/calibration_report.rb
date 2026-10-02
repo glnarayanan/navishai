@@ -62,7 +62,10 @@ class CalibrationReport
       counts[key] += 1
     end
     ratio = ->(numerator, denominator) { denominator.zero? ? nil : numerator.fdiv(denominator) }
-    counts.merge(reviews:, precision: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_positive]),
+    assumed_cost = if set.error_costs_supplied? && counts[:compared].positive?
+      set.false_positive_cost * counts[:false_positive] + set.false_negative_cost * counts[:false_negative]
+    end
+    counts.merge(reviews:, assumed_cost:, precision: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_positive]),
       recall: ratio.call(counts[:true_positive], counts[:true_positive] + counts[:false_negative]),
       disagreement_rate: ratio.call(counts[:false_positive] + counts[:false_negative], counts[:compared]),
       inter_rater_agreement: ratio.call(counts[:agreeing_pairs], counts[:pairs]))
