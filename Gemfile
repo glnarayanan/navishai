@@ -56,4 +56,4 @@ end
 
 # Rails 8.1.4 decodes compatibly with JSON 3, but JSON 3 also rejects duplicate
 # keys and comments by default. Retain JSON 2 until that parsing change is reviewed.
-gem "json", "< 3", require: false
+gem "json", "< 4", require: false
