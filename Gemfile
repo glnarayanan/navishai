@@ -1,7 +1,7 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "8.1.3.1"
+gem "rails", "8.1.4"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use postgresql as the database for Active Record
@@ -54,6 +54,6 @@ group :test do
   gem "selenium-webdriver"
 end
 
-# Rails 8.1.3.1 passes JSON.parse options positionally, which JSON 3 rejects.
-# Retain JSON 2 until Rails supports the new keyword-only API.
+# Rails 8.1.4 decodes compatibly with JSON 3, but JSON 3 also rejects duplicate
+# keys and comments by default. Retain JSON 2 until that parsing change is reviewed.
 gem "json", "< 3", require: false
