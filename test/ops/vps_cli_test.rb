@@ -133,6 +133,177 @@ class VpsCliTest < Minitest::Test
     refute status.success?, output
   end
 
+  def test_public_listen_address_refuses_private_tailnet_and_invalid_literals
+    output, status = shell("vps_public_listen_address 203.0.113.9")
+    assert status.success?, output
+    %w[0.0.0.0 127.0.0.1 10.0.0.1 172.16.0.1 192.168.0.1 169.254.0.1 100.64.0.1 100.98.160.115 100.127.255.254 224.0.0.1 256.0.0.1 203.0.113.9:443 203.0.113.009].each do |address|
+      output, status = shell("vps_public_listen_address #{Shellwords.escape(address)}")
+      refute status.success?, "#{address}: #{output}"
+    end
+    output, status = shell("ip() { return 7; }; vps_resolve_ingress")
+    refute status.success?, output
+  end
+
+  def test_auto_ingress_rederives_destination_and_refuses_ambiguity_and_stale_override
+    output, status = shell('VPS_PUBLIC_LISTEN_ADDRESS=198.51.100.99; vps_resolve_ingress; echo "$VPS_PUBLIC_LISTEN_ADDRESS"')
+    assert status.success?, output
+    assert_equal "203.0.113.9\n", output
+    output, status = shell(host_network("198.51.100.23") + 'vps_resolve_ingress; echo "$VPS_PUBLIC_LISTEN_ADDRESS"')
+    assert status.success?, output
+    assert_equal "198.51.100.23\n", output
+    output, status = shell(host_network("203.0.113.9", "198.51.100.23") + "vps_resolve_ingress")
+    refute status.success?, output
+    assert_includes output, "No safe unique choice"
+    output, status = shell(host_network("203.0.113.9", "198.51.100.23") + 'vps_resolve_ingress 198.51.100.23; echo "$VPS_PUBLIC_LISTEN_ADDRESS"')
+    assert status.success?, output
+    assert_equal "198.51.100.23\n", output
+    output, status = shell("vps_resolve_ingress 198.51.100.23")
+    refute status.success?, output
+    output, status = shell(host_network("100.98.160.115") + "vps_resolve_ingress")
+    refute status.success?, output
+  end
+
+  def test_check_refuses_stale_proxy_binding_and_stops_writers
+    bindings = { "80/tcp" => [ { HostIp: "198.51.100.99", HostPort: "80" } ], "443/tcp" => [ { HostIp: "198.51.100.99", HostPort: "443" }, { HostIp: "127.0.0.1", HostPort: "443" } ] }
+    script = <<~SH
+      vps_policy_check() { :; }; vps_runtime_check() { :; }; vps_services_check() { :; }
+      vps_compose() { echo #{'c' * 64}; }
+      vps_docker() { printf '%s' #{Shellwords.escape(JSON.generate(bindings))}; }
+      vps_stop() { echo STOPPED; }
+      vps_check
+    SH
+    output, status = shell(script)
+    refute status.success?, output
+    assert_includes output, "stale or unsafe"
+    assert_includes output, "STOPPED"
+    output, status = shell(script.gsub("198.51.100.99", "203.0.113.9"))
+    assert status.success?, output
+    refute_includes output, "STOPPED"
+  end
+
+  def test_dns_gate_checks_public_resolution_without_assuming_proxy_origin_address
+    output, status = shell("NAVISHAI_APP_HOST=lab.example.com; getent() { echo '104.16.1.2 STREAM lab.example.com'; }; vps_dns_check")
+    assert status.success?, output
+    %w[127.0.0.1 100.98.160.115 10.0.0.1].each do |address|
+      output, status = shell("NAVISHAI_APP_HOST=lab.example.com; getent() { echo '#{address} STREAM lab.example.com'; }; vps_dns_check")
+      refute status.success?, output
+    end
+    output, status = shell("NAVISHAI_APP_HOST=lab.example.com; getent() { return 7; }; vps_dns_check")
+    refute status.success?, output
+  end
+
+  def test_ingress_check_preserves_tailnet_listeners_but_refuses_endpoint_conflicts
+    listeners = "LISTEN 0 4096 100.98.160.115:443 0.0.0.0:*\nLISTEN 0 4096 [fd7a:115c:a1e0::6634:a074]:443 [::]:*\nLISTEN 0 4096 127.0.0.1:80 0.0.0.0:*\n"
+    script = <<~SH
+      NAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.9
+      ss() { printf '%s' #{Shellwords.escape(listeners)}; }
+      vps_ingress_check
+    SH
+    output, status = shell(script)
+    assert status.success?, output
+    %w[203.0.113.9:80 203.0.113.9:443 127.0.0.1:443 0.0.0.0:80 0.0.0.0:443 *:443 [::]:80 [::]:443].each do |endpoint|
+      output, status = shell(script.sub(Shellwords.escape(listeners), Shellwords.escape("#{listeners}LISTEN 0 4096 #{endpoint} *:*\n")))
+      refute status.success?, "#{endpoint}: #{output}"
+      assert_includes output, "Ingress endpoint in use"
+    end
+    output, status = shell(script.sub("ss() { printf", "ss() { return 7; }; unused() { printf"))
+    refute status.success?, output
+    assert_includes output, "Cannot inspect ingress listeners"
+  end
+
+  def test_upgrade_reconfigures_ingress_only_after_backup_and_restores_old_env_on_failure
+    original = root_command("cat", "#{@config}/env")
+    script = <<~SH
+      source=reviewed; commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; backup=point; listen_address=203.0.113.9
+      ss() { :; }
+      vps_archive() { echo ARCHIVE; }
+      vps_backup() { cp "$VPS_CONFIG/env" "$VPS_STATE/saved.env"; echo BACKUP; }
+      vps_switch() { echo SWITCH; }
+      vps_load() { vps_load_env; [[ $NAVISHAI_PUBLIC_LISTEN_ADDRESS == 203.0.113.9 ]]; echo LOAD; }
+      vps_compose() { echo COMPOSE; }
+      vps_pull_pins() { :; }
+      vps_guard() { :; }
+      vps_prepare() { echo MIGRATION; return 7; }
+      vps_stop() { echo STOP; }
+      vps_restore() { cp "$VPS_STATE/saved.env" "$VPS_CONFIG/env"; echo RESTORE; }
+      vps_start() { echo MUST-NOT-START; }
+      vps_upgrade
+    SH
+    output, status = shell(script)
+    refute status.success?, output
+    assert_match(/BACKUP\nSWITCH\nLOAD\nCOMPOSE\nCOMPOSE\nMIGRATION\nSTOP\nRESTORE\n/, output)
+    refute_includes output, "MUST-NOT-START"
+    assert_equal original, root_command("cat", "#{@config}/env")
+    output, status = shell(script.sub("echo BACKUP;", "echo BACKUP; return 7;"))
+    refute status.success?, output
+    refute_includes output, "SWITCH"
+    assert_equal original, root_command("cat", "#{@config}/env")
+  end
+
+  def test_bootstrap_renewal_refuses_completed_owner_and_never_prints_token
+    script = <<~SH
+      vps_stop() { echo STOP; }; vps_guard() { echo GUARD; }
+      vps_compose() { echo RENEWABLE; }
+      vps_renew_bootstrap
+    SH
+    output, status = shell(script)
+    assert status.success?, output
+    assert_match(/STOP\nGUARD\nRENEWABLE\n/, output)
+    refute_match(/[0-9a-f]{96}/, output)
+    saved = root_command("cat", "#{@config}/env")
+    assert_match(/^NAVISHAI_BOOTSTRAP_TOKEN='[0-9a-f]{96}'$/, saved)
+    output, status = shell(script.sub("echo RENEWABLE;", "echo RENEWABLE; return 7;"))
+    refute status.success?, output
+    assert_equal saved, root_command("cat", "#{@config}/env")
+  end
+
+  def test_owned_units_can_resume_but_foreign_contents_still_refuse
+    names = %w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer]
+    root_command("rm", "-f", *names.map { |name| "#{@units}/#{name}" })
+    output, status = shell("systemctl() { echo SYSTEMD; }; vps_units; vps_units")
+    assert status.success?, output
+    assert_equal 4, output.lines.count { |line| line.strip == "SYSTEMD" }
+    root_command("sh", "-c", "echo foreign >> #{Shellwords.escape("#{@units}/navishai-reset.service")}")
+    output, status = shell("systemctl() { echo MUST-NOT-RUN; }; vps_units")
+    refute status.success?, output
+    refute_includes output, "MUST-NOT-RUN"
+    assert_includes root_command("cat", "#{@units}/navishai-reset.service"), "foreign"
+  end
+
+  def test_destination_recovery_requires_consent_and_an_empty_target
+    output, status = shell("from=not-a-backup; confirmation=; vps_fresh_check() { echo MUST-NOT-RUN; }; vps_recover")
+    refute status.success?, output
+    refute_includes output, "MUST-NOT-RUN"
+    write_private("#{@directory}/CHECKSUMS", "consent fixture\n")
+    digest = root_command("sha256sum", "#{@directory}/CHECKSUMS").split.first
+    output, status = shell("from=#{Shellwords.escape(@directory)}; confirmation=#{digest}; vps_recover")
+    refute status.success?, output
+    assert_includes output, "Fresh install path exists"
+    assert File.exist?("#{@config}/env")
+  end
+
+  def test_destination_resume_refuses_other_installations_and_checks_owned_resources
+    write_private("#{@directory}/CHECKSUMS", "consent fixture\n")
+    digest = root_command("sha256sum", "#{@directory}/CHECKSUMS").split.first
+    script = <<~SH
+      from=#{Shellwords.escape(@directory)}; confirmation=#{digest}; resume=true
+      vps_load() { echo LOAD; }
+      vps_cleanup_plan() { echo OWNERSHIP >&2; return 7; }
+      vps_fresh_check() { echo MUST-NOT-ADOPT; return 7; }
+      vps_recover
+    SH
+    output, status = shell(script)
+    refute status.success?, output
+    refute_includes output, "OWNERSHIP"
+    refute_includes output, "MUST-NOT-ADOPT"
+    output, status = shell("vps_receipt #{SHA} recovering; #{script}")
+    refute status.success?, output
+    assert_includes output, "LOAD"
+    assert_includes output, "OWNERSHIP"
+    refute_includes output, "MUST-NOT-ADOPT"
+    assert File.exist?("#{@config}/env")
+  end
+
   def test_compose_uses_dynamic_release_and_only_validated_final_image_overlay
     overlay = { services: %w[app-net jobs postgres proxy web].to_h { |s| [ s, { image: "sha256:#{'9' * 64}" } ] } }
     write_private("#{@state}/recovery-images.yaml", JSON.generate(overlay))
@@ -153,11 +324,14 @@ class VpsCliTest < Minitest::Test
     script = <<~'SH'
       NAVISHAI_APP_HOST=support.example.test
       vps_stop() { echo STOP; }
+      vps_ingress_check() { echo INGRESS; }
+      vps_dns_check() { echo DNS; }
       vps_compose() { printf 'COMPOSE %s\n' "$*"; }
       vps_policy_apply() { echo APPLY; }
       vps_policy_check() { echo CHECK; }
       vps_validate() { echo VALIDATE; }
       vps_runtime_check() { echo RUNTIME; }
+      vps_ingress_binding_check() { echo BINDING; }
       vps_https() { echo TLS; }
       curl() { echo HEALTH; }
       vps_receipt() { echo READY; }
@@ -165,7 +339,10 @@ class VpsCliTest < Minitest::Test
     SH
     output, status = shell(script)
     assert status.success?, output
-    assert_equal [ "STOP", "COMPOSE up -d --pull never --no-build --no-deps --wait postgres", "COMPOSE up -d --pull never --no-build --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE up --no-start --pull never --no-build --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --pull never --no-build --no-deps proxy", "TLS", "READY" ], output.lines.map(&:strip)
+    assert_equal [ "STOP", "INGRESS", "DNS", "COMPOSE up -d --pull never --no-build --no-deps --wait postgres", "COMPOSE up -d --pull never --no-build --no-deps --force-recreate --wait app-net", "APPLY", "CHECK", "VALIDATE", "COMPOSE up --no-start --pull never --no-build --no-deps --force-recreate web jobs", "RUNTIME", "CHECK", "COMPOSE start web jobs", "CHECK", "COMPOSE up -d --pull never --no-build --no-deps proxy", "BINDING", "TLS", "READY" ], output.lines.map(&:strip)
+    output, status = shell(script.sub("echo INGRESS;", "echo INGRESS; return 7;"))
+    refute status.success?, output
+    assert_equal "STOP\nINGRESS\n", output
     output, status = shell(script.sub("echo RUNTIME;", "echo RUNTIME; return 7;"))
     refute status.success?, output
     refute_includes output, "COMPOSE start web jobs"
@@ -246,6 +423,7 @@ class VpsCliTest < Minitest::Test
   def test_upgrade_failure_restores_full_point_and_never_restarts_rollback_writers
     script = <<~'SH'
       source=reviewed; commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; backup=point
+      NAVISHAI_PUBLIC_LISTEN_ADDRESS=203.0.113.9
       vps_archive() { echo ARCHIVE; }
       vps_backup() { echo BACKUP; }
       vps_candidate() { echo CANDIDATE; return 7; }
@@ -322,10 +500,12 @@ class VpsCliTest < Minitest::Test
       vps_paths #{Shellwords.escape("#{@directory}/fresh")}
       source=reviewed; commit=#{SHA}; envfile=#{Shellwords.escape("#{@config}/env")}
       vps_docker() { :; }
-      vps_archive() { mkdir -p "$VPS_PREFIX/releases"; return 7; }
+      vps_ingress_check() { :; }
+      vps_archive() { mkdir -p "$VPS_PREFIX/releases"; echo ARCHIVE >&2; return 7; }
       vps_install
     SH
     refute status.success?, output
+    assert_includes output, "ARCHIVE"
     %w[opt/navishai-reset etc/navishai-reset var/lib/navishai-reset].each do |path|
       refute File.exist?("#{@directory}/fresh/#{path}")
     end
@@ -351,14 +531,16 @@ class VpsCliTest < Minitest::Test
   end
 
   def test_init_env_writes_private_distinct_secrets_and_refuses_overwrite
-    output, status = shell("host=support.example.test; email=owner@example.test; output=#{Shellwords.escape("#{@directory}/new.env")}; vps_init_env; stat -c '%u:%a' \"$output\"")
+    route = "listen_address=auto; "
+    output, status = shell(route + "host=support.example.test; email=owner@example.test; output=#{Shellwords.escape("#{@directory}/new.env")}; vps_init_env; stat -c '%u:%a' \"$output\"")
     assert status.success?, output
     assert_includes output, "0:600"
     refute_match(/[0-9a-f]{96}/, output)
     values = root_command("cat", "#{@directory}/new.env").scan(/^NAVISHAI_(?:DATABASE|POSTGRES|PREPARE)_PASSWORD='([0-9a-f]{96})'$/).flatten
     assert_equal 3, values.length
     assert_equal 3, values.uniq.length
-    output, status = shell("host=support.example.test; email=owner@example.test; output=#{Shellwords.escape("#{@directory}/new.env")}; vps_init_env")
+    assert_includes root_command("cat", "#{@directory}/new.env"), "NAVISHAI_PUBLIC_LISTEN_ADDRESS='auto'"
+    output, status = shell(route + "host=support.example.test; email=owner@example.test; output=#{Shellwords.escape("#{@directory}/new.env")}; vps_init_env")
     refute status.success?, output
     output, status = shell("host='unsafe{host}'; email=owner@example.test; output=#{Shellwords.escape("#{@directory}/unsafe.env")}; vps_init_env")
     refute status.success?, output
@@ -412,7 +594,23 @@ class VpsCliTest < Minitest::Test
 
   def shell(script)
     root_command_args = Process.uid.zero? ? [] : [ "sudo", "-n" ]
-    Open3.capture2e(*root_command_args, "bash", "-euo", "pipefail", "-c", "source ops/vps/cli.sh; vps_paths #{Shellwords.escape(@root)}; VPS_RELEASE=#{Shellwords.escape(@release)}; #{script}", chdir: ROOT)
+    Open3.capture2e(*root_command_args, "bash", "-euo", "pipefail", "-c", "source ops/vps/cli.sh; vps_paths #{Shellwords.escape(@root)}; VPS_RELEASE=#{Shellwords.escape(@release)}; #{host_network} #{script}", chdir: ROOT)
+  end
+
+  def host_network(*addresses)
+    addresses = [ "203.0.113.9" ] if addresses.empty?
+    interfaces = [ { ifname: "eth0", addr_info: addresses.map { |address| { local: address, scope: "global" } } },
+      { ifname: "tailscale0", addr_info: [ { local: "100.98.160.115", scope: "global" } ] } ]
+    <<~SH
+      ip() {
+        case "$*" in
+          '-j -4 address show up') printf '%s\n' #{Shellwords.escape(JSON.generate(interfaces))} ;;
+          '-j -4 route show table main default') echo '[{"dev":"eth0"}]' ;;
+          '-j -4 route get 1.1.1.1 from '*) echo '[{"dev":"eth0"}]' ;;
+          *) return 7 ;;
+        esac
+      };
+    SH
   end
 
   def container(char, service)

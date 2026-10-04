@@ -53,7 +53,11 @@ services:
     environment:
       NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set the public host}
       NAVISHAI_ACME_EMAIL: ${NAVISHAI_ACME_EMAIL:?set the certificate contact}
-    ports: ["80:80", "443:443"]
+    ports:
+      - "${VPS_PUBLIC_LISTEN_ADDRESS:?CLI must derive the host ingress address}:80:80"
+      - "${VPS_PUBLIC_LISTEN_ADDRESS:?CLI must derive the host ingress address}:443:443"
+      # Direct local HTTPS still verifies the real certificate and hostname.
+      - "127.0.0.1:443:443"
     volumes:
       - ./ops/vps/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

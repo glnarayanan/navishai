@@ -203,8 +203,22 @@ PostgreSQL major upgrade, arbitrary-scale timing, Rails boot, public HTTPS,
 startup-policy acceptance, live-host recovery or customer-data proof follows from
 this unit's synthetic tests. Files outside managed roots/volumes stay outside it.
 
-Restore requires already validated installed roots and an env file. The disposable
-proof tests recovery after deleting volumes, images and the saved release while
-those roots remain. It does not supply a clean-host bootstrap CLI. Existing
-unrelated databases/roles stay untouched during same-install rollback, but the
-backup does not recover them after loss of the PG volume.
+The library requires validated installed roots and an env file. Its standalone
+disposable proof tests lost volumes/images/release while those roots remain.
+The parent CLI now adds a distinct empty-destination `recover` path; see
+[the supported workflow](./VPS_CLI.md#move-or-recover-onto-another-vps).
+It validates the consented portable backup before creating installed roots,
+rebinds receipt paths and desired ingress to the destination, then calls this same
+restore unit under the lock. Source addresses/interfaces/container IDs do not
+become destination runtime state. Data, secrets, roles and history stay fixed.
+Writers stay stopped until gated startup validates the destination.
+
+Only that explicit destination path sets the internal destination flag. The CLI
+clears any inherited flag; same-install restore/rollback does not rebind desired
+config. An unfinished destination keeps a `recovering` receipt so `recover --resume`
+can validate its owned resources and repeat restore after a failure. Registration
+must finish before the receipt changes to `restored`. It never adopts a normal
+existing install. Existing unrelated databases/roles stay untouched during
+same-install rollback, but the backup does not recover them after loss of the
+PG volume. Clean-host recovery needs a portable source release, retained full
+backup and the supported host prerequisites; it is not an old-product converter.
