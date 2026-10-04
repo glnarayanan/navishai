@@ -1,7 +1,10 @@
 require "test_helper"
+require_relative "../test_helpers/http_target_test_helper"
 require_relative "../../ops/vps/bootstrap_owner"
 
 class VpsOwnerBootstrapTest < ActiveSupport::TestCase
+  include HttpTargetTestHelper
+
   setup do
     @token = ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
     @expiry = ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"]
@@ -74,6 +77,59 @@ class VpsOwnerBootstrapTest < ActiveSupport::TestCase
       assert run_bootstrap
     end
     assert_includes @output.string, "sign in"
+  end
+
+  test "inactive token names renewal without exposing the token or account" do
+    ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
+    refute run_bootstrap
+    assert_includes @errors.string, "protected bootstrap token is inactive"
+    assert_includes @errors.string, "sudo navishai-reset renew-bootstrap"
+    refute_includes @errors.string, ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
+    refute_includes @errors.string, @data[:email_address]
+  end
+
+  test "account validation identifies only fixed field names and rolls back all writes" do
+    [ [ { password_confirmation: "different-private-password" }, "Owner", "password_confirmation" ],
+      [ { organization_slug: "INVALID_PRIVATE_ORG" }, "Organisation", "slug" ],
+      [ { workspace_slug: "INVALID_PRIVATE_WORKSPACE" }, "Workspace", "slug" ] ].each do |changes, label, field|
+      @errors.truncate(0)
+      @errors.rewind
+      assert_no_difference [ "Organization.count", "Workspace.count", "User.count", "InstallationState.count", "AuditEvent.count" ] do
+        refute run_bootstrap(JSON.generate(@data.merge(changes)))
+      end
+      assert_includes @errors.string, "#{label} fields need correction: #{field}"
+      changes.each_value { |value| refute_includes @errors.string, value }
+      refute_includes @errors.string, @data[:password]
+      refute_includes @errors.string, "renew-bootstrap"
+    end
+  end
+
+  test "malformed input and database errors have distinct redacted diagnostics" do
+    refute run_bootstrap("not json")
+    assert_includes @errors.string, "invalid account input"
+    @errors.truncate(0)
+    @errors.rewind
+    failure = ActiveRecord::StatementInvalid.new("SQL contains #{@data[:password]} #{ENV['NAVISHAI_BOOTSTRAP_TOKEN']}")
+    with_test_method(ApplicationRecord, :transaction, ->(*) { raise failure }) do
+      refute run_bootstrap
+    end
+    assert_includes @errors.string, "database operation failed"
+    refute_includes @errors.string, @data[:password]
+    refute_includes @errors.string, ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
+    refute_includes @errors.string, "renew-bootstrap"
+  end
+
+  test "failed audit validation rolls back Owner creation and does not blame account fields" do
+    audit = AuditEvent.new
+    audit.errors.add(:metadata, @data[:password])
+    with_test_method(AuditEvent, :record!, ->(**) { raise ActiveRecord::RecordInvalid, audit }) do
+      assert_no_difference [ "Organization.count", "Workspace.count", "User.count", "InstallationState.count", "AuditEvent.count" ] do
+        refute run_bootstrap
+      end
+    end
+    assert_includes @errors.string, "account/audit validation failed"
+    refute_includes @errors.string, @data[:password]
+    refute_includes @errors.string, "fields need correction"
   end
 
   test "real DEBUG logger retains no credentials and is restored" do

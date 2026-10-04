@@ -257,6 +257,45 @@ class VpsCliTest < Minitest::Test
     assert_equal saved, root_command("cat", "#{@config}/env")
   end
 
+  def test_guided_resume_uses_owned_release_without_source_or_commit
+    script = resume_script
+    original = root_command("cat", "#{@config}/env")
+    output, status = shell(script)
+    assert status.success?, output
+    assert_match(/OWNERSHIP\nSTOP\nINGRESS\nFINISH\nACCOUNT\n/, output)
+    assert_operator output.index("Review nonsecret"), :<, output.index("OWNERSHIP")
+    assert_equal original, root_command("cat", "#{@config}/env")
+    refute_includes output, "owner-private-password"
+    assert_empty mutations
+
+    output, status = shell(script.sub("install --resume", "install --resume --source #{Shellwords.escape(@directory)} --commit #{SHA}"))
+    assert status.success?, output
+    assert_includes output, "ACCOUNT"
+    assert_equal original, root_command("cat", "#{@config}/env")
+  end
+
+  def test_resume_refuses_wrong_commit_or_receipt_before_collecting_account_and_checks_ownership
+    script = resume_script
+    output, status = shell(script.sub("install --resume", "install --resume --commit #{'b' * 40}"))
+    refute status.success?, output
+    assert_includes output, "installed commit"
+    refute_includes output, "Review nonsecret"
+    refute_includes output, "STOP"
+
+    output, status = shell(script.sub("echo OWNERSHIP >&2;", "echo OWNERSHIP >&2; return 7;"))
+    refute status.success?, output
+    assert_includes output, "OWNERSHIP"
+    refute_includes output, "STOP"
+    refute_includes output, "ACCOUNT"
+
+    write_private("#{@release}/SOURCE_COMMIT", "#{'b' * 40}\n")
+    output, status = shell(script)
+    refute status.success?, output
+    refute_includes output, "Review nonsecret"
+    refute_includes output, "STOP"
+    assert_empty mutations
+  end
+
   def test_owned_units_can_resume_but_foreign_contents_still_refuse
     names = %w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer]
     root_command("rm", "-f", *names.map { |name| "#{@units}/#{name}" })
@@ -595,6 +634,26 @@ class VpsCliTest < Minitest::Test
   def shell(script)
     root_command_args = Process.uid.zero? ? [] : [ "sudo", "-n" ]
     Open3.capture2e(*root_command_args, "bash", "-euo", "pipefail", "-c", "source ops/vps/cli.sh; vps_paths #{Shellwords.escape(@root)}; VPS_RELEASE=#{Shellwords.escape(@release)}; #{host_network} #{script}", chdir: ROOT)
+  end
+
+  def resume_script
+    root_command("mkdir", "-p", "#{@release}/ops/vps")
+    %w[policy recovery].each { |name| write_private("#{@release}/ops/vps/#{name}.sh", "# inert release fixture\n") }
+    write_private("#{@directory}/answers.json", JSON.generate(
+      host: "support.example.test", acme_email: "owner@example.test", smtp_server: "smtp.example.test",
+      smtp_port: "587", smtp_user: "test-only-user", smtp_password: "test-only-secret", smtp_from: "owner@example.test",
+      owner_email: "owner@example.test", owner_password: "owner-private-password", owner_password_confirmation: "owner-private-password",
+      organization_name: "Example Org", organization_slug: "example-org", workspace_name: "Support Lab", workspace_slug: "support-lab"
+    ))
+    <<~SH
+      vps_doctor() { :; }
+      vps_cleanup_plan() { echo OWNERSHIP >&2; }
+      vps_stop() { echo STOP; }
+      vps_ingress_check() { echo INGRESS; }
+      vps_finish_install() { flock -u "$VPS_LOCK"; echo FINISH; }
+      vps_compose() { jq -e '.email_address == "owner@example.test" and .password == "owner-private-password"' >/dev/null && echo ACCOUNT; }
+      vps_main --root #{Shellwords.escape(@root)} install --resume --non-interactive --answers #{Shellwords.escape("#{@directory}/answers.json")}
+    SH
   end
 
   def host_network(*addresses)

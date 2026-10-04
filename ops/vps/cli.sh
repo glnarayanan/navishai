@@ -6,9 +6,11 @@ vps_die() { printf 'navishai-vps: %s\n' "$*" >&2; return 1; }
 vps_help() {
   cat <<'HELP'
 Usage: sudo bin/navishai-vps [--root /] COMMAND [options]
-  install --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA [--resume]
+  install --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA
     Guided setup by default; automation: --non-interactive --answers PRIVATE_JSON
     Advanced prebuilt configuration: --env PRIVATE_FILE
+  install --resume [--commit FULL_INSTALLED_SHA]
+    Guided resume uses the protected installed release; no source checkout needed.
   init-env --host DNS_NAME --acme-email EMAIL --output NEW_PRIVATE_FILE [--public-listen-address IPV4|auto]
   upgrade --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA --backup NEW_DIRECTORY [--public-listen-address IPV4|auto]
   recover --from BACKUP_DIRECTORY --confirm-restore BACKUP_SHA256 [--resume] [--public-listen-address IPV4|auto]
@@ -392,7 +394,7 @@ vps_install() {
 }
 vps_resume() {
   vps_load && vps_lock || return 1
-  [[ $commit == "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" && -n $source ]] || { vps_die 'Resume needs the same reviewed source and full installed commit.'; return 1; }
+  [[ $commit == "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" ]] || { vps_die 'Resume requires the installed commit; use a backed-up upgrade to change releases.'; return 1; }
   vps_cleanup_plan >/dev/null && vps_stop && vps_ingress_check || return 1
   vps_finish_install
 }
