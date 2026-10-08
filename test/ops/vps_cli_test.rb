@@ -247,8 +247,9 @@ class VpsCliTest < Minitest::Test
     assert status.success?, output
     assert_includes output, "Already on latest main (#{main}); nothing to upgrade."
     refute_includes output, "MUST-NOT"
-    assert File.directory?("#{@root}/root/navishai-source/.git")
-    refute File.exist?("#{@root}/root/navishai-backups")
+    # CI runs as non-root; these 0700 paths need a root view.
+    assert root_command("sh", "-c", "test -d #{Shellwords.escape("#{@root}/root/navishai-source/.git")} && echo yes").include?("yes")
+    refute root_command("sh", "-c", "test -e #{Shellwords.escape("#{@root}/root/navishai-backups")} && echo yes || :").include?("yes")
   end
 
   def test_single_command_upgrade_confirms_backs_up_upgrades_and_verifies
@@ -271,7 +272,7 @@ class VpsCliTest < Minitest::Test
     output, status = shell(upgrade_script.sub("yes=false", "yes=false; source=#{@directory}/reviewed; commit=#{'b' * 40}; backup=#{@directory}/point").gsub("MUST-NOT-", ""))
     assert status.success?, output
     assert_match(%r{\AARCHIVE #{@directory}/reviewed #{'b' * 40}\nBACKUP #{@directory}/point\nCANDIDATE\n}, output)
-    refute File.exist?("#{@root}/root/navishai-source")
+    refute root_command("sh", "-c", "test -e #{Shellwords.escape("#{@root}/root/navishai-source")} && echo yes || :").include?("yes")
   end
 
   def test_legacy_command_is_renamed_once_and_units_follow
