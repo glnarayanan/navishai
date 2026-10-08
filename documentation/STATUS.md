@@ -2324,10 +2324,38 @@ and `CLEAN`: automatic partial-install upgrade, guided chosen Owner setup, exact
 restore, committed-mutation rollback, different-address destination recovery and
 guarded resume, address-change reconciliation and daemon restart. It checks 18
 pre-start inspections and 175 source maintenance windows. All 11 production hashes
-match the worktree; host firewall/four sysctls stay unchanged and no private asset
+matched that frozen source; host firewall/four sysctls stayed unchanged and no private asset
 remains. Public ACME/DNS, SMTP delivery and real systemd registration/reboot remain
 unproved. Parent integration owns the PR and exact pushed-head CI; no push, merge,
 owner-VPS action or deployment ran in this slice.
+
+### Owner resume correction (4 October)
+
+The owner merged [#228](https://github.com/glnarayanan/navishai/pull/228) and ran
+the ingress upgrade. Their output shows successful runtime/schema/policy gates
+and proxy startup. Owner setup then refused with a generic error; its cause
+remains unclassified. Protected token renewal succeeded, but the suggested bare
+`install --resume` asked for account details before refusing missing source/commit
+arguments. A native regression reproduces that exact refusal.
+
+Resume now derives the commit from the protected installed receipt. It needs no
+checkout, keeps optional explicit commit matching, rejects a wrong release before
+questions and rechecks under the mutation lock after consent. Ownership, namespace,
+TLS, token eligibility, account transaction and audit guards stay unchanged.
+Owner errors name inactive tokens, invalid input/fields or database/audit failure,
+without values, SQL, exception messages or backtraces. Expiry is not the confirmed
+cause of the owner's earlier generic refusal.
+
+`PARALLEL_WORKERS=1 bin/rails test test/ops
+test/services/first_owner_bootstrap_test.rb --seed 17419` passes 97 tests / 1,140
+assertions, no failures, errors or skips. Bash/Ruby syntax, all 388 Ruby files,
+eager loading, gem/importmap audits and Brakeman pass. Direct review checked
+release/receipt binding, secret handling and transaction rollback. The named
+external review tools remain unavailable. This branch retains the
+owner-merged Rails 8.1.4 dependency update; this fix adds no dependency.
+Joined Docker proof and exact pushed-head CI remain separate evidence. No agent
+VPS action, merge or deployment ran. Older installed CLIs still need the original
+source/full-commit resume arguments; see [VPS_CLI](./VPS_CLI.md).
 
 ## Pending owner decisions
 

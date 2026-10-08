@@ -420,11 +420,20 @@ begin
     owner_email: "owner@example.invalid", owner_password:, owner_password_confirmation: owner_password)
   run.call("sudo", "-n", "tee", answers_path, input: JSON.generate(guided_answers))
   run.call("sudo", "-n", "chmod", "600", answers_path)
-  cli.call("install", "--resume", "--source", source, "--commit", release1, "--non-interactive", "--answers", answers_path)
+  installed_env = File.join(managed, "etc/navishai-reset/env")
+  run.call("sudo", "-n", "sed", "-i", "s/^NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT=.*/NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT='2000-01-01T00:00:00Z'/", installed_env)
+  refusal = cli.call("install", "--resume", "--non-interactive", "--answers", answers_path, allowed: false)
+  raise "Inactive bootstrap not diagnosed" unless refusal.include?("protected bootstrap token is inactive")
+  raise "Inactive bootstrap wrote account data" unless sql.call(databases.first, "SELECT (SELECT count(*) FROM users)+(SELECT count(*) FROM organizations)+(SELECT count(*) FROM installation_states)+(SELECT count(*) FROM audit_events WHERE action='installation.bootstrapped')") == "0"
+  cli.call("renew-bootstrap")
+  writers_stopped.call
+  secrets.concat(run.call("sudo", "-n", "cat", installed_env).scan(/^NAVISHAI_BOOTSTRAP_TOKEN='([^']+)'/).flatten)
+  cli.call("install", "--resume", "--non-interactive", "--answers", answers_path)
   web = service_info.call("web").fetch("Id")
   proxy = service_info.call("proxy").fetch("Id")
   raise "Initial Owner or audit missing" unless sql.call(databases.first, "SELECT count(*) FROM installation_states") == "1" && sql.call(databases.first, "SELECT count(*) FROM audit_events WHERE action='installation.bootstrapped'") == "1"
-  puts "PASS: actual guided resume/protected answers use the native chosen-password Owner runner through Compose stdin, with one installation marker and attributable audit."
+  run.call(*docker, "exec", "-i", web, "bin/rails", "runner", 'abort "Chosen Owner password not retained" unless User.find_by!(email_address: "owner@example.invalid").authenticate(STDIN.read)', input: owner_password)
+  puts "PASS: expired protected token refuses with zero account writes; guarded renewal and bare guided resume create the chosen-password Owner through Compose stdin, with one installation marker and attributable audit."
   puts run.call(*docker, "exec", "-i", web, "bin/rails", "runner", "-", input: File.read(File.join(root, "test/support/container_runtime_proof.rb")))
   verification = <<~'RUBY'
     require Rails.root.join("ops/current_workflows_proof")

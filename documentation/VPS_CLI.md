@@ -42,19 +42,33 @@ writers. Existing Owners cannot be recreated. Public registration stays off; no
 default password is supplied.
 
 If install reaches owned state but a later step fails, correct the named cause and
-repeat that same source/commit with `install --resume`. Resume retains domain,
-SMTP and secrets; it asks only for unfinished account choices. Do not delete data
-or rerun fresh install. If the protected token expired before Owner creation:
+run `sudo navishai-reset install --resume`. Resume reads the protected installed
+release and needs no source checkout or commit argument. An optional `--commit`
+must match that release; setup refuses a mismatch before asking account questions
+and rechecks the release under the mutation lock after consent. Resume retains
+domain, SMTP and secrets; it asks for account choices without saving passwords.
+Do not delete data or rerun fresh install. If the protected token is inactive:
 
 ```sh
 sudo navishai-reset renew-bootstrap
-sudo /root/navishai-reset-source/bin/navishai-vps install --resume \
-  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
+sudo navishai-reset install --resume
 ```
 
 Renewal stops writers, checks native bootstrap eligibility and creates a new
 private two-hour token. It refuses a completed bootstrap without changing config.
 If failure occurred before any installed state, use normal install again.
+
+Older CLI releases still require the original arguments for resume:
+
+```sh
+sudo /root/navishai-reset-source/bin/navishai-vps install --resume \
+  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
+```
+
+Owner refusals now distinguish inactive tokens, malformed input, invalid account
+fields and database/audit errors. Only fixed field names reach the terminal; no
+values, exception text, SQL or backtraces do. Account/audit failures roll back the
+whole account transaction. Renew only an inactive token, not a validation error.
 
 Automation must opt in with `--non-interactive --answers /root/private-answers.json`.
 The file must be root-owned, mode 0600, single-link, at most 32 KiB and inside a
@@ -342,4 +356,8 @@ the owner's firewall or storage, live recovery or customer/model quality.
 Owner-specific inputs remain hostname/DNS, access to public 80/443, SMTP, and a
 root-controlled Linux/systemd Docker host with the required namespace/firewall tools.
 The owner attempted the initial reset install; its public-bind failure is recorded
-above. This fix has not run on that VPS. No agent VPS, provider or paid call ran.
+above. The owner then ran the ingress fix: upgrade passed runtime/schema/policy
+and direct-local HTTPS gates and reached guided Owner setup. That setup refused
+with an unclassified error; renewal succeeded, but bare resume then failed on the
+old missing-argument check. The Owner-resume follow-up has not run on that VPS.
+No agent VPS, provider or paid call ran.

@@ -30,10 +30,35 @@ module VpsOwnerBootstrap
     end
     output.puts "Owner workspace created. Sign in using your chosen credentials."
     true
+  rescue FirstOwnerBootstrap::Unavailable
+    errors.puts "Owner bootstrap refused: protected bootstrap token is inactive (missing, invalid or expired). Run sudo navishai-reset renew-bootstrap, then sudo navishai-reset install --resume."
+    false
+  rescue InvalidInput, JSON::ParserError
+    errors.puts "Owner bootstrap refused: invalid account input. Re-enter account details; values withheld."
+    false
+  rescue ActiveRecord::RecordInvalid => error
+    # Only these fixed names may reach the terminal, never validation messages,
+    # submitted values, SQL, exception messages or backtraces.
+    label, fields = case error.record
+    when User then [ "Owner", %i[email_address password password_confirmation] ]
+    when Organization then [ "Organisation", %i[name slug] ]
+    when Workspace then [ "Workspace", %i[name slug] ]
+    else [ "Account/audit", [] ]
+    end
+    invalid = fields.select { |field| error.record.errors.key?(field) }
+    if invalid.empty?
+      errors.puts "Owner bootstrap refused: account/audit validation failed. Keep installed data and report this message; no credentials printed."
+    else
+      errors.puts "Owner bootstrap refused: #{label} fields need correction: #{invalid.join(', ')}. Values withheld; no account changes saved."
+    end
+    false
+  rescue ActiveRecord::StatementInvalid, ActiveRecord::ConnectionNotEstablished
+    errors.puts "Owner bootstrap refused: database operation failed. Keep installed data and report this message; no credentials printed."
+    false
   rescue StandardError
     # Database and validation exceptions can contain private bind values. Never
     # expose their messages or backtraces from this credential-handling runner.
-    errors.puts "Owner bootstrap refused: check account fields and active protected bootstrap token. No credentials printed."
+    errors.puts "Owner bootstrap refused: unexpected setup error. Keep installed data and report this message; no credentials printed."
     false
   ensure
     ActiveRecord::Base.logger = previous_logger

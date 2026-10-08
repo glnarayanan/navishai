@@ -39,6 +39,10 @@ vps_setup() (
   [[ $EUID == 0 ]] || { vps_die 'Guided setup requires root.'; return 1; }
   if [[ ${resume:-false} == true ]]; then
     vps_load || return 1
+    [[ -z ${commit:-} || $commit == "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" ]] || { vps_die 'Resume requires the installed commit; use a backed-up upgrade to change releases.'; return 1; }
+    # Resume builds this owned archive, never a source checkout. Recheck under
+    # the mutation lock after consent, in case another operation changed it.
+    commit="$(cat "$VPS_RELEASE/SOURCE_COMMIT")" || return 1
     [[ -z $listen_address || $listen_address == "${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto}" ]] || { vps_die 'Resume retains ingress; change deliberate settings through a backed-up upgrade.'; return 1; }
     listen_address="${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto}"
     fields=(owner_email owner_password owner_password_confirmation organization_name organization_slug workspace_name workspace_slug)
@@ -114,7 +118,7 @@ vps_setup() (
   # This is a runtime write after gated startup, not one-off maintenance.
   printf '%s\n' "$account" | vps_compose exec -T web bin/rails runner ops/vps/bootstrap_owner.rb || status=$?
   unset account values value
-  (( status == 0 )) || { vps_die 'Owner setup did not complete. For expiry, run navishai-reset renew-bootstrap, then retry install --resume. Never delete installed data.'; return "$status"; }
+  (( status == 0 )) || { vps_die 'Owner setup did not complete. Correct the named cause, then run sudo navishai-reset install --resume. Never delete installed data.'; return "$status"; }
 )
 
 vps_renew_bootstrap() (
@@ -127,5 +131,5 @@ vps_renew_bootstrap() (
   (set -o noclobber; { sed '/^NAVISHAI_BOOTSTRAP_TOKEN\(_EXPIRES_AT\)\?=/d' "$VPS_CONFIG/env" && printf "NAVISHAI_BOOTSTRAP_TOKEN='%s'\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT='%s'\n" "$token" "$expiry"; } > "$VPS_CONFIG/env.new") &&
     chmod 600 -- "$VPS_CONFIG/env.new" && mv -f -- "$VPS_CONFIG/env.new" "$VPS_CONFIG/env" || return 1
   unset token
-  printf 'Protected bootstrap token renewed for two hours; writers remain stopped. Retry guided install --resume.\n'
+  printf 'Protected bootstrap token renewed for two hours; writers remain stopped. Run sudo navishai-reset install --resume.\n'
 )

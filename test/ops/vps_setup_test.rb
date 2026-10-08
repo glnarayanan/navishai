@@ -21,6 +21,7 @@ class VpsSetupTest < Minitest::Test
     @directory = Open3.capture2("sudo", "mktemp", "-d", "/tmp/navishai-setup-test.XXXXXXXX").first.strip
     @answers = "#{@directory}/answers.json"
     write_answers(JSON.generate(ANSWERS))
+    Open3.capture3("sudo", "tee", "#{@directory}/SOURCE_COMMIT", stdin_data: "#{'a' * 40}\n")
   end
 
   def teardown
@@ -180,6 +181,7 @@ class VpsSetupTest < Minitest::Test
         source #{Shellwords.escape(ROOT)}/ops/vps/cli.sh
         source #{Shellwords.escape(ROOT)}/ops/vps/setup.sh
         answers=#{Shellwords.escape(@answers)}; non_interactive=true; resume=false
+        VPS_RELEASE=#{Shellwords.escape(@directory)}; commit=
         vps_resolve_ingress() { [[ $1 == auto ]]; export VPS_PUBLIC_LISTEN_ADDRESS=203.0.113.9; }
         vps_install() {
           vps_private "$envfile" || return 1

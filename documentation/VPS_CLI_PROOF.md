@@ -150,8 +150,9 @@ does not certify Docker publication, Caddy TLS or the owner's VPS by itself.
 
 ### Automatic ingress, guided setup and portable recovery
 
-The full current joined proof returned exit 0 and `CLEAN`. All 11 frozen
-production hashes still match the worktree. Key SHA-256 values are:
+The recorded joined proof returned exit 0 and `CLEAN`. All 11 production hashes
+matched its frozen source. The later Owner-resume fix changes CLI, setup and
+bootstrap handling; it cannot inherit this earlier run. Key SHA-256 values are:
 
 | File | SHA-256 |
 | --- | --- |
@@ -272,3 +273,28 @@ The proof has caught these boundary failures:
 Every completed failed run removed its disposable assets and matched the
 before/after host IPv4/IPv6 firewall and checked sysctls. No failed run counts
 as a full joined-proof pass.
+
+### Owner-resume follow-up
+
+The expanded harness expires only the disposable installation's protected token.
+Bare guided resume must then refuse with zero users, organisations, installation
+markers or bootstrap audits. Guarded renewal must leave writers stopped; another
+bare resume must create one Owner/audit and authenticate the chosen password.
+No source/commit argument, password argument or immutable release edit is used.
+
+This run freezes the following changed sources; its complete result and log hash
+belong in the follow-up PR, separate from the earlier pass above:
+
+| File | SHA-256 |
+| --- | --- |
+| `ops/vps/cli.sh` | `d418af46c86b52af5bd280fc110a3605df2ffa1b91ad0d3a7850494c1fc80fb6` |
+| `ops/vps/setup.sh` | `8ecbccca309b7993bc6c7607f9d864500a92f1b47065d63d4bd8862460719462` |
+| `ops/vps/bootstrap_owner.rb` | `c9991e76167866bbeb310168242d79e96a19c4d59053cbd2c82ce3a16c78f050` |
+| Executed proof | `fca72c6393935bc7f4ca7b6f4cb89eb75aa22ef131542f86db4cb6ba0348e61d` |
+
+The proof keeps its exact historical application base and current CLI sources.
+Application/schema code matches the current branch; Gemfile/lock differ after
+the owner's dependency update. Native tests and exact-head CI test Rails 8.1.4
+separately. Internal CA, synthetic systemctl/NSS and all other limits above remain.
+An expired-token fixture cannot prove the cause of the owner's earlier generic
+bootstrap refusal. No agent runs on the owner VPS.
