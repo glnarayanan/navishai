@@ -1,0 +1,66 @@
+<%# DRAFT TEXT FOR OWNER REVIEW. Not legal advice. Do not name a legal entity or address until one exists. %>
+<% content_for :title, "Privacy — NavishAI" %>
+<% content_for :head do %>
+  <meta name="description" content="What the NavishAI website collects and how the self-hosted evaluation lab handles company support data.">
+<% end %>
+<main class="landing landing-legal">
+  <article aria-labelledby="privacy-page-title">
+    <header class="landing-legal-header">
+      <h1 id="privacy-page-title">Privacy</h1>
+      <p>Last updated 8 October 2026. A plain-language summary of what this website collects and how the evaluation lab treats your data.</p>
+    </header>
+
+    <section aria-labelledby="site-title">
+      <h2 id="site-title">This website</h2>
+      <p>There are no analytics, advertising, tracking pixels or third-party scripts on navishai.com. Fonts, styles and scripts load from this site only.</p>
+      <dl>
+        <div>
+          <dt>Server logs</dt>
+          <dd>The application logs each request with its time, path, request ID and your IP address. We use these logs to run and secure the site. A fixed log retention period has not been set yet; we will publish one before general availability.</dd>
+        </div>
+        <div>
+          <dt>Cookies</dt>
+          <dd>A <code>_navishai_session</code> cookie holds a security token that protects forms and ends when you close your browser. A <code>navishai_theme</code> cookie remembers a colour theme for one year, but only after you choose one. Signing in adds a session cookie that keeps you signed in and, once you open a workspace, a cookie that remembers it. None of these are used for tracking or advertising.</dd>
+        </div>
+        <div>
+          <dt>Email</dt>
+          <dd>If you write to <%= mail_to "hello@navishai.com" %>, we use your message and address to reply.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="lab-title">
+      <h2 id="lab-title">The evaluation lab</h2>
+      <p>NavishAI is self-hosted. Your operator controls the database, backups, logs and which external endpoints are allowed. Signed-in sessions record the browser user agent and IP address for security.</p>
+      <dl>
+        <div>
+          <dt>Local by default</dt>
+          <dd>Intake, local analysis, review and deterministic grading stay in your deployment. Workspace-scoped access separates company data.</dd>
+        </div>
+        <div>
+          <dt>Explicit external disclosure</dt>
+          <dd>Model-assisted source processing, HTTP targets and rubric judges need operator-approved endpoints and human disclosure confirmation. Targets receive visible context and permitted knowledge, not hidden expectations. Judges receive the fixed requirement, relevant evidence and output.</dd>
+        </div>
+        <div>
+          <dt>No training on customer data</dt>
+          <dd>NavishAI does not train models on your corpus. Any future training would need separate opt-in terms and controls.</dd>
+        </div>
+        <div>
+          <dt>Masking has limits</dt>
+          <dd>Email masking or authored exact-text rules do not remove all PII. Review retained titles, text and context before approving disclosure. Masking new input does not rewrite earlier snapshots.</dd>
+        </div>
+        <div>
+          <dt>Retention and deletion</dt>
+          <dd>Source retention limits access. Source deletion also clears local derived scenarios, calibration and run records in that corpus. It cannot recall data already sent to an endpoint; remote retention belongs to that endpoint's operator.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="privacy-contact-title">
+      <h2 id="privacy-contact-title">Questions</h2>
+      <p>Write to <%= mail_to "hello@navishai.com" %>.</p>
+    </section>
+  </article>
+
+  <%= render "pages/footer", top_id: "privacy-page-title" %>
+</main>

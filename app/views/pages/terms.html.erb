@@ -1,0 +1,42 @@
+<%# DRAFT TEXT FOR OWNER REVIEW. Not legal advice. Do not name a legal entity or address until one exists. %>
+<% content_for :title, "Terms — NavishAI" %>
+<% content_for :head do %>
+  <meta name="description" content="Pre-launch terms for the self-hosted NavishAI evaluation lab during early access.">
+<% end %>
+<main class="landing landing-legal">
+  <article aria-labelledby="terms-page-title">
+    <header class="landing-legal-header">
+      <h1 id="terms-page-title">Terms</h1>
+      <p>Last updated 8 October 2026. NavishAI is in early access. This short notice applies until full terms are published.</p>
+    </header>
+
+    <section aria-labelledby="terms-notice-title">
+      <h2 id="terms-notice-title">Pre-launch notice</h2>
+      <dl>
+        <div>
+          <dt>Self-hosted</dt>
+          <dd>NavishAI runs in a deployment that your operator sets up and controls. There is no managed service and no public signup. Access comes from a deployment's Owner.</dd>
+        </div>
+        <div>
+          <dt>Provided as-is</dt>
+          <dd>During early access, NavishAI is provided as-is, without warranties. Features, data formats and these terms may change.</dd>
+        </div>
+        <div>
+          <dt>Results have limits</dt>
+          <dd>A passing suite means recorded outputs passed fixed checks. It does not establish coverage, grader accuracy or that an AI support system is ready to ship.</dd>
+        </div>
+        <div>
+          <dt>Your data and endpoints</dt>
+          <dd>Upload only data you are allowed to use. External endpoints you approve are run by their operators under their own terms.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="terms-contact-title">
+      <h2 id="terms-contact-title">Contact</h2>
+      <p>Write to <%= mail_to "hello@navishai.com" %>.</p>
+    </section>
+  </article>
+
+  <%= render "pages/footer", top_id: "terms-page-title" %>
+</main>
