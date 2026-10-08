@@ -31,7 +31,7 @@ module VpsOwnerBootstrap
     output.puts "Owner workspace created. Sign in using your chosen credentials."
     true
   rescue FirstOwnerBootstrap::Unavailable
-    errors.puts "Owner bootstrap refused: protected bootstrap token is inactive (missing, invalid or expired). Run sudo navishai-reset renew-bootstrap, then sudo navishai-reset install --resume."
+    errors.puts "Owner bootstrap refused: protected bootstrap token is inactive (missing, invalid or expired). Run sudo navishai renew-bootstrap, then sudo navishai install --resume."
     false
   rescue InvalidInput, JSON::ParserError
     errors.puts "Owner bootstrap refused: invalid account input. Re-enter account details; values withheld."

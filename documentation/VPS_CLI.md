@@ -1,5 +1,49 @@
 # Reset VPS CLI
 
+## Upgrade in one command
+
+On an installed VPS, this is the whole upgrade:
+
+```sh
+sudo navishai upgrade
+```
+
+It fetches `main` into `/root/navishai-source` (cloning it if missing), compares
+it with the installed release and stops with "nothing to upgrade" when they match.
+Otherwise it lists up to 20 new commits and asks to continue (`--yes` skips the
+question). It then takes a full backup to a new
+`/root/navishai-backups/<UTC date>-<time>-<old>-to-<new>` folder, upgrades with
+writers stopped, restarts, and runs the same checks as `check` and `status`.
+A failed upgrade restores that backup and stays stopped, as before.
+
+Merged `main` is the reviewed code. To pin another reviewed commit instead, add
+`--commit FULL_SHA`; that skips the fetch and the question. `--source` and
+`--backup` still override the defaults.
+
+### Move from the old `navishai-reset` command (one time)
+
+Installs made before this change only have `navishai-reset`, whose installed
+code cannot run the one-command upgrade. Run the new code once from a fresh
+checkout; it upgrades and then renames the command:
+
+```sh
+sudo git clone https://github.com/glnarayanan/navishai.git /root/navishai-source
+sudo /root/navishai-source/bin/navishai-vps upgrade
+```
+
+After a successful upgrade (or when already current), it links
+`/usr/local/bin/navishai`, points the two startup services at it, reloads
+systemd and removes `/usr/local/bin/navishai-reset`. From then on, use
+`sudo navishai upgrade`. Any later operator command finishes the rename if an
+upgrade was made with the old command. The old `/root/navishai-reset-source`
+checkout and `/root/navishai-reset-backups` stay untouched; delete them under
+your own retention policy.
+
+Only the command and default folders changed. Systemd units
+(`navishai-reset.service`, `navishai-reset-check.timer`), managed paths, the
+Compose project, volumes and labels keep the `navishai-reset` name, because
+renaming them would mean moving the database volumes.
+
 ## Fresh replacement
 
 `bin/navishai-vps` installs the reset from one reviewed Git commit. It does not
@@ -7,18 +51,17 @@ install host packages or convert old helpdesk data. First remove only the verifi
 old install with [legacy uninstall](./LEGACY_UNINSTALL.md); backup is optional for
 the owner's disposable test data. No broad Docker/system prune is needed.
 
-New CLI work needs review before deployment. Use an approved full commit SHA that
-contains this CLI, not a pre-CLI `main` or local edits. On the VPS:
+Use a reviewed full commit SHA from `main`, not local edits. On the VPS:
 
 ```sh
-sudo git clone https://github.com/glnarayanan/navishai.git /root/navishai-reset-source
+sudo git clone https://github.com/glnarayanan/navishai.git /root/navishai-source
 # Replace this value with the reviewed 40-character commit SHA.
 RESET_COMMIT=APPROVED_FULL_COMMIT_SHA
-sudo git -C /root/navishai-reset-source checkout --detach "$RESET_COMMIT"
-sudo /root/navishai-reset-source/bin/navishai-vps doctor
-sudo /root/navishai-reset-source/bin/navishai-vps install \
-  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
-sudo navishai-reset status
+sudo git -C /root/navishai-source checkout --detach "$RESET_COMMIT"
+sudo /root/navishai-source/bin/navishai-vps doctor
+sudo /root/navishai-source/bin/navishai-vps install \
+  --source /root/navishai-source --commit "$RESET_COMMIT"
+sudo navishai status
 ```
 
 ### Guided setup and resume
@@ -42,7 +85,7 @@ writers. Existing Owners cannot be recreated. Public registration stays off; no
 default password is supplied.
 
 If install reaches owned state but a later step fails, correct the named cause and
-run `sudo navishai-reset install --resume`. Resume reads the protected installed
+run `sudo navishai install --resume`. Resume reads the protected installed
 release and needs no source checkout or commit argument. An optional `--commit`
 must match that release; setup refuses a mismatch before asking account questions
 and rechecks the release under the mutation lock after consent. Resume retains
@@ -50,8 +93,8 @@ domain, SMTP and secrets; it asks for account choices without saving passwords.
 Do not delete data or rerun fresh install. If the protected token is inactive:
 
 ```sh
-sudo navishai-reset renew-bootstrap
-sudo navishai-reset install --resume
+sudo navishai renew-bootstrap
+sudo navishai install --resume
 ```
 
 Renewal stops writers, checks native bootstrap eligibility and creates a new
@@ -61,8 +104,8 @@ If failure occurred before any installed state, use normal install again.
 Older CLI releases still require the original arguments for resume:
 
 ```sh
-sudo /root/navishai-reset-source/bin/navishai-vps install --resume \
-  --source /root/navishai-reset-source --commit "$RESET_COMMIT"
+sudo /root/navishai-source/bin/navishai-vps install --resume \
+  --source /root/navishai-source --commit "$RESET_COMMIT"
 ```
 
 Owner refusals now distinguish inactive tokens, malformed input, invalid account
@@ -152,7 +195,7 @@ Compose config paths, container IDs, volume names and network IDs. If it cannot
 prove a project/layout, stop and share that refusal and the read-only inventory,
 not private environment contents. It does not run an unknown old CLI for a version.
 
-### Recover a wildcard-bind partial install
+### Recover a wildcard-bind partial install (historical)
 
 The old installer isolated public ingress in
 [`fe5de56`](https://github.com/glnarayanan/navishai/commit/fe5de56b41880dd409bc425ba455ebb18af5d331).
@@ -173,17 +216,17 @@ managed CLI cannot parse the new option. Do not add the key to its env first,
 edit an immutable release, delete installed data or rerun install:
 
 ```sh
-sudo git -C /root/navishai-reset-source fetch origin
+sudo git -C /root/navishai-source fetch origin
 FIXED_COMMIT=REVIEWED_FULL_FIX_SHA
-sudo git -C /root/navishai-reset-source checkout --detach "$FIXED_COMMIT"
-sudo install -d -m 700 /root/navishai-reset-backups
-sudo /root/navishai-reset-source/bin/navishai-vps upgrade \
-  --source /root/navishai-reset-source --commit "$FIXED_COMMIT" \
-  --backup /root/navishai-reset-backups/before-ingress-fix
+sudo git -C /root/navishai-source checkout --detach "$FIXED_COMMIT"
+sudo install -d -m 700 /root/navishai-backups
+sudo /root/navishai-source/bin/navishai-vps upgrade \
+  --source /root/navishai-source --commit "$FIXED_COMMIT" \
+  --backup /root/navishai-backups/before-ingress-fix
 # Only after upgrade succeeds, restore the generated service's active state.
 sudo systemctl start navishai-reset.service navishai-reset-check.timer
-sudo navishai-reset check
-sudo navishai-reset status
+sudo navishai check
+sudo navishai status
 ```
 
 No IP input is required. The backup directory must be new. Upgrade stops writers,
@@ -197,28 +240,27 @@ families remain in force. No script stops Tailscale or changes host interfaces.
 ## Commands after install
 
 ```sh
-sudo navishai-reset status
-sudo navishai-reset check
-sudo navishai-reset stop
-sudo navishai-reset start
-sudo install -d -m 700 /root/navishai-reset-backups
-sudo navishai-reset backup --output /root/navishai-reset-backups/point-001
+sudo navishai upgrade
+sudo navishai status
+sudo navishai check
+sudo navishai stop
+sudo navishai start
+sudo install -d -m 700 /root/navishai-backups
+sudo navishai backup --output /root/navishai-backups/point-001
 
-# Fetch and review a new full SHA first; do not reuse an existing release directory.
-sudo git -C /root/navishai-reset-source fetch origin
-NEW_COMMIT=NEW_REVIEWED_FULL_COMMIT_SHA
-sudo navishai-reset upgrade --source /root/navishai-reset-source \
-  --commit "$NEW_COMMIT" --backup /root/navishai-reset-backups/pre-upgrade-001
+# Pinned alternative to the one-command upgrade; the backup folder must be new.
+sudo navishai upgrade --commit NEW_REVIEWED_FULL_COMMIT_SHA \
+  --backup /root/navishai-backups/pre-upgrade-001
 
 # Explicit restore destroys current reset data. Inspect the backup first.
-sudo sha256sum /root/navishai-reset-backups/point-001/CHECKSUMS
-sudo navishai-reset restore --from /root/navishai-reset-backups/point-001 \
+sudo sha256sum /root/navishai-backups/point-001/CHECKSUMS
+sudo navishai restore --from /root/navishai-backups/point-001 \
   --confirm-restore DISPLAYED_CHECKSUMS_SHA256
-sudo navishai-reset start
+sudo navishai start
 
 # Preview; repeat with its digest only when destruction is intended.
-sudo navishai-reset cleanup
-sudo navishai-reset cleanup --apply --confirm-destroy DISPLAYED_PLAN_SHA256
+sudo navishai cleanup
+sudo navishai cleanup --apply --confirm-destroy DISPLAYED_PLAN_SHA256
 ```
 
 Backup pauses writers and resumes them only through gated start after publication.
@@ -250,15 +292,15 @@ Do not run fresh `install` or create empty data first. Target paths and project
 resources must be absent. Inspect the backup's manifest/checksums privately:
 
 ```sh
-sudo /root/navishai-reset-source/bin/navishai-vps doctor
-sudo sha256sum /root/navishai-reset-backups/migration-point/CHECKSUMS
-sudo /root/navishai-reset-source/bin/navishai-vps recover \
-  --from /root/navishai-reset-backups/migration-point \
+sudo /root/navishai-source/bin/navishai-vps doctor
+sudo sha256sum /root/navishai-backups/migration-point/CHECKSUMS
+sudo /root/navishai-source/bin/navishai-vps recover \
+  --from /root/navishai-backups/migration-point \
   --confirm-restore DISPLAYED_CHECKSUMS_SHA256
 # Restore leaves writers stopped. Point DNS/proxy origin at this destination.
 sudo systemctl start navishai-reset.service navishai-reset-check.timer
-sudo navishai-reset check
-sudo navishai-reset status
+sudo navishai check
+sudo navishai status
 ```
 
 Recovery validates the full backup, creates only owned destination paths/resources,
@@ -278,8 +320,9 @@ immutable-release edit is part of either retry.
 
 ## Ownership and startup
 
-The CLI owns `/opt/navishai-reset`, `/etc/navishai-reset`, `/var/lib/navishai-reset`
-and the exact `navishai-reset` Compose project. `current` points to an immutable
+The CLI owns `/opt/navishai-reset`, `/etc/navishai-reset`, `/var/lib/navishai-reset`,
+the `/usr/local/bin/navishai` command link and the exact `navishai-reset` Compose
+project. `current` points to an immutable
 `releases/<full-git-sha>` with `SOURCE_COMMIT`. Private configuration is
 `/etc/navishai-reset/env`; state and the mutation lock live under the state path.
 An explicit managed root supports isolated tests, never guessed host cleanup.
@@ -328,8 +371,12 @@ before candidate commands. It never rewrites immutable release/Compose files.
 
 ## Done checks and limits
 
-Focused core checks pass 29 tests / 278 assertions; guided setup passes 11 / 237,
-with no failures, errors or skips. They cover native terminal hiding/cancellation,
+Focused core checks pass 36 tests / 357 assertions; guided setup passes 11 / 235,
+with no failures, errors or skips. The one-command upgrade tests use a local Git
+origin to cover the up-to-date no-op, the commit list and refusal without a
+terminal or `--yes`, auto-named backups, post-upgrade check/status, the pinned
+path without fetching, and the one-time command rename with foreign-link and
+foreign-unit refusal. Earlier checks cover native terminal hiding/cancellation,
 invalid/protected answers, stdin-only account input, lock ordering, retained resume
 config, automatic discovery, ambiguity/stale override refusal, exact endpoints,
 byte-exact upgrade rollback and unfinished-destination ownership. Bash/Ruby syntax,
