@@ -2357,6 +2357,22 @@ Joined Docker proof and exact pushed-head CI remain separate evidence. No agent
 VPS action, merge or deployment ran. Older installed CLIs still need the original
 source/full-commit resume arguments; see [VPS_CLI](./VPS_CLI.md).
 
+### One-command upgrade and `navishai` command (8 October)
+
+The owner asked to replace the multi-step upgrade with one command and to drop
+the `navishai-reset` command name. `sudo navishai upgrade` now fetches `main`
+into `/root/navishai-source`, stops when the installed release already matches,
+lists new commits and confirms (`--yes` skips), backs up to an auto-named folder
+under `/root/navishai-backups`, upgrades and runs `check` and `status`. A pinned
+`--commit` keeps the old explicit path. Older installs run the new code once from
+a fresh checkout; it renames the command link and both service `ExecStart` paths,
+then removes `/usr/local/bin/navishai-reset`. Units, managed paths, Compose
+project and volumes keep the `navishai-reset` name so no data moves.
+
+`test/ops` VPS CLI, setup, policy, recovery and Owner bootstrap tests pass (36/357,
+11/235, 8/155, 11/33, 9/151). No Docker proof, VPS action, merge or deployment
+ran in this slice.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support
