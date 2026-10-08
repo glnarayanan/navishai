@@ -23,7 +23,7 @@ class VpsCliTest < Minitest::Test
     FileUtils.mkdir_p("#{@release}/bin")
     File.write("#{@release}/bin/navishai-vps", "# inert test release\n")
     File.symlink("releases/#{SHA}", "#{@prefix}/current")
-    File.symlink("#{@prefix}/current/bin/navishai-vps", "#{@root}/usr/local/bin/navishai-reset")
+    File.symlink("#{@prefix}/current/bin/navishai-vps", "#{@root}/usr/local/bin/navishai")
     File.write("#{@state}/install.json", JSON.generate(schema: 1, project: "navishai-reset", prefix: @prefix, config: @config, state: @state, commit: SHA), perm: 0600)
     @env = {
       "NAVISHAI_APP_HOST" => "support.example.test", "NAVISHAI_ACME_EMAIL" => "owner@example.test",
@@ -35,7 +35,7 @@ class VpsCliTest < Minitest::Test
     }
     write_env
     %w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer].each do |unit|
-      File.write("#{@units}/#{unit}", "ExecStart=#{@root}/usr/local/bin/navishai-reset --root #{@root} #{unit.include?('check') ? 'check' : 'start'}\n")
+      File.write("#{@units}/#{unit}", "ExecStart=#{@root}/usr/local/bin/navishai --root #{@root} #{unit.include?('check') ? 'check' : 'start'}\n")
     end
     @containers = [ container("1", "web"), container("2", "postgres"), { id: "3" * 64, labels: { "com.docker.compose.project" => "unrelated" }, mounts: [] } ]
     @volumes = [ { Name: "navishai-reset_rails_storage", Driver: "local", Options: {}, Labels: { "com.navishai.owner" => "navishai-reset", "com.docker.compose.project" => "navishai-reset", "com.docker.compose.volume" => "rails_storage" } } ]
@@ -58,7 +58,7 @@ class VpsCliTest < Minitest::Test
   end
 
   def test_generated_startup_files_refuse_writable_unit_directory
-    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai-reset",
+    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai",
       *%w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer].map { |name| "#{@units}/#{name}" })
     root_command("chmod", "0777", @units)
     output, status = shell("systemctl() { echo MUST-NOT-RUN; }; vps_units")
@@ -66,7 +66,7 @@ class VpsCliTest < Minitest::Test
     assert_includes output, "Directory ancestry is not root-controlled"
     refute_includes output, "MUST-NOT-RUN"
     refute File.exist?("#{@units}/navishai-reset.service")
-    refute File.symlink?("#{@root}/usr/local/bin/navishai-reset")
+    refute File.symlink?("#{@root}/usr/local/bin/navishai")
   end
 
   def test_real_root_git_archive_normalizes_modes_and_is_recoverable
@@ -238,6 +238,77 @@ class VpsCliTest < Minitest::Test
     refute status.success?, output
     refute_includes output, "SWITCH"
     assert_equal original, root_command("cat", "#{@config}/env")
+  end
+
+  def test_single_command_upgrade_is_a_no_op_on_latest_main
+    main = origin_with_commits("feat: first").last
+    install_release(main)
+    output, status = shell(upgrade_script)
+    assert status.success?, output
+    assert_includes output, "Already on latest main (#{main}); nothing to upgrade."
+    refute_includes output, "MUST-NOT"
+    assert File.directory?("#{@root}/root/navishai-source/.git")
+    refute File.exist?("#{@root}/root/navishai-backups")
+  end
+
+  def test_single_command_upgrade_confirms_backs_up_upgrades_and_verifies
+    installed, main = origin_with_commits("feat: first", "fix: second")
+    install_release(installed)
+    output, status = shell(upgrade_script)
+    refute status.success?, output
+    assert_includes output, "fix: second"
+    refute_includes output, "feat: first"
+    assert_includes output, "Confirm on a terminal, or add --yes."
+    refute_includes output, "MUST-NOT"
+    output, status = shell(upgrade_script.sub("yes=false", "yes=true").gsub("MUST-NOT-", ""))
+    assert status.success?, output
+    assert_match(%r{ARCHIVE #{@root}/root/navishai-source #{main}\nBACKUP #{@root}/root/navishai-backups/\d{8}-\d{6}-#{installed[0, 7]}-to-#{main[0, 7]}\nCANDIDATE\n}, output)
+    assert_match(/Recovery point: .*\nCHECK\nSTATUS\n\z/, output)
+    assert_equal "700", root_command("stat", "-c", "%a", "#{@root}/root/navishai-backups").strip
+  end
+
+  def test_pinned_upgrade_keeps_explicit_source_commit_and_backup_without_fetching
+    output, status = shell(upgrade_script.sub("yes=false", "yes=false; source=#{@directory}/reviewed; commit=#{'b' * 40}; backup=#{@directory}/point").gsub("MUST-NOT-", ""))
+    assert status.success?, output
+    assert_match(%r{\AARCHIVE #{@directory}/reviewed #{'b' * 40}\nBACKUP #{@directory}/point\nCANDIDATE\n}, output)
+    refute File.exist?("#{@root}/root/navishai-source")
+  end
+
+  def test_legacy_command_is_renamed_once_and_units_follow
+    legacy = "#{@root}/usr/local/bin/navishai-reset"
+    root_command("mv", "#{@root}/usr/local/bin/navishai", legacy)
+    %w[navishai-reset.service navishai-reset-check.service].each do |unit|
+      root_command("sed", "-i", "s#bin/navishai --root#bin/navishai-reset --root#", "#{@units}/#{unit}")
+    end
+    timer = root_command("cat", "#{@units}/navishai-reset-check.timer")
+    output, status = shell("systemctl() { echo \"SYSTEMD $*\"; }; vps_rename_cli; vps_rename_cli")
+    assert status.success?, output
+    assert_equal [ "SYSTEMD daemon-reload", "Renamed the command: use sudo navishai from now on." ], output.lines.map(&:strip)
+    refute File.symlink?(legacy)
+    assert_equal "#{@prefix}/current/bin/navishai-vps", File.readlink("#{@root}/usr/local/bin/navishai")
+    assert_equal "ExecStart=#{@root}/usr/local/bin/navishai --root #{@root} start\n", root_command("cat", "#{@units}/navishai-reset.service")
+    assert_equal "644", root_command("stat", "-c", "%a", "#{@units}/navishai-reset-check.service").strip
+    assert_equal timer, root_command("cat", "#{@units}/navishai-reset-check.timer")
+    output, status = cleanup
+    assert status.success?, output
+  end
+
+  def test_legacy_rename_refuses_foreign_links_and_units_without_changes
+    legacy = "#{@root}/usr/local/bin/navishai-reset"
+    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai")
+    root_command("ln", "-s", "/usr/bin/true", legacy)
+    output, status = shell("systemctl() { echo MUST-NOT-RUN; }; vps_rename_cli")
+    refute status.success?, output
+    assert_includes output, "Unclaimed legacy CLI"
+    refute_includes output, "MUST-NOT-RUN"
+    refute File.symlink?("#{@root}/usr/local/bin/navishai")
+    root_command("ln", "-sfn", "#{@prefix}/current/bin/navishai-vps", legacy)
+    root_command("chmod", "0666", "#{@units}/navishai-reset.service")
+    output, status = shell("systemctl() { echo MUST-NOT-RUN; }; vps_rename_cli")
+    refute status.success?, output
+    assert_includes output, "Unclaimed unit"
+    assert File.symlink?(legacy)
+    refute File.symlink?("#{@root}/usr/local/bin/navishai")
   end
 
   def test_bootstrap_renewal_refuses_completed_owner_and_never_prints_token
@@ -553,7 +624,7 @@ class VpsCliTest < Minitest::Test
   end
 
   def test_partial_install_cleanup_requires_receipt_and_not_env_or_missing_units
-    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai-reset", "#{@config}/env",
+    root_command("rm", "-f", "#{@root}/usr/local/bin/navishai", "#{@config}/env",
       *%w[navishai-reset.service navishai-reset-check.service navishai-reset-check.timer].map { |name| "#{@units}/#{name}" })
     output, status = cleanup
     refute status.success?, output
@@ -618,6 +689,36 @@ class VpsCliTest < Minitest::Test
     output, status = Open3.capture2e(*command, "tee", path, stdin_data: body)
     raise output unless status.success?
     root_command("chmod", "0600", path)
+  end
+
+  def origin_with_commits(*subjects)
+    origin = "#{@directory}/origin.git"
+    work = "#{@directory}/origin-work"
+    script = +"git init -q --bare -b main #{Shellwords.escape(origin)} && git init -q -b main #{Shellwords.escape(work)}"
+    subjects.each do |subject|
+      script << " && git -C #{Shellwords.escape(work)} -c user.name=Fixture -c user.email=fixture@example.invalid commit -q --allow-empty -m #{Shellwords.escape(subject)}"
+    end
+    script << " && git -C #{Shellwords.escape(work)} push -q #{Shellwords.escape(origin)} main"
+    root_command("sh", "-c", script)
+    freeze_files
+    root_command("git", "-C", work, "log", "--reverse", "--format=%H").split
+  end
+
+  def install_release(sha)
+    root_command("sh", "-c", "echo #{sha} > #{Shellwords.escape("#{@release}/SOURCE_COMMIT")}")
+  end
+
+  def upgrade_script
+    <<~SH
+      VPS_REPOSITORY=#{Shellwords.escape("#{@directory}/origin.git")}; source= commit= backup= listen_address=; yes=false
+      vps_archive() { echo "MUST-NOT-ARCHIVE $1 $2" >&2; }
+      vps_resolve_ingress() { :; }
+      vps_backup() { echo "MUST-NOT-BACKUP $1"; }
+      vps_candidate() { echo MUST-NOT-CANDIDATE; }
+      vps_check() { echo MUST-NOT-CHECK; }
+      vps_status() { echo MUST-NOT-STATUS; }
+      vps_upgrade
+    SH
   end
 
   def freeze_files

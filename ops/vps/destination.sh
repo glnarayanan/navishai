@@ -9,7 +9,7 @@ vps_recover() (
   if [[ ${resume:-false} == true ]]; then
     vps_load no-env && vps_lock || return 1
     [[ $(jq -r .phase "$VPS_STATE/install.json") == recovering ]] || { vps_die 'Recovery resume requires an unfinished destination receipt; never adopt an existing installation.'; return 1; }
-    vps_cleanup_plan >/dev/null || return 1
+    vps_rename_cli && vps_cleanup_plan >/dev/null || return 1
   else vps_fresh_check || return 1; fi
   vps_resolve_ingress "$desired" || return 1
   VPS_RECOVERY_WORK="$(mktemp -d /tmp/navishai-destination.XXXXXXXX)" || return 1

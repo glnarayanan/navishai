@@ -118,7 +118,7 @@ vps_setup() (
   # This is a runtime write after gated startup, not one-off maintenance.
   printf '%s\n' "$account" | vps_compose exec -T web bin/rails runner ops/vps/bootstrap_owner.rb || status=$?
   unset account values value
-  (( status == 0 )) || { vps_die 'Owner setup did not complete. Correct the named cause, then run sudo navishai-reset install --resume. Never delete installed data.'; return "$status"; }
+  (( status == 0 )) || { vps_die 'Owner setup did not complete. Correct the named cause, then run sudo navishai install --resume. Never delete installed data.'; return "$status"; }
 )
 
 vps_renew_bootstrap() (
@@ -131,5 +131,5 @@ vps_renew_bootstrap() (
   (set -o noclobber; { sed '/^NAVISHAI_BOOTSTRAP_TOKEN\(_EXPIRES_AT\)\?=/d' "$VPS_CONFIG/env" && printf "NAVISHAI_BOOTSTRAP_TOKEN='%s'\nNAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT='%s'\n" "$token" "$expiry"; } > "$VPS_CONFIG/env.new") &&
     chmod 600 -- "$VPS_CONFIG/env.new" && mv -f -- "$VPS_CONFIG/env.new" "$VPS_CONFIG/env" || return 1
   unset token
-  printf 'Protected bootstrap token renewed for two hours; writers remain stopped. Run sudo navishai-reset install --resume.\n'
+  printf 'Protected bootstrap token renewed for two hours; writers remain stopped. Run sudo navishai install --resume.\n'
 )

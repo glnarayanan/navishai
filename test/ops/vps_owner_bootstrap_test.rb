@@ -83,7 +83,7 @@ class VpsOwnerBootstrapTest < ActiveSupport::TestCase
     ENV["NAVISHAI_BOOTSTRAP_TOKEN_EXPIRES_AT"] = 1.second.ago.iso8601
     refute run_bootstrap
     assert_includes @errors.string, "protected bootstrap token is inactive"
-    assert_includes @errors.string, "sudo navishai-reset renew-bootstrap"
+    assert_includes @errors.string, "sudo navishai renew-bootstrap"
     refute_includes @errors.string, ENV["NAVISHAI_BOOTSTRAP_TOKEN"]
     refute_includes @errors.string, @data[:email_address]
   end

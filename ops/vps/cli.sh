@@ -5,14 +5,19 @@ source "${BASH_SOURCE[0]%/*}/destination.sh"
 vps_die() { printf 'navishai-vps: %s\n' "$*" >&2; return 1; }
 vps_help() {
   cat <<'HELP'
-Usage: sudo bin/navishai-vps [--root /] COMMAND [options]
+Usage: sudo navishai [--root /] COMMAND [options]
+  (before install, or from a source checkout: sudo bin/navishai-vps ...)
+  upgrade [--yes]
+    One step: fetch latest main into /root/navishai-source, stop if already on it,
+    show new commits and confirm, back up to /root/navishai-backups, upgrade, verify.
   install --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA
     Guided setup by default; automation: --non-interactive --answers PRIVATE_JSON
     Advanced prebuilt configuration: --env PRIVATE_FILE
   install --resume [--commit FULL_INSTALLED_SHA]
     Guided resume uses the protected installed release; no source checkout needed.
   init-env --host DNS_NAME --acme-email EMAIL --output NEW_PRIVATE_FILE [--public-listen-address IPV4|auto]
-  upgrade --source REVIEWED_GIT_CHECKOUT --commit FULL_SHA --backup NEW_DIRECTORY [--public-listen-address IPV4|auto]
+  upgrade [--source GIT_CHECKOUT] [--commit FULL_SHA] [--backup NEW_DIRECTORY] [--public-listen-address IPV4|auto]
+    A pinned --commit skips the fetch and the confirmation.
   recover --from BACKUP_DIRECTORY --confirm-restore BACKUP_SHA256 [--resume] [--public-listen-address IPV4|auto]
   backup --output NEW_DIRECTORY
   restore --from BACKUP_DIRECTORY --confirm-restore BACKUP_SHA256
@@ -38,7 +43,12 @@ vps_paths() {
   VPS_PREFIX="${VPS_ROOT%/}/opt/navishai-reset"
   VPS_CONFIG="${VPS_ROOT%/}/etc/navishai-reset"
   VPS_STATE="${VPS_ROOT%/}/var/lib/navishai-reset"
-  VPS_CLI="${VPS_ROOT%/}/usr/local/bin/navishai-reset"
+  VPS_CLI="${VPS_ROOT%/}/usr/local/bin/navishai"
+  # Older installs linked this name; vps_rename_cli moves them to VPS_CLI once.
+  VPS_LEGACY_CLI="${VPS_ROOT%/}/usr/local/bin/navishai-reset"
+  VPS_SOURCE="${VPS_ROOT%/}/root/navishai-source"
+  VPS_BACKUPS="${VPS_ROOT%/}/root/navishai-backups"
+  VPS_REPOSITORY=https://github.com/glnarayanan/navishai.git
   VPS_UNITS="${VPS_ROOT%/}/etc/systemd/system"
   VPS_PROJECT=navishai-reset
   export VPS_PROJECT
@@ -366,7 +376,7 @@ UNIT
 )
 vps_fresh_check() {
   local path existing
-  for path in "$VPS_PREFIX" "$VPS_CONFIG" "$VPS_STATE" "$VPS_CLI"; do [[ ! -e $path && ! -L $path ]] || { vps_die "Fresh install path exists: $path"; return 1; }; done
+  for path in "$VPS_PREFIX" "$VPS_CONFIG" "$VPS_STATE" "$VPS_CLI" "$VPS_LEGACY_CLI"; do [[ ! -e $path && ! -L $path ]] || { vps_die "Fresh install path exists: $path"; return 1; }; done
   # No reuse of a manual/old project's state, even when the name happens to match.
   existing="$(vps_docker ps -aq --filter "label=com.docker.compose.project=$VPS_PROJECT")" || return 1
   [[ -z $existing ]] || { vps_die 'Project containers already exist; refuse adoption.'; return 1; }
@@ -395,7 +405,7 @@ vps_install() {
 vps_resume() {
   vps_load && vps_lock || return 1
   [[ $commit == "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" ]] || { vps_die 'Resume requires the installed commit; use a backed-up upgrade to change releases.'; return 1; }
-  vps_cleanup_plan >/dev/null && vps_stop && vps_ingress_check || return 1
+  vps_rename_cli && vps_cleanup_plan >/dev/null && vps_stop && vps_ingress_check || return 1
   vps_finish_install
 }
 vps_finish_install() {
@@ -417,9 +427,43 @@ vps_candidate() {
   vps_compose build web jobs && vps_pull_pins || return 1
   vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate && vps_start
 }
+vps_git() { GIT_TERMINAL_PROMPT=0 git -c safe.directory="$source" -C "$source" "$@"; }
+vps_latest_main() {
+  if [[ ! -e $source && ! -L $source ]]; then
+    printf 'Cloning %s into %s\n' "$VPS_REPOSITORY" "$source" >&2
+    mkdir -p -m 700 -- "$(dirname -- "$source")" &&
+      GIT_TERMINAL_PROMPT=0 git clone --quiet --no-checkout -- "$VPS_REPOSITORY" "$source" || { vps_die "Could not clone $VPS_REPOSITORY."; return 1; }
+  fi
+  vps_directory "$source" || return 1
+  vps_git fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' || { vps_die "Could not fetch main into $source."; return 1; }
+  vps_git rev-parse --verify 'refs/remotes/origin/main^{commit}'
+}
+vps_upgrade_consent() {
+  local installed="$1" answer
+  printf 'Installed:   %s\nLatest main: %s\n' "$installed" "$commit"
+  vps_git log --oneline --no-decorate -20 "$installed..$commit" 2>/dev/null || printf '(installed commit is not in this checkout'"'"'s history)\n'
+  "$yes" && return 0
+  [[ -t 0 ]] || { vps_die 'Confirm on a terminal, or add --yes.'; return 1; }
+  read -r -p 'Back up, then upgrade to latest main? [y/N] ' answer || return 1
+  [[ $answer == [yY] || $answer == [yY][eE][sS] ]] || { printf 'Upgrade cancelled; nothing changed.\n'; return 1; }
+}
 vps_upgrade() {
-  [[ -n $source && -n $commit && -n $backup ]] || { vps_die 'Upgrade needs --source, --commit and --backup.'; return 1; }
-  [[ $commit != "$(cat "$VPS_RELEASE/SOURCE_COMMIT")" ]] || { vps_die 'Already on this release.'; return 1; }
+  local installed latest=false
+  installed="$(cat "$VPS_RELEASE/SOURCE_COMMIT")" || return 1
+  source="${source:-$VPS_SOURCE}"
+  # Without a pinned --commit, the target is whatever main is now.
+  if [[ -z $commit ]]; then commit="$(vps_latest_main)" || return 1; latest=true; fi
+  if [[ $commit == "$installed" ]]; then
+    vps_rename_cli || return 1
+    if "$latest"; then printf 'Already on latest main (%s); nothing to upgrade.\n' "$commit"
+    else printf 'Already on %s; nothing to upgrade.\n' "$commit"; fi
+    return 0
+  fi
+  if "$latest"; then vps_upgrade_consent "$installed" || return 1; fi
+  if [[ -z $backup ]]; then
+    backup="$VPS_BACKUPS/$(date -u +%Y%m%d-%H%M%S)-${installed:0:7}-to-${commit:0:7}"
+    install -d -m 700 -- "$VPS_BACKUPS" || return 1
+  fi
   local VPS_INGRESS_OVERRIDE="${listen_address:-}"
   vps_resolve_ingress "${listen_address:-${NAVISHAI_PUBLIC_LISTEN_ADDRESS:-auto}}" || return 1
   vps_archive "$source" "$commit" >/dev/null || return 1
@@ -432,6 +476,38 @@ vps_upgrade() {
     vps_die "Upgrade failed; old full recovery point restored, writers stopped. Inspect then run start. Backup: $backup"
     return 1
   fi
+  vps_rename_cli || :
+  vps_check && vps_status || { vps_die "Upgraded to $commit, but verification failed; writers stopped. Backup: $backup"; return 1; }
+}
+vps_status() {
+  printf 'Release: %s\n' "$(cat "$VPS_RELEASE/SOURCE_COMMIT")"
+  vps_compose ps
+  vps_policy_check && vps_runtime_check && vps_services_check || return 1
+  printf 'Verified local HTTPS: '
+  vps_https && echo reachable
+}
+# One-time move from the old navishai-reset command. Units, paths and Compose
+# resources keep their navishai-reset names; renaming volumes would move data.
+vps_rename_cli() {
+  [[ -e $VPS_LEGACY_CLI || -L $VPS_LEGACY_CLI ]] || return 0
+  local target="$VPS_PREFIX/current/bin/navishai-vps" file content
+  [[ -L $VPS_LEGACY_CLI && $(stat -c %u -- "$VPS_LEGACY_CLI") == 0 && $(readlink -- "$VPS_LEGACY_CLI") == "$target" ]] || { vps_die "Unclaimed legacy CLI: $VPS_LEGACY_CLI"; return 1; }
+  for file in navishai-reset.service navishai-reset-check.service; do
+    [[ ! -e $VPS_UNITS/$file && ! -L $VPS_UNITS/$file ]] && continue
+    [[ -f $VPS_UNITS/$file && ! -L $VPS_UNITS/$file && $(stat -c '%u:%a:%h' -- "$VPS_UNITS/$file") == 0:644:1 ]] || { vps_die "Unclaimed unit: $file"; return 1; }
+  done
+  if [[ -e $VPS_CLI || -L $VPS_CLI ]]; then
+    [[ -L $VPS_CLI && $(stat -c %u -- "$VPS_CLI") == 0 && $(readlink -- "$VPS_CLI") == "$target" ]] || { vps_die "Existing unclaimed CLI: $VPS_CLI"; return 1; }
+  else ln -s "$target" "$VPS_CLI" || return 1; fi
+  for file in navishai-reset.service navishai-reset-check.service; do
+    [[ -f $VPS_UNITS/$file ]] || continue
+    content="$(cat -- "$VPS_UNITS/$file")" || return 1
+    printf '%s\n' "${content//"$VPS_LEGACY_CLI --root "/"$VPS_CLI --root "}" > "$VPS_UNITS/.$file.new" &&
+      chmod 644 -- "$VPS_UNITS/.$file.new" && mv -f -- "$VPS_UNITS/.$file.new" "$VPS_UNITS/$file" || return 1
+  done
+  # Units must point at the new name before the old link disappears.
+  systemctl daemon-reload && rm -f -- "$VPS_LEGACY_CLI" || return 1
+  printf 'Renamed the command: use sudo navishai from now on.\n'
 }
 vps_cleanup_plan() {
   local inventory owned ids name metadata volumes='[]' networks='[]' paths mounts digest file
@@ -501,7 +577,7 @@ vps_cleanup() {
   printf 'Removed only verified reset resources. Images/packages/external backups remain.\n'
 }
 vps_main() {
-  local root=/ command= source= commit= envfile= backup= output= host= email= listen_address= from= confirmation= answers= apply=false non_interactive=false resume=false
+  local root=/ command= source= commit= envfile= backup= output= host= email= listen_address= from= confirmation= answers= apply=false non_interactive=false resume=false yes=false
   if [[ ${1:-} == --root ]]; then [[ $# -ge 3 ]] || return 1; root="$2"; shift 2; fi
   command="${1:-help}"; (($# == 0)) || shift
   case "$command" in help|--help|-h) vps_help; return ;; esac
@@ -522,12 +598,14 @@ vps_main() {
       --apply) apply=true; shift ;;
       --non-interactive) non_interactive=true; shift ;;
       --resume) resume=true; shift ;;
+      --yes) yes=true; shift ;;
       *) vps_die "Unknown option: $1"; return 1 ;;
     esac
   done
   [[ -z $listen_address || $command == init-env || $command == install || $command == upgrade || $command == recover ]] || { vps_die '--public-listen-address is only for setup, backed-up upgrade or destination recovery.'; return 1; }
   [[ $command == install || ( -z $answers && $non_interactive == false ) ]] || return 1
   [[ $resume == false || $command == install || $command == recover ]] || return 1
+  [[ $yes == false || $command == upgrade ]] || { vps_die '--yes is only for upgrade.'; return 1; }
   [[ $command != init-env ]] || { vps_init_env; return; }
   # Emergency stop does not need healthy config, Compose, Git or firewall tools.
   [[ $command != stop ]] || {
@@ -544,9 +622,11 @@ vps_main() {
     return 1
   }
   vps_lock || return 1
+  # Upgrade renames after switching releases; systemd's start/check never rewrite units.
+  case "$command" in upgrade|start|check) ;; *) vps_rename_cli || return 1 ;; esac
   case "$command" in
     start) vps_start ;; stop) vps_stop ;; check) vps_check ;;
-    status) printf 'Release: %s\n' "$(cat "$VPS_RELEASE/SOURCE_COMMIT")"; vps_compose ps; vps_policy_check && vps_runtime_check && vps_services_check || return 1; printf 'Verified local HTTPS: '; vps_https && echo reachable ;;
+    status) vps_status ;;
     backup) [[ -n $output ]] || { vps_die 'backup needs --output.'; return 1; }; vps_backup "$output" && vps_start ;;
     upgrade) vps_upgrade ;;
     renew-bootstrap) vps_renew_bootstrap ;;
