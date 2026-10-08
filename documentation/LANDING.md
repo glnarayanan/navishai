@@ -129,8 +129,8 @@ below-the-fold evidence limit; they do not prove external actions or model quali
 
 Checked 8 October 2026 with Ruby 4.0.6, PostgreSQL 16 and Chrome 155.
 `bin/rails test`: 727 tests / 11,616 assertions. `bin/rails test test/controllers`:
-50 tests / 393 assertions; the landing and lab
-shell browser tests: 6 tests / 256 assertions; no failures, errors or skips. New
+50 tests / 393 assertions. Landing and lab shell browser tests: 6 tests / 256
+assertions. No failures, errors or skips. New
 checks cover the pilot and contact `mailto:` hrefs, footer link targets, signed-out
 and signed-in Privacy/Terms, Back to top targets and keyboard focus on footer
 links. `bin/rubocop`, `zeitwerk:check`, Brakeman and `git diff --check` are clean.
