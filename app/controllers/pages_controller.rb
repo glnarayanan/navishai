@@ -4,4 +4,10 @@ class PagesController < ApplicationController
   def show
     redirect_to workspaces_path if authenticated?
   end
+
+  def privacy
+  end
+
+  def terms
+  end
 end

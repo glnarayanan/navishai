@@ -15,8 +15,28 @@ The page extends the [lab design](./DESIGN.md); it does not replace it.
   source-to-check example. Stack them without dropping content on narrow screens.
 - **Form:** Extend the owner-pinned repository/QA-lab identity in code. No new visual
   world, generated images, dependencies, pricing or customer claims.
+- **Close:** The closing section asks for a pilot with one primary
+  `mailto:hello@navishai.com?subject=NavishAI%20pilot` action, shows the contact
+  address and one founder line without employer names. The hero keeps the only
+  in-page "Sign in to the lab" action; the header keeps its sign-in link. No form
+  or backend handles pilot requests.
+- **Footer:** "© 2026 NavishAI", the contact `mailto:`, Privacy, Terms and a Back
+  to top link that targets the current page's `h1` id. Footer links use the muted
+  text-link treatment of the section navigation.
 - **Finish:** Inspect desktop/mobile and theme states; exercise real sign-in,
   signed-in root redirect, native disclosures, anchors, keyboard access and CSP.
+
+## Privacy and Terms pages
+
+`/privacy` and `/terms` (`PagesController#privacy`, `#terms`) render for signed-out
+and signed-in visitors and share the landing footer. Their text is draft for owner
+review and not legal advice; it names no legal entity or address. Privacy describes
+what the site actually does: no analytics or third-party assets, request logs with
+IP address and path, the CSRF session cookie, the opt-in `navishai_theme` cookie and
+signed-in session/workspace cookies. Its lab section restates the data boundaries
+below. Terms is a short pre-launch notice: self-hosted, no managed service or
+public signup, provided as-is during early access, contact by email. Update both
+pages when cookies, logging, analytics or the boundaries change.
 
 ## Product and privacy boundaries
 
@@ -37,11 +57,13 @@ are advertised. Self-hosting needs operator setup, not an implied managed servic
 
 ## Routes and ownership
 
-Signed-out visitors can read the page and follow the real sign-in route. First-time
+Signed-out visitors can read the page, follow the real sign-in route or email a
+pilot request. First-time
 setup appears only while `FirstOwnerBootstrap.available?`. Signed-in root requests
 keep their existing redirect to `workspaces_path`; no authentication logic changes.
 Page CSS lives in `app/assets/stylesheets/landing.css`, scoped to `.landing`, and
-loads through the existing asset pipeline. Shared layout and application CSS stay
+loads through the existing asset pipeline; the legal pages reuse it under
+`.landing-legal`, and the footer is `app/views/pages/_footer.html.erb`. Shared layout and application CSS stay
 unchanged. Native FAQ disclosures need no new JavaScript. Section links opt out of
 Turbo so the browser handles fragment scrolling, history and focus directly.
 
@@ -102,3 +124,19 @@ Executed DOM checks confirm six steps, `/session/new`, no horizontal overflow an
 16px body text at 390px. Native tests exercise real sign-in/out, themes, disclosures,
 anchors, focus and CSP. Full captures fix the earlier mobile viewport capture's
 below-the-fold evidence limit; they do not prove external actions or model quality.
+
+## Contact, pilot and legal pages
+
+Checked 8 October 2026 with Ruby 4.0.6, PostgreSQL 16 and Chrome 155.
+`bin/rails test`: 727 tests / 11,616 assertions. `bin/rails test test/controllers`:
+50 tests / 393 assertions; the landing and lab
+shell browser tests: 6 tests / 256 assertions; no failures, errors or skips. New
+checks cover the pilot and contact `mailto:` hrefs, footer link targets, signed-out
+and signed-in Privacy/Terms, Back to top targets and keyboard focus on footer
+links. `bin/rubocop`, `zeitwerk:check`, Brakeman and `git diff --check` are clean.
+Desktop and 390px captures of the close, footer and both legal pages were
+inspected in light and dark: no horizontal overflow or CSP violations. The CSP
+initializer is unchanged. A request probe with forgery protection on (as in
+production) confirmed the signed-out pages set only the HttpOnly
+`_navishai_session` CSRF cookie. Back to top already targeted the existing
+`#landing-title`; tests now guard it.

@@ -192,12 +192,10 @@
     <div>
       <h2 id="close-title">Start with the support decisions your AI must get right</h2>
       <p>Bring company evidence. Let experts set the expectations. Keep the failures worth testing again.</p>
+      <p class="landing-note">Built by a Support leader with 13+ years in B2B SaaS post-sales. Questions? Write to <%= mail_to "hello@navishai.com" %>.</p>
     </div>
-    <%= link_to "Sign in to the lab", new_session_path, class: "button button-secondary" %>
+    <%= mail_to "hello@navishai.com", "Request a pilot", subject: "NavishAI pilot", class: "button button-primary" %>
   </section>
 
-  <footer class="landing-footer">
-    <p>NavishAI · Company-specific support evaluation</p>
-    <%= link_to "Back to top", "#landing-title", data: { turbo: false } %>
-  </footer>
+  <%= render "pages/footer", top_id: "landing-title" %>
 </main>

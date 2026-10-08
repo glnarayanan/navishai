@@ -1,5 +1,7 @@
 Rails.application.routes.draw do
   root "pages#show"
+  get "privacy", to: "pages#privacy", as: :privacy
+  get "terms", to: "pages#terms", as: :terms
   resources :workspaces, only: %i[index show new create edit update] do
     resources :workspace_invitations, only: %i[index create destroy]
     resources :corpora, only: %i[index create show] do
