@@ -2373,6 +2373,26 @@ project and volumes keep the `navishai-reset` name so no data moves.
 11/235, 8/155, 11/33, 9/151). No Docker proof, VPS action, merge or deployment
 ran in this slice.
 
+## Plain Compose automatic preparation (16 October)
+
+The owner asked for plain `docker compose up -d --build` to be the whole
+deployment, so a PaaS (Dokploy) can redeploy on every push. `compose.yaml` adds a
+one-shot `prepare` service that runs `db:prepare db:grant_runtime` as
+`navishai_setup` on the control network only; web/jobs wait for it to exit 0. It
+is the only Rails container with the preparation password. The VPS CLI override
+disables it and keeps its own gated preparation. This replaces the manual
+owner-run preparation rule for plain Compose; see
+[deployment](./DEPLOYMENT.md#upgrade-ordering-and-the-trade-off) for the observed
+ordering, the outage on failure and the migration rule.
+
+A local Docker 29.8.2/Compose v5.6.0 run passed a fresh `up`, a repeat `up`, a forced
+recreate with identical ACLs and an image-change redeploy; a wrong preparation
+password stopped the rollout with web/jobs left unstarted. The image added this
+sandbox's proxy CA to build. Local `bin/ci` passed every step except system tests,
+which could not start Chrome as root; rerun separately with `--no-sandbox` and a
+matching driver, 72 browser tests passed. `bin/prove-compose-runtime` (orb-only)
+was updated to use `prepare` but did not run here. No merge or deployment ran.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support

@@ -11,6 +11,9 @@ x-runtime: &runtime
     postgres:
       condition: service_healthy
 services:
+  # The CLI runs its own gated preparation as a different owner (vps_prepare).
+  prepare:
+    profiles: [vps-cli-disabled]
   postgres:
     restart: "no"
     labels:

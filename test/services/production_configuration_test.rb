@@ -22,6 +22,30 @@ class ProductionConfigurationTest < ActiveSupport::TestCase
     assert_not_includes File.read(Rails.root.join("Dockerfile")), "docker-entrypoint"
   end
 
+  test "Compose prepares as the owner on the control network before web and jobs start" do
+    services = YAML.safe_load_file(Rails.root.join("compose.yaml"), aliases: true).fetch("services")
+    prepare = services.fetch("prepare")
+    assert_equal %w[bin/rails db:prepare db:grant_runtime], prepare.fetch("command")
+    assert_equal "no", prepare.fetch("restart")
+    assert_equal %w[control], prepare.fetch("networks")
+    assert_not prepare.key?("ports")
+    assert_equal %w[ALL], prepare.fetch("cap_drop")
+    assert_equal %w[no-new-privileges:true], prepare.fetch("security_opt")
+    assert_equal({ "postgres" => { "condition" => "service_healthy" } }, prepare.fetch("depends_on"))
+    environment = prepare.fetch("environment")
+    assert_equal "navishai_setup", environment.fetch("NAVISHAI_DATABASE_USERNAME")
+    assert_includes environment.fetch("NAVISHAI_DATABASE_PASSWORD"), "NAVISHAI_POSTGRES_PASSWORD"
+    assert_empty environment.keys.grep(/ENDPOINTS|OIDC|SMTP|BOOTSTRAP/)
+    %w[web jobs].each do |name|
+      dependencies = services.fetch(name).fetch("depends_on")
+      assert_equal "service_healthy", dependencies.dig("postgres", "condition")
+      assert_equal "service_completed_successfully", dependencies.dig("prepare", "condition")
+      assert_not_includes services.fetch(name).fetch("command"), "db:prepare"
+    end
+    vps = YAML.safe_load_file(Rails.root.join("ops/vps/compose.yaml"), aliases: true).fetch("services")
+    assert_equal %w[vps-cli-disabled], vps.fetch("prepare").fetch("profiles")
+  end
+
   test "all production database configurations share the restricted default username" do
     assert_equal %w[primary cache queue cable], ActiveRecord::Base.configurations.configs_for(env_name: "production").map(&:name)
     ActiveRecord::Base.configurations.configs_for(env_name: "production").each do |config|

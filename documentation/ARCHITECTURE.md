@@ -553,12 +553,13 @@ Every controller and job starts from a checked workspace. Composite relationship
 
 Keep deployment boring: web, jobs, PostgreSQL, and only the execution worker actually needed. No runtime CDN or telemetry. Existing installer/live-host proof does not transfer to this topology. Validate backup/restore, network policy, TLS, and clean-host setup before claiming deployment readiness.
 
-Prepare production schemas once under a separate database owner before starting
-web/jobs. Runtime uses a distinct password and a non-superuser, non-owner role with
+Prepare production schemas under a separate database owner before starting
+web/jobs; plain Compose does this with a one-shot `prepare` service on every `up`. Runtime uses a distinct password and a non-superuser, non-owner role with
 table DML, sequence usage and schema usage only. It cannot create databases/roles,
 change schemas, assume the preparation role or disable audit/version triggers.
 Never run migrations from web startup or pass the preparation credential to a
-persistent app process. The manual three-service topology stays unchanged.
+persistent app process. Plain Compose adds only that one-shot service to
+PostgreSQL, web and jobs.
 The separate [VPS CLI](./VPS_CLI.md) override adds Caddy and a credential-empty
 namespace holder. Web/jobs share its IPv4/IPv6 guard, applied before startup.
 Systemd and a locked maintenance CLI own restart, preparation and recovery;
