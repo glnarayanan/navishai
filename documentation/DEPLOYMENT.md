@@ -1,9 +1,11 @@
 # Evaluation-lab hosting boundary
 
-The manual Compose composition contains web, Solid Queue jobs, and PostgreSQL 16.
+The plain Compose composition contains PostgreSQL 16, a one-shot `prepare`
+service, web and Solid Queue jobs. `docker compose up -d --build` is the whole
+generic deployment: a PaaS such as Dokploy can run it on every push.
 The [reset VPS CLI](./VPS_CLI.md) adds a separate production override with Caddy,
 gated IPv4/IPv6 startup, restricted preparation/runtime roles and full recovery.
-Use that CLI for same-VPS fresh replacement, not the manual commands below.
+Its override disables `prepare`; the CLI keeps its own gated preparation.
 Neither private test evidence nor a pinned image proves public-host acceptance.
 Old installers, Helm/native
 topologies, runtime payloads, release scripts, archive tools and their proof have
@@ -16,8 +18,8 @@ It neither installs this reset nor converts an old database.
 
 Copy `.env.example` into a private environment file and supply app host, distinct
 runtime/preparation database passwords, and SECRET_KEY_BASE. Compose uses a new project/volume and lab database
-names: do not map an old helpdesk volume into it. Run database preparation once
-before starting web/jobs; Rails maintains separate primary/cache/queue/cable
+names: do not map an old helpdesk volume into it. Compose prepares the databases
+before web/jobs start (below); Rails maintains separate primary/cache/queue/cable
 databases in production. The first-Owner bootstrap is protected by a deployment
 token and expiry, not public registration. SMTP is required for production reset,
 verification and invitation email; missing SMTP fails closed. Optional OIDC needs
@@ -25,38 +27,67 @@ issuer/client configuration and registered callback URLs.
 
 ### Preparation and runtime roles
 
-These commands describe only the manual baseline, not the reset VPS CLI.
-No deployment ran in this work.
+This describes plain Compose, not the reset VPS CLI. No deployment ran in this work.
 Use a new volume. PostgreSQL's init script creates restricted `navishai`; the
 bootstrap administrator is `navishai_setup`. `NAVISHAI_POSTGRES_PASSWORD` must
-differ from `NAVISHAI_DATABASE_PASSWORD`. Only PostgreSQL and the one-off preparation
-container receive the former. Supply it in the private shell environment through
-your secret manager; a Compose `.env` file alone does not export shell variables.
+differ from `NAVISHAI_DATABASE_PASSWORD`. Only PostgreSQL and the one-shot `prepare`
+container receive the former. Supply both through the private `.env` next to
+`compose.yaml` (Dokploy writes its environment there) or your secret manager.
 Never print either value or put it in tracked files.
 
 ```sh
-docker compose build
-docker compose up -d postgres
-NAVISHAI_PREPARE_PASSWORD="$NAVISHAI_POSTGRES_PASSWORD" docker compose run --rm --no-deps \
-  -e NAVISHAI_PREPARE_PASSWORD web sh -ec '
-    export NAVISHAI_DATABASE_USERNAME=navishai_setup
-    export NAVISHAI_DATABASE_PASSWORD="$NAVISHAI_PREPARE_PASSWORD"
-    unset NAVISHAI_PREPARE_PASSWORD
-    exec bin/rails db:prepare db:grant_runtime
-  '
-docker compose up -d web jobs
+docker compose up -d --build
 ```
 
-Wait for PostgreSQL's health check before preparation. `db:grant_runtime` requires
-production and a separate owner; it rejects elevated runtime-role flags. It grants
-CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE and sequence USAGE/SELECT
-for primary/cache/queue/cable, including future owner-created tables/sequences.
-It revokes public database access and schema creation. Runtime cannot create or
-alter schemas, become the owner or disable triggers. Admins still can bypass them.
-Web/jobs no longer prepare databases on startup, so concurrent starts cannot race
-migrations. Starting before preparation fails; do not solve it by elevating runtime.
-Upgrades require stopping web/jobs, approved owner-run preparation and grants, then
-restart. This is not an automatic migration or old-volume conversion path.
+On every `up`, `prepare` waits for PostgreSQL's health check, then runs
+`bin/rails db:prepare db:grant_runtime` as `navishai_setup` and exits. It joins
+only the internal control network, mounts no volume, drops all capabilities, uses
+no-new-privileges and `restart: "no"`. Web/jobs depend on it with
+`service_completed_successfully`, so Compose starts them only after it exits 0.
+Web/jobs still never prepare or migrate on startup and never receive the
+preparation password. `docker compose logs prepare` shows the last run.
+
+Both tasks are safe to repeat. `db:prepare` creates/loads missing databases and
+otherwise applies only pending migrations. `db:grant_runtime` re-issues the same
+REVOKE/GRANT/ALTER DEFAULT PRIVILEGES statements in one transaction per database.
+On 16 October a local Docker 29.8.2/Compose v5.6.0 run of this composition passed a
+fresh `up`, a second `up` and a forced recreate: each `prepare` exited 0, the
+database, schema and default ACLs were byte-identical after the re-runs, `/up` on
+the loopback publication returned 200, web/jobs ran as `navishai` on all four
+databases and only `prepare` carried the preparation password. That run used a
+locally built image with this sandbox's proxy CA added; it is not host acceptance.
+
+`db:grant_runtime` requires production and a separate owner; it rejects elevated
+runtime-role flags. It grants CONNECT, schema USAGE, table SELECT/INSERT/UPDATE/DELETE
+and sequence USAGE/SELECT for primary/cache/queue/cable, including future
+owner-created tables/sequences. It revokes public database access and schema
+creation. Runtime cannot create or alter schemas, become the owner or disable
+triggers. Admins still can bypass them. Do not fix a failed start by elevating runtime.
+
+#### Upgrade ordering and the trade-off
+
+This replaces the earlier rule that upgrades need stopped web/jobs and an approved,
+owner-run preparation: preparation now runs without a human step on every `up`.
+What Compose does around it was observed, not configured. In the local run above,
+an image change made Compose stop and replace the old web/jobs containers, then
+run `prepare`, then start the new web/jobs. So old code did not serve while
+migrations ran, but the site was down for the preparation time. Other Compose
+versions or a targeted command such as `docker compose up -d prepare` can order
+this differently and leave old web/jobs serving against the new schema.
+
+When `prepare` fails, `up` exits non-zero and the new web/jobs stay created but not
+started; the old ones were already stopped in the observed run. That is fail-closed
+(no app runs on a half-prepared schema) but it is an outage until a fixed commit or
+the previous one deploys. Read `docker compose logs prepare` first. Rolling back to
+the previous commit only works if its code tolerates the newer schema.
+
+No Compose deployment of this lab has a database yet. On the first `up`,
+`db:prepare` loads the current schemas into empty databases with no old code
+running. Of the 36 primary migrations, the `remove_column`/`drop_table` calls sit
+only in `down` methods; none removes or renames anything a running release reads. Write future
+migrations so the previous release keeps working against the new schema (add, then
+backfill, then remove in a later release). When one cannot be, stop web/jobs
+(`docker compose stop web jobs`) before deploying it and record that in its PR.
 
 Web binds only to the host loopback. Supply an HTTPS reverse proxy with trusted
 forwarded headers; production enforces SSL and secure cookies. PostgreSQL is not
@@ -69,7 +100,8 @@ the application also validates DNS and pins public addresses. No live endpoint i
 configured or tested by default. Local deletion cannot recall remote copies.
 See [operations acceptance](./OPERATIONS_ACCEPTANCE.md) for namespace-only edge
 controls and local upgrade/rollback evidence. Shared-host policy needs the owner's
-approval; Compose alone does not enforce destination deny or safe startup ordering.
+approval; Compose alone does not enforce destination deny or apply egress policy
+before web/jobs start.
 
 Compose pins the public PostgreSQL 16 multi-platform index by digest. On 1 October
 2026, the registry returned that digest for `postgres:16`; fetching the immutable

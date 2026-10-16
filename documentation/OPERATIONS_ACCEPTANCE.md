@@ -130,8 +130,9 @@ application's per-workspace endpoint registry. Application DNS/address pinning a
 human/operator disclosure checks remain required and unchanged.
 
 For an approved customer deployment whose Docker daemon runs in an owned namespace,
-create the edge network with web/jobs stopped, apply and verify policy, then perform
-owner-run schema preparation/grants and start web/jobs. Do not expose an unprotected
+create the edge network with web/jobs stopped (`docker compose up --no-start`), apply
+and verify policy, then run `docker compose up -d`; its `prepare` service applies
+schema preparation/grants before web/jobs start. Do not expose an unprotected
 startup window. Verify policy again after daemon/network recreation, before apps
 restart. Compose alone does not enforce destination policy or this startup order.
 
