@@ -30,6 +30,8 @@ x-rails: &rails
   depends_on:
     postgres:
       condition: service_healthy
+    prepare:
+      condition: service_completed_successfully
   networks: [control, edge]
   volumes: [rails_storage:/rails/storage]
 services:
@@ -49,6 +51,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+  # One-shot owner preparation before every web/jobs start; the only Rails
+  # container with the preparation password. Web/jobs never prepare themselves.
+  prepare:
+    <<: *rails
+    restart: "no"
+    command: [bin/rails, db:prepare, db:grant_runtime]
+    environment:
+      RAILS_ENV: production
+      NAVISHAI_APP_HOST: ${NAVISHAI_APP_HOST:?set NAVISHAI_APP_HOST}
+      NAVISHAI_DATABASE_HOST: postgres
+      NAVISHAI_DATABASE_USERNAME: navishai_setup
+      NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_POSTGRES_PASSWORD:?set a distinct NAVISHAI_POSTGRES_PASSWORD}
+      SECRET_KEY_BASE: ${NAVISHAI_SECRET_KEY_BASE:?set NAVISHAI_SECRET_KEY_BASE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [control]
+    volumes: []
   web:
     <<: *rails
     command: [bin/rails, server, -b, 0.0.0.0]
