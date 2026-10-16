@@ -116,15 +116,13 @@ begin
   secret_values = secrets.values_at("NAVISHAI_DATABASE_PASSWORD", "NAVISHAI_POSTGRES_PASSWORD", "NAVISHAI_SECRET_KEY_BASE")
   envfile = File.join(directory, "proof.env")
   File.write(envfile, secrets.map { |key, value| "#{key}=#{value}\n" }.join, perm: 0o600)
-  compose = [ "sudo", "-n", "--preserve-env=NAVISHAI_PREPARE_PASSWORD", cli, "--host", docker.last, "--env-file", envfile,
+  compose = [ "sudo", "-n", cli, "--host", docker.last, "--env-file", envfile,
     "--project-name", prefix, "--project-directory", source, "--file", proof_composition ]
-  run.call(*compose, "up", "--detach", "--no-build", "--pull", "never", "--wait", "postgres")
-  # Passing the generated preparation secret by environment keeps it out of argv.
-  environment["NAVISHAI_PREPARE_PASSWORD"] = secrets.fetch("NAVISHAI_POSTGRES_PASSWORD")
-  puts run.call(*compose, "run", "--rm", "--no-deps", "-e", "NAVISHAI_PREPARE_PASSWORD", "web", "sh", "-ec",
-    'export NAVISHAI_DATABASE_USERNAME=navishai_setup NAVISHAI_DATABASE_PASSWORD="$NAVISHAI_PREPARE_PASSWORD"; unset NAVISHAI_PREPARE_PASSWORD; exec bin/rails db:prepare db:grant_runtime')
-  environment.delete("NAVISHAI_PREPARE_PASSWORD")
-  run.call(*compose, "up", "--detach", "--no-build", "web", "jobs")
+  # The tracked one-shot prepare service must finish before Compose starts web/jobs.
+  run.call(*compose, "up", "--detach", "--no-build", "--pull", "never", "web", "jobs")
+  prepare = run.call(*compose, "ps", "--all", "--quiet", "prepare").strip
+  raise "Preparation did not complete" unless run.call(*docker, "inspect", "--format", "{{.State.ExitCode}}", prepare).strip == "0"
+  puts "PASS: Compose ran the one-shot prepare service to exit 0 before web/jobs."
   web = run.call(*compose, "ps", "--quiet", "web").strip
   jobs = run.call(*compose, "ps", "--quiet", "jobs").strip
   pg = run.call(*compose, "ps", "--quiet", "postgres").strip
