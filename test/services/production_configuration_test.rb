@@ -46,6 +46,12 @@ class ProductionConfigurationTest < ActiveSupport::TestCase
     assert_equal %w[vps-cli-disabled], vps.fetch("prepare").fetch("profiles")
   end
 
+  test "Compose web declares its networks directly rather than only through the merge anchor" do
+    pairs = ->(node) { node.children.each_slice(2).to_h { |key, value| [ key.value, value ] } }
+    web = pairs.(pairs.(Psych.parse_file(Rails.root.join("compose.yaml")).root).fetch("services")).fetch("web")
+    assert_equal %w[control edge], pairs.(web).fetch("networks").children.map(&:value)
+  end
+
   test "all production database configurations share the restricted default username" do
     assert_equal %w[primary cache queue cable], ActiveRecord::Base.configurations.configs_for(env_name: "production").map(&:name)
     ActiveRecord::Base.configurations.configs_for(env_name: "production").each do |config|

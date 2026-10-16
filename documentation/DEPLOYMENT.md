@@ -47,6 +47,13 @@ no-new-privileges and `restart: "no"`. Web/jobs depend on it with
 Web/jobs still never prepare or migrate on startup and never receive the
 preparation password. `docker compose logs prepare` shows the last run.
 
+`web` lists `networks: [control, edge]` itself instead of relying only on the
+`x-rails` merge anchor. Reverse proxies and PaaS tools that attach a domain may
+rewrite a routed service's networks and ignore YAML-merge-inherited keys; on a
+Dokploy host that dropped `control`, so web could not resolve `postgres` while
+`/up` stayed 200. Keep web's networks explicit. This is a composition fix, not
+deployment acceptance.
+
 Both tasks are safe to repeat. `db:prepare` creates/loads missing databases and
 otherwise applies only pending migrations. `db:grant_runtime` re-issues the same
 REVOKE/GRANT/ALTER DEFAULT PRIVILEGES statements in one transaction per database.
