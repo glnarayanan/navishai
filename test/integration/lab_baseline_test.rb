@@ -18,7 +18,7 @@ class LabBaselineTest < ActionDispatch::IntegrationTest
     sign_in_as users(:owner)
     get workspace_path(workspaces(:acme_support))
     assert_response :success
-    assert_select "h2", "A clean starting point"
+    assert_select "h2", "Start with a corpus"
     assert_select "a", text: "Manage invitations"
     assert_select "button[disabled]", count: 0
   end

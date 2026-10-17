@@ -18,8 +18,8 @@ class LabShellTest < ApplicationSystemTestCase
       fill_in "Password", with: "password12345"
       click_button "Sign in"
       assert_selector "h1", text: "Choose a workspace"
-      click_link "Open lab", match: :first
-      assert_selector "h2", text: "A clean starting point"
+      click_link "Acme Support", match: :first
+      assert_selector "h2", text: "Start with a corpus"
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("workspace-#{width}")
