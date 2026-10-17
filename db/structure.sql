@@ -3261,6 +3261,13 @@ CREATE UNIQUE INDEX idx_on_workspace_id_corpus_id_evaluation_target_id__d962945b
 
 
 --
+-- Name: idx_on_workspace_id_corpus_id_external_id_id_0f183c9b92; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_workspace_id_corpus_id_external_id_id_0f183c9b92 ON public.corpus_items USING btree (workspace_id, corpus_id, external_id, id);
+
+
+--
 -- Name: idx_on_workspace_id_corpus_id_grader_id_id_69031213be; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5265,6 +5272,7 @@ ALTER TABLE ONLY public.grader_versions
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261017090000'),
 ('20261002010100'),
 ('20261001230000'),
 ('20261001220000'),
