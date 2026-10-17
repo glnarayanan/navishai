@@ -1,7 +1,11 @@
-<header class="public-header">
-  <%= render "layouts/brand" %>
+<header class="public-header<%= " has-nav" if content_for?(:public_nav) %>">
+  <div class="public-header-start">
+    <%= render "layouts/brand" %>
+    <%= yield :public_nav %>
+  </div>
   <div class="public-header-tools">
     <%= render "layouts/theme_control" %>
     <%= link_to "Sign in", new_session_path, class: "button button-small" unless current_page?(new_session_path) %>
+    <%= yield :public_actions %>
   </div>
 </header>
