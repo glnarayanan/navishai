@@ -2,8 +2,21 @@
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1>Calibration</h1><p>Measure a fixed grader against company experts, not against its own predictions.</p></div></div>
-  <% if @sets.empty? %><p class="empty-state">No calibration sets yet. Compile a scenario, then add output samples for its grader checks.</p><% end %>
-  <ul class="workspace-list" role="list"><% @sets.each do |set| %><li class="workspace-card"><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %><span><%= set.grader_version.grader.name %> · v<%= set.grader_version.number %></span></li><% end %></ul>
+  <% if @sets.empty? %><p class="empty-state">No calibration sets yet. Compile a scenario, then add output samples for its grader checks.</p><% else %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th scope="col">Calibration set</th><th scope="col">Fixed grader</th></tr></thead>
+        <tbody>
+          <% @sets.each do |set| %>
+            <tr class="record-row">
+              <td><%= link_to set.name, workspace_corpus_calibration_set_path(Current.workspace, @corpus, set) %></td>
+              <td><%= set.grader_version.grader.name %> <span class="muted">· v<%= set.grader_version.number %></span></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
   <% if Current.require_membership!.can_write? %>
     <section class="section-block config-panel"><h2>Create calibration set</h2>
       <%= form_with url: workspace_corpus_calibration_sets_path(Current.workspace, @corpus), scope: :calibration_set, class: "form-stack" do |form| %>
