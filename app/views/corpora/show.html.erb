@@ -1,39 +1,82 @@
 <% content_for :title, "#{@corpus.name} — NavishAI" %>
 <% content_for :head do %><meta name="turbo-cache-control" content="no-preview"><% end %>
 <main class="page-shell">
-  <%= link_to "Corpora", workspace_corpora_path(Current.workspace), class: "back-link" %>
-  <div class="page-heading"><div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. Local processing unless you approve a model request.</p></div></div>
-  <section aria-labelledby="sources-title"><h2 id="sources-title">Sources</h2>
-    <ul class="workspace-list" role="list">
-      <% @sources.each do |source| %>
-        <li class="workspace-card"><% if source.expires_at > Time.current %><%= link_to source.name, workspace_corpus_source_path(Current.workspace, @corpus, source) %><% else %><%= source.name %> (expired; awaiting deletion)<% end %>
-          <span>Snapshot <%= source.current_snapshot.number %> · <%= source.kind.humanize %> · expires <%= source.expires_at.to_date %></span></li>
-      <% end %>
-    </ul>
-    <% if @sources.empty? %><p>No data yet. Add historical conversations and documentation below.</p><% end %>
-    <p><%= link_to "Explore current records", "#corpus-records", data: { turbo: false } %></p>
+  <% can_write = Current.require_membership!.can_write? %>
+  <div class="page-heading">
+    <div><h1><%= @corpus.name %></h1><p>Fixed source snapshots. Local processing unless you approve a model request.</p></div>
+    <div class="page-actions">
+      <%= link_to "Explore current records", "#corpus-records", class: "button", data: { turbo: false } %>
+      <% if can_write %><%= link_to "Add source", "#add-source", class: "button button-primary", data: { turbo: false } %><% end %>
+    </div>
+  </div>
+  <section aria-labelledby="sources-title">
+    <div class="section-heading"><h2 id="sources-title">Sources</h2><span class="muted-copy"><%= pluralize(@sources.size, "source") %></span></div>
+    <% if @sources.empty? %>
+      <p class="empty-state">No data yet. Add historical conversations and documentation below.</p>
+    <% else %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th scope="col">Source</th><th scope="col" class="hide-narrow">Type</th><th scope="col">Snapshot</th><th scope="col" class="hide-narrow">Expires</th></tr></thead>
+          <tbody>
+            <% @sources.each do |source| %>
+              <tr>
+                <td><% if source.expires_at > Time.current %><%= link_to source.name, workspace_corpus_source_path(Current.workspace, @corpus, source) %><% else %><%= source.name %> <%= status_pill("stale", label: "Expired; awaiting deletion") %><% end %></td>
+                <td class="hide-narrow"><%= source.kind.humanize %></td>
+                <td class="muted">Snapshot <%= source.current_snapshot.number %></td>
+                <td class="muted hide-narrow"><%= l source.expires_at.to_date, format: :long %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
   </section>
-  <section class="section-block config-panel"><h2>Corpus analysis</h2>
-    <p>Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
-    <% if Current.require_membership!.can_write? %>
-      <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack" do |form| %>
+  <section class="section-block" aria-labelledby="analysis-title">
+    <h2 id="analysis-title">Corpus analysis</h2>
+    <p class="section-lede">Discover conversation/document term clusters and select bounded, risk-prioritised candidates. This local baseline needs expert correction; it does not prove issue coverage. Production traces use source review, not term discovery.</p>
+    <% if @analyses.any? %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th scope="col">Analysis</th><th scope="col">State</th><th scope="col" class="hide-narrow">Started</th></tr></thead>
+          <tbody>
+            <% @analyses.each do |analysis| %>
+              <tr>
+                <td><%= link_to "Analysis #{analysis.id}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></td>
+                <td><%= status_pill(analysis.state) %></td>
+                <td class="muted hide-narrow"><%= time_ago_in_words(analysis.created_at) %> ago</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+    <% if can_write %>
+      <div class="panel-grid">
+      <%= form_with url: workspace_corpus_corpus_analyses_path(Current.workspace, @corpus), class: "form-stack panel-card" do |form| %>
+        <h3>Analyse locally</h3>
         <div class="field"><%= form.label :processing_method, "Local method" %><%= form.select :processing_method, [[ "Original local · 2000 records / 10 MiB", "local" ], [ "Streaming local · 100,000 records / 1 GiB", "local_stream" ], [ "Full-text local · 2000 records / 10 MiB", "local_full_text" ], [ "Large full-text · 100,000 / 1 GiB", "local_large_full_text" ]], selected: flash[:local_analysis_method] || "local" %>
-          <p>Full-text and large full-text local use complete conversations, including later diagnostics. Original and streaming use only the first 4000 characters for clustering. All use complete documents and global term statistics, not separate batch clusters.</p>
-          <p>Streaming and full-text budgets: 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. Exceeding a budget saves no proposals. These local methods neither send data to a model nor prove discovery quality; model limits and disclosure stay separate.</p>
-          <p>Large full-text uses the same work budgets, with up to 100,000 complete records / 1 GiB. Complete evidence reads and mining stay within 10 MiB; a larger input can still exceed a work budget.</p>
+          <p class="field-hint">Full-text and large full-text local use complete conversations, including later diagnostics. Original and streaming use only the first 4000 characters for clustering. All use complete documents and global term statistics, not separate batch clusters.</p>
+          <p class="field-hint">Streaming and full-text budgets: 2 million conversation-term entries, 250,000 distinct terms and 2 million seed comparisons. Exceeding a budget saves no proposals. These local methods neither send data to a model nor prove discovery quality; model limits and disclosure stay separate.</p>
+          <p class="field-hint">Large full-text uses the same work budgets, with up to 100,000 complete records / 1 GiB. Complete evidence reads and mining stay within 10 MiB; a larger input can still exceed a work budget.</p>
         </div>
         <div class="field"><%= form.label :scenario_limit, "Candidate limit" %><%= form.number_field :scenario_limit, value: 20, min: 1, max: 100, required: true %></div>
         <%= form.submit "Analyse corpus locally", class: "button button-primary" %>
       <% end %>
-      <p><%= link_to "Model-assisted corpus discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus) %>. Preview exact records and approve their separate disclosure before any model request.</p>
-      <p><%= link_to "Bounded multi-request discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch") %>. Preview all records, repeated documents and the fixed maximum call plan separately.</p>
-      <p>Retain source-backed support observations with uncertainty and every source anchor: <%= link_to "Single-request support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_observations") %> or <%= link_to "Batch support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_observations") %>. These explicit v2 methods use the same source limits, approval and call quota; original v1 requests stay unchanged.</p>
-      <p><%= link_to "Cross-batch support relationships", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_relationships") %> · explicit v3. Propose new relationships from retained observation quotes across batches, keeping all originals and the same call ceiling. Missing evidence and company meaning still need expert review.</p>
+      <div class="panel-card">
+        <h3>Model-assisted analysis</h3>
+        <p class="field-hint">Every model request shows the exact records first and needs its own disclosure approval.</p>
+        <ul class="option-list" role="list">
+          <li><%= link_to "Model-assisted corpus discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus) %>. Preview exact records and approve their separate disclosure before any model request.</li>
+          <li><%= link_to "Bounded multi-request discovery", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch") %>. Preview all records, repeated documents and the fixed maximum call plan separately.</li>
+          <li>Retain source-backed support observations with uncertainty and every source anchor: <%= link_to "Single-request support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_observations") %> or <%= link_to "Batch support observations", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_observations") %>. These explicit v2 methods use the same source limits, approval and call quota; original v1 requests stay unchanged.</li>
+          <li><%= link_to "Cross-batch support relationships", new_workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, processing_method: "model_batch_relationships") %> · explicit v3. Propose new relationships from retained observation quotes across batches, keeping all originals and the same call ceiling. Missing evidence and company meaning still need expert review.</li>
+        </ul>
+      </div>
+      </div>
     <% end %>
-    <ul class="workspace-list" role="list"><% @analyses.each do |analysis| %><li class="workspace-card"><%= link_to "Analysis #{analysis.id} · #{analysis.state}", workspace_corpus_corpus_analysis_path(Current.workspace, @corpus, analysis) %></li><% end %></ul>
   </section>
-  <% if Current.require_membership!.can_write? %>
-    <section class="section-block config-panel"><h2>Add company data</h2>
+  <% if can_write %>
+    <section class="section-block config-panel" id="add-source" aria-labelledby="add-source-title"><h2 id="add-source-title">Add company data</h2>
       <p>UTF-8 JSON exports, production traces or text/Markdown documents: 10 MiB and 2000 records per file.</p>
       <p id="intake-format-help">Conversation JSONL: one conversation object per line, up to 60 MiB and 100,000 records. Each line is at most 1 MiB; normalized fields after masking are at most 256 MiB. Other formats keep their limits. Imports run locally and commit as a whole; wait for confirmation before submitting again.</p>
       <p>Within one source, matching bytes, masking rules and processing version reuse a snapshot; changes add a version.</p>
