@@ -9,6 +9,8 @@ class EvaluationRunsController < ApplicationController
     @runs = @corpus.evaluation_runs.includes(:eval_suite, evaluation_target_version: :evaluation_target).order(id: :desc).offset((@page - 1) * 50).limit(51).to_a
     @more = @runs.size > 50
     @runs = @runs.first(50)
+    @status_counts = EvaluationResult.joins(:evaluation_run_item).where(evaluation_run_items: { evaluation_run_id: @runs.map(&:id) })
+      .group("evaluation_run_items.evaluation_run_id", :status).count
   end
 
   def create

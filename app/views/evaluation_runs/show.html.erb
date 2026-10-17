@@ -1,12 +1,43 @@
 <% content_for :title, "Run #{@run.id} — NavishAI" %>
 <main class="page-shell">
   <%= link_to @run.eval_suite.name, workspace_corpus_eval_suite_path(Current.workspace, @corpus, @run.eval_suite), class: "back-link" %>
-  <div class="page-heading"><div><h1>Run <%= @run.id %></h1><p><%= @run.state.humanize %> · <%= @items.size %> fixed cases · <%= @run.processing_version %></p></div><%= link_to "Refresh run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run, baseline_id: @baseline&.id), class: "button" %></div>
-  <p><%= link_to @run.evaluation_target_version.evaluation_target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, @run.evaluation_target_version.evaluation_target, version: @run.evaluation_target_version.number) %> · target v<%= @run.evaluation_target_version.number %> · requested by expert #<%= @run.requested_by_id %>.</p>
-  <p role="status"><%= {"http_conversation" => "Bounded HTTP conversation: only conditionally released messages and actual history go to the approved endpoint, at most eleven calls per case. No automatic retry or continuation after unknown calls.", "http" => "HTTP run: visible inputs go to the approved endpoint; remote outcomes may be unknown after a failed call.", "scripted" => "Scripted fixture run, not a live agent test.", "recorded" => "Recorded production output replay, not a new agent execution. The visible input must match the original trace."}.fetch(@run.evaluation_target_version.adapter) %> Trace checks report behaviour; rubric checks without a judge abstain. Calibration must establish grader accuracy.</p>
+  <div class="page-heading">
+    <div>
+      <h1>Run <%= @run.id %></h1>
+      <p class="page-meta"><%= status_pill(@run.state) %><span><%= @items.size %> fixed cases</span><span><%= link_to @run.evaluation_target_version.evaluation_target.name, workspace_corpus_evaluation_target_path(Current.workspace, @corpus, @run.evaluation_target_version.evaluation_target, version: @run.evaluation_target_version.number) %> · target v<%= @run.evaluation_target_version.number %></span><span>requested by expert #<%= @run.requested_by_id %></span><span><%= @run.processing_version %></span></p>
+    </div>
+    <%= link_to "Refresh run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run, baseline_id: @baseline&.id), class: "button" %>
+  </div>
+  <% statuses = @items.filter_map { |item| item.evaluation_result&.status } %>
+  <ul class="result-counts" aria-label="Result counts">
+    <li class="is-fail"><strong><%= statuses.count("fail") %></strong>failed</li>
+    <li class="is-pass"><strong><%= statuses.count("pass") %></strong>passed</li>
+    <li class="is-warn"><strong><%= statuses.count("incomplete") %></strong>incomplete</li>
+    <li><strong><%= statuses.count("error") %></strong>errors</li>
+    <li><strong><%= @items.size - statuses.size %></strong>not executed</li>
+    <li>Cost unknown</li>
+  </ul>
+  <p class="run-note" role="status"><%= {"http_conversation" => "Bounded HTTP conversation: only conditionally released messages and actual history go to the approved endpoint, at most eleven calls per case. No automatic retry or continuation after unknown calls.", "http" => "HTTP run: visible inputs go to the approved endpoint; remote outcomes may be unknown after a failed call.", "scripted" => "Scripted fixture run, not a live agent test.", "recorded" => "Recorded production output replay, not a new agent execution. The visible input must match the original trace."}.fetch(@run.evaluation_target_version.adapter) %> Trace checks report behaviour; rubric checks without a judge abstain. Calibration must establish grader accuracy.</p>
   <% if @run.error %><p class="inline-error" role="alert"><%= @run.error %></p><% end %>
   <% if @run.state == "queued" %><p>Waiting for the evaluation worker. Refresh for results; do not submit another run just to refresh.</p><% end %>
   <% if @run.state == "running" %><p><%= @items.count { |item| item.evaluation_result } %> of <%= @items.size %> results saved. A worker crash does not grant permission to repeat execution.</p><% end %>
+  <section aria-labelledby="case-results-title"><h2 id="case-results-title">Case results</h2>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th scope="col">Scenario</th><th scope="col">Result</th><th scope="col" class="hide-narrow">Importance</th><th scope="col" class="numeric hide-narrow">Case</th></tr></thead>
+        <tbody>
+          <% @items.each do |item| %>
+            <tr>
+              <td><% if item.evaluation_result %><%= link_to item.eval_case.scenario_version.title, workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %><% else %><%= item.eval_case.scenario_version.title %><% end %></td>
+              <td><%= item.evaluation_result ? status_pill(item.evaluation_result.status) : status_pill("queued", label: "Not executed") %></td>
+              <td class="hide-narrow"><%= item.eval_case.scenario_version.importance.humanize %></td>
+              <td class="numeric muted hide-narrow">#<%= item.eval_case_id %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
   <section class="section-block" id="run-comparison"><h2>Compare fixed cases</h2><p>This run is the after run. Match only the same fixed case and identical frozen visible input. Changed contracts, graders or inputs stay unmatched. A missing, incomplete or error result is unresolved, never a pass or improvement.</p>
     <% if @baseline_options.empty? %><p>No other run in this corpus yet. Start a separate run deliberately when you need to test another target version.</p><% else %>
       <%= form_with url: workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run, anchor: "run-comparison"), method: :get, class: "form-stack config-panel" do |form| %>
@@ -26,7 +57,6 @@
       </article><% end %>
     <% end %>
   </section>
-  <section class="section-block"><h2>Case results</h2><ul class="workspace-list" role="list"><% @items.each do |item| %><li class="workspace-card"><% if item.evaluation_result %><%= link_to item.eval_case.scenario_version.title, workspace_corpus_evaluation_result_path(Current.workspace, @corpus, item.evaluation_result) %><strong><%= item.evaluation_result.status.humanize %></strong><% else %><span><%= item.eval_case.scenario_version.title %></span><strong>Not executed</strong><% end %><span><%= item.eval_case.scenario_version.importance.humanize %> importance · case #<%= item.eval_case_id %></span></li><% end %></ul></section>
   <%= render "failure_patterns" %>
   <% if Current.require_membership!.can_write? && (@run.state == "queued" || (@run.state == "running" && @run.started_at < 10.minutes.ago)) %><section class="section-block"><h2>Stop without retrying</h2><p>Interrupt this run. Retain prior results and start a separate run only if you intend another execution.</p><%= button_to "Interrupt run", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, @run), method: :patch, class: "button" %></section><% end %>
 </main>
