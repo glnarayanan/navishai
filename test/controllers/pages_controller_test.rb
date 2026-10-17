@@ -7,11 +7,12 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     end
 
     assert_response :success
-    assert_select "title", text: "Company-specific AI support evaluation — NavishAI"
+    assert_select "title", text: "NavishAI — The evaluation lab for AI in technical support"
     assert_select "meta[name=description][content*=calibrated]"
     assert_select "main", count: 1
     assert_select "h1", count: 1
-    assert_select "main.landing a.button-primary[href=?]", new_session_path, text: "Sign in to the lab"
+    assert_select "header.public-header a[href=?]", new_session_path, text: "Sign in"
+    assert_select ".landing-hero a.button-primary[href=?]", "mailto:hello@navishai.com?subject=NavishAI%20pilot", text: "Request a pilot"
     assert_select "main.landing a[href=?]", new_setup_path, count: 0
     assert_select "nav[aria-label='On this page'] a" do |links|
       assert_equal %w[#workflow #example #privacy], links.map { |link| link["href"] }
@@ -22,7 +23,7 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
         "Let experts define good support", "Compile the behaviour into checks",
         "Calibrate against human judgment", "Inspect failures. Keep regressions." ], headings.map(&:text)
     end
-    assert_select "figure figcaption", text: /Illustrative SSO case.*not customer data or a run/
+    assert_select "figure.landing-preview figcaption", text: /Illustrative data, not customer data or a real run/
     assert_select "#privacy dd", text: /do not remove all PII/
     assert_select "#privacy dd", text: /cannot recall data already sent/
     assert_select ".landing-disclosure", count: 6
@@ -39,7 +40,7 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_select ".landing-close a.button[href=?]", "mailto:hello@navishai.com?subject=NavishAI%20pilot", text: "Request a pilot"
     assert_select ".landing-close a[href=?]", "mailto:hello@navishai.com", text: "hello@navishai.com"
     assert_select ".landing-close", text: /Built by a Support leader with 13\+ years in B2B SaaS post-sales/
-    assert_select "main.landing a[href=?]", new_session_path, text: "Sign in to the lab", count: 1
+    assert_select "main.landing a[href=?]", new_session_path, count: 0
     assert_select "footer.landing-footer", text: /© 2026 NavishAI/
     assert_select "footer.landing-footer nav[aria-label=Footer] a" do |links|
       assert_equal [ "mailto:hello@navishai.com", privacy_path, terms_path, "#landing-title" ], links.map { |link| link["href"] }

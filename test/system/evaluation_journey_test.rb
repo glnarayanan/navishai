@@ -84,7 +84,8 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     assert_selector "h1", text: "Sign in"
     assert_current_path new_session_path
     visit root_path
-    assert_selector "main.landing a.button-primary[href='#{new_session_path}']", text: "Sign in to the lab"
+    assert_selector "header.public-header a[href='#{new_session_path}']", text: "Sign in"
+    assert_selector "main.landing"
     assert_no_horizontal_overflow
     capture("home-390")
   end

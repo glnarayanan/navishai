@@ -5,10 +5,11 @@ class LandingTest < ApplicationSystemTestCase
     [ 1280, 768, 390, 320 ].each do |width|
       viewport(width)
       visit root_path
-      assert_selector "h1", text: "Test your AI's SSO handoffs, API fixes and billing rules"
+      assert_selector "h1", text: "The evaluation lab for AI in technical support"
       assert_selector ".landing-workflow li", count: 6
-      assert_selector ".landing-specimen figcaption", text: "not customer data or a run"
-      assert_selector "main a.button-primary", text: "Sign in to the lab"
+      assert_selector ".landing-preview figcaption", text: "not customer data or a real run"
+      assert_selector ".landing-hero a.button-primary", text: "Request a pilot"
+      assert_selector "header.public-header a", text: "Sign in"
       assert_equal "Geist, system-ui, sans-serif", page.evaluate_script("getComputedStyle(document.documentElement).fontFamily")
       assert_operator page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.landing h1')).fontSize)"), :>=, 36
 
@@ -49,7 +50,7 @@ class LandingTest < ApplicationSystemTestCase
     assert page.evaluate_script("document.getElementById(#{target.to_json}) !== null")
     click_link "Back to top"
     assert_selector "##{target}:target"
-    click_link "Sign in to the lab", match: :first
+    within("header.public-header") { click_link "Sign in" }
     assert_current_path new_session_path
     assert_selector "h1", text: "Sign in"
   end
