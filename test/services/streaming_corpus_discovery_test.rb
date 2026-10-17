@@ -20,6 +20,7 @@ class StreamingCorpusDiscoveryTest < ActiveSupport::TestCase
         CASE WHEN i = 99998 THEN '{"impact":"critical","reopened":true}'::jsonb ELSE '{}'::jsonb END, NOW()
       FROM generate_series(1, 99998) AS i
     SQL
+    ApplicationRecord.connection.execute("ANALYZE corpus_items")
     CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Scale document", kind: "document", bytes: "Certificate metadata expiry.")
     scanned = []
     observer = ->(event) { scanned << event.payload[:row_count] if event.payload[:sql].start_with?('SELECT "corpus_items"."id", "corpus_items"."external_id", "corpus_items"."title"') }

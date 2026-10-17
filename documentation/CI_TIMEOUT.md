@@ -351,3 +351,27 @@ Executed against the owned password-only PostgreSQL 16 instance:
 RAILS_ENV=test DATABASE_URL="$DISPOSABLE_TCP_TEST_URL" \
   CHROME_ARGS=--no-sandbox BUNDLE_FROZEN=true bin/ci
 ```
+
+## Cursor-page sort follow-up — 17 October 2026
+
+Green GitHub runs took 23–77 minutes; about 95% was `bin/rails test`. Per-test
+timing (`bin/rails test -v`, local PostgreSQL 16, four workers) put three
+100,000-record proofs at 25 of 34 summed test-minutes: large full-text (728s),
+varied (417s) and streaming (365s) discovery.
+
+`CorpusDiscovery` pages inputs with an `(external_id, id)` cursor. No index
+matched that order, and rows bulk-inserted inside the test transaction had no
+planner statistics, so each of 1000 pages sorted the whole corpus twice
+(about 165 ms per query). Production analyses of large corpora pay the same
+per-page sort: autovacuum later gives committed imports statistics, but not an index.
+
+- `corpus_items (workspace_id, corpus_id, external_id, id)` now backs the cursor.
+- The three proofs run `ANALYZE corpus_items` after their bulk insert, as a
+  committed import would receive. No assertion, limit or record count changed.
+
+Streaming-proof SQL time fell from 340s to 30s alone; the local suite fell from
+15m10s to 8m24s with 737 tests passing. CI now runs checks, unit, scale and system
+tests as parallel jobs, and runs on `main` so pull requests reuse its gem cache.
+`bin/ci` still runs everything in one process locally.
+The first split run ([39029405110](https://github.com/glnarayanan/navishai/actions/runs/39029405110))
+passed in 4m23s: scale tests 3m16s, unit 2m18s, system 1m55s, checks 47s.

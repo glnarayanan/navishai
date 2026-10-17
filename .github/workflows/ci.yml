@@ -1,12 +1,41 @@
 name: CI
 on:
   pull_request:
+  # Runs on main build the gem cache that pull requests can restore.
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  RAILS_ENV: test
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/navishai_lab_test
+  # 100k-record scale proofs run in their own job so they do not hold up the rest.
+  SCALE_TESTS: >-
+    test/services/large_full_text_discovery_test.rb
+    test/services/streamed_corpus_intake_test.rb
+    test/services/streaming_corpus_discovery_test.rb
+    test/services/varied_corpus_discovery_test.rb
 jobs:
-  rails:
+  checks:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+      - run: bin/rubocop
+      - run: bin/bundler-audit
+      - run: bin/importmap audit
+      - run: bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
+      - run: bin/rails zeitwerk:check
+
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, scale, system]
     services:
       postgres:
         image: postgres:16
@@ -14,13 +43,17 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
-        options: --health-cmd=pg_isready --health-interval=10s --health-timeout=5s --health-retries=5
-    env:
-      RAILS_ENV: test
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/navishai_lab_test
+        options: --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
           bundler-cache: true
-      - run: bin/ci
+      - run: bin/rails db:prepare
+      - name: Run ${{ matrix.suite }} tests
+        run: |
+          case "${{ matrix.suite }}" in
+            unit) bin/rails test $(find test -name '*_test.rb' -not -path 'test/system/*' | sort | grep -vxF -f <(tr ' ' '\n' <<< "$SCALE_TESTS")) ;;
+            scale) bin/rails test $SCALE_TESTS ;;
+            system) bin/rails test:system ;;
+          esac
