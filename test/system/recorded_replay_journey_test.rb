@@ -44,8 +44,7 @@ class RecordedReplayJourneyTest < ApplicationSystemTestCase
       end
     end
     Membership.create!(workspace: @workspace, user: users(:teammate), role: :viewer)
-    find(".lab-navigation summary").click
-    click_button "Sign out"
+    sign_out_from_menu
     sign_in users(:teammate)
     assert_no_difference [ "AuditEvent.count", "EvaluationRun.count", "ScenarioVersion.count", "HumanLabel.count" ] do
       assert_no_enqueued_jobs do

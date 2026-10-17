@@ -23,14 +23,11 @@ class LabShellTest < ApplicationSystemTestCase
       assert_no_horizontal_overflow
       assert_no_csp_violations
       capture("workspace-#{width}")
-      find(".theme-toggle").click
-      find("[data-theme-value=dark]").click
+      choose_theme("dark")
       assert_selector "html.dark"
       capture("workspace-dark-#{width}")
-      find(".theme-toggle").click
-      find("[data-theme-value=light]").click
-      find(".lab-navigation summary").click
-      click_button "Sign out"
+      choose_theme("light")
+      sign_out_from_menu
     end
   end
 

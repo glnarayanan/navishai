@@ -7,7 +7,8 @@
     <meta name="application-name" content="NavishAI">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#2B7FFF">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
     <%= javascript_tag nonce: true do %>
@@ -40,26 +41,27 @@
 
   <body class="<%= authenticated? ? "is-app" : "is-public" %>" data-controller="theme">
     <%= link_to "Skip to content", "#main-content", class: "skip-link" %>
-    <header class="lab-header">
-      <%= link_to "NavishAI", root_path, class: "wordmark", aria: { label: "Homepage" } %>
-      <div class="header-tools">
-        <%= render "layouts/theme_control" %>
-        <details class="lab-navigation">
-          <summary>Navigation</summary>
-          <nav aria-label="Main navigation">
-            <% if authenticated? %>
-              <%= link_to "Workspaces", workspaces_path %>
-              <%= button_to "Sign out", session_path, method: :delete, class: "button button-quiet" %>
-            <% else %>
-              <%= link_to "Sign in", new_session_path %>
-            <% end %>
-          </nav>
-        </details>
+    <% if authenticated? %>
+      <div class="app-shell">
+        <%= render "layouts/sidebar" %>
+        <div class="app-panel">
+          <header class="app-topbar">
+            <button type="button" class="icon-button sidebar-trigger" popovertarget="app-sidebar" aria-label="Open navigation"><%= nav_icon(:menu) %></button>
+            <%= render "layouts/breadcrumbs" %>
+            <%= render "layouts/account_menu" %>
+          </header>
+          <div class="lab-container" id="main-content" tabindex="-1">
+            <%= render "shared/flash_messages" %>
+            <%= yield %>
+          </div>
+        </div>
       </div>
-    </header>
-    <div class="lab-container" id="main-content" tabindex="-1">
-      <%= render "shared/flash_messages" %>
-      <%= yield %>
-    </div>
+    <% else %>
+      <%= render "layouts/public_header" %>
+      <div class="lab-container" id="main-content" tabindex="-1">
+        <%= render "shared/flash_messages" %>
+        <%= yield %>
+      </div>
+    <% end %>
   </body>
 </html>

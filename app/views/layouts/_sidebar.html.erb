@@ -1,0 +1,53 @@
+<% membership = current_membership %>
+<aside id="app-sidebar" class="app-sidebar" popover aria-label="Sidebar">
+  <div class="sidebar-head">
+    <% if Current.workspace %>
+      <button type="button" class="workspace-switcher" popovertarget="workspace-menu" aria-label="Switch workspace, current: <%= Current.workspace.name %>">
+        <span class="workspace-mark" aria-hidden="true"><%= initials(Current.workspace.name) %></span>
+        <span class="workspace-switcher-name"><%= Current.workspace.name %></span>
+        <%= nav_icon(:chevrons) %>
+      </button>
+      <div id="workspace-menu" class="menu workspace-menu" popover>
+        <p class="menu-label">Workspaces</p>
+        <% Current.user.workspaces.order(:name).each do |workspace| %>
+          <%= link_to workspace_path(workspace), class: "menu-item", aria: { current: (workspace == Current.workspace ? "true" : nil) } do %>
+            <span class="workspace-mark" aria-hidden="true"><%= initials(workspace.name) %></span>
+            <span class="menu-item-label"><%= workspace.name %></span>
+            <% if workspace == Current.workspace %><%= nav_icon(:check, css: "icon menu-item-check") %><% end %>
+          <% end %>
+        <% end %>
+        <hr class="menu-separator">
+        <%= link_to workspaces_path, class: "menu-item" do %><%= nav_icon(:workspaces) %><span class="menu-item-label">All workspaces</span><% end %>
+      </div>
+    <% else %>
+      <%= render "layouts/brand" %>
+    <% end %>
+    <button type="button" class="icon-button sidebar-close" popovertarget="app-sidebar" popovertargetaction="hide" aria-label="Close navigation"><%= nav_icon(:close) %></button>
+  </div>
+
+  <% if Current.workspace && membership %>
+    <nav class="sidebar-group" aria-label="Workspace">
+      <% section = workspace_section %>
+      <%= link_to workspace_path(Current.workspace), class: "sidebar-link", aria: { current: (section == :overview ? "page" : nil) } do %><%= nav_icon(:overview) %>Overview<% end %>
+      <%= link_to workspace_corpora_path(Current.workspace), class: "sidebar-link", aria: { current: (section == :corpora ? "page" : nil) } do %><%= nav_icon(:corpora) %>Corpora<% end %>
+      <% if membership.owner? || membership.admin? %>
+        <%= link_to workspace_workspace_invitations_path(Current.workspace), class: "sidebar-link", aria: { current: (section == :people ? "page" : nil) } do %><%= nav_icon(:people) %>People and access<% end %>
+      <% end %>
+      <% if membership.owner? %>
+        <%= link_to edit_workspace_path(Current.workspace), class: "sidebar-link", aria: { current: (section == :settings ? "page" : nil) } do %><%= nav_icon(:settings) %>Settings<% end %>
+      <% end %>
+    </nav>
+    <% if (corpus = sidebar_corpus) %>
+      <nav class="sidebar-group" aria-label="Corpus sections">
+        <p class="sidebar-label" title="<%= corpus.name %>"><%= corpus.name %></p>
+        <% corpus_sections(corpus).each do |item| %>
+          <%= link_to item[:path], class: "sidebar-link", aria: { current: (item[:current] ? "page" : nil) } do %><%= nav_icon(item[:key]) %><%= item[:label] %><% end %>
+        <% end %>
+      </nav>
+    <% end %>
+  <% else %>
+    <nav class="sidebar-group" aria-label="Workspace">
+      <%= link_to workspaces_path, class: "sidebar-link", aria: { current: (controller_name == "workspaces" && action_name == "index" ? "page" : nil) } do %><%= nav_icon(:workspaces) %>Workspaces<% end %>
+    </nav>
+  <% end %>
+</aside>

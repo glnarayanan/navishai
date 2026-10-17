@@ -80,8 +80,7 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     assert_text "targets, runs, results and regressions"
     assert_no_horizontal_overflow
     capture("deletion-warning-390")
-    find(".lab-navigation summary").click
-    click_button "Sign out"
+    sign_out_from_menu
     assert_selector "h1", text: "Sign in"
     assert_current_path new_session_path
     visit root_path

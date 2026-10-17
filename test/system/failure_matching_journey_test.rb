@@ -169,8 +169,7 @@ class FailureMatchingJourneyTest < ApplicationSystemTestCase
     assert_text "No candidates share at least two meaningful terms"
     capture("empty-390", 390)
     Membership.create!(workspace: @corpus.workspace, user: users(:teammate), role: :viewer)
-    find(".lab-navigation summary").click
-    click_button "Sign out"
+    sign_out_from_menu
     sign_in users(:teammate)
     visit source_path
     assert_no_button "Append trace decision"

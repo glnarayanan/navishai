@@ -25,6 +25,17 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     assert_selector "h1", text: "Choose a workspace", wait:
   end
 
+  def choose_theme(theme)
+    option = "[data-theme-value=#{theme}]"
+    find(".account-trigger").click if has_css?(".account-trigger", wait: 0) && has_no_css?(option, wait: 0)
+    find(option).click
+  end
+
+  def sign_out_from_menu
+    find(".account-trigger").click if has_no_button?("Sign out", wait: 0)
+    click_button "Sign out"
+  end
+
   def assert_no_horizontal_overflow
     assert_equal page.evaluate_script("document.documentElement.clientWidth"),
       page.evaluate_script("document.documentElement.scrollWidth")

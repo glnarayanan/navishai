@@ -44,8 +44,7 @@ class SourceExportJourneyTest < ApplicationSystemTestCase
       assert_equal 1, workspace.audit_events.where(action: "source.downloaded").count
     end
     workspace.memberships.create!(user: users(:teammate), role: :viewer)
-    find("summary", text: "Navigation").click
-    click_button "Sign out"
+    sign_out_from_menu
     sign_in users(:teammate)
     visit workspace_corpus_source_path(workspace, corpus, source, snapshot: 1)
     assert_no_selector "#source-download"

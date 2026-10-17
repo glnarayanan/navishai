@@ -2,7 +2,6 @@
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1>Scenarios</h1><p>Real-source cases and controlled variants. Experts own the expected behaviour.</p></div></div>
-  <%= render "shared/corpus_navigation", active: "scenarios" %>
   <section id="scenario-search" class="section-block" aria-labelledby="scenario-search-heading">
     <h2 id="scenario-search-heading">Find a scenario</h2>
     <p id="scenario-search-help">Search a literal phrase in current titles, situations and taxonomy labels, ignoring case. Facts, requirements and old versions are not searched. This local search grants no association or approval.</p>

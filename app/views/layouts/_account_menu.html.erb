@@ -1,0 +1,14 @@
+<% membership = current_membership %>
+<button type="button" class="account-trigger" popovertarget="account-menu" aria-label="Account menu">
+  <span class="avatar" aria-hidden="true"><%= Current.user.email_address.first %></span>
+</button>
+<div id="account-menu" class="menu account-menu" popover>
+  <div class="menu-header">
+    <p class="menu-title"><%= Current.user.email_address %></p>
+    <% if membership %><p class="menu-meta"><%= role_label(membership.role) %> · <%= Current.workspace.name %></p><% end %>
+  </div>
+  <div class="menu-row"><span>Theme</span><%= render "layouts/theme_control" %></div>
+  <hr class="menu-separator">
+  <%= link_to workspaces_path, class: "menu-item" do %><%= nav_icon(:workspaces) %><span class="menu-item-label">All workspaces</span><% end %>
+  <%= button_to session_path, method: :delete, class: "menu-item", form_class: "menu-form" do %><%= nav_icon(:sign_out) %><span class="menu-item-label">Sign out</span><% end %>
+</div>

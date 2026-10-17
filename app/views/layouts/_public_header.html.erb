@@ -1,0 +1,7 @@
+<header class="public-header">
+  <%= render "layouts/brand" %>
+  <div class="public-header-tools">
+    <%= render "layouts/theme_control" %>
+    <%= link_to "Sign in", new_session_path, class: "button button-small" unless current_page?(new_session_path) %>
+  </div>
+</header>

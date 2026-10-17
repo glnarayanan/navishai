@@ -13,8 +13,7 @@ class LandingTest < ApplicationSystemTestCase
       assert_operator page.evaluate_script("parseFloat(getComputedStyle(document.querySelector('.landing h1')).fontSize)"), :>=, 36
 
       %w[dark light].each do |theme|
-        find(".theme-toggle").click
-        find("[data-theme-value=#{theme}]").click
+        choose_theme(theme)
         assert_selector "html[data-theme=#{theme}]"
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')")
         assert_no_horizontal_overflow
@@ -77,8 +76,7 @@ class LandingTest < ApplicationSystemTestCase
         visit path
         assert_selector "h1", text: heading
         %w[dark light].each do |theme|
-          find(".theme-toggle").click
-          find("[data-theme-value=#{theme}]").click
+          choose_theme(theme)
           assert_selector "html[data-theme=#{theme}]"
           assert_no_horizontal_overflow
           assert_no_csp_violations
@@ -99,16 +97,14 @@ class LandingTest < ApplicationSystemTestCase
       assert_selector "h1", text: "Choose a workspace"
       assert_no_selector "main.landing"
       %w[dark light].each do |theme|
-        find(".theme-toggle").click
-        find("[data-theme-value=#{theme}]").click
+        choose_theme(theme)
         assert_selector "html[data-theme=#{theme}]"
         assert_no_horizontal_overflow
         assert_no_csp_violations
         capture("signed-in-#{theme}-#{width}") if [ 1280, 390 ].include?(width)
       end
     end
-    find(".lab-navigation summary").click
-    click_button "Sign out"
+    sign_out_from_menu
     visit root_path
     assert_selector "main.landing"
   end
