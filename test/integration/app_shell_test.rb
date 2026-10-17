@@ -29,6 +29,11 @@ class AppShellTest < ActionDispatch::IntegrationTest
     get workspace_corpus_evaluation_runs_path(@workspace, corpus)
     assert_select "nav[aria-label='Corpus sections'] a[aria-current=page]", text: "Runs"
     assert_select "nav[aria-label=Breadcrumb] [aria-current=page]", text: "Runs"
+
+    suite = corpus.eval_suites.create!(workspace: @workspace, name: "Shell suite", kind: "evaluation")
+    get workspace_corpus_eval_suite_path(@workspace, corpus, suite)
+    assert_select "nav[aria-label=Breadcrumb] a[href=?]", workspace_corpus_eval_suites_path(@workspace, corpus), text: "Eval suites"
+    assert_select "nav[aria-label=Breadcrumb] [aria-current=page]", text: "Shell suite"
   end
 
   test "signed-out pages keep a slim header with the theme radiogroup" do

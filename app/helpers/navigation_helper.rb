@@ -62,6 +62,18 @@ module NavigationHelper
     CORPUS_SECTIONS.find { |_key, _label, _route, controllers| controllers.include?(controller_name) }&.second
   end
 
+  def corpus_section_path(corpus)
+    route = CORPUS_SECTIONS.find { |_key, _label, _route, controllers| controllers.include?(controller_name) }&.third
+    public_send(route, Current.workspace, corpus) if route
+  end
+
+  # The record a detail page shows, taken from its title, so the breadcrumb can end on it.
+  def breadcrumb_page_title
+    return if action_name.in?(%w[index create]) || (controller_name == "corpora" && action_name == "show")
+
+    content_for(:title).to_s.delete_suffix(" — NavishAI").presence
+  end
+
   def workspace_section
     return :overview if controller_name == "workspaces" && action_name == "show"
     return :settings if controller_name == "workspaces" && action_name.in?(%w[edit update])
