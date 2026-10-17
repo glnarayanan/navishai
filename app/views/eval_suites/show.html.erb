@@ -2,10 +2,26 @@
 <main class="page-shell">
   <%= link_to "Eval suites", workspace_corpus_eval_suites_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1><%= @suite.name %></h1><p><%= @suite.kind.humanize %> suite · <%= @cases.size %> unexpired cases</p></div></div>
-  <p>Cases keep exact scenario, contract and grader versions. Membership edits do not change a case or a prior run. A run checks current approval and source evidence again.</p>
+  <p class="section-lede">Cases keep exact scenario, contract and grader versions. Membership edits do not change a case or a prior run. A run checks current approval and source evidence again.</p>
   <% if @corpus.eval_definitions_expired? %><p role="status">Source retention ended. Derived definitions, targets, runs and regressions stay hidden until purge.</p><% end %>
   <% if @cases.empty? %><p class="empty-state"><%= link_to "Review a scenario", workspace_corpus_scenarios_path(Current.workspace, @corpus) %>, then compile its contract and add it here.</p><% end %>
-  <ul class="workspace-list" role="list"><% @cases.each do |item| %><li class="workspace-card"><%= link_to item.scenario_version.title, workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %><span>Case #<%= item.id %> · definition <%= item.number %></span><% if Current.require_membership!.can_write? %><%= button_to "Remove case #{item.id}", workspace_corpus_eval_suite_path(Current.workspace, @corpus, @suite), method: :patch, params: { remove_case_id: item.id }, class: "button" %><% end %></li><% end %></ul>
+  <% if @cases.any? %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <caption class="visually-hidden">Cases in this suite</caption>
+        <thead><tr><th scope="col">Case</th><th scope="col" class="hide-narrow">Definition</th><% if Current.require_membership!.can_write? %><th scope="col"><span class="visually-hidden">Actions</span></th><% end %></tr></thead>
+        <tbody>
+          <% @cases.each do |item| %>
+            <tr class="record-row">
+              <td><%= link_to item.scenario_version.title, workspace_corpus_eval_case_path(Current.workspace, @corpus, item) %><span class="cell-sub">Case #<%= item.id %></span></td>
+              <td class="muted hide-narrow">Definition <%= item.number %></td>
+              <% if Current.require_membership!.can_write? %><td class="numeric"><%= button_to "Remove case #{item.id}", workspace_corpus_eval_suite_path(Current.workspace, @corpus, @suite), method: :patch, params: { remove_case_id: item.id }, class: "button button-small" %></td><% end %>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
   <% unless @corpus.eval_definitions_expired? %>
     <section class="section-block config-panel"><h2>Run this suite</h2><p>At most 50 cases and 100 checks. Scripted returns fixtures; recorded replays an output only for identical visible input. HTTP sends visible inputs to its exact approved endpoint. Judge checks without a model abstain.</p>
       <% if @cases.empty? %><p>Add a compiled case before running.</p><% elsif @targets.empty? %><p><%= link_to "Define an evaluation target", workspace_corpus_evaluation_targets_path(Current.workspace, @corpus) %> before running.</p><% elsif Current.require_membership!.can_write? %>
@@ -37,7 +53,22 @@
         <% end %>
       <% else %><p>A workspace writer must start a run.</p><% end %>
     </section>
-    <section class="section-block"><h2>Recent runs</h2><% if @runs.empty? %><p>No runs yet.</p><% end %><ul class="workspace-list" role="list"><% @runs.each do |run| %><li class="workspace-card"><%= link_to "Run #{run.id}", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run) %><span><%= run.state.humanize %> · <%= l run.created_at, format: :short %></span></li><% end %></ul></section>
+    <section class="section-block"><h2>Recent runs</h2><% if @runs.empty? %><p class="muted-copy">No runs yet.</p><% else %>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th scope="col">Run</th><th scope="col">State</th><th scope="col" class="hide-narrow">Started</th></tr></thead>
+          <tbody>
+            <% @runs.each do |run| %>
+              <tr class="record-row">
+                <td><%= link_to "Run #{run.id}", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run) %></td>
+                <td><%= status_pill(run.state) %></td>
+                <td class="muted hide-narrow"><%= l run.created_at, format: :short %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %></section>
     <% if @suite.kind == "regression" %><section class="section-block"><h2>Reviewed failure admissions</h2><p>These fixed records retain the source result and human reason, even if a case later leaves the suite.</p><% if @regressions.empty? %><p>No reviewed failures yet. Inspect a failed result, then add it here with your reason.</p><% end %><% @regressions.each do |record| %><article class="source-record"><h3><%= link_to "Failed result #{record.evaluation_result_id} · case #{record.eval_case_id}", workspace_corpus_evaluation_result_path(Current.workspace, @corpus, record.evaluation_result) %></h3><p><%= record.rationale %></p><p>Reviewed by expert #<%= record.reviewed_by_id %> · <%= l record.created_at, format: :short %></p></article><% end %></section><% end %>
   <% end %>
 </main>

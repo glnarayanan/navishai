@@ -2,8 +2,22 @@
 <main class="page-shell">
   <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1>Eval suites</h1><p>Named groups of fixed support cases. A run will freeze their membership.</p></div></div>
-  <% if @suites.empty? %><p class="empty-state">No suites yet. Review a scenario, compile its checks, and add the fixed case to a named suite.</p><% end %>
-  <ul class="workspace-list" role="list"><% @suites.each do |suite| %><li class="workspace-card"><%= link_to suite.name, workspace_corpus_eval_suite_path(Current.workspace, @corpus, suite) %><span><%= suite.kind.humanize %></span></li><% end %></ul>
+  <% if @suites.empty? %><p class="empty-state">No suites yet. Review a scenario, compile its checks, and add the fixed case to a named suite.</p><% else %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th scope="col">Suite</th><th scope="col">Purpose</th><th scope="col" class="hide-narrow">Created</th></tr></thead>
+        <tbody>
+          <% @suites.each do |suite| %>
+            <tr class="record-row">
+              <td><%= link_to suite.name, workspace_corpus_eval_suite_path(Current.workspace, @corpus, suite) %></td>
+              <td><%= suite.kind.humanize %></td>
+              <td class="muted hide-narrow"><%= time_ago_in_words(suite.created_at) %> ago</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
   <% if Current.require_membership!.can_write? %><section class="section-block config-panel"><h2>Create a suite</h2>
     <%= form_with url: workspace_corpus_eval_suites_path(Current.workspace, @corpus), scope: :eval_suite, class: "form-stack" do |form| %>
       <div class="field"><%= form.label :name, "Suite name" %><%= form.text_field :name, value: params.dig(:eval_suite, :name), required: true, maxlength: 120 %></div>

@@ -314,6 +314,15 @@ tbody tr:hover td { background: var(--surface); }
 .check-card + h3, .check-card + h2 { margin-top: 1.75rem; }
 blockquote.evidence-text { margin-inline: 0; }
 .panel-card { padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius-l); background: var(--panel); }
+.panel-card h3 { margin-bottom: .75rem; font-size: .9375rem; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1rem; align-items: start; margin-top: 1.25rem; }
+.section-lede { max-width: 68ch; color: var(--muted); }
+.option-list { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: .84375rem; }
+.option-list li { padding-top: .75rem; border-top: 1px solid var(--border-soft); }
+.option-list li:first-child { padding-top: 0; border-top: 0; }
+.option-list a { color: var(--ink); font-weight: 500; }
+.pill-group { display: inline-flex; flex-wrap: wrap; gap: .375rem; }
+.data-table + .data-table, .table-wrap + .panel-grid { margin-top: 1.25rem; }
 
 /* Feedback */
 .flash-region { display: grid; gap: .5rem; margin-top: 1.25rem; }
