@@ -14,6 +14,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   end
 
   setup do
+    page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride")
     page.current_window.resize_to(1400, 1400)
   end
 

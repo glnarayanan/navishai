@@ -30,7 +30,7 @@ class CorpusExplorationJourneyTest < ApplicationSystemTestCase
     assert_text "After rotating the IdP certificate"
     assert_not_includes page.current_url, "record_id="
     assert_includes page.current_url, "#record-"
-    click_link corpus.name
+    within("main") { click_link corpus.name }
     fill_in "Search phrase", with: "no such diagnostic phrase"
     click_button "Search retained records"
     within "#corpus-records" do
@@ -109,7 +109,7 @@ class CorpusExplorationJourneyTest < ApplicationSystemTestCase
       end
     end
     ActiveSupport::Notifications.subscribed(delay, "start_processing.action_controller") do
-      click_link corpus.name
+      within("main") { click_link corpus.name }
       Timeout.timeout(5) { entered.pop }
       if page.has_selector?("html[data-turbo-preview]", wait: 0.5)
         fill_in "Search phrase", with: "no matching diagnostics"
