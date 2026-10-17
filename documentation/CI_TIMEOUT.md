@@ -373,3 +373,5 @@ Streaming-proof SQL time fell from 340s to 30s alone; the local suite fell from
 15m10s to 8m24s with 737 tests passing. CI now runs checks, unit, scale and system
 tests as parallel jobs, and runs on `main` so pull requests reuse its gem cache.
 `bin/ci` still runs everything in one process locally.
+The first split run ([39029405110](https://github.com/glnarayanan/navishai/actions/runs/39029405110))
+passed in 4m23s: scale tests 3m16s, unit 2m18s, system 1m55s, checks 47s.
