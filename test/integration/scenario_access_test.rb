@@ -312,13 +312,13 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
       "Request the certificate expiry date." => 0, @scenario.current_version.selection_reason => 0 }.each do |phrase, count|
       get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
       assert_response :success
-      assert_select ".workspace-card", count: count
+      assert_select ".record-row", count: count
       assert_select "#scenario-search [role=status]", text: /\A#{count} matching scenario/
-      assert_select ".workspace-card a", text: "Current nebula", count: count
+      assert_select ".record-row a", text: "Current nebula", count: count
     end
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "  " }
     assert_response :success
-    assert_select ".workspace-card", count: 2
+    assert_select ".record-row", count: 2
   end
 
   test "scenario search escapes literal wildcards and stays in its corpus and workspace" do
@@ -334,13 +334,13 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     [ "%", "_", "\\", "%_\\" ].each do |phrase|
       get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
       assert_response :success
-      assert_select ".workspace-card", count: 1
-      assert_select ".workspace-card a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, @scenario)}']"
+      assert_select ".record-row", count: 1
+      assert_select ".record-row a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, @scenario)}']"
     end
     [ "' OR 1=1 --", "<script>foreign()</script>" ].each do |phrase|
       get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
       assert_response :success
-      assert_select ".workspace-card", count: 0
+      assert_select ".record-row", count: 0
       assert_select("input[name=corpus_query]") { |inputs| assert_equal phrase, inputs.sole["value"] }
       assert_select "script", text: /foreign\(\)/, count: 0
     end
@@ -369,23 +369,23 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
         assert_select "#scenario-search label[for='#{input['id']}']", text: "Scenario search phrase"
         submitters = css_select("#scenario-search input[type=submit], #scenario-search button[type=submit], #scenario-search button:not([type])")
         assert submitters.any? { |element| (element["value"] || element.text) == "Find scenarios" }
-        assert_select ".workspace-card", count: 1
+        assert_select ".record-row", count: 1
         assert_not_includes request.filtered_path, phrase
         assert_includes request.filtered_path, "corpus_query=[FILTERED]"
       end
     end
     sign_in_as users(:owner)
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: other.current_version.title }
-    assert_select ".workspace-card", text: /reject/, count: 1
+    assert_select ".record-row", text: /Rejected/, count: 1
     other.review!(membership: @membership, version_id: other.current_version_id, decision: "merge", merge_into_id: @scenario.id)
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: other.current_version.title }
-    assert_select ".workspace-card", text: /merged/, count: 1
+    assert_select ".record-row", text: /Merged/, count: 1
     CorpusIntake.call(corpus: @corpus, membership: @membership, name: "SSO playbook", kind: "document", bytes: "Changed certificate policy.")
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
-    assert_select ".workspace-card", text: /source changed/, count: 1
+    assert_select ".record-row", text: /Source changed/, count: 1
     @snapshot.source.update!(expires_at: 1.minute.ago)
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: phrase }
-    assert_select ".workspace-card", count: 0
+    assert_select ".record-row", count: 0
     assert_select "#scenario-search [role=status]", text: /\A0 matching scenario/
   end
 
@@ -398,11 +398,11 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
       assert_select "#scenario-search [role=alert]", text: /200 characters and no null bytes/
       assert_select "input[name=corpus_query]", count: 1
       assert_includes response.body, %Q(value="#{ERB::Util.html_escape(phrase)}")
-      assert_select ".workspace-card", count: 0
+      assert_select ".record-row", count: 0
     end
     get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "  " + "x" * 200 + "  " }
     assert_response :success
-    assert_select ".workspace-card", count: 0
+    assert_select ".record-row", count: 0
   end
 
   test "scenario search counts the whole filter and pages fifty ordered IDs with safe local recovery" do
@@ -422,7 +422,7 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     get path, params: { corpus_query: "constellation", page: 0, protocol: "javascript", host: "alert(1)//", script_name: "//evil.example" }
     assert_response :success
     assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
-    assert_equal scenarios.first(50).map { |scenario| workspace_corpus_scenario_path(@workspace, @corpus, scenario) }, css_select(".workspace-card a").map { |link| link["href"] }
+    assert_equal scenarios.first(50).map { |scenario| workspace_corpus_scenario_path(@workspace, @corpus, scenario) }, css_select(".record-row a").map { |link| link["href"] }
     next_link = css_select("a").find { |link| link.text == "Next records" }
     assert next_link
     uri = URI(next_link["href"])
@@ -433,8 +433,8 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     get next_link["href"]
     assert_response :success
     assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
-    assert_select ".workspace-card", count: 1
-    assert_select ".workspace-card a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, scenarios.last)}']"
+    assert_select ".record-row", count: 1
+    assert_select ".record-row a[href='#{workspace_corpus_scenario_path(@workspace, @corpus, scenarios.last)}']"
     assert_select "a", text: "Next records", count: 0
     previous = css_select("a").find { |link| link.text == "Previous records" }
     assert previous
@@ -447,11 +447,11 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     get clear["href"]
     assert_response :success
     assert_select "#scenario-search [role=status]", text: /\A53 matching scenarios/
-    assert_select ".workspace-card", count: 50
+    assert_select ".record-row", count: 50
     assert_select("input[name=corpus_query]") { |inputs| assert inputs.sole["value"].blank? }
     get path, params: { corpus_query: "constellation", page: 10001 }
     assert_response :success
-    assert_select ".workspace-card", count: 0
+    assert_select ".record-row", count: 0
     assert_select "#scenario-search [role=status]", text: /\A51 matching scenarios/
     previous = css_select("a").find { |link| link.text == "Previous records" }
     assert previous
@@ -469,7 +469,7 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
     ActiveSupport::Notifications.subscribed(capture, "sql.active_record") do
       get workspace_corpus_scenarios_path(@workspace, @corpus), params: { corpus_query: "diagnostic nebula" }
       assert_response :success
-      assert_select ".workspace-card a", text: "Private diagnostic nebula", count: 1
+      assert_select ".record-row a", text: "Private diagnostic nebula", count: 1
     end
     searches = statements.select { |payload| payload[:sql].include?("ILIKE") }
     assert_not_empty searches
@@ -578,7 +578,7 @@ class ScenarioAccessTest < ActionDispatch::IntegrationTest
       sign_in_as users(:teammate)
       get workspace_corpus_scenarios_path(@workspace, @corpus)
       assert_response :success
-      assert_select ".workspace-card", count: 0
+      assert_select ".record-row", count: 0
       get workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
       assert_response :not_found
     end

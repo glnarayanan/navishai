@@ -13,9 +13,22 @@
     <% if @search_error %><p id="scenario-search-error" class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching scenario") %> · page <%= @page %> · up to 50 scenarios. Counts describe this filter, not issue coverage.</p><% end %>
   </section>
   <% if !@search_error && @scenarios.empty? %><p><%= @query.blank? && @page == 1 ? "No candidates yet. Analyse a corpus, inspect its selection, then create scenarios." : "No scenarios on this page. Clear the phrase or return to the first page, then inspect your corpus if needed." %></p><% end %>
-  <ul class="workspace-list" role="list"><% @scenarios.each do |scenario| %><li class="workspace-card">
-    <%= link_to scenario.current_version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, scenario) %>
-    <span>#<%= scenario.id %> · v<%= scenario.current_version.number %> · <%= scenario.merged_into_id ? "merged" : scenario.current_version.latest_review&.decision || "needs review" %> · <%= scenario.current_version.importance %><%= " · source changed" if scenario.current_version.stale? %></span>
-  </li><% end %></ul>
+  <% if @scenarios.any? %>
+    <div class="table-wrap">
+      <table class="data-table" id="scenario-list">
+        <thead><tr><th scope="col">Scenario</th><th scope="col">Review</th><th scope="col" class="hide-narrow">Importance</th></tr></thead>
+        <tbody>
+          <% @scenarios.each do |scenario| %>
+            <% version = scenario.current_version %>
+            <tr class="record-row">
+              <td><%= link_to version.title, workspace_corpus_scenario_path(Current.workspace, @corpus, scenario) %><span class="cell-sub">#<%= scenario.id %> · version <%= version.number %></span></td>
+              <td><span class="pill-group"><%= scenario_review_pill(scenario.merged_into_id ? "merge" : version.latest_review&.decision) %><%= status_pill("stale", label: "Source changed") if version.stale? %></span></td>
+              <td class="hide-narrow"><%= importance_label(version.importance) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
   <%= render "shared/record_pagination", more: @more, page_number: @page, query: request.query_parameters.except("page") %>
 </main>

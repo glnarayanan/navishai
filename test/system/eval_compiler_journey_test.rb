@@ -60,9 +60,9 @@ class EvalCompilerJourneyTest < ApplicationSystemTestCase
     visit case_path
     click_button "Add to SSO readiness"
     assert_selector "h1", text: "SSO readiness"
-    assert_selector ".workspace-card", count: 1
+    assert_selector ".record-row", count: 1
     click_button "Remove case #{EvalCase.order(:id).last.id}"
-    assert_selector ".workspace-card", count: 0
+    assert_selector ".record-row", count: 0
     @scenario.review!(membership: @membership, version_id: @scenario.current_version_id, decision: "reject")
     visit new_workspace_corpus_eval_case_path(@workspace, @corpus, scenario_id: @scenario.id)
     assert_selector "[role=status]", text: /needs approval/

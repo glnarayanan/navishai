@@ -243,7 +243,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     fill_in "Scenario search phrase", with: "CeRtIfIcAtE"
     find_field("Scenario search phrase").send_keys(:enter)
     assert_selector "#scenario-search [role=status]", text: "1 matching scenario"
-    assert_selector ".workspace-card", count: 1
+    assert_selector ".record-row", count: 1
     assert_link "Signing certificate expiry", href: workspace_corpus_scenario_path(@workspace, @corpus, @scenario)
     [ 1280, 390 ].each do |width|
       resize_viewport(width, 1000)
@@ -255,7 +255,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     click_button "Find scenarios"
     assert_selector "#scenario-search [role=status]", text: "0 matching scenarios"
     assert_text "No scenarios on this page"
-    assert_no_selector ".workspace-card"
+    assert_no_selector ".record-row"
     [ 1280, 390 ].each do |width|
       resize_viewport(width, 1000)
       assert_no_horizontal_overflow
@@ -265,7 +265,7 @@ class ScenarioJourneyTest < ApplicationSystemTestCase
     assert_selector "#scenario-search [role=alert]", text: "200 characters and no null bytes"
     assert_field "Scenario search phrase", with: "x" * 201
     assert_equal "true", find_field("Scenario search phrase")["aria-invalid"]
-    assert_no_selector ".workspace-card"
+    assert_no_selector ".record-row"
     [ 1280, 390 ].each do |width|
       resize_viewport(width, 1000)
       assert_no_horizontal_overflow

@@ -86,7 +86,7 @@ class EvaluationAccessTest < ActionDispatch::IntegrationTest
     end
     get workspace_corpus_eval_suite_path(@workspace, @corpus, @regression)
     assert_response :success
-    assert_select ".workspace-card", count: 0
+    assert_select ".record-row", count: 0
     assert_select ".source-record", count: 0
     assert_select "input[type=submit]", count: 0
     assert_not_includes response.body, "Private regression rationale"

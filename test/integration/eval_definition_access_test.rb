@@ -85,7 +85,7 @@ class EvalDefinitionAccessTest < ActionDispatch::IntegrationTest
     assert_response :not_found
     get workspace_corpus_eval_suite_path(@workspace, @corpus, suite)
     assert_response :success
-    assert_select ".workspace-card", count: 0
+    assert_select ".record-row", count: 0
     assert_raises(EvalCase::Invalid) { @outcome_grader.revise!(membership: @membership, version_id: @outcome_grader.current_version_id, kind: "rubric_judge", definition: @outcome_grader.current_version.definition) }
   end
 end
