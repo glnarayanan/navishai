@@ -7,7 +7,12 @@
         <% section = current_corpus_section %>
         <% if section && !(controller_name == "corpora" && action_name == "show") %>
           <li><%= link_to corpus.name, workspace_corpus_path(Current.workspace, corpus) %></li>
-          <li><span aria-current="page"><%= section %></span></li>
+          <% if (page_title = breadcrumb_page_title) && page_title != section %>
+            <li><%= link_to section, corpus_section_path(corpus) %></li>
+            <li><span aria-current="page"><%= page_title %></span></li>
+          <% else %>
+            <li><span aria-current="page"><%= section %></span></li>
+          <% end %>
         <% else %>
           <li><span aria-current="page"><%= corpus.name %></span></li>
         <% end %>

@@ -1,18 +1,84 @@
-# Lab shell design
+# NavishAI design system
 
-Mode: Operate. Visual direction: category-standard neutral SaaS (reference bar:
-Linear, Vercel, Stripe Dashboard), not an inbox. Local Geist/Geist Mono, neutral
-ink on white, black primary actions, one functional blue for focus, and status
-colour only for results. No customer preview, fake totals, disabled feature
-buttons or invented evaluation results. A full rewrite of this file follows the
-redesign; tokens live at the top of `app/assets/stylesheets/application.css`.
+Mode: Operate (the lab) and Persuade (the [landing page](./LANDING.md)). Owner-approved
+direction, 17 October 2026: category-standard neutral SaaS, played straight. The
+reference bar is Linear, Vercel and the Stripe Dashboard. The product is an
+evaluation lab, not an inbox: no customer previews, fake totals, disabled feature
+buttons or invented evaluation results.
 
-Signed-in pages use a sidebar shell: workspace switcher, workspace links, and the
-current corpus's sections (derived from the controller, so detail pages keep their
-place). The content sits in an inset panel with breadcrumbs and an account menu
-holding the System/Light/Dark radiogroup and sign out. Menus and the narrow-width
-sidebar are native popovers, so Escape and outside clicks close them without
-custom scripts. Signed-out pages keep a slim header with the theme radiogroup.
+## Foundations
+
+- **Type:** self-hosted Geist and Geist Mono (`app/assets/fonts`), no web-font
+  requests. Body 14px; h1 22px, h2 16px, h3 15px, all weight 600 with tight
+  negative tracking. Mono is for literal values (JSON, digests, IDs) only, never as
+  decoration. The landing headline is the only display size (up to 64px, 650).
+- **Colour tokens** live at the top of `app/assets/stylesheets/application.css`,
+  with a full `html.dark` set. Surfaces: `--canvas` (app background), `--panel`
+  (content), `--surface` and `--surface-strong` (wells, quotes, segmented
+  controls), `--hover`, `--selected`. Ink: `--ink`, `--ink-soft`, `--muted`
+  (secondary text, 5:1 on white), `--faint` (decoration only). Lines: `--border`,
+  `--border-soft`, and `--control-border` (3:1 for inputs).
+- **Actions:** `--primary` is near-black in light mode and near-white in dark;
+  there is no brand accent. `--focus` blue is reserved for focus rings, caret and
+  selection.
+- **Status:** `--fail`, `--pass` and `--warn` with soft backgrounds, used only for
+  results, review decisions and blocking states. Never for decoration.
+- **Shape and depth:** radii 6/8/12px (`--radius-s/m/l`). Borders carry structure;
+  shadows appear only on menus (`--shadow-menu`), the selected theme option and the
+  landing product preview.
+
+## Shell
+
+Signed-in pages use a sidebar shell. The sidebar has the workspace switcher,
+workspace links (Overview, Corpora, People and access, Settings) and, inside a
+corpus, its nine sections in workflow order (Sources → Source changes), derived
+from the controller so detail pages keep their place. Content sits in an inset
+panel under a top bar with breadcrumbs and the account menu (theme radiogroup, All
+workspaces, Sign out). Breadcrumbs end on the section, or on the record's name for
+detail pages, with the section linked. Menus and the narrow-width sidebar are native
+`popover` elements, so Escape and outside clicks close them without custom scripts.
+Below 56rem the sidebar opens from a menu button; below 40rem only the last
+breadcrumb shows. Signed-out pages keep a slim header with the brand, theme
+radiogroup and Sign in; the landing page adds its section links and a pilot button
+through `:public_nav` and `:public_actions`.
+
+## Components
+
+- **Page heading:** h1, one muted line, optional `.page-meta` (status pill and
+  facts) and `.page-actions` on the right. A back link is optional when the
+  breadcrumb already names the parent.
+- **Buttons:** `.button` (bordered), `.button-primary` (filled), `.button-small`;
+  one primary action per view. `.button-large` is landing-only.
+- **Tables:** lists of records are `.table-wrap > table.data-table` with a linked
+  first column, `.cell-sub` for a secondary line, `.numeric` for counts and
+  `.hide-narrow` for columns dropped below 40rem. Rows carry `.record-row` as a
+  stable test hook. Use tables for anything with more than one attribute.
+- **Status pills:** `StatusHelper#status_pill` maps run, result and analysis states
+  to pass/fail/warn/info/neutral; `scenario_review_pill` names expert decisions
+  (Approved, Rejected, Merged, Needs review). A pill always carries a text label.
+- **Cards and panels:** `.panel-card` for grouped forms or option lists,
+  `.panel-grid` to set two side by side, `.check-card` for a check decision with
+  its evidence. Evidence quotes use `blockquote.evidence-text`; literal JSON uses
+  `pre.evidence-text`.
+- **Forms:** native labels, hints in `.field-hint`, `.field-grid` for pairs,
+  `.search-row` for a search field with its button, chevron `select`s and 20px
+  checkboxes. Disclosure fieldsets keep their consent copy and checkbox together.
+- **Empty and error states:** `.empty-state` names what is missing and the next
+  real action; `.inline-error` and `role=alert` state the rejected input and how to
+  recover. Flash messages sit under the top bar.
+
+## Rules
+
+- Server-rendered pages, local assets, no inline `style` attributes (CSP tests fail
+  on them) and no new JavaScript for menus, disclosures or themes.
+- No eyebrows or kickers, gradient text, mono as costume, emoji icons or decorative
+  colour. Icons are the 1.6px stroke set in `NavigationHelper::ICONS`.
+- Keep copy honest: counts describe filters, not coverage; proposals are not expert
+  decisions; unknown cost stays unknown.
+- Check every changed page at 1440 and 390px in light and dark for overflow, focus
+  and contrast.
+
+## Page and flow notes
 
 The workspace overview links to corpus intake and source evidence. Import forms
 name supported formats, bounds, email masking limits and retention. Source pages
