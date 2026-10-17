@@ -42,6 +42,21 @@ class LabShellTest < ApplicationSystemTestCase
     capture("permission-error")
   end
 
+  test "paired form fields keep their inputs aligned when only one has a hint" do
+    sign_in users(:owner)
+    page.current_window.resize_to(1280, 900)
+    visit edit_workspace_path(workspaces(:acme_support))
+    assert_selector "h1", text: "Workspace settings"
+    boxes = page.evaluate_script(<<~JS)
+      Array.from(document.querySelectorAll(".field-grid > .field > input")).map((input) => {
+        const box = input.getBoundingClientRect();
+        return [ Math.round(box.top), Math.round(box.height) ];
+      })
+    JS
+    assert_equal 2, boxes.size
+    assert_equal 1, boxes.uniq.size, "inputs in one row should share top and height: #{boxes.inspect}"
+  end
+
   private
     def capture(name)
       return unless ENV["CAPTURE_LAB_SCREENSHOTS"] == "1"

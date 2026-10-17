@@ -198,9 +198,9 @@ form.button_to { display: inline-block; margin: 0; }
 /* Forms */
 .form-stack, .invite-form { display: grid; gap: 1.125rem; }
 .form-stack > .button, .form-stack > input[type=submit], .invite-form > input[type=submit] { justify-self: start; }
-.field { display: grid; gap: .375rem; min-width: 0; }
+.field { display: grid; align-content: start; gap: .375rem; min-width: 0; }
 .field p { margin: 0; color: var(--muted); font-size: .8125rem; }
-.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.125rem; }
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1.125rem; }
 .field-wide { grid-column: 1 / -1; }
 .label-row { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .label-row a { color: var(--muted); font-size: .8125rem; }
@@ -211,8 +211,8 @@ input:hover, select:hover, textarea:hover { border-color: var(--ink-soft); }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
 input[type=submit] { width: auto; }
 input[type=checkbox], input[type=radio] { width: 1.25rem; min-height: 1.25rem; height: 1.25rem; padding: 0; accent-color: var(--primary); }
-input[type=file] { padding: .3125rem; }
-input[type=file]::file-selector-button { margin-right: .75rem; padding: .25rem .625rem; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-strong); color: var(--ink); font: inherit; font-size: .8125rem; font-weight: 500; cursor: pointer; }
+input[type=file] { padding: .25rem .3125rem; }
+input[type=file]::file-selector-button { margin-right: .75rem; padding: .1875rem .625rem; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-strong); color: var(--ink); font: inherit; font-size: .8125rem; font-weight: 500; cursor: pointer; }
 select { appearance: none; padding-right: 2.25rem; background-image: var(--select-chevron); background-position: right .625rem center; background-size: 1rem; background-repeat: no-repeat; }
 select[multiple] { background-image: none; padding-right: .75rem; }
 textarea { min-height: 6rem; resize: vertical; line-height: 1.5; }
