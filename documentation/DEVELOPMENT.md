@@ -75,6 +75,8 @@ remain separate Rails-native production databases. No RLS is installed.
   branch.
 - `bin/ci` runs setup, RuboCop, gem/importmap audits, Brakeman, eager-load checks,
   full Rails tests and system tests. No checks reference deleted Go code.
+- GitHub CI runs the same checks as parallel jobs: checks, unit, 100k-record scale
+  proofs (`SCALE_TESTS` in `.github/workflows/ci.yml`) and system tests.
 - `bin/prove-container-runtime` uses a separately prepared private Docker daemon
   and reviewed image for a disposable production-role, native-jobs and private
   HTTPS proof. It is orb-only, never a deploy command; see [hosting](./DEPLOYMENT.md#disposable-imageruntime-proof).
