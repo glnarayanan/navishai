@@ -7,7 +7,15 @@ Thank you for helping keep NavishAI and the people who use it safe.
 Please report security issues privately. **Do not open a public issue, pull
 request or discussion** for a suspected vulnerability.
 
-Email **hello@navishai.com** with the subject line `Security report`. Include:
+Use either private channel:
+
+- **GitHub:** open a private report from the repository's
+  [Security tab](https://github.com/glnarayanan/navishai/security/advisories/new)
+  ("Report a vulnerability").
+- **Email:** write to **hello@navishai.com** with the subject line
+  `Security report`.
+
+Include:
 
 - what the issue is and what an attacker could do with it
 - the affected page, route, file or commit
