@@ -1,18 +1,34 @@
 <% content_for :title, "#{@workspace.name} — NavishAI" %>
 <main class="page-shell">
-  <%= link_to "All workspaces", workspaces_path, class: "back-link" %>
   <div class="page-heading">
-    <div><p class="repository-path"><%= @workspace.organization.name %> / <%= @workspace.slug %></p>
-      <h1><%= @workspace.name %></h1></div>
-    <span class="role-badge"><%= role_label(@membership.role) %></span>
+    <div>
+      <h1><%= @workspace.name %></h1>
+      <p class="page-meta"><span><%= @workspace.organization.name %></span><span class="role-badge"><%= role_label(@membership.role) %></span></p>
+    </div>
+    <div class="page-actions">
+      <% if @membership.owner? || @membership.admin? %>
+        <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button" %>
+      <% end %>
+      <%= link_to "Open corpora", workspace_corpora_path(@workspace), class: "button button-primary" %>
+    </div>
   </div>
-  <section class="lab-empty" aria-labelledby="empty-title">
-    <h2 id="empty-title">A clean starting point</h2>
-    <p>Build a corpus from historical conversations and documentation. Each import keeps its source, digest and fixed snapshot.</p>
-    <p class="muted-copy">Intake stays local. Scenario review and evaluation runs are not yet available.</p>
-    <%= link_to "Open corpora", workspace_corpora_path(@workspace), class: "button button-primary" %>
-    <% if @membership.owner? || @membership.admin? %>
-      <%= link_to "Manage invitations", workspace_workspace_invitations_path(@workspace), class: "button button-secondary" %>
-    <% end %>
-  </section>
+
+  <% if @corpora.empty? %>
+    <section class="empty-state" aria-labelledby="empty-title">
+      <h2 id="empty-title">Start with a corpus</h2>
+      <p>A corpus holds past support conversations and the documentation used to resolve them. Every import keeps its source, digest and a fixed snapshot.</p>
+      <% if @membership.can_write? %><%= link_to "Create a corpus", workspace_corpora_path(@workspace), class: "button button-primary" %><% end %>
+    </section>
+    <ol class="steps" aria-label="How evaluation works here">
+      <li><strong>Import evidence</strong><p>Conversation exports, production traces and the policies your team follows.</p></li>
+      <li><strong>Approve scenarios</strong><p>Experts decide what good support looks like for each case.</p></li>
+      <li><strong>Build a suite</strong><p>Freeze approved cases and checks, then connect the agent under test.</p></li>
+      <li><strong>Run every version</strong><p>See which decisions pass, fail or abstain before customers do.</p></li>
+    </ol>
+  <% else %>
+    <section aria-labelledby="corpora-title">
+      <div class="section-heading"><h2 id="corpora-title">Corpora</h2><%= link_to "View all", workspace_corpora_path(@workspace) %></div>
+      <%= render "corpora/table", corpora: @corpora, counts: @corpus_counts %>
+    </section>
+  <% end %>
 </main>

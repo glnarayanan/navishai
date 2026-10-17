@@ -91,8 +91,8 @@ class RecordedReplayJourneyTest < ApplicationSystemTestCase
     click_link "Refresh run"
     assert_text "Recorded production output replay, not a new agent execution"
     click_link @scenario.current_version.title, match: :first
-    assert_text "Fail · Outcomes"
-    assert_text "Fail · Actions"
+    assert_selector ".check-card h3", text: /Fail\s+Outcomes/
+    assert_selector ".check-card h3", text: /Fail\s+Actions/
     assert_link "the fixed production trace"
     [ 1280, 390 ].each { |width| capture("failure-#{width}", width) }
     result_path = page.current_path

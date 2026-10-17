@@ -4,7 +4,8 @@ class CorporaController < ApplicationController
   before_action -> { require_role(:owner, :admin, :manager, :member) }, only: :create
 
   def index
-    @corpora = Current.workspace.corpora.order(:name)
+    @corpora = Current.workspace.corpora.order(:name).to_a
+    @corpus_counts = CorpusCounts.call(@corpora)
     @corpus = Corpus.new
   end
 
@@ -17,7 +18,8 @@ class CorporaController < ApplicationController
     end
     redirect_to workspace_corpus_path(Current.workspace, @corpus), notice: "Corpus created.", status: :see_other
   rescue ActiveRecord::RecordInvalid
-    @corpora = Current.workspace.corpora.order(:name)
+    @corpora = Current.workspace.corpora.order(:name).to_a
+    @corpus_counts = CorpusCounts.call(@corpora)
     render :index, status: :unprocessable_content
   end
 

@@ -1,8 +1,7 @@
 <% content_for :title, "Workspaces — NavishAI" %>
 <main class="page-shell">
   <div class="page-heading">
-    <div><h1>Choose a workspace</h1>
-      <p>Each workspace is an isolated lab with its own people and access.</p></div>
+    <div><h1>Choose a workspace</h1><p>Each workspace is an isolated lab with its own people and access.</p></div>
     <% if @owned_workspace_ids.any? %>
       <%= link_to "Create workspace", new_workspace_path, class: "button button-primary" %>
     <% end %>
@@ -12,11 +11,14 @@
       <% @workspaces.each do |workspace| %>
         <li class="workspace-card">
           <%= link_to workspace_path(workspace), class: "workspace-link" do %>
-            <div><strong><%= workspace.name %></strong><p><%= workspace.organization.name %> / <%= workspace.slug %></p></div>
-            <span>Open lab →</span>
+            <span class="workspace-row">
+              <span class="workspace-mark" aria-hidden="true"><%= initials(workspace.name) %></span>
+              <span><strong><%= workspace.name %></strong><span class="workspace-link-meta"><%= workspace.organization.name %> / <%= workspace.slug %></span></span>
+            </span>
+            <span class="role-badge"><%= role_label(@roles[workspace.id]) %></span>
           <% end %>
           <% if @owned_workspace_ids.include?(workspace.id) %>
-            <%= link_to "Settings", edit_workspace_path(workspace), class: "button button-secondary" %>
+            <%= link_to "Settings", edit_workspace_path(workspace), class: "button button-small" %>
           <% end %>
         </li>
       <% end %>

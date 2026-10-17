@@ -7,10 +7,13 @@ class WorkspacesController < ApplicationController
   def index
     @workspaces = Current.user.workspaces.includes(:organization).order(:name)
     @owned_workspace_ids = Current.user.memberships.owner.where(workspace_id: @workspaces).pluck(:workspace_id).to_set
+    @roles = Current.user.memberships.where(workspace_id: @workspaces).pluck(:workspace_id, :role).to_h
   end
 
   def show
     @membership = Current.require_membership!
+    @corpora = Current.workspace.corpora.order(:name).to_a
+    @corpus_counts = CorpusCounts.call(@corpora)
   end
 
   def new

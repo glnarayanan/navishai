@@ -1,8 +1,24 @@
 <% content_for :title, "Evaluation runs — NavishAI" %>
 <main class="page-shell">
-  <%= link_to @corpus.name, workspace_corpus_path(Current.workspace, @corpus), class: "back-link" %>
   <div class="page-heading"><div><h1>Evaluation runs</h1><p>Fixed inputs, target versions and individual behavioural decisions. No universal support score.</p></div></div>
-  <% if @runs.empty? %><p class="empty-state">No runs yet. <%= link_to "Open an eval suite", workspace_corpus_eval_suites_path(Current.workspace, @corpus) %> and choose a target.</p><% end %>
-  <ul class="workspace-list" role="list"><% @runs.each do |run| %><li class="workspace-card"><%= link_to "Run #{run.id} · #{run.eval_suite.name}", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run) %><span><%= run.state.humanize %> · <%= run.evaluation_target_version.evaluation_target.name %> v<%= run.evaluation_target_version.number %></span></li><% end %></ul>
+  <% if @runs.empty? %><p class="empty-state">No runs yet. <%= link_to "Open an eval suite", workspace_corpus_eval_suites_path(Current.workspace, @corpus) %> and choose a target.</p><% else %>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th scope="col">Run</th><th scope="col">State</th><th scope="col">Results</th><th scope="col" class="hide-narrow">Target</th><th scope="col" class="hide-narrow">Started</th></tr></thead>
+        <tbody>
+          <% @runs.each do |run| %>
+            <% counts = %w[fail pass incomplete error].to_h { |status| [ status, @status_counts.fetch([ run.id, status ], 0) ] } %>
+            <tr>
+              <td><%= link_to "Run #{run.id} · #{run.eval_suite.name}", workspace_corpus_evaluation_run_path(Current.workspace, @corpus, run) %></td>
+              <td><%= status_pill(run.state) %></td>
+              <td class="muted"><%= counts.select { |_status, count| count.positive? }.map { |status, count| "#{count} #{status == "fail" ? "failed" : status == "pass" ? "passed" : status}" }.join(" · ").presence || "No results yet" %></td>
+              <td class="hide-narrow"><%= run.evaluation_target_version.evaluation_target.name %> v<%= run.evaluation_target_version.number %></td>
+              <td class="muted hide-narrow"><%= time_ago_in_words(run.created_at) %> ago</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
   <nav class="workspace-tabs" aria-label="Run pages"><% if @page > 1 %><%= link_to "Previous runs", workspace_corpus_evaluation_runs_path(Current.workspace, @corpus, page: @page - 1) %><% end %><% if @more %><%= link_to "Next runs", workspace_corpus_evaluation_runs_path(Current.workspace, @corpus, page: @page + 1) %><% end %></nav>
 </main>

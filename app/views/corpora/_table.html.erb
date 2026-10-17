@@ -1,0 +1,17 @@
+<div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th scope="col">Corpus</th><th scope="col" class="numeric">Sources</th><th scope="col" class="numeric">Suites</th><th scope="col" class="numeric">Runs</th><th scope="col" class="hide-narrow">Last run</th></tr></thead>
+    <tbody>
+      <% corpora.each do |corpus| %>
+        <% row = counts.fetch(corpus.id) %>
+        <tr>
+          <td><%= link_to corpus.name, workspace_corpus_path(Current.workspace, corpus) %></td>
+          <td class="numeric"><%= row.sources %></td>
+          <td class="numeric"><%= row.suites %></td>
+          <td class="numeric"><%= row.runs %></td>
+          <td class="muted hide-narrow"><%= row.last_run_at ? "#{time_ago_in_words(row.last_run_at)} ago" : "No runs yet" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

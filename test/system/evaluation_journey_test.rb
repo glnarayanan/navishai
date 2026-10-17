@@ -31,7 +31,7 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     assert_text "Complete"
     assert_text "Failure patterns"
     click_link @scenario.current_version.title, match: :first
-    assert_text "Fail · Outcomes"
+    assert_selector ".check-card h3", text: /Fail\s+Outcomes/
     assert_text "tool_called: condition not met"
     assert_link "Supporting source snapshot", count: 2
     [ 1280, 390 ].each do |width|
@@ -74,7 +74,7 @@ class EvaluationJourneyTest < ApplicationSystemTestCase
     assert_text "No reported behavioural failures"
     capture("passed-390")
     visit result_path
-    assert_text "Fail · Outcomes"
+    assert_selector ".check-card h3", text: /Fail\s+Outcomes/
     click_link "Supporting source snapshot", match: :first
     find("summary", text: "Delete this source").click
     assert_text "targets, runs, results and regressions"
