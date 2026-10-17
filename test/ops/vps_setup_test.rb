@@ -47,7 +47,7 @@ class VpsSetupTest < Minitest::Test
       ANSWERS.merge(smtp_port: "0587"), ANSWERS.merge(smtp_port: "010"),
       ANSWERS.merge(owner_password: "short"), ANSWERS.merge(workspace_slug: "Bad Slug"),
       ANSWERS.merge(owner_email: "not-mail"), ANSWERS.merge(smtp_user: "line\nline") ]
-    inputs.map { |data| JSON.generate(data) }.push(JSON.generate(ANSWERS).sub("{", '{"host":"duplicate.example.com",')).each do |json|
+    inputs.map { |data| JSON.generate(data) }.push('{"host":"duplicate.example.com",' + JSON.generate(ANSWERS).delete_prefix("{")).each do |json|
       write_answers(json)
       output, status = run_setup
       refute status.success?, output
