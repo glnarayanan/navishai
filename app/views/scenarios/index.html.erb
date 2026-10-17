@@ -6,8 +6,9 @@
     <h2 id="scenario-search-heading">Find a scenario</h2>
     <p id="scenario-search-help">Search a literal phrase in current titles, situations and taxonomy labels, ignoring case. Facts, requirements and old versions are not searched. This local search grants no association or approval.</p>
     <%= form_with url: workspace_corpus_scenarios_path(Current.workspace, @corpus, anchor: "scenario-search"), method: :get, class: "form-stack config-panel", role: "search" do |form| %>
-      <div class="field"><%= form.label :corpus_query, "Scenario search phrase" %><%= form.search_field :corpus_query, value: @query, maxlength: 200, aria: { invalid: @search_error.present?, describedby: @search_error ? "scenario-search-help scenario-search-error" : "scenario-search-help" } %></div>
-      <%= form.submit "Find scenarios", class: "button" %>
+      <div class="field"><%= form.label :corpus_query, "Scenario search phrase" %>
+        <div class="search-row"><%= form.search_field :corpus_query, value: @query, maxlength: 200, aria: { invalid: @search_error.present?, describedby: @search_error ? "scenario-search-help scenario-search-error" : "scenario-search-help" } %><%= form.submit "Find scenarios", class: "button" %></div>
+      </div>
     <% end %>
     <p><%= link_to "Clear search", workspace_corpus_scenarios_path(Current.workspace, @corpus, anchor: "scenario-search") %>. Phrases stay in your browser URL/history; do not paste secrets.</p>
     <% if @search_error %><p id="scenario-search-error" class="inline-error" role="alert"><%= @search_error %></p><% else %><p role="status"><%= pluralize(@matching_count, "matching scenario") %> · page <%= @page %> · up to 50 scenarios. Counts describe this filter, not issue coverage.</p><% end %>
