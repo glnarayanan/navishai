@@ -49,6 +49,7 @@ class VariedCorpusDiscoveryTest < ActiveSupport::TestCase
     assert_equal 20, LARGE_FAMILIES.size
     assert_equal 99_998, LARGE_FAMILIES.values.sum(&:first)
     snapshot = build_large_varied_history
+    ApplicationRecord.connection.execute("ANALYZE corpus_items")
     documents = %w[a d].map do |prefix|
       CorpusIntake.call(corpus: @corpus, membership: @membership, name: "Large known document #{prefix}",
         kind: "document", bytes: LARGE_FAMILIES.fetch(prefix).last)

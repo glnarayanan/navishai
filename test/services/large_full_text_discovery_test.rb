@@ -164,6 +164,7 @@ class LargeFullTextDiscoveryTest < ActiveSupport::TestCase
         CASE WHEN i = 99999 THEN '{"impact":"critical"}'::jsonb ELSE '{}'::jsonb END, NOW()
       FROM generate_series(1, 99999) AS i
     SQL
+    ApplicationRecord.connection.execute("ANALYZE corpus_items")
     analysis = nil
     assert_no_corpus_item_materialization { analysis = request }
     assert_equal 100_000, analysis.corpus_analysis_inputs.count
