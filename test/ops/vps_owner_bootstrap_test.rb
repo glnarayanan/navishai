@@ -65,7 +65,7 @@ class VpsOwnerBootstrapTest < ActiveSupport::TestCase
         refute run_bootstrap(JSON.generate(data))
       end
     end
-    refute run_bootstrap(JSON.generate(@data).sub("{", '{"password":"duplicate",'))
+    refute run_bootstrap('{"password":"duplicate",' + JSON.generate(@data).delete_prefix("{"))
     refute run_bootstrap("not json")
     refute_includes @errors.string, @data[:password]
   end
