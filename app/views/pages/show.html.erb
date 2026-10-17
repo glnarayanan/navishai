@@ -1,84 +1,117 @@
-<% content_for :title, "Company-specific AI support evaluation — NavishAI" %>
+<% content_for :title, "NavishAI — The evaluation lab for AI in technical support" %>
 <% content_for :head do %>
   <meta name="description" content="Turn your company's support conversations, policies and expert judgment into source-backed scenarios, calibrated checks and regression tests for AI support systems.">
 <% end %>
-<main class="landing">
+<% content_for :public_nav do %>
   <nav class="landing-nav" aria-label="On this page" data-turbo="false">
-    <%= link_to "The workflow", "#workflow" %>
-    <%= link_to "An SSO example", "#example" %>
+    <%= link_to "How it works", "#workflow" %>
+    <%= link_to "Example", "#example" %>
     <%= link_to "Data boundaries", "#privacy" %>
   </nav>
-
+<% end %>
+<% content_for :public_actions do %>
+  <%= mail_to "hello@navishai.com", "Request a pilot", subject: "NavishAI pilot", class: "button button-small button-primary hide-narrow" %>
+<% end %>
+<main class="landing">
   <section class="landing-hero" aria-labelledby="landing-title">
-    <div>
-      <h1 id="landing-title">Test your AI's SSO handoffs, API fixes and billing rules</h1>
-      <p class="landing-lead">Your SSO rules. Your billing policy. Your Engineering handoffs. Define good support with your company's evidence—not a universal benchmark.</p>
-      <p>NavishAI is an evaluation lab for B2B SaaS teams putting AI into technical support. Your experts decide what should happen. Your suite checks what did.</p>
-      <div class="landing-actions">
-        <%= link_to "Sign in to the lab", new_session_path, class: "button button-primary" %>
-        <%= link_to "See how it works", "#workflow", class: "landing-text-link", data: { turbo: false } %>
-      </div>
-      <p class="landing-note">Evaluates your support system. Does not reply to your customers.</p>
-      <% if FirstOwnerBootstrap.available? %>
-        <p class="landing-note">Setting up this deployment? <%= link_to "First-time setup", new_setup_path %> requires the operator's bootstrap token.</p>
-      <% end %>
+    <h1 id="landing-title">The evaluation lab for AI in technical support</h1>
+    <p class="landing-lead">Turn your support conversations and playbooks into tests. Your experts approve what good support looks like. Run every new version of your AI agent against them before it reaches customers.</p>
+    <div class="landing-actions">
+      <%= mail_to "hello@navishai.com", "Request a pilot", subject: "NavishAI pilot", class: "button button-primary button-large" %>
+      <%= link_to "How it works", "#workflow", class: "button button-large", data: { turbo: false } %>
     </div>
-
-    <figure class="landing-specimen">
-      <figcaption>Illustrative SSO case · not customer data or a run</figcaption>
-      <h2>When should the agent stop troubleshooting?</h2>
-      <dl>
-        <div>
-          <dt>Company playbook</dt>
-          <dd>“Valid IdP metadata + repeated ACS 500 responses: escalate to Engineering.”</dd>
-        </div>
-        <div>
-          <dt>Expert expectation</dt>
-          <dd>Hand off with the diagnostic evidence. Do not ask the customer to keep changing a valid configuration.</dd>
-        </div>
-        <div>
-          <dt>Executable check</dt>
-          <dd><code>{"type":"escalation",<br>"value":"Engineering"}</code></dd>
-        </div>
-      </dl>
-      <p>The check reads the target's reported escalation. It does not prove that a handoff happened.</p>
-    </figure>
+    <p class="landing-note">NavishAI evaluates your support AI. It never replies to your customers.</p>
+    <% if FirstOwnerBootstrap.available? %>
+      <p class="landing-note">Setting up this deployment? <%= link_to "First-time setup", new_setup_path %> requires the operator's bootstrap token.</p>
+    <% end %>
   </section>
 
-  <section class="landing-domain" aria-labelledby="domain-title">
-    <h2 id="domain-title">Technical support needs company-specific tests</h2>
-    <p>Authentication and SSO. API failures. Permissions and plans. Integration dependencies. Incidents and escalation. The right next step depends on your product, not just a polite answer.</p>
+  <figure class="landing-preview" aria-labelledby="preview-caption">
+    <div class="preview-window">
+      <div class="preview-sidebar" aria-hidden="true">
+        <p class="preview-workspace"><span>SQ</span>Support quality</p>
+        <% %w[Sources Scenarios Graders Calibration Eval\ suites Runs Trace\ discovery].each do |item| %>
+          <span class="<%= "is-current" if item == "Runs" %>"><%= item %></span>
+        <% end %>
+      </div>
+      <div class="preview-main">
+        <div class="preview-heading">
+          <div><p>Runs / Run 14</p><h2>Replay readiness · candidate v3</h2></div>
+          <span class="status-pill status-fail">1 failed</span>
+        </div>
+        <table class="preview-table">
+          <caption class="visually-hidden">Case results for an illustrative run</caption>
+          <thead class="visually-hidden"><tr><th scope="col">Result</th><th scope="col">Case</th><th scope="col">Importance</th><th scope="col">Checks</th></tr></thead>
+          <tbody>
+            <% [ [ "fail", "Fail", "Webhook replay writes duplicate invoices", "Critical", "2 checks failed" ],
+                 [ "warn", "Abstain", "SSO stopped after certificate rotation", "High", "Judge below threshold" ],
+                 [ "pass", "Pass", "REST quota retry headers", "Normal", "3 of 3 checks" ],
+                 [ "pass", "Pass", "REST quota retry timing", "Normal", "2 of 2 checks" ],
+                 [ "pass", "Pass", "Invoice shows duplicate seat charges", "High", "4 of 4 checks" ] ].each do |tone, result, title, importance, detail| %>
+              <tr>
+                <td><span class="status-pill status-<%= tone %>"><%= result %></span></td>
+                <th scope="row"><%= title %></th>
+                <td class="preview-optional"><%= importance %></td>
+                <td class="preview-optional"><%= detail %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <div class="preview-detail">
+        <p class="preview-label">Failed check</p>
+        <p class="preview-check">Escalate to Engineering on repeated ACS 500s</p>
+        <p class="preview-label">Company evidence</p>
+        <blockquote>“Valid IdP metadata plus repeated ACS 500 responses: escalate to Engineering.”</blockquote>
+        <p class="preview-source">SSO playbook, section 4.2</p>
+        <p class="preview-label">Agent response</p>
+        <p>“Please re-upload the metadata and try again.”</p>
+      </div>
+    </div>
+    <figcaption id="preview-caption">Illustrative data, not customer data or a real run.</figcaption>
+  </figure>
+
+  <section class="landing-section" aria-labelledby="domain-title">
+    <div class="landing-section-heading">
+      <h2 id="domain-title">Generic benchmarks don't know your product</h2>
+      <p>The right answer to an SSO failure, an API error or a billing dispute depends on your playbooks, plans and escalation rules. A polite reply can still be the wrong decision.</p>
+    </div>
+    <dl class="landing-pillars">
+      <div><dt>Built from your evidence</dt><dd>Every scenario links to the exact conversation or document it came from.</dd></div>
+      <div><dt>Judged by your experts</dt><dd>Experts approve each expected behaviour. Machine proposals stay drafts until they do.</dd></div>
+      <div><dt>Kept as regressions</dt><dd>A reviewed failure becomes a test for the next version of your agent.</dd></div>
+    </dl>
   </section>
 
-  <section class="landing-section landing-split" id="workflow" aria-labelledby="workflow-title">
-    <div>
-      <h2 id="workflow-title">From company corpus to regression suite</h2>
-      <p>A historical answer is evidence, not automatically the right answer. Each step keeps its sources, versions and human decisions.</p>
+  <section class="landing-section" id="workflow" aria-labelledby="workflow-title">
+    <div class="landing-section-heading">
+      <h2 id="workflow-title">From support history to regression suite</h2>
+      <p>Six steps. Each one keeps its sources, its versions and the human decisions behind it. A historical answer is evidence, not automatically the right answer.</p>
     </div>
     <ol class="landing-workflow" role="list">
       <li>
         <h3>Build a source-backed corpus</h3>
-        <p>Upload conversation exports and text or Markdown documentation. Keep fixed source snapshots so a scenario points to the exact record it came from.</p>
+        <p>Upload conversation exports and text or Markdown documentation. Fixed snapshots let every scenario point to the exact record it came from.</p>
       </li>
       <li>
         <h3>Find cases worth testing</h3>
-        <p>Explore proposed issue families, representative examples and risk signals. Inspect why a case was selected. Local term analysis and optional model proposals need expert review; selection counts are not verified coverage.</p>
+        <p>Review proposed issue families, examples and risk signals, and see why each case was picked. Proposals need expert review; selection counts are not verified coverage.</p>
       </li>
       <li>
         <h3>Let experts define good support</h3>
-        <p>Correct the situation, facts, expected outcome, required steps and escalation rules. Approve an exact scenario version. Controlled variants retain their parent, named changes and expected differences; they need their own review.</p>
+        <p>Correct the situation, facts, expected outcome and escalation rules, then approve an exact version. Controlled variants keep their parent and need their own review.</p>
       </li>
       <li>
         <h3>Compile the behaviour into checks</h3>
-        <p>The Eval Compiler binds each requirement to a fixed grader and source excerpt. Use deterministic checks for reported fields, actions and citations. Use versioned rubric judges where context matters.</p>
+        <p>Bind each requirement to a fixed grader and a source excerpt. Deterministic checks inspect reported fields and actions; versioned rubric judges handle context.</p>
       </li>
       <li>
         <h3>Calibrate against human judgment</h3>
-        <p>Experts label fixed outputs. Compare graders with those labels, inspect false alarms, missed failures and disagreement, and keep development samples separate from held-out evidence. Confidence alone is not accuracy.</p>
+        <p>Compare graders with expert labels, inspect false alarms, missed failures and disagreement, and keep held-out evidence separate. Confidence alone is not accuracy.</p>
       </li>
       <li>
         <h3>Inspect failures. Keep regressions.</h3>
-        <p>Run a suite against a configured target or compatible stored output. Inspect each check beside the response and company evidence. An expert can retain a failed case in a regression suite for the next target version.</p>
+        <p>Run a suite against a configured target or a stored output. Read each check beside the response and the evidence, then keep reviewed failures for the next version.</p>
       </li>
     </ol>
   </section>
@@ -191,7 +224,7 @@
   <section class="landing-close" aria-labelledby="close-title">
     <div>
       <h2 id="close-title">Start with the support decisions your AI must get right</h2>
-      <p>Bring company evidence. Let experts set the expectations. Keep the failures worth testing again.</p>
+      <p>Bring a slice of your support history and the agent you want to test. Your experts set the expectations; the failures worth keeping become your regression suite.</p>
       <p class="landing-note">Built by a Support leader with 13+ years in B2B SaaS post-sales. Questions? Write to <%= mail_to "hello@navishai.com" %>.</p>
     </div>
     <%= mail_to "hello@navishai.com", "Request a pilot", subject: "NavishAI pilot", class: "button button-primary" %>
