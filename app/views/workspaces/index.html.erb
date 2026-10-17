@@ -1,7 +1,7 @@
 <% content_for :title, "Workspaces — NavishAI" %>
 <main class="page-shell">
   <div class="page-heading">
-    <div><p class="eyebrow">Support evaluation lab</p><h1>Choose a workspace</h1>
+    <div><h1>Choose a workspace</h1>
       <p>Each workspace is an isolated lab with its own people and access.</p></div>
     <% if @owned_workspace_ids.any? %>
       <%= link_to "Create workspace", new_workspace_path, class: "button button-primary" %>

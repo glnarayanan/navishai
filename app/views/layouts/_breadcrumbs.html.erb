@@ -1,0 +1,24 @@
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <ol>
+    <% if Current.workspace && current_membership %>
+      <% corpus = sidebar_corpus %>
+      <% if corpus %>
+        <li><%= link_to Current.workspace.name, workspace_path(Current.workspace) %></li>
+        <% section = current_corpus_section %>
+        <% if section && !(controller_name == "corpora" && action_name == "show") %>
+          <li><%= link_to corpus.name, workspace_corpus_path(Current.workspace, corpus) %></li>
+          <li><span aria-current="page"><%= section %></span></li>
+        <% else %>
+          <li><span aria-current="page"><%= corpus.name %></span></li>
+        <% end %>
+      <% elsif (label = { corpora: "Corpora", people: "People and access", settings: "Settings" }[workspace_section]) %>
+        <li><%= link_to Current.workspace.name, workspace_path(Current.workspace) %></li>
+        <li><span aria-current="page"><%= label %></span></li>
+      <% else %>
+        <li><span aria-current="page"><%= Current.workspace.name %></span></li>
+      <% end %>
+    <% else %>
+      <li><span aria-current="page">Workspaces</span></li>
+    <% end %>
+  </ol>
+</nav>

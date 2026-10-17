@@ -73,7 +73,7 @@ class LargeFullTextJourneyTest < ApplicationSystemTestCase
     assert_empty corpus.corpus_analyses.order(:id).last.summary
     capture("error")
     assert_no_difference([ "IssueCluster.count", "ClusterMember.count", "AuditEvent.count" ]) { click_link "Refresh result" }
-    click_link "Synthetic large late-diagnostic history"
+    within("main") { click_link "Synthetic large late-diagnostic history" }
     assert_selector "h1", text: corpus.name
     assert_field "Local method", with: "local"
   end

@@ -54,7 +54,7 @@ class CorpusJourneyTest < ApplicationSystemTestCase
       capture("jsonl-source-#{width}", width:)
       capture("jsonl-record-#{width}", selector: "#source-evidence > article:first-of-type", width:)
     end
-    click_link "JSONL corpus fixture", exact: true
+    within("main") { click_link "JSONL corpus fixture", exact: true }
     select "Streaming local · 100,000 records / 1 GiB", from: "Local method"
     fill_in "Candidate limit", with: 2
     click_button "Analyse corpus locally"
@@ -175,7 +175,7 @@ class CorpusJourneyTest < ApplicationSystemTestCase
       assert_no_csp_violations
       capture("source-#{width}")
     end
-    click_link "Technical support"
+    within("main") { click_link "Technical support" }
     fill_in "Source name", with: "Empty export"
     attach_file "Company data file", Rails.root.join("test/fixtures/files/empty_export.json")
     click_button "Import source"

@@ -1,9 +1,18 @@
 # Lab shell design
 
-Mode: Operate. Visual direction: repository, test suite and QA lab, not an inbox.
-Local Geist/Geist Mono, neutral canvas, thin dividers, restrained blue actions,
-plain repository path and text navigation. No customer preview, fake totals,
-disabled feature buttons or invented evaluation results.
+Mode: Operate. Visual direction: category-standard neutral SaaS (reference bar:
+Linear, Vercel, Stripe Dashboard), not an inbox. Local Geist/Geist Mono, neutral
+ink on white, black primary actions, one functional blue for focus, and status
+colour only for results. No customer preview, fake totals, disabled feature
+buttons or invented evaluation results. A full rewrite of this file follows the
+redesign; tokens live at the top of `app/assets/stylesheets/application.css`.
+
+Signed-in pages use a sidebar shell: workspace switcher, workspace links, and the
+current corpus's sections (derived from the controller, so detail pages keep their
+place). The content sits in an inset panel with breadcrumbs and an account menu
+holding the System/Light/Dark radiogroup and sign out. Menus and the narrow-width
+sidebar are native popovers, so Escape and outside clicks close them without
+custom scripts. Signed-out pages keep a slim header with the theme radiogroup.
 
 The workspace overview links to corpus intake and source evidence. Import forms
 name supported formats, bounds, email masking limits and retention. Source pages
@@ -11,9 +20,9 @@ show the fixed snapshot, input digest, processing version and historical version
 record lists paginate. Errors state the rejected input and recovery path. Analysis pages distinguish term
 proposals from expert taxonomy revisions, disclose bounds and selection reasons,
 and link each example to its source snapshot. Queued jobs have a refresh action;
-failures have a recovery message. Light and dark modes retain the native
-theme control. Navigation uses a keyboard-accessible disclosure at every viewport;
-workspace links wrap at narrow widths. Forms keep native labels, autocomplete,
+failures have a recovery message. Light and dark modes share one token set.
+Below 56rem the sidebar opens from a menu button in the top bar. Forms keep
+native labels, autocomplete,
 focus rings and alert states. Skip-to-content and semantic page headings remain.
 
 Import copy names bytes, masking rules and processing version as snapshot identity.
