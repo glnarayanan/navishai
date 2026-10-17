@@ -1,5 +1,7 @@
 # Evaluation-lab security evidence and limits
 
+Report vulnerabilities privately as described in the [security policy](../.github/SECURITY.md).
+
 Retained controls: local verification/password reset, revocable expiring sessions,
 invitation role bounds, first Owner, generic OIDC state/nonce/PKCE and signed-token
 checks, protected short-lived break-glass recovery, per-workspace membership
