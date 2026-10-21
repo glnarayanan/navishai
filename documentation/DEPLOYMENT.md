@@ -110,9 +110,10 @@ controls and local upgrade/rollback evidence. Shared-host policy needs the owner
 approval; Compose alone does not enforce destination deny or apply egress policy
 before web/jobs start.
 
-Compose pins the public PostgreSQL 16 multi-platform index by digest. On 1 October
-2026, the registry returned that digest for `postgres:16`; fetching the immutable
-index produced the same SHA-256 and included Linux amd64/arm64 entries. This checks
+Compose pins the public PostgreSQL 16 multi-platform index by digest. On 21 October
+2026, the registry returned that digest for `postgres:16` and `postgres:16.15`, the
+release that fixes CVE-2026-14679, 14680, 15741, 15742, 16239, 16241, 18024, 18408
+and 19385; the index included Linux amd64/arm64 entries. This checks
 manifest identity, not image execution or release security. Review and test a new
 digest before changing it; do not leave security updates unreviewed indefinitely.
 
