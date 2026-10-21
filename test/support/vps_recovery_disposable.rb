@@ -49,7 +49,7 @@ begin
   expected = run.call("curl", "-fsSL", "#{url}.sha256").split.first
   raise "Compose checksum mismatch" unless expected.match?(/\A[0-9a-f]{64}\z/) && sudo.call("sha256sum", cli).split.first == expected
   sudo.call("chmod", "700", cli)
-  postgres = "postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54"
+  postgres = "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690"
   docker.call("pull", postgres)
   image = docker.call("image", "inspect", "--format", "{{.Id}}", postgres).strip
   old = "6c9fa890127c7cbfac59b810f68ebd9b3bb77603"

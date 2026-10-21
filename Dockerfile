@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
-ARG RUBY_VERSION=4.0.6
-FROM ruby:${RUBY_VERSION}-slim@sha256:901e9c09db7b5e7e19af81799a7dd743c89f9c5fc93dc0038f899e9131c80b5b AS base
+ARG RUBY_VERSION=4.0.7
+FROM ruby:${RUBY_VERSION}-slim@sha256:38d10548b581179f1beb84d21554dbc0fffa668deb04338c67332f29f923f7e9 AS base
 
 WORKDIR /rails
 ENV RAILS_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_PATH=/usr/local/bundle BUNDLE_WITHOUT=development:test
-RUN apt-get update -qq && apt-get install --no-install-recommends -y curl libpq5 postgresql-client \
+RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates curl libpq5 postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build
