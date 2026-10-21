@@ -1075,7 +1075,8 @@ existing development database.
 
 Dependencies were removed with native `bundle lock --local` / `bundle install`:
 pdf-reader, image_processing, ruby-vips and their orphaned dependencies. BigDecimal
-remains transitively required by Rails. JSON stays below 3. Rails 8.1.4 decodes
-compatibly with JSON 3, but JSON 3 rejects duplicate keys and comments by default.
+remains transitively required by Rails. JSON is no longer capped below 3: Rails
+8.1.4 decodes compatibly with JSON 3, which rejects duplicate keys and comments in
+parsed input through the same `JSON::ParserError` path as malformed JSON.
 The owner's checksum for already-locked Bundler 4.0.20 matches the cached gem
 archive and now has its own dependency-file commit. It changes no gem version.
