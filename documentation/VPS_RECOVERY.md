@@ -42,7 +42,7 @@ After stopping and checking all three writer services, the unit captures one
 stopped-writer recovery point:
 
 - All four fixed databases: `navishai_lab_production` and its `_cache`, `_queue`
-  and `_cable` databases. PostgreSQL 16 custom archives use `--create`, retain
+  and `_cable` databases. Custom archives (PostgreSQL 16 or 18) use `--create`, retain
   database/object owners, ACLs, default ACLs, sequence state and complete data.
 - Only `navishai_setup` and `navishai` role hashes, login flags, inheritance and
   connection limits. Both must be restricted: no superuser, database/role
@@ -59,8 +59,9 @@ stopped-writer recovery point:
   Every running or stopped volume user must be the exact scoped Compose container
   for its allowed service. Foreign users and copied labels fail closed.
 - The standard PostgreSQL server files `postgresql.conf`, `postgresql.auto.conf`,
-  `pg_hba.conf` and `pg_ident.conf` from `lab_postgres_data`. External include files
-  and alternate configuration paths fail closed rather than disappear on restore.
+  `pg_hba.conf` and `pg_ident.conf` from the running layout's data directory. External
+  include files and alternate configuration paths fail closed rather than disappear
+  on restore.
 
 The PG data volume's physical database files are not copied; logical archives
 rebuild them. No cluster-wide role/global dump enters the backup.
@@ -84,7 +85,7 @@ hard links, devices, set-id bits, control characters or unsupported file names.
 Release/config/state/proxy files must use root ownership. Rails storage may also
 use UID/GID 1000. The four PG config files must use UID/GID 999 and mode 0600.
 Names use ASCII letters, digits and `_./@+:=-`; unsupported names fail, not change.
-The library uses the pinned Debian PostgreSQL 16 UID/tool contract.
+The library uses the pinned Debian PostgreSQL UID/tool contract (UID 999 in 16 and 18).
 
 The pinned Caddy image uses mode 1777 for the root-owned `caddy/` directory in
 both data/config volumes. Only those two archives accept that exact directory,
@@ -122,6 +123,35 @@ Keep writers stopped, inspect the named failure phase, repair the cause, and ret
 the same retained backup. The source backup stays unchanged. The parent CLI owns
 post-restore checks and gated startup, including upgrade health/rollback reporting.
 
+## PostgreSQL 18 migration
+
+`vps_recovery_pg_layout` accepts exactly two running layouts and fails on any other:
+16 with `data_directory=/var/lib/postgresql/data` at the root of `lab_postgres_data`
+(older releases, and restores of their backups), and 18 with
+`/var/lib/postgresql/18/docker` inside `lab_postgres18_data`. Server-file checks,
+dumps and restores follow it.
+
+`vps_recovery_postgres_state` prints `none` without a `lab_postgres_data` volume,
+`migrated` when root-owned 0600 `VPS_STATE/postgres18-migrated` exists, and
+otherwise `pending`. The policy gate refuses to apply or check policy while pending,
+so no release starts writers on an empty 18 cluster while 16 data waits; an older
+CLI upgrading into an 18 release stops there and rolls back.
+
+`vps_recovery_migrate BACKUP` requires `pending`, stopped writers and the 18 layout.
+It validates and copies the backup like restore, lists each dump with the running
+18 image, writes `postgres18-migrating` with the backup's `CHECKSUMS` SHA-256, then
+drops and restores only the four databases, the two app roles and the four server
+files. Parity: owners and dependencies, the role dump equal to `roles.tsv`, and the
+server files byte-equal to the backup with no parse errors. Success renames the
+marker to `postgres18-migrated`. It never mounts the 16 volume and never touches
+release, config, other state, images or other volumes. The CLI runs it during an
+upgrade, between starting PostgreSQL and the first gate.
+
+Restore reads the marker before replacing state. When it names the backup being
+restored and `lab_postgres_data` exists, that volume still holds exactly the
+backup's databases: restore starts the 16 release on it and only verifies parity,
+without dropping or rewriting anything. Otherwise restore is unchanged.
+
 ## Checks and limits
 
 ```sh
@@ -140,8 +170,8 @@ lock retention, caller refresh, strict input refusal and stopped partial recover
 The separate disposable proof creates a supervised private Docker daemon with no
 bridge, published port, host firewall rule or forwarding change. It downloads a
 checksum-verified private Compose binary and the repository's pinned PostgreSQL
-image; it installs no production tool or dependency. Its fixtures use real PG16
-catalogs, restricted role logins, sequences and default grants, plus synthetic
+images; it installs no production tool or dependency. Its fixtures use real PG16
+and PG18 catalogs, restricted role logins, sequences and default grants, plus synthetic
 code/writer/proxy stand-ins. Cleanup stops only its generated resources.
 
 ### Executed orb evidence, 2 October 2026

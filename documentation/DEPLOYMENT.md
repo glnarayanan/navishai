@@ -1,6 +1,6 @@
 # Evaluation-lab hosting boundary
 
-The plain Compose composition contains PostgreSQL 16, a one-shot `prepare`
+The plain Compose composition contains PostgreSQL 18, a one-shot `prepare`
 service, web and Solid Queue jobs. `docker compose up -d --build` is the whole
 generic deployment: a PaaS such as Dokploy can run it on every push.
 The [reset VPS CLI](./VPS_CLI.md) adds a separate production override with Caddy,
@@ -110,12 +110,18 @@ controls and local upgrade/rollback evidence. Shared-host policy needs the owner
 approval; Compose alone does not enforce destination deny or apply egress policy
 before web/jobs start.
 
-Compose pins the public PostgreSQL 16 multi-platform index by digest. On 21 October
-2026, the registry returned that digest for `postgres:16` and `postgres:16.15`, the
-release that fixes CVE-2026-14679, 14680, 15741, 15742, 16239, 16241, 18024, 18408
-and 19385; the index included Linux amd64/arm64 entries. This checks
+Compose pins the public PostgreSQL 18 multi-platform index by digest
+(`sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`). On
+22 October 2026, the registry returned that digest for `postgres:18` and
+`postgres:18.6`; the index included Linux amd64/arm64 entries. This checks
 manifest identity, not image execution or release security. Review and test a new
 digest before changing it; do not leave security updates unreviewed indefinitely.
+The data volume `lab_postgres18_data` mounts at `/var/lib/postgresql` (the image
+keeps its cluster in `18/docker`). An install that still has 16 data in
+`lab_postgres_data` must follow the [PostgreSQL 18 upgrade](./POSTGRES_18_UPGRADE.md)
+before this release starts; plain Compose has no gate that stops it serving an
+empty database. The app image installs `postgresql-client-18` from the PostgreSQL
+apt repository so its `pg_dump` matches the server.
 
 The Docker context excludes local Bundler config, all `config/**/*.key` files,
 private environment files, runtime content and generated `public/assets`. Assets
