@@ -92,7 +92,10 @@ checkout, as below. Later upgrades use `sudo navishai upgrade` again.
    sudo cat /var/lib/navishai-reset/postgres18-migrated; sudo sha256sum "$BACKUP/CHECKSUMS"  # same hash
    ```
 
-   Sign in and open a workspace with recent evaluations.
+   Sign in and open a workspace with recent evaluations. If you compare table
+   ACLs with 16, owners now show `arwdDxtm` instead of `arwdDxt`: PostgreSQL 17
+   added the `MAINTAIN` privilege to an owner's implicit rights. Explicit grants,
+   such as the runtime role's `arwd`, are unchanged.
 
 5. **Take a fresh backup on 18** once satisfied. It restarts the app afterwards.
 

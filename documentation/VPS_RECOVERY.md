@@ -147,6 +147,11 @@ marker to `postgres18-migrated`. It never mounts the 16 volume and never touches
 release, config, other state, images or other volumes. The CLI runs it during an
 upgrade, between starting PostgreSQL and the first gate.
 
+`vps_recovery_pg_ready` waits for a server that listens on TCP. On a fresh volume
+the image entrypoint first runs a socket-only initialisation server and then
+restarts; work begun on that temporary server failed intermittently when it shut
+down (seen in the real proof's complete-loss restore before this check).
+
 Restore reads the marker before replacing state. When it names the backup being
 restored and `lab_postgres_data` exists, that volume still holds exactly the
 backup's databases: restore starts the 16 release on it and only verifies parity,
