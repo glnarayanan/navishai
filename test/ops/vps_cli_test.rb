@@ -211,6 +211,45 @@ class VpsCliTest < Minitest::Test
     assert_includes output, "Cannot inspect ingress listeners"
   end
 
+  def test_first_postgres_18_upgrade_moves_the_backup_before_any_gate_or_prepare
+    script = <<~SH
+      source=reviewed; commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; backup=point
+      ss() { :; }
+      vps_archive() { :; }
+      vps_backup() { echo "BACKUP $1"; }
+      vps_switch() { :; }
+      vps_load() { :; }
+      vps_compose() { :; }
+      vps_pull_pins() { :; }
+      vps_recovery_postgres_state() { echo "${STATE:-pending}"; }
+      vps_recovery_migrate() { echo "MOVE $1"; return "${MOVE_STATUS:-0}"; }
+      vps_guard() { echo GUARD; }
+      vps_prepare() { echo PREPARE; }
+      vps_validate() { :; }
+      vps_start() { echo START; }
+      vps_stop() { echo STOP; }
+      vps_restore() { echo "RESTORE $1"; }
+      vps_check() { :; }
+      vps_status() { :; }
+      vps_upgrade
+    SH
+    output, status = shell(script)
+    assert status.success?, output
+    assert_match(/BACKUP point\nMOVE point\nMoved PostgreSQL 16 data.*\nGUARD\nPREPARE\nSTART\n/, output)
+    output, status = shell(script.sub("vps_upgrade", "MOVE_STATUS=7 vps_upgrade"))
+    refute status.success?, output
+    assert_match(/MOVE point\nSTOP\nRESTORE point\n/, output)
+    refute_match(/GUARD|PREPARE|START/, output)
+    %w[none migrated].each do |state|
+      output, status = shell(script.sub("vps_upgrade", "STATE=#{state} vps_upgrade"))
+      assert status.success?, output
+      refute_includes output, "MOVE"
+    end
+    output, status = shell(script.sub('echo "${STATE:-pending}";', "return 7;"))
+    refute status.success?, output
+    refute_match(/MOVE|GUARD|PREPARE|START/, output)
+  end
+
   def test_upgrade_reconfigures_ingress_only_after_backup_and_restores_old_env_on_failure
     original = root_command("cat", "#{@config}/env")
     script = <<~SH
@@ -222,6 +261,7 @@ class VpsCliTest < Minitest::Test
       vps_load() { vps_load_env; [[ $NAVISHAI_PUBLIC_LISTEN_ADDRESS == 203.0.113.9 ]]; echo LOAD; }
       vps_compose() { echo COMPOSE; }
       vps_pull_pins() { :; }
+      vps_recovery_postgres_state() { echo none; }
       vps_guard() { :; }
       vps_prepare() { echo MIGRATION; return 7; }
       vps_stop() { echo STOP; }

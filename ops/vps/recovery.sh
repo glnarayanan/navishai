@@ -62,7 +62,56 @@ vps_recovery_pg_ready() {
     vps_recovery_pg pg_isready -U navishai_admin -d postgres >/dev/null 2>&1 && break
     sleep 1
   done
-  [[ "$i" -lt 60 && "$(vps_recovery_sql postgres <<<'SHOW server_version_num;')" =~ ^16[0-9]{4}$ ]]
+  [[ "$i" -lt 60 ]] && vps_recovery_pg_layout >/dev/null
+}
+
+# Releases before PostgreSQL 18 kept 16 at the root of lab_postgres_data,
+# mounted on /var/lib/postgresql/data. 18 keeps its cluster in 18/docker inside
+# lab_postgres18_data, mounted on /var/lib/postgresql. 16 stays accepted so a
+# pre-migration backup can still restore its own release. Prints the volume key
+# and the data directory inside that volume; any other server or path fails.
+vps_recovery_pg_layout() {
+  local answer
+  answer="$(vps_recovery_sql postgres <<'SQL'
+SELECT current_setting('server_version_num')::int / 10000 || ':' || current_setting('data_directory');
+SQL
+  )" || return 1
+  case "$answer" in
+    16:/var/lib/postgresql/data) printf 'lab_postgres_data .\n' ;;
+    18:/var/lib/postgresql/18/docker) printf 'lab_postgres18_data 18/docker\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Prints none, pending or migrated. Pending means the PostgreSQL 16 volume still
+# exists and no migration has completed: starting the app then would serve an
+# empty 18 cluster while the real data sits in the old volume. Only a fully
+# checked vps_recovery_migrate writes the marker, so a partial run stays pending.
+vps_recovery_postgres_state() {
+  local legacy marker="$VPS_STATE/postgres18-migrated"
+  legacy="$(vps_docker volume ls -q --filter "name=^${VPS_PROJECT}_lab_postgres_data\$")" || return 1
+  if [[ -z "$legacy" ]]; then printf 'none\n'; return 0; fi
+  [[ "$legacy" == "${VPS_PROJECT}_lab_postgres_data" ]] || return 1
+  if [[ -e "$marker" || -L "$marker" ]]; then
+    [[ -f "$marker" && ! -L "$marker" && "$(stat -c '%u:%a:%h' -- "$marker")" == 0:600:1 ]] || return 1
+    printf 'migrated\n'
+  else
+    printf 'pending\n'
+  fi
+}
+
+# The backup a migration started from (postgres18-migrating) or completed
+# (postgres18-migrated), as its CHECKSUMS SHA-256. Each marker is root 0600.
+vps_recovery_migration_source() {
+  local name path
+  for name in postgres18-migrated postgres18-migrating; do
+    path="$VPS_STATE/$name"
+    [[ -e "$path" || -L "$path" ]] || continue
+    [[ -f "$path" && ! -L "$path" && "$(stat -c '%u:%a:%h' -- "$path")" == 0:600:1 ]] || return 1
+    grep -xE '[0-9a-f]{64}' -- "$path" || return 1
+    return 0
+  done
+  return 1
 }
 
 vps_recovery_image_ref() {
@@ -114,7 +163,7 @@ vps_recovery_volume() {
     service="${labels##*/}"
     [[ "$labels" == "$VPS_PROJECT/$VPS_PROJECT/$service" ]] || return 1
     case "$key:$service" in
-      lab_postgres_data:postgres|rails_storage:web|rails_storage:jobs|caddy_data:proxy|caddy_config:proxy) ;;
+      lab_postgres_data:postgres|lab_postgres18_data:postgres|rails_storage:web|rails_storage:jobs|caddy_data:proxy|caddy_config:proxy) ;;
       *) return 1 ;;
     esac
     [[ "$user" == "$(vps_compose ps --all -q "$service")" ]] || return 1
@@ -145,32 +194,47 @@ vps_recovery_volume_restore() {
 }
 
 vps_recovery_pg_config_dump() {
-  local image="$1" name answer
+  local image="$1" layout key directory name answer
+  layout="$(vps_recovery_pg_layout)" || return 1
+  read -r key directory <<< "$layout"
+  # data_directory is one of the two fixed layouts accepted above.
   answer="$(vps_recovery_sql postgres <<'SQL'
-SELECT current_setting('config_file')='/var/lib/postgresql/data/postgresql.conf'
-AND current_setting('hba_file')='/var/lib/postgresql/data/pg_hba.conf'
-AND current_setting('ident_file')='/var/lib/postgresql/data/pg_ident.conf'
-AND NOT EXISTS (SELECT 1 FROM pg_file_settings WHERE error IS NOT NULL OR sourcefile NOT IN ('/var/lib/postgresql/data/postgresql.conf','/var/lib/postgresql/data/postgresql.auto.conf'))
-AND NOT EXISTS (SELECT 1 FROM pg_hba_file_rules WHERE error IS NOT NULL OR file_name <> '/var/lib/postgresql/data/pg_hba.conf')
-AND NOT EXISTS (SELECT 1 FROM pg_ident_file_mappings WHERE error IS NOT NULL OR file_name <> '/var/lib/postgresql/data/pg_ident.conf');
+SELECT current_setting('config_file')=current_setting('data_directory')||'/postgresql.conf'
+AND current_setting('hba_file')=current_setting('data_directory')||'/pg_hba.conf'
+AND current_setting('ident_file')=current_setting('data_directory')||'/pg_ident.conf'
+AND NOT EXISTS (SELECT 1 FROM pg_file_settings WHERE error IS NOT NULL OR sourcefile NOT IN (current_setting('data_directory')||'/postgresql.conf',current_setting('data_directory')||'/postgresql.auto.conf'))
+AND NOT EXISTS (SELECT 1 FROM pg_hba_file_rules WHERE error IS NOT NULL OR file_name <> current_setting('data_directory')||'/pg_hba.conf')
+AND NOT EXISTS (SELECT 1 FROM pg_ident_file_mappings WHERE error IS NOT NULL OR file_name <> current_setting('data_directory')||'/pg_ident.conf');
 SQL
   )" || return 1
   [[ "$answer" == t ]] || return 1
-  name="$(vps_recovery_volume lab_postgres_data)" || return 1
+  name="$(vps_recovery_volume "$key")" || return 1
   vps_docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_OVERRIDE \
     --security-opt no-new-privileges --user 0:0 --mount "type=volume,src=$name,dst=/data,readonly" \
-    --entrypoint tar "$image" --format=ustar -cf - -C /data postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf
+    --entrypoint tar "$image" --format=ustar -cf - -C "/data/$directory" postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf
 }
 
 vps_recovery_pg_config_restore() {
-  local name
-  name="$(vps_recovery_volume lab_postgres_data)" || return 1
+  local layout key directory name
+  layout="$(vps_recovery_pg_layout)" || return 1
+  read -r key directory <<< "$layout"
+  name="$(vps_recovery_volume "$key")" || return 1
   vps_compose stop postgres >/dev/null || return 1
   vps_docker run --rm -i --network none --read-only --cap-drop ALL --cap-add DAC_OVERRIDE \
     --cap-add CHOWN --cap-add FOWNER --security-opt no-new-privileges --user 0:0 \
     --mount "type=volume,src=$name,dst=/data" --entrypoint sh "$1" \
-    -ec 'rm -f /data/postgresql.conf /data/postgresql.auto.conf /data/pg_hba.conf /data/pg_ident.conf; exec tar --numeric-owner --same-owner --same-permissions -xf - -C /data' < "$2" || return 1
+    -ec 'cd "/data/$1"; rm -f postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf; exec tar --numeric-owner --same-owner --same-permissions -xf - -C .' sh "$directory" < "$2" || return 1
   vps_compose up -d --no-deps --pull never postgres >/dev/null
+}
+
+# Parity: the running server's four files equal the backup's, byte for byte,
+# and the dump checks above (paths, no parse errors, no includes) pass.
+vps_recovery_pg_config_parity() {
+  local image="$1" archive="$2" file restored="$VPS_RECOVERY_WORK/postgres-config-restored.tar"
+  vps_recovery_pg_config_dump "$image" > "$restored" || return 1
+  for file in postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf; do
+    cmp -s <(tar -xOf "$archive" "$file") <(tar -xOf "$restored" "$file") || return 1
+  done
 }
 
 # Deliberately scoped, not pg_dumpall: no other role, membership or global is saved.
@@ -337,7 +401,7 @@ vps_backup() (
   vps_recovery_path "$release" || exit 1
   [[ "$(cat "$release/SOURCE_COMMIT")" == "$sha" && "$(realpath -e "$VPS_PREFIX/current")" == "$release" ]] || exit 1
   phase=images
-  [[ "$(vps_recovery_sql postgres <<<'SHOW server_version_num;')" =~ ^16[0-9]{4}$ ]] || exit 1
+  vps_recovery_pg_layout >/dev/null || exit 1
   pgid="$(vps_docker inspect --format '{{.Image}}' "$(vps_compose ps -q postgres)")" || exit 1
   [[ "$pgid" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
   printf 'navishai-reset-backup-v1\nrelease\t%s\npostgres\t%s\n' "$sha" "$pgid" > "$stage/manifest"
@@ -396,7 +460,7 @@ vps_recovery_restore() (
   set -uo pipefail
   umask 077
   export LC_ALL=C TZ=UTC
-  local source="${1:-}" key database release running i success=0 phase=validation
+  local source="${1:-}" key database release running i success=0 phase=validation untouched=false
   local VPS_RECOVERY_WORK= VPS_RECOVERY_SHA VPS_RECOVERY_PG_IMAGE
   local -a VPS_RECOVERY_SERVICES=() VPS_RECOVERY_IMAGES=() VPS_RECOVERY_IDS=()
   exec 3>&2
@@ -416,6 +480,14 @@ vps_recovery_restore() (
   cp -- "$source/CHECKSUMS" "$VPS_RECOVERY_WORK/backup/CHECKSUMS" || exit 1
   source="$VPS_RECOVERY_WORK/backup"
   vps_recovery_backup_check "$source" || exit 1
+  # Rollback from a PostgreSQL 18 migration, failed or complete: the marker names
+  # the backup it moved, taken with writers stopped, and 18 never mounts the 16
+  # volume. That volume still holds exactly this backup's databases, so they are
+  # verified, not rewritten. Read it now; the state restore below replaces it.
+  if [[ -n "$(vps_docker volume ls -q --filter "name=^${VPS_PROJECT}_lab_postgres_data\$")" &&
+    "$(vps_recovery_migration_source)" == "$(sha256sum -- "$source/CHECKSUMS" | cut -d' ' -f1)" ]]; then
+    untouched=true
+  fi
   mkdir -m 700 "$VPS_RECOVERY_WORK/release" "$VPS_RECOVERY_WORK/config" "$VPS_RECOVERY_WORK/state" || exit 1
   for key in release config state; do
     tar --numeric-owner --same-owner --same-permissions -xf "$source/$key.tar" -C "$VPS_RECOVERY_WORK/$key" || exit 1
@@ -450,7 +522,7 @@ vps_recovery_restore() (
   phase=files
   # Labels are not enough: reject foreign mounts before taking the project down
   # or deleting config/volume contents. Missing volumes are rebuilt later.
-  for key in lab_postgres_data rails_storage caddy_data caddy_config; do
+  for key in lab_postgres_data lab_postgres18_data rails_storage caddy_data caddy_config; do
     if vps_docker volume inspect "${VPS_PROJECT}_$key" >/dev/null 2>&1; then
       vps_recovery_volume "$key" >/dev/null || exit 1
     fi
@@ -491,33 +563,115 @@ vps_recovery_restore() (
   phase=databases
   vps_compose up -d --no-deps --pull never postgres >/dev/null || exit 1
   vps_recovery_pg_ready || exit 1
-  # Recreated container env uses the restored private config. Do not copy a
-  # cluster-global admin definition or put a password on a command line.
-  vps_recovery_sql postgres <<'SQL' || exit 1
+  if [[ "$untouched" == true ]]; then
+    [[ "$(vps_recovery_pg_layout)" == "lab_postgres_data ." ]] || exit 1
+    vps_recovery_postgres_verify "$source" "$VPS_RECOVERY_PG_IMAGE" || exit 1
+  else
+    # Recreated container env uses the restored private config. Do not copy a
+    # cluster-global admin definition or put a password on a command line.
+    vps_recovery_sql postgres <<'SQL' || exit 1
 \getenv admin_password POSTGRES_PASSWORD
 ALTER ROLE navishai_admin PASSWORD :'admin_password';
 SQL
-  vps_recovery_volume lab_postgres_data >/dev/null || exit 1
-  vps_recovery_clients_stopped || exit 1
-  # Only the four fixed DBs are dropped. A new client causes refusal, not forced
-  # termination; normal web/jobs/proxy remain stopped throughout recovery.
-  for key in primary cache queue cable; do
-    database=navishai_lab_production
-    [[ "$key" == primary ]] || database+="_$key"
-    printf 'DROP DATABASE IF EXISTS %s;\n' "$database" | vps_recovery_sql postgres || exit 1
-    vps_recovery_pg pg_restore -U navishai_admin -d postgres --create --exit-on-error < "$source/$key.dump" || exit 1
-    vps_recovery_database_check "$database" || exit 1
-  done
-  phase=roles
-  vps_recovery_roles_restore "$source/roles.tsv" || exit 1
-  vps_recovery_roles_dump > "$VPS_RECOVERY_WORK/roles-restored.tsv" || exit 1
-  cmp -s "$source/roles.tsv" "$VPS_RECOVERY_WORK/roles-restored.tsv" || exit 1
-  phase=postgres-config
-  vps_recovery_pg_config_restore "$VPS_RECOVERY_PG_IMAGE" "$source/postgres-config.tar" || exit 1
-  vps_recovery_pg_ready || exit 1
+    vps_recovery_postgres_restore "$source" "$VPS_RECOVERY_PG_IMAGE" || exit 1
+  fi
   vps_recovery_stopped || exit 1
   success=1
   # No vps_start: the caller must verify recovery and apply its startup gates.
+)
+
+# Shared by restore and migration. Only the four fixed DBs are dropped. A new
+# client causes refusal, not forced termination; web/jobs/proxy stay stopped.
+vps_recovery_postgres_restore() {
+  local source="$1" image="$2" layout key database
+  layout="$(vps_recovery_pg_layout)" || return 1
+  vps_recovery_volume "${layout%% *}" >/dev/null || return 1
+  vps_recovery_clients_stopped || return 1
+  for key in primary cache queue cable; do
+    database=navishai_lab_production
+    [[ "$key" == primary ]] || database+="_$key"
+    printf 'DROP DATABASE IF EXISTS %s;\n' "$database" | vps_recovery_sql postgres || return 1
+    vps_recovery_pg pg_restore -U navishai_admin -d postgres --create --exit-on-error < "$source/$key.dump" || return 1
+    vps_recovery_database_check "$database" || return 1
+  done
+  phase=roles
+  vps_recovery_roles_restore "$source/roles.tsv" || return 1
+  phase=postgres-config
+  vps_recovery_pg_config_restore "$image" "$source/postgres-config.tar" || return 1
+  vps_recovery_pg_ready || return 1
+  vps_recovery_postgres_verify "$source" "$image"
+}
+
+# Read-only parity with the backup: database owners and dependencies, the two
+# app roles (flags, limits, password hashes) and the four server files.
+vps_recovery_postgres_verify() {
+  local source="$1" image="$2" key database
+  phase=parity
+  vps_recovery_volume "$(vps_recovery_pg_layout | cut -d' ' -f1)" >/dev/null || return 1
+  for key in primary cache queue cable; do
+    database=navishai_lab_production
+    [[ "$key" == primary ]] || database+="_$key"
+    vps_recovery_database_check "$database" || return 1
+  done
+  vps_recovery_roles_dump > "$VPS_RECOVERY_WORK/roles-restored.tsv" || return 1
+  cmp -s "$source/roles.tsv" "$VPS_RECOVERY_WORK/roles-restored.tsv" || return 1
+  vps_recovery_pg_config_parity "$image" "$source/postgres-config.tar"
+}
+
+# Move a PostgreSQL 16 backup into the running, freshly initialised 18 cluster.
+# Only the databases, the two app roles and the four server files move; release,
+# config, state, images and the other volumes stay as the current release has
+# them. The 16 volume is never mounted. Refuses unless migration is pending;
+# a rerun after a partial failure drops and restores the four databases again.
+vps_recovery_migrate() (
+  set +x
+  set +e
+  trap - ERR DEBUG RETURN
+  set -uo pipefail
+  umask 077
+  export LC_ALL=C TZ=UTC
+  local source="${1:-}" key database pgid success=0 phase=validation
+  local VPS_RECOVERY_WORK= VPS_RECOVERY_SHA VPS_RECOVERY_PG_IMAGE
+  local -a VPS_RECOVERY_SERVICES=() VPS_RECOVERY_IMAGES=() VPS_RECOVERY_IDS=()
+  exec 3>&2
+  trap 'status=$?; if (( ! success )); then vps_stop >/dev/null 2>&1 || :; vps_recovery_error "migration $phase" >&3 || :; fi; [[ -z "$VPS_RECOVERY_WORK" ]] || rm -rf -- "$VPS_RECOVERY_WORK"; exit "$status"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM HUP
+  [[ $# == 1 ]] || exit 1
+  vps_recovery_roots >/dev/null 2>&1 || exit 1
+  VPS_RECOVERY_WORK="$(mktemp -d "$VPS_PREFIX/.recovery-migrate.XXXXXXXX")" || exit 1
+  exec 2>"$VPS_RECOVERY_WORK/errors"
+  vps_recovery_stopped || exit 1
+  vps_recovery_backup_check "$source" || exit 1
+  mkdir -m 700 "$VPS_RECOVERY_WORK/backup" || exit 1
+  while read -r key; do cp -- "$source/$key" "$VPS_RECOVERY_WORK/backup/$key" || exit 1; done < <(vps_recovery_files)
+  cp -- "$source/CHECKSUMS" "$VPS_RECOVERY_WORK/backup/CHECKSUMS" || exit 1
+  source="$VPS_RECOVERY_WORK/backup"
+  vps_recovery_backup_check "$source" || exit 1
+  [[ "$(vps_recovery_pg_layout)" == "lab_postgres18_data 18/docker" ]] || exit 1
+  [[ "$(vps_recovery_postgres_state)" == pending ]] || exit 1
+  pgid="$(vps_docker inspect --format '{{.Image}}' "$(vps_compose ps -q postgres)")" || exit 1
+  [[ "$pgid" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+  # The 18 pg_restore reads 16 archives; list them before dropping anything.
+  for key in primary cache queue cable; do
+    database=navishai_lab_production
+    [[ "$key" == primary ]] || database+="_$key"
+    vps_recovery_dump_check "$source/$key.dump" "$database" "$pgid" || exit 1
+  done
+  # Record the source before the first change, so a rollback can recognise the
+  # untouched 16 volume even when this run fails part way.
+  phase=marker
+  sha256sum -- "$source/CHECKSUMS" | cut -d' ' -f1 > "$VPS_STATE/postgres18-migrating" || exit 1
+  chmod 600 -- "$VPS_STATE/postgres18-migrating" || exit 1
+  phase=databases
+  vps_recovery_postgres_restore "$source" "$pgid" || exit 1
+  [[ "$(vps_recovery_pg_layout)" == "lab_postgres18_data 18/docker" ]] || exit 1
+  vps_recovery_stopped || exit 1
+  phase=marker
+  mv -T -- "$VPS_STATE/postgres18-migrating" "$VPS_STATE/postgres18-migrated" || exit 1
+  [[ "$(vps_recovery_postgres_state)" == migrated ]] || exit 1
+  success=1
+  # No vps_start: the caller prepares, validates and starts through its gates.
 )
 
 vps_restore() {

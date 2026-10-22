@@ -271,4 +271,167 @@ class VpsRecoveryTest < Minitest::Test
       done
     SH
   end
+
+  def test_postgres_16_layout_still_backs_up_and_restores_its_own_files
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      [[ "$(tar -xOf "$ROOT/backups/good/postgres-config.tar" pg_hba.conf)" == synthetic-postgres-config-16 ]]
+      echo changed > "$ROOT/volumes/lab_postgres_data/pg_hba.conf"
+      vps_restore "$ROOT/backups/good"
+      grep -qx synthetic-postgres-config-16 "$ROOT/volumes/lab_postgres_data/pg_hba.conf"
+      grep -qx synthetic-postgres-config-18 "$ROOT/volumes/lab_postgres18_data/18/docker/pg_hba.conf"
+      assert_stopped
+    SH
+  end
+
+  def test_migration_moves_a_16_backup_into_18_and_leaves_the_16_volume_alone
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      legacy() { (cd "$ROOT/volumes/lab_postgres_data" && find . -type f -exec sha256sum {} + | sort); }
+      before="$(legacy)"
+      release="$(realpath "$VPS_PREFIX/current")"
+      cp "$VPS_CONFIG/env" "$ROOT/env-before"
+      mock_pg_switch 18
+      [[ "$(vps_recovery_postgres_state)" == pending ]]
+      : > "$ROOT/log"
+      vps_recovery_migrate "$ROOT/backups/good"
+      for database in navishai_lab_production navishai_lab_production_cache navishai_lab_production_queue navishai_lab_production_cable; do
+        grep -qx restored "$ROOT/databases/$database"
+      done
+      for file in postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf; do
+        cmp "$ROOT/volumes/lab_postgres_data/$file" "$ROOT/volumes/lab_postgres18_data/18/docker/$file"
+      done
+      [[ "$(legacy)" == "$before" ]]
+      if grep -q 'src=navishai-reset_lab_postgres_data,' "$ROOT/log"; then exit 1; fi
+      if grep -qE 'compose down|image load' "$ROOT/log"; then exit 1; fi
+      [[ "$(realpath "$VPS_PREFIX/current")" == "$release" ]]
+      cmp "$ROOT/env-before" "$VPS_CONFIG/env"
+      [[ "$(vps_recovery_postgres_state)" == migrated ]]
+      [[ "$(stat -c '%u:%a' "$VPS_STATE/postgres18-migrated")" == 0:600 ]]
+      [[ "$(cat "$VPS_STATE/postgres18-migrated")" == "$(sha256sum "$ROOT/backups/good/CHECKSUMS" | cut -d' ' -f1)" ]]
+      [[ "$(find "$VPS_PREFIX" -maxdepth 1 -name '.recovery-*' | wc -l)" == 0 ]]
+      # Done once: a second run would overwrite live 18 data, so it refuses.
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      assert_stopped
+    SH
+  end
+
+  def test_rollback_to_the_migrated_backup_reuses_the_untouched_16_volume
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      mock_pg_switch 18
+      vps_recovery_migrate "$ROOT/backups/good"
+      legacy() { (cd "$ROOT/volumes/lab_postgres_data" && find . -type f -exec sha256sum {} + | sort); }
+      before="$(legacy)"
+      # The restored release runs 16 again; its databases are verified, not rewritten.
+      mock_pg_switch 16
+      : > "$ROOT/log"
+      vps_restore "$ROOT/backups/good"
+      if grep -q 'pg_restore -U\|DROP DATABASE\|ALTER ROLE' "$ROOT/log"; then exit 1; fi
+      if grep 'entrypoint sh' "$ROOT/log" | grep -q lab_postgres; then exit 1; fi
+      grep 'entrypoint tar' "$ROOT/log" | grep -q 'src=navishai-reset_lab_postgres_data,'
+      [[ "$(legacy)" == "$before" ]]
+      [[ ! -e "$VPS_STATE/postgres18-migrated" ]]
+      assert_stopped
+    SH
+  end
+
+  def test_rollback_with_a_different_backup_rewrites_the_databases
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      mock_pg_switch 18
+      vps_recovery_migrate "$ROOT/backups/good"
+      echo 0000 > "$VPS_STATE/postgres18-migrated"
+      mock_pg_switch 16
+      : > "$ROOT/log"
+      vps_restore "$ROOT/backups/good"
+      grep -q 'pg_restore -U navishai_admin' "$ROOT/log"
+      assert_stopped
+    SH
+  end
+
+  def test_migration_refuses_unless_pending_before_dropping_anything
+    run_shell <<~'SH'
+      good_backup
+      [[ "$(vps_recovery_postgres_state)" == none ]]
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      mock_pg_switch 16
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      mock_pg_switch 18
+      FAIL_STEP=volume-ls
+      if vps_recovery_postgres_state; then exit 1; fi
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      FAIL_STEP=
+      install -m 600 /dev/null "$VPS_STATE/postgres18-migrated"
+      [[ "$(vps_recovery_postgres_state)" == migrated ]]
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      rm "$VPS_STATE/postgres18-migrated"
+      ln -s /dev/null "$VPS_STATE/postgres18-migrated"
+      if vps_recovery_postgres_state; then exit 1; fi
+      rm "$VPS_STATE/postgres18-migrated"
+      touch "$ROOT/running"
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      if grep -q 'pg_restore.*postgres\|DROP DATABASE' "$ROOT/log"; then exit 1; fi
+      assert_stopped
+    SH
+  end
+
+  def test_partial_migration_stays_pending_and_stopped
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      mock_pg_switch 18
+      FAIL_STEP=restore-navishai_lab_production_cache
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      [[ ! -e "$VPS_STATE/postgres18-migrated" ]]
+      [[ "$(cat "$VPS_STATE/postgres18-migrating")" == "$(sha256sum "$ROOT/backups/good/CHECKSUMS" | cut -d' ' -f1)" ]]
+      FAIL_STEP=
+      [[ "$(vps_recovery_postgres_state)" == pending ]]
+      [[ "$(find "$VPS_PREFIX" -maxdepth 1 -name '.recovery-*' | wc -l)" == 0 ]]
+      assert_stopped
+      vps_recovery_migrate "$ROOT/backups/good"
+      [[ "$(vps_recovery_postgres_state)" == migrated ]]
+      [[ ! -e "$VPS_STATE/postgres18-migrating" ]]
+    SH
+  end
+
+  def test_rollback_after_a_failed_migration_also_keeps_the_16_volume
+    run_shell <<~'SH'
+      mock_pg_switch 16
+      good_backup
+      mock_pg_switch 18
+      FAIL_STEP=restore-navishai_lab_production_queue
+      if vps_recovery_migrate "$ROOT/backups/good"; then exit 1; fi
+      FAIL_STEP=
+      mock_pg_switch 16
+      : > "$ROOT/log"
+      vps_restore "$ROOT/backups/good"
+      if grep -q 'pg_restore -U\|DROP DATABASE' "$ROOT/log"; then exit 1; fi
+      [[ ! -e "$VPS_STATE/postgres18-migrating" ]]
+      assert_stopped
+    SH
+  end
+
+  def test_policy_gate_refuses_writers_while_16_data_awaits_migration
+    run_shell <<~SH
+      source #{Shellwords.escape(File.join(ROOT, "ops/vps/policy.sh"))}
+      _vps_policy_postgres
+      mock_pg_switch 16
+      if _vps_policy_postgres 2> "$ROOT/gate"; then exit 1; fi
+      grep -q 'POSTGRES_18_UPGRADE.md' "$ROOT/gate"
+      : > "$ROOT/log"
+      if vps_policy_check 2>/dev/null; then exit 1; fi
+      if vps_policy_apply 2>/dev/null; then exit 1; fi
+      if grep -q 'app-net' "$ROOT/log"; then exit 1; fi
+      FAIL_STEP=volume-ls
+      if _vps_policy_postgres 2>/dev/null; then exit 1; fi
+      FAIL_STEP=
+      install -m 600 /dev/null "$VPS_STATE/postgres18-migrated"
+      _vps_policy_postgres
+    SH
+  end
 end

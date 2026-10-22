@@ -180,6 +180,18 @@ _vps_policy_run() {
   printf 'PASS: application namespace IPv4/IPv6 OUTPUT policy %s; holder %s, namespace %s.\n' "$action" "${context[0]%%|*}" "$inode"
 }
 
+# Never start writers on an empty PostgreSQL 18 cluster while the 16 volume
+# still holds the data. vps_load sources recovery.sh with this file, so an older
+# CLI upgrading into this release also stops here, before it prepares a schema.
+_vps_policy_postgres() {
+  declare -F vps_recovery_postgres_state >/dev/null || return 0
+  local state
+  state=$(vps_recovery_postgres_state) || { _vps_policy_error 'cannot read PostgreSQL migration state'; return 1; }
+  [[ $state != pending ]] || {
+    _vps_policy_error 'PostgreSQL 16 data awaits migration; follow documentation/POSTGRES_18_UPGRADE.md'; return 1;
+  }
+}
+
 # Subshells close the pinned descriptor and keep shell options/variables local.
-vps_policy_apply() ( _vps_policy_run apply; )
-vps_policy_check() ( _vps_policy_run check; )
+vps_policy_apply() ( _vps_policy_postgres && _vps_policy_run apply; )
+vps_policy_check() ( _vps_policy_postgres && _vps_policy_run check; )

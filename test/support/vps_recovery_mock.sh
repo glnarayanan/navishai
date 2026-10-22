@@ -33,10 +33,24 @@ for key in rails_storage caddy_data caddy_config; do
   mkdir "$ROOT/volumes/$key"
   printf 'synthetic-%s-old\n' "$key" > "$ROOT/volumes/$key/value"
 done
-mkdir "$ROOT/volumes/lab_postgres_data"
-for key in postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf; do
-  echo 'synthetic-postgres-config' > "$ROOT/volumes/lab_postgres_data/$key"
-done
+# MOCK_PG_MAJOR=16 models a release before PostgreSQL 18 (cluster at the root of
+# lab_postgres_data); the default models 18 (18/docker inside lab_postgres18_data).
+MOCK_PG_MAJOR="${MOCK_PG_MAJOR:-18}"
+mock_pg_files() {
+  if [[ "$MOCK_PG_MAJOR" == 16 ]]; then echo "$ROOT/volumes/lab_postgres_data"
+  else echo "$ROOT/volumes/lab_postgres18_data/18/docker"; fi
+}
+# Switch the running server's major; a layout seen for the first time gets that
+# major's own fresh server files, as initdb would write them.
+mock_pg_switch() {
+  MOCK_PG_MAJOR="$1"
+  [[ ! -d "$(mock_pg_files)" ]] || return 0
+  mkdir -p "$(mock_pg_files)"
+  for key in postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf; do
+    echo "synthetic-postgres-config-$1" > "$(mock_pg_files)/$key"
+  done
+}
+mock_pg_switch "$MOCK_PG_MAJOR"
 for key in primary cache queue cable; do
   database=navishai_lab_production
   [[ "$key" == primary ]] || database+="_$key"
@@ -84,7 +98,9 @@ vps_compose() {
         echo restored > "$ROOT/databases/$database"
       elif [[ "$1" == psql ]]; then
         sql="$(cat)"
-        if [[ "$sql" == *'SHOW server_version_num'* ]]; then echo 160015
+        if [[ "$sql" == *"current_setting('data_directory');"* ]]; then
+          if [[ "$MOCK_PG_MAJOR" == 16 ]]; then echo 16:/var/lib/postgresql/data
+          else echo 18:/var/lib/postgresql/18/docker; fi
         elif [[ "$sql" == *'FROM pg_authid'* ]]; then cat "$ROOT/roles.tsv"
         elif [[ "$sql" == *'FROM pg_shdepend'* ]]; then echo t
         elif [[ "$sql" == *'FROM pg_stat_activity'* ]]; then
@@ -120,6 +136,9 @@ vps_docker() {
     [[ "${FAIL_STEP:-}" != load ]] || return 1
   elif [[ "$1 $2" == 'image tag' ]]; then
     :
+  elif [[ "$1 $2" == 'volume ls' ]]; then
+    [[ "${FAIL_STEP:-}" != volume-ls ]] || return 1
+    [[ ! -d "$ROOT/volumes/lab_postgres_data" ]] || echo navishai-reset_lab_postgres_data
   elif [[ "$1 $2" == 'volume inspect' ]]; then
     key="${@: -1}"; key="${key#navishai-reset_}"
     [[ "${FAIL_STEP:-}" != foreign-volume ]] || { echo foreign/rails_storage; return; }
@@ -130,10 +149,11 @@ vps_docker() {
       *) echo "local/null/navishai-reset/$key/navishai-reset" ;;
     esac
   elif [[ "$1" == run ]]; then
-    local mount= entry= argument previous=
+    local mount= entry= argument previous= directory=
     for argument in "$@"; do
       [[ "$previous" != --mount ]] || mount="$argument"
       [[ "$previous" != --entrypoint ]] || entry="$argument"
+      [[ "$previous" != -C ]] || directory="${argument#/data}"
       previous="$argument"
     done
     if [[ "$entry" == pg_restore ]]; then
@@ -144,16 +164,21 @@ vps_docker() {
       key="${mount#*src=navishai-reset_}"; key="${key%%,*}"
       if [[ "$entry" == tar ]]; then
         [[ "${FAIL_STEP:-}" != "volume-$key" ]] || return 1
-        if [[ "$key" == lab_postgres_data ]]; then
-          tar --format=ustar --owner=999 --group=999 -cf - -C "$ROOT/volumes/$key" postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf
+        if [[ "$key" == lab_postgres_data || "$key" == lab_postgres18_data ]]; then
+          tar --format=ustar --owner=999 --group=999 -cf - -C "$ROOT/volumes/$key$directory" postgresql.conf postgresql.auto.conf pg_hba.conf pg_ident.conf
         else
           tar --format=ustar -cf - -C "$ROOT/volumes/$key" .
         fi
       elif [[ "$entry" == sh ]]; then
         [[ "$*" == *' -i '* ]] || return 1
         [[ "${FAIL_STEP:-}" != "restore-volume-$key" ]] || return 1
-        find "$ROOT/volumes/$key" -mindepth 1 -delete
-        tar --same-owner --same-permissions -xf - -C "$ROOT/volumes/$key"
+        if [[ "$key" == lab_postgres_data || "$key" == lab_postgres18_data ]]; then
+          # Server files only, into the layout's data directory (the last argument).
+          tar --same-owner --same-permissions -xf - -C "$ROOT/volumes/$key/${@: -1}"
+        else
+          find "$ROOT/volumes/$key" -mindepth 1 -delete
+          tar --same-owner --same-permissions -xf - -C "$ROOT/volumes/$key"
+        fi
       else return 1
       fi
     fi
