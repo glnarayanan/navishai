@@ -1,6 +1,6 @@
 # Evaluation-lab development
 
-The lab runs Rails 8.1, Ruby 4.0.7 and PostgreSQL 16. No Go source, process runner,
+The lab runs Rails 8.1, Ruby 4.0.7 and PostgreSQL 18. No Go source, process runner,
 Supermemory, vector extension, document converters or provider services remain.
 Solid Queue owns bounded evaluation batches; HTTP uses the Ruby standard library.
 A separate worker language needs measured workload or isolation evidence.

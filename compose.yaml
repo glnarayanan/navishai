@@ -36,14 +36,16 @@ x-rails: &rails
   volumes: [rails_storage:/rails/storage]
 services:
   postgres:
-    image: postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_USER: navishai_setup
       POSTGRES_PASSWORD: ${NAVISHAI_POSTGRES_PASSWORD:?set a distinct NAVISHAI_POSTGRES_PASSWORD}
       POSTGRES_DB: navishai_lab_production
       NAVISHAI_DATABASE_PASSWORD: ${NAVISHAI_DATABASE_PASSWORD:?set NAVISHAI_DATABASE_PASSWORD}
     volumes:
-      - lab_postgres_data:/var/lib/postgresql/data
+      # PostgreSQL 18 keeps PGDATA at /var/lib/postgresql/18/docker. The 16 volume
+      # (lab_postgres_data) is never mounted here; see POSTGRES_18_UPGRADE.md.
+      - lab_postgres18_data:/var/lib/postgresql
       - ./db/initialize_runtime_role.sh:/docker-entrypoint-initdb.d/10-navishai-runtime.sh:ro
     networks: [control]
     healthcheck:
@@ -80,7 +82,7 @@ services:
     <<: *rails
     command: [bin/jobs]
 volumes:
-  lab_postgres_data:
+  lab_postgres18_data:
   rails_storage:
 networks:
   control:

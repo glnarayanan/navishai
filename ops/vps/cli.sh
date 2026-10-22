@@ -32,6 +32,8 @@ No package installer, old-data conversion, broad prune or host firewall mutation
 Cleanup previews exact owned resources; apply destroys them and all reset data.
 Backup/upgrade stop writers. Failed backup/restore/upgrade remains stopped.
 Restore refuses unknown owners, unsafe archives and changed backup checksums.
+The first PostgreSQL 18 upgrade moves the backup's data into a new volume and
+leaves the 16 volume untouched; see documentation/POSTGRES_18_UPGRADE.md.
 Public DNS/80/443, working SMTP and host storage policy are operator prerequisites.
 HELP
 }
@@ -382,7 +384,7 @@ vps_fresh_check() {
   [[ -z $existing ]] || { vps_die 'Project containers already exist; refuse adoption.'; return 1; }
   existing="$(vps_docker volume ls -q)" || return 1
   while IFS= read -r path; do
-    case "$path" in navishai-reset_lab_postgres_data|navishai-reset_rails_storage|navishai-reset_caddy_data|navishai-reset_caddy_config) vps_die "Named volume already exists, even without labels: $path"; return 1 ;; esac
+    case "$path" in navishai-reset_lab_postgres_data|navishai-reset_lab_postgres18_data|navishai-reset_rails_storage|navishai-reset_caddy_data|navishai-reset_caddy_config) vps_die "Named volume already exists, even without labels: $path"; return 1 ;; esac
   done <<< "$existing"
   existing="$(vps_docker network ls --format '{{.Name}}')" || return 1
   while IFS= read -r path; do
@@ -425,7 +427,17 @@ vps_candidate() {
   vps_load && vps_ingress_check || return 1
   rm -f -- "$VPS_STATE/recovery-images.yaml"
   vps_compose build web jobs && vps_pull_pins || return 1
-  vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net && vps_guard && vps_prepare && vps_validate && vps_start
+  vps_compose up -d --pull never --no-build --no-deps --wait postgres app-net || return 1
+  # First 18 release over a 16 install: the new cluster is empty, so move the
+  # backup just taken into it before any gate, prepare or writer runs. The 16
+  # volume is left as it is; vps_guard refuses while this is still pending.
+  local state
+  state="$(vps_recovery_postgres_state)" || return 1
+  if [[ $state == pending ]]; then
+    vps_recovery_migrate "$backup" || return 1
+    printf 'Moved PostgreSQL 16 data from the backup into PostgreSQL 18; the 16 volume is untouched.\n'
+  fi
+  vps_guard && vps_prepare && vps_validate && vps_start
 }
 vps_git() { GIT_TERMINAL_PROMPT=0 git -c safe.directory="$source" -C "$source" "$@"; }
 vps_latest_main() {
@@ -519,7 +531,7 @@ vps_cleanup_plan() {
   while IFS= read -r name; do
     [[ -n $name ]] || continue
     metadata="$(vps_docker volume inspect "$name" | jq -ec 'if length == 1 then .[0] else error("volume ambiguity") end')" || return 1
-    jq -e --arg p "$VPS_PROJECT" '.Labels["com.navishai.owner"] == "navishai-reset" and .Labels["com.docker.compose.project"] == $p and (.Labels["com.docker.compose.volume"] as $v | ["lab_postgres_data","rails_storage","caddy_data","caddy_config"] | index($v) != null) and .Driver == "local" and ((.Options // {}) | length == 0) and .Name == ($p + "_" + .Labels["com.docker.compose.volume"])' <<< "$metadata" >/dev/null || { vps_die "Unowned/external/custom project volume: $name"; return 1; }
+    jq -e --arg p "$VPS_PROJECT" '.Labels["com.navishai.owner"] == "navishai-reset" and .Labels["com.docker.compose.project"] == $p and (.Labels["com.docker.compose.volume"] as $v | ["lab_postgres_data","lab_postgres18_data","rails_storage","caddy_data","caddy_config"] | index($v) != null) and .Driver == "local" and ((.Options // {}) | length == 0) and .Name == ($p + "_" + .Labels["com.docker.compose.volume"])' <<< "$metadata" >/dev/null || { vps_die "Unowned/external/custom project volume: $name"; return 1; }
     jq -e --arg name "$name" --argjson ids "$ids" 'all(.[]; (.id as $id | $ids | index($id) != null) or all(.mounts[]; .Type != "volume" or .Name != $name))' <<< "$inventory" >/dev/null || { vps_die "Shared volume: $name"; return 1; }
     volumes="$(jq -c --argjson v "$metadata" '. + [$v]' <<< "$volumes")" || return 1
   done <<< "$names"
