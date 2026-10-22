@@ -178,7 +178,9 @@ begin
     vps_docker image save "$PG18_ID" > "$ROOT/postgres18.tar"
     vps_compose up -d --pull never
     for i in {1..60}; do
-      if [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
+      # The entrypoint's temporary init server also answers; wait for the real one.
+      if vps_compose logs postgres 2>/dev/null | grep -q 'init process complete' &&
+        [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
       sleep 1
     done
     [[ $i -lt 60 ]]
@@ -324,7 +326,8 @@ begin
     rm -rf "$VPS_PREFIX/releases/$OLD"
     ln -sfn "releases/$NEW" "$VPS_PREFIX/current"
     VPS_RELEASE="$VPS_PREFIX/releases/$NEW"
-    vps_docker image ls -q | sort -u | xargs -r -n1 docker --config "$ROOT" --host "unix://$ROOT/docker.sock" image rm -f
+    # One ID can disappear with another's removal; the check below decides.
+    for id in $(vps_docker image ls -q | sort -u); do vps_docker image rm -f "$id" >/dev/null 2>&1 || :; done
     [[ -z "$(vps_docker image ls -q)" ]]
     vps_restore "$ROOT/backups/good"
     VPS_RELEASE="$VPS_PREFIX/releases/$OLD"
@@ -368,6 +371,9 @@ begin
     done
     database_oids() { vps_recovery_sql postgres <<<"SELECT string_agg(datname || '=' || oid, ',' ORDER BY datname) FROM pg_database WHERE datname LIKE 'navishai_lab_production%';"; }
     database_oids > "$ROOT/oids16"
+    # Backup records every service's container image, as on a running install.
+    vps_compose up -d --pull never >/dev/null
+    vps_stop
     vps_backup "$ROOT/backups/pre18"
     vps_recovery_stopped
     vps_compose stop postgres >/dev/null
@@ -387,7 +393,9 @@ begin
     rm -f "$VPS_STATE/recovery-images.yaml"
     vps_compose up -d --no-deps --pull never postgres >/dev/null
     for i in {1..60}; do
-      if [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
+      # The entrypoint's temporary init server also answers; wait for the real one.
+      if vps_compose logs postgres 2>/dev/null | grep -q 'init process complete' &&
+        [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
       sleep 1
     done
     [[ $i -lt 60 ]]
@@ -399,8 +407,10 @@ begin
     check_pre18() {
       for key in primary cache queue cable; do
         database=navishai_lab_production; [[ "$key" == primary ]] || database+="_$key"
-        snapshot "$database" > "$ROOT/now-$key"
-        cmp "$ROOT/pre18-$key" "$ROOT/now-$key"
+        # PostgreSQL 17 added MAINTAIN (m) to an owner's implicit privileges; only
+        # that letter may differ from the 16 catalog. Explicit grants must match.
+        snapshot "$database" | sed 's|=arwdDxtm/|=arwdDxt/|g' > "$ROOT/now-$key"
+        diff "$ROOT/pre18-$key" "$ROOT/now-$key"
       done
       for role in navishai_admin navishai_setup navishai; do
         vps_compose exec -T postgres sh -ec 'case "$1" in navishai_admin) PGPASSWORD="$POSTGRES_PASSWORD";; navishai_setup) PGPASSWORD="$NAVISHAI_PREPARE_PASSWORD";; navishai) PGPASSWORD="$NAVISHAI_DATABASE_PASSWORD";; esac; export PGPASSWORD; exec psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$1" -d navishai_lab_production' sh "$role" <<'SQL' > "$ROOT/login"
@@ -413,7 +423,10 @@ begin
     legacy_tree > "$ROOT/legacy-after"
     cmp "$ROOT/legacy-before" "$ROOT/legacy-after"
     echo 'PASS: real PostgreSQL 16 backup migrated into a fresh 18 cluster on a new volume; four exact row/sequence/owner/ACL/default-ACL catalogs, three password logins, role and server-file parity; 16 volume files byte-identical.'
-    # Backup and restore keep working on the 18 layout.
+    # Backup and restore keep working on the 18 layout. Like the upgrade's start,
+    # recreate the other services under the 18 release first.
+    vps_compose up -d --pull never >/dev/null
+    vps_stop
     vps_backup "$ROOT/backups/on18"
     vps_recovery_sql navishai_lab_production <<'SQL'
     SET ROLE navishai_setup;
