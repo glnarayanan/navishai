@@ -119,7 +119,7 @@ begin
     [ client, command ]
   end
   builder, = daemon.call("build", false)
-  pins = %w[postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690 caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f]
+  pins = %w[postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6 caddy:2.11.7-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f]
   pins.each { |pin| puts run.call(*builder, "pull", pin) }
   # Match the CLI archive, including SOURCE_COMMIT, to keep the actual offline build cached.
   build_source = File.join(directory, "build-source")

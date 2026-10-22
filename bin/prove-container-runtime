@@ -10,7 +10,7 @@ root = File.expand_path("..", __dir__)
 socket = File.join(root, "tmp/navishai-image-proof/docker.sock")
 abort "Start the private image-proof daemon and build navishai-runtime-proof:local first." unless File.socket?(socket)
 docker = [ "sudo", "-n", "docker", "--host", "unix://#{socket}" ]
-postgres = "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690"
+postgres = "postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6"
 image = "navishai-runtime-proof:local"
 prefix = "lab-#{SecureRandom.hex(6)}"
 services = []
@@ -54,7 +54,7 @@ begin
   socket_mount = [ "--volume", "#{database_socket}:/var/run/postgresql" ]
   pg_name = "#{prefix}-postgres"
   start.call("postgres", [ "run", "--rm", "--name", pg_name, "--user", "999:999", *isolation,
-    "--env-file", File.join(directory, "postgres.env"), "--volume", "#{data}:/var/lib/postgresql/data", *socket_mount,
+    "--env-file", File.join(directory, "postgres.env"), "--volume", "#{data}:/var/lib/postgresql", *socket_mount,
     "--volume", "#{root}/db/initialize_runtime_role.sh:/docker-entrypoint-initdb.d/10-navishai-runtime.sh:ro",
     postgres, "postgres", "-c", "listen_addresses=" ])
   deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60

@@ -49,9 +49,13 @@ begin
   expected = run.call("curl", "-fsSL", "#{url}.sha256").split.first
   raise "Compose checksum mismatch" unless expected.match?(/\A[0-9a-f]{64}\z/) && sudo.call("sha256sum", cli).split.first == expected
   sudo.call("chmod", "700", cli)
+  # The release under test starts on the last PostgreSQL 16 pin, then moves to 18.
   postgres = "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690"
+  postgres18 = "postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6"
   docker.call("pull", postgres)
+  docker.call("pull", postgres18)
   image = docker.call("image", "inspect", "--format", "{{.Id}}", postgres).strip
+  image18 = docker.call("image", "inspect", "--format", "{{.Id}}", postgres18).strip
   old = "6c9fa890127c7cbfac59b810f68ebd9b3bb77603"
   newer = "2" * 40
   docker.call("tag", image, "navishai-reset:#{old}")
@@ -69,6 +73,8 @@ begin
     NEW=#{newer}
     PG_IMAGE=#{postgres}
     PG_ID=#{image}
+    PG18_ID=#{image18}
+    PG18_RELEASE=#{"3" * 40}
     mkdir -p "$VPS_PREFIX/releases/$OLD/ops/vps"
     VPS_RELEASE="$VPS_PREFIX/releases/$OLD"
     ln -s "releases/$OLD" "$VPS_PREFIX/current"
@@ -168,6 +174,8 @@ begin
         export "$key=$value"
       done < "$VPS_CONFIG/env"
     }
+    # Kept outside the daemon: the complete-image-loss phase below deletes it.
+    vps_docker image save "$PG18_ID" > "$ROOT/postgres18.tar"
     vps_compose up -d --pull never
     for i in {1..60}; do
       if [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
@@ -350,13 +358,94 @@ begin
     [[ "$(vps_docker run --rm --network none --mount type=volume,src=navishai-reset_rails_storage,dst=/data,readonly --entrypoint stat "$PG_ID" -c '%u:%g:%a' /data/synthetic)" == 1000:1000:600 ]]
     vps_recovery_stopped
     echo 'PASS: fresh PG volume/roles, retained images reloaded after complete image loss, storage/certificate bytes and storage ownership; real runtime passwords, sequences, default ACLs and 20 denials.'
+    # PostgreSQL 16 -> 18, as the first 18 upgrade runs it: writers stopped,
+    # backup on 16, an 18 release on a new volume, migrate, verify. The 16 volume
+    # is never mounted by 18 and must keep its exact files.
+    vps_docker image load < "$ROOT/postgres18.tar" >/dev/null
+    for key in primary cache queue cable; do
+      database=navishai_lab_production; [[ "$key" == primary ]] || database+="_$key"
+      snapshot "$database" > "$ROOT/pre18-$key"
+    done
+    database_oids() { vps_recovery_sql postgres <<<"SELECT string_agg(datname || '=' || oid, ',' ORDER BY datname) FROM pg_database WHERE datname LIKE 'navishai_lab_production%';"; }
+    database_oids > "$ROOT/oids16"
+    vps_backup "$ROOT/backups/pre18"
+    vps_recovery_stopped
+    vps_compose stop postgres >/dev/null
+    legacy_tree() {
+      vps_docker run --rm --network none --mount type=volume,src=navishai-reset_lab_postgres_data,dst=/data,readonly \
+        --entrypoint sh "$PG_ID" -ec 'cd /data && find . -type f -exec sha256sum {} + | sort'
+    }
+    legacy_tree > "$ROOT/legacy-before"
+    cp -a "$VPS_PREFIX/releases/$OLD" "$VPS_PREFIX/releases/$PG18_RELEASE"
+    sed -i -e "s|$PG_IMAGE|$PG18_ID|" -e "s|navishai-reset:$OLD|navishai-reset:$PG18_RELEASE|" \
+      -e 's|lab_postgres_data:/var/lib/postgresql/data|lab_postgres18_data:/var/lib/postgresql|' \
+      -e 's|^  lab_postgres_data:|  lab_postgres18_data:|' "$VPS_PREFIX/releases/$PG18_RELEASE/compose.yaml"
+    echo "$PG18_RELEASE" > "$VPS_PREFIX/releases/$PG18_RELEASE/SOURCE_COMMIT"
+    vps_docker tag "$PG_ID" "navishai-reset:$PG18_RELEASE"
+    ln -sfn "releases/$PG18_RELEASE" "$VPS_PREFIX/current"
+    VPS_RELEASE="$VPS_PREFIX/releases/$PG18_RELEASE"
+    rm -f "$VPS_STATE/recovery-images.yaml"
+    vps_compose up -d --no-deps --pull never postgres >/dev/null
+    for i in {1..60}; do
+      if [[ "$(vps_recovery_sql postgres <<< "SELECT 1 FROM pg_roles WHERE rolname = 'navishai';" 2>/dev/null)" == 1 ]]; then break; fi
+      sleep 1
+    done
+    [[ $i -lt 60 ]]
+    [[ "$(vps_recovery_postgres_state)" == pending ]]
+    vps_recovery_migrate "$ROOT/backups/pre18"
+    [[ "$(vps_recovery_postgres_state)" == migrated ]]
+    [[ "$(vps_recovery_sql postgres <<<'SHOW server_version_num;')" == 18???? ]]
+    [[ "$(vps_recovery_pg_layout)" == "lab_postgres18_data 18/docker" ]]
+    check_pre18() {
+      for key in primary cache queue cable; do
+        database=navishai_lab_production; [[ "$key" == primary ]] || database+="_$key"
+        snapshot "$database" > "$ROOT/now-$key"
+        cmp "$ROOT/pre18-$key" "$ROOT/now-$key"
+      done
+      for role in navishai_admin navishai_setup navishai; do
+        vps_compose exec -T postgres sh -ec 'case "$1" in navishai_admin) PGPASSWORD="$POSTGRES_PASSWORD";; navishai_setup) PGPASSWORD="$NAVISHAI_PREPARE_PASSWORD";; navishai) PGPASSWORD="$NAVISHAI_DATABASE_PASSWORD";; esac; export PGPASSWORD; exec psql -X -q -At -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$1" -d navishai_lab_production' sh "$role" <<'SQL' > "$ROOT/login"
+    SELECT current_user;
+    SQL
+        [[ "$(cat "$ROOT/login")" == "$role" ]]
+      done
+    }
+    check_pre18
+    legacy_tree > "$ROOT/legacy-after"
+    cmp "$ROOT/legacy-before" "$ROOT/legacy-after"
+    echo 'PASS: real PostgreSQL 16 backup migrated into a fresh 18 cluster on a new volume; four exact row/sequence/owner/ACL/default-ACL catalogs, three password logins, role and server-file parity; 16 volume files byte-identical.'
+    # Backup and restore keep working on the 18 layout.
+    vps_backup "$ROOT/backups/on18"
+    vps_recovery_sql navishai_lab_production <<'SQL'
+    SET ROLE navishai_setup;
+    INSERT INTO records(marker) VALUES ('after-18-backup');
+    SQL
+    vps_recovery_sql postgres <<<"ALTER SYSTEM SET log_min_duration_statement = '4321';"
+    vps_restore "$ROOT/backups/on18"
+    VPS_RELEASE="$VPS_PREFIX/releases/$PG18_RELEASE"
+    [[ "$(vps_recovery_pg_layout)" == "lab_postgres18_data 18/docker" ]]
+    [[ "$(vps_recovery_sql postgres <<<'SHOW log_min_duration_statement;')" == -1 ]]
+    [[ "$(vps_recovery_postgres_state)" == migrated ]]
+    check_pre18
+    echo 'PASS: PostgreSQL 18 backup/restore round trip: rows, server setting and migration marker return to the backup.'
+    # Rollback: the pre-migration backup brings back the 16 release, image and
+    # the untouched 16 volume. Same database OIDs prove nothing was recreated.
+    vps_restore "$ROOT/backups/pre18"
+    VPS_RELEASE="$VPS_PREFIX/releases/$OLD"
+    [[ "$(cat "$VPS_PREFIX/current/code")" == old ]]
+    [[ "$(vps_recovery_sql postgres <<<'SHOW server_version_num;')" == 16???? ]]
+    [[ "$(vps_recovery_pg_layout)" == "lab_postgres_data ." ]]
+    [[ "$(database_oids)" == "$(cat "$ROOT/oids16")" ]]
+    check_pre18
+    vps_docker volume inspect navishai-reset_lab_postgres18_data >/dev/null
+    vps_recovery_stopped
+    echo 'PASS: rollback to the 16 image on the untouched 16 volume: same database OIDs and catalogs, 18 volume retained, writers stopped.'
   BASH
   # Write generated credentials only to private stdin/file, not shell argv.
   sudo.call("tee", "#{directory}/proof.sh", input: shell)
   sudo.call("chmod", "600", "#{directory}/proof.sh")
   output = sudo.call("bash", "#{directory}/proof.sh")
   puts output.lines.grep(/^PASS:/)
-  puts "LIMIT: real PostgreSQL/Docker recovery with synthetic code/writer/proxy stand-ins; no Rails boot, public TLS, network gate, PITR, encryption or live-host claim."
+  puts "LIMIT: real PostgreSQL 16/18 Docker recovery with synthetic code/writer/proxy stand-ins; no Rails boot, public TLS, network gate, PITR, encryption or live-host claim."
 ensure
   # No daemon resource can escape its generated data-root. Stop before deleting it.
   stopped = !started

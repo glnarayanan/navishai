@@ -4,7 +4,11 @@ FROM ruby:${RUBY_VERSION}-slim@sha256:38d10548b581179f1beb84d21554dbc0fffa668deb
 
 WORKDIR /rails
 ENV RAILS_ENV=production BUNDLE_DEPLOYMENT=1 BUNDLE_PATH=/usr/local/bundle BUNDLE_WITHOUT=development:test
-RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates curl libpq5 postgresql-client \
+# Debian trixie ships client 17, which cannot pg_dump a PostgreSQL 18 server. The
+# PGDG repository key comes from Debian's signed postgresql-common package.
+RUN apt-get update -qq && apt-get install --no-install-recommends -y ca-certificates curl postgresql-common \
+  && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+  && apt-get install --no-install-recommends -y libpq5 postgresql-client-18 \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS build
