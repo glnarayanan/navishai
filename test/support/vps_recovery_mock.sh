@@ -98,7 +98,8 @@ vps_compose() {
         echo restored > "$ROOT/databases/$database"
       elif [[ "$1" == psql ]]; then
         sql="$(cat)"
-        if [[ "$sql" == *"current_setting('data_directory');"* ]]; then
+        if [[ "$sql" == *'SHOW listen_addresses'* ]]; then echo '*'
+        elif [[ "$sql" == *"current_setting('data_directory');"* ]]; then
           if [[ "$MOCK_PG_MAJOR" == 16 ]]; then echo 16:/var/lib/postgresql/data
           else echo 18:/var/lib/postgresql/18/docker; fi
         elif [[ "$sql" == *'FROM pg_authid'* ]]; then cat "$ROOT/roles.tsv"

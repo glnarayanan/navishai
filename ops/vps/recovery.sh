@@ -58,8 +58,11 @@ vps_recovery_sql() {
 
 vps_recovery_pg_ready() {
   local i
+  # On a fresh volume the image entrypoint first runs a socket-only init server
+  # (listen_addresses='') and then restarts. Work begun on that one dies with it.
   for ((i=0; i<60; i++)); do
-    vps_recovery_pg pg_isready -U navishai_admin -d postgres >/dev/null 2>&1 && break
+    vps_recovery_pg pg_isready -U navishai_admin -d postgres >/dev/null 2>&1 &&
+      [[ -n "$(vps_recovery_sql postgres <<<'SHOW listen_addresses;' 2>/dev/null)" ]] && break
     sleep 1
   done
   [[ "$i" -lt 60 ]] && vps_recovery_pg_layout >/dev/null
@@ -642,6 +645,7 @@ vps_recovery_migrate() (
   VPS_RECOVERY_WORK="$(mktemp -d "$VPS_PREFIX/.recovery-migrate.XXXXXXXX")" || exit 1
   exec 2>"$VPS_RECOVERY_WORK/errors"
   vps_recovery_stopped || exit 1
+  vps_recovery_pg_ready || exit 1
   vps_recovery_backup_check "$source" || exit 1
   mkdir -m 700 "$VPS_RECOVERY_WORK/backup" || exit 1
   while read -r key; do cp -- "$source/$key" "$VPS_RECOVERY_WORK/backup/$key" || exit 1; done < <(vps_recovery_files)
