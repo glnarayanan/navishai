@@ -63,7 +63,7 @@ begin
   # The only composition substitution is its test image name; --project-name is unique.
   composition = File.read(File.join(source, "compose.yaml"))
   raise "Unexpected image definition" unless composition.scan("image: navishai-lab:local").length == 1
-  postgres = "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690"
+  postgres = "postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42"
   raise "Unexpected PostgreSQL pin" unless composition.scan("image: #{postgres}").length == 1
   # Docker save/load retains image identity but not the upstream index RepoDigest.
   # Give that exact pinned image a disposable alias and verify its ID after load.

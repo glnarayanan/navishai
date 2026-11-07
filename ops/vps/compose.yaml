@@ -22,7 +22,7 @@ services:
       POSTGRES_USER: navishai_admin
       NAVISHAI_PREPARE_PASSWORD: ${NAVISHAI_PREPARE_PASSWORD:?set a distinct owner password}
     volumes: !override
-      - lab_postgres_data:/var/lib/postgresql/data
+      - lab_postgres18_data:/var/lib/postgresql
       - ./ops/vps/initialize_roles.sh:/docker-entrypoint-initdb.d/10-navishai-roles.sh:ro
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U navishai_admin -d navishai_lab_production"]
@@ -67,7 +67,9 @@ services:
       - caddy_config:/config
     networks: [control, edge]
 volumes:
-  lab_postgres_data:
+  # The PostgreSQL 16 volume (lab_postgres_data) is deliberately not declared:
+  # it stays untouched after migration and is never created on new installs.
+  lab_postgres18_data:
     labels:
       com.navishai.owner: navishai-reset
   rails_storage:

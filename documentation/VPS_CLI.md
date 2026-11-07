@@ -20,6 +20,13 @@ Merged `main` is the reviewed code. To pin another reviewed commit instead, add
 `--commit FULL_SHA`; that skips the fetch and the question. `--source` and
 `--backup` still override the defaults.
 
+### PostgreSQL 18 (one time)
+
+The first release on PostgreSQL 18 must be installed with its own CLI from a
+checkout, not `sudo navishai upgrade`: only the new code moves the 16 data into
+the new 18 volume. The old command fails safe and rolls back. Follow the
+[PostgreSQL 18 upgrade runbook](./POSTGRES_18_UPGRADE.md).
+
 ### Move from the old `navishai-reset` command (one time)
 
 Installs made before this change only have `navishai-reset`, whose installed
