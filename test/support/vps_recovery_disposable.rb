@@ -50,8 +50,8 @@ begin
   raise "Compose checksum mismatch" unless expected.match?(/\A[0-9a-f]{64}\z/) && sudo.call("sha256sum", cli).split.first == expected
   sudo.call("chmod", "700", cli)
   # The release under test starts on the last PostgreSQL 16 pin, then moves to 18.
-  postgres = "postgres:16@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690"
-  postgres18 = "postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6"
+  postgres = "postgres:16@sha256:f9a7b9ebf6f56201f949db745e47bc423c0f0f8294bafe991cc10bf74b029657"
+  postgres18 = "postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42"
   docker.call("pull", postgres)
   docker.call("pull", postgres18)
   image = docker.call("image", "inspect", "--format", "{{.Id}}", postgres).strip

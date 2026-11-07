@@ -111,8 +111,8 @@ approval; Compose alone does not enforce destination deny or apply egress policy
 before web/jobs start.
 
 Compose pins the public PostgreSQL 18 multi-platform index by digest
-(`sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`). On
-22 October 2026, the registry returned that digest for `postgres:18` and
+(`sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42`). On
+7 November 2026, the registry returned that digest for `postgres:18` and
 `postgres:18.6`; the index included Linux amd64/arm64 entries. This checks
 manifest identity, not image execution or release security. Review and test a new
 digest before changing it; do not leave security updates unreviewed indefinitely.

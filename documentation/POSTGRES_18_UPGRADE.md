@@ -6,8 +6,8 @@ The lab moves from PostgreSQL 16 to 18. PostgreSQL 16 is supported until Novembe
 ## What changes
 
 - **Image.** Compose pins `postgres:18` by its multi-platform index digest
-  `sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6`
-  (PostgreSQL 18.6). On 22 October 2026 the registry returned that digest for both
+  `sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42`
+  (PostgreSQL 18.6). On 7 November 2026 the registry returned that digest for both
   `postgres:18` and `postgres:18.6`; the index lists linux amd64, arm64, arm/v5,
   arm/v7, 386, ppc64le, riscv64 and s390x.
 - **Volume.** The 18 image keeps its cluster in `/var/lib/postgresql/18/docker` and

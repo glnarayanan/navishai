@@ -83,7 +83,7 @@ begin
     [ client, command ]
   end
   builder, = daemon.call("build", false)
-  postgres_pin = "postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6"
+  postgres_pin = "postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42"
   run.call(*builder, "pull", postgres_pin)
   postgres_id = run.call(*builder, "image", "inspect", "--format", "{{.Id}}", postgres_pin).strip
   run.call(*builder, "tag", postgres_pin, "#{prefix}-postgres:local")
