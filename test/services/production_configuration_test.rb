@@ -52,6 +52,20 @@ class ProductionConfigurationTest < ActiveSupport::TestCase
     assert_equal %w[control edge], pairs.(web).fetch("networks").children.map(&:value)
   end
 
+  test "Compose builds PostgreSQL from the official pin while the VPS CLI keeps that pin" do
+    postgres = YAML.safe_load_file(Rails.root.join("compose.yaml"), aliases: true).fetch("services").fetch("postgres")
+    assert_equal "./db", postgres.fetch("build")
+    assert_equal "navishai-lab-postgres:local", postgres.fetch("image")
+    assert_includes postgres.fetch("volumes"), "lab_postgres18_data:/var/lib/postgresql"
+    official = File.read(Rails.root.join("db/Dockerfile")).lines.grep(/\AFROM postgres:/).sole.split.second
+    assert_match(/\Apostgres:18@sha256:\h{64}\z/, official)
+    vps = YAML.safe_load_file(Rails.root.join("ops/vps/compose.yaml"), aliases: true).fetch("services").fetch("postgres")
+    assert_equal official, vps.fetch("image")
+    # `build: !reset null` removes the base build so vps_pull_pins sees a digest pin.
+    assert vps.key?("build")
+    assert_nil vps.fetch("build")
+  end
+
   test "all production database configurations share the restricted default username" do
     assert_equal %w[primary cache queue cable], ActiveRecord::Base.configurations.configs_for(env_name: "production").map(&:name)
     ActiveRecord::Base.configurations.configs_for(env_name: "production").each do |config|
