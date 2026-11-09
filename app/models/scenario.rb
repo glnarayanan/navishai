@@ -30,7 +30,7 @@ class Scenario < ApplicationRecord
       version = scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: previous.number + 1, origin: "expert", selection_reason: previous.selection_reason,
         mutation: previous.mutation, draft_notes: previous.draft_notes, created_at: Time.current))
-      previous.scenario_evidence.each do |evidence|
+      previous.scenario_evidence.order(:id).each do |evidence|
         next if conversation_changed && evidence.id == conversation.id
         next if item && item.source_snapshot.source.kind == "document" && evidence.kind == evidence_kind && evidence.corpus_item.source_snapshot.source_id == item.source_snapshot.source_id
 
@@ -91,7 +91,7 @@ class Scenario < ApplicationRecord
       version = child.scenario_versions.create!(values.merge(workspace:, corpus:, created_by: membership.user,
         number: 1, origin: "variant", selection_reason: "Controlled variant of scenario #{id}, version #{parent.number}",
         mutation: receipt, draft_notes: parent.draft_notes, created_at: Time.current))
-      parent.scenario_evidence.each { |evidence| version.scenario_evidence.create!(workspace:, corpus:, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt) }
+      parent.scenario_evidence.order(:id).each { |evidence| version.scenario_evidence.create!(workspace:, corpus:, corpus_item: evidence.corpus_item, kind: evidence.kind, excerpt: evidence.excerpt) }
       child.update!(current_version: version)
       audit!("scenario.variant_created", membership, version)
       child
