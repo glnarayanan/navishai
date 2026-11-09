@@ -36,7 +36,10 @@ x-rails: &rails
   volumes: [rails_storage:/rails/storage]
 services:
   postgres:
-    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    # The pinned official postgres:18 image with Debian fixes and a rebuilt gosu;
+    # same entrypoint, UID 999 and data layout. See db/Dockerfile.
+    build: ./db
+    image: navishai-lab-postgres:local
     # Without this, a Docker daemon restart (e.g. apt upgrading docker) leaves the
     # database stopped while web/jobs come back and fail.
     restart: unless-stopped

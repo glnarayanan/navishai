@@ -63,8 +63,9 @@ begin
   # The only composition substitution is its test image name; --project-name is unique.
   composition = File.read(File.join(source, "compose.yaml"))
   raise "Unexpected image definition" unless composition.scan("image: navishai-lab:local").length == 1
-  postgres = "postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42"
-  raise "Unexpected PostgreSQL pin" unless composition.scan("image: #{postgres}").length == 1
+  # PostgreSQL is built from db/Dockerfile (the pinned official image, hardened).
+  postgres = "navishai-lab-postgres:local"
+  raise "Unexpected PostgreSQL image" unless composition.scan("image: #{postgres}").length == 1
   # Docker save/load retains image identity but not the upstream index RepoDigest.
   # Give that exact pinned image a disposable alias and verify its ID after load.
   proof_composition = File.join(directory, "compose.yaml")
@@ -95,9 +96,8 @@ begin
   end
   # The download/build daemon never creates a bridge or publishes a port.
   builder = daemon.call("build", false)
-  run.call(*builder, "pull", postgres)
-  postgres_id = run.call(*builder, "image", "inspect", "--format", "{{.Id}}", postgres).strip
-  run.call(*builder, "tag", postgres, "#{prefix}-postgres:local")
+  puts run.call(*builder, "build", "--network=host", "--memory=1g", "--cpu-period=100000", "--cpu-quota=200000", "--tag", "#{prefix}-postgres:local", File.join(source, "db"))
+  postgres_id = run.call(*builder, "image", "inspect", "--format", "{{.Id}}", "#{prefix}-postgres:local").strip
   puts run.call(*builder, "build", "--network=host", "--memory=1g", "--cpu-period=100000", "--cpu-quota=200000", "--tag", "#{prefix}:local", source)
   images = File.join(directory, "images.tar")
   run.call(*builder, "save", "--output", images, "#{prefix}:local", "#{prefix}-postgres:local")
@@ -109,8 +109,8 @@ begin
   raise "Shared network namespace refused" if run.call("stat", "-Lc", "%i", "/proc/self/ns/net").strip == run.call("stat", "-Lc", "%i", File.join(directory, "netns")).strip
   docker = daemon.call("run", true)
   run.call(*docker, "load", "--input", images)
-  raise "Pinned PostgreSQL identity changed during transfer" unless run.call(*docker, "image", "inspect", "--format", "{{.Id}}", "#{prefix}-postgres:local").strip == postgres_id
-  puts "PASS: exact pinned PostgreSQL #{postgres} transferred as #{postgres_id}."
+  raise "Built PostgreSQL identity changed during transfer" unless run.call(*docker, "image", "inspect", "--format", "{{.Id}}", "#{prefix}-postgres:local").strip == postgres_id
+  puts "PASS: tracked db/Dockerfile PostgreSQL image transferred as #{postgres_id}."
   secrets = { "NAVISHAI_APP_HOST" => "example.invalid", "NAVISHAI_DATABASE_PASSWORD" => SecureRandom.hex(32),
     "NAVISHAI_POSTGRES_PASSWORD" => SecureRandom.hex(32), "NAVISHAI_SECRET_KEY_BASE" => SecureRandom.hex(64) }
   secret_values = secrets.values_at("NAVISHAI_DATABASE_PASSWORD", "NAVISHAI_POSTGRES_PASSWORD", "NAVISHAI_SECRET_KEY_BASE")
