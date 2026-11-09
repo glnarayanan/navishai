@@ -37,6 +37,9 @@ x-rails: &rails
 services:
   postgres:
     image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    # Without this, a Docker daemon restart (e.g. apt upgrading docker) leaves the
+    # database stopped while web/jobs come back and fail.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: navishai_setup
       POSTGRES_PASSWORD: ${NAVISHAI_POSTGRES_PASSWORD:?set a distinct NAVISHAI_POSTGRES_PASSWORD}
