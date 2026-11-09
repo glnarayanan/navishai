@@ -15,6 +15,11 @@ services:
   prepare:
     profiles: [vps-cli-disabled]
   postgres:
+    # The gated CLI only pulls, records and restores pinned upstream digests
+    # (vps_pull_pins, recovery images), so it keeps the official image instead
+    # of building the base file's db/Dockerfile.
+    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    build: !reset null
     restart: "no"
     labels:
       com.navishai.owner: navishai-reset

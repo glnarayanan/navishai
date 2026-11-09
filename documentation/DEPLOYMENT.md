@@ -110,12 +110,24 @@ controls and local upgrade/rollback evidence. Shared-host policy needs the owner
 approval; Compose alone does not enforce destination deny or apply egress policy
 before web/jobs start.
 
-Compose pins the public PostgreSQL 18 multi-platform index by digest
-(`sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42`). On
-7 November 2026, the registry returned that digest for `postgres:18` and
+`db/Dockerfile` starts from the public PostgreSQL 18 multi-platform index pinned by
+digest (`sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42`).
+On 7 and 9 November 2026, the registry returned that digest for `postgres:18` and
 `postgres:18.6`; the index included Linux amd64/arm64 entries. This checks
 manifest identity, not image execution or release security. Review and test a new
 digest before changing it; do not leave security updates unreviewed indefinitely.
+
+Plain Compose builds that file as `navishai-lab-postgres:local`. It applies Debian
+security updates (PostgreSQL packages are held at the image's `PG_VERSION`) and
+replaces `/usr/local/bin/gosu` with gosu built from its tagged source using a
+current Go toolchain and tagged modules. Path, root ownership, mode 0755 (no
+setuid), UID/GID 999, `PGDATA`, the entrypoint and the volume stay as upstream.
+Stay on the Debian (glibc) variant: Alpine's musl collation would corrupt existing
+text indexes. The VPS CLI override keeps the official pinned image, because its
+gates and recovery images expect a pulled digest. Rebuilding refreshes Debian
+packages; bump the pins in `db/Dockerfile` (base digest, Go image, gosu tag and
+modules) to move the rest. Changing the image recreates the database container,
+a few seconds of database downtime while web/jobs reconnect.
 The data volume `lab_postgres18_data` mounts at `/var/lib/postgresql` (the image
 keeps its cluster in `18/docker`). An install that still has 16 data in
 `lab_postgres_data` must follow the [PostgreSQL 18 upgrade](./POSTGRES_18_UPGRADE.md)
@@ -235,15 +247,14 @@ never enter the build. Inspect the tracked checkout before running it.
 The script downloads official Compose v2.39.4 into its private directory and checks
 the published SHA-256. It installs no global plugin or production dependency. A
 supervised private build daemon uses separate vfs roots, no bridge, forwarding,
-iptables, masquerading or publication. It pulls the existing pinned PostgreSQL
-image and builds the tracked app with its existing dependencies. Images then move
+iptables, masquerading or publication. It builds the tracked `db/Dockerfile`
+PostgreSQL image and the tracked app with their existing dependencies. Images then move
 to a second supervised daemon in an owned network namespace. Docker manages rules
 only inside that namespace; the orb's routes, firewall, services and databases stay
 unchanged. The namespace has no external default route.
 
-Docker save/load does not preserve an upstream index RepoDigest reference. The
-proof gives the unchanged pinned PostgreSQL image a disposable name and verifies
-the same image ID after transfer. Only test image names and the unique project name
+The proof gives the built PostgreSQL image a disposable name and verifies the
+same image ID after transfer. Only test image names and the unique project name
 differ from the tracked composition. Control/edge topology, database initialization,
 roles, capability settings, mounts and loopback publication remain unchanged.
 
