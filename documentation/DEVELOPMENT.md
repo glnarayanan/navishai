@@ -49,11 +49,19 @@ then run `bin/setup --skip-server`. Default databases are `navishai_lab_developm
 and `navishai_lab_test`. Setup creates/prepares them; it does not reset databases or
 seed accounts. `--reset` is rejected.
 
-Orb setup uses frozen Bundler installs and reports separate times for the Ruby
-toolchain, gems and application preparation. A changed Gemfile must have a matching
-lockfile; setup cannot resolve it or rewrite the lockfile. Warm setup still checks
-installed dependencies rather than using a custom cache marker. Resume only repairs
-PostgreSQL; it installs no packages or gems.
+Orb setup selects the PostgreSQL apt repository from Debian's release codename,
+including bookworm and trixie, and installs PostgreSQL 18. It uses frozen Bundler
+installs and reports separate times for packages, Ruby, gems, Selenium's cached
+Chrome/driver and application preparation. A changed Gemfile must have a matching
+lockfile; setup cannot resolve it or rewrite the lockfile. Warm setup checks installed
+dependencies without a custom cache marker and skips apt when packages are present.
+Amp can snapshot these installed tools and caches for later fresh orbs.
+
+The local orb role `user` is a PostgreSQL superuser, matching CI's fixture-loading
+requirements. This applies only to the orb's local database, not production roles.
+Resume starts only `18/main` and checks readiness; it installs no packages or gems.
+A missing cluster or port other than 5432 fails explicitly. Setup never migrates,
+deletes or repurposes older clusters; preserve them and resolve port conflicts first.
 
 Never point this rebuild at an old helpdesk database. Preserve/archive that database
 and choose a fresh name. Database task preflight checks effective configuration

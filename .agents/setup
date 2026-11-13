@@ -18,31 +18,36 @@ if ! command -v mise >/dev/null; then
   curl --fail --silent --show-error https://mise.run | MISE_QUIET=1 sh
 fi
 missing=()
-for package in build-essential libpq-dev libyaml-dev postgresql-16; do
+for package in build-essential libpq-dev libyaml-dev postgresql-18; do
   dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
 done
 if ((${#missing[@]})); then
-  if [[ ! -f /etc/apt/sources.list.d/pgdg.list ]]; then
+  source /etc/os-release
+  source_line="deb [signed-by=/usr/share/keyrings/postgresql-apt.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME:?}-pgdg main"
+  if ! grep -Fqx "$source_line" /etc/apt/sources.list.d/pgdg.list 2>/dev/null; then
     key="$(mktemp)"
     trap 'rm -f "$key"' EXIT
     curl --fail --silent --show-error https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$key"
     fingerprint="$(gpg --show-keys --with-colons "$key" | awk -F: '$1 == "fpr" {print $10; exit}')"
     [[ "$fingerprint" == B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8 ]] || exit 1
     gpg --dearmor < "$key" | sudo tee /usr/share/keyrings/postgresql-apt.gpg >/dev/null
-    printf '%s\n' 'deb [signed-by=/usr/share/keyrings/postgresql-apt.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+    printf '%s\n' "$source_line" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
   fi
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends "${missing[@]}"
+  run_timed "package index" sudo apt-get update
+  run_timed "system packages" sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
 fi
 mise trust --yes
 run_timed "Ruby toolchain" mise install
 if ! grep -Fq '# navishai mise toolchain' "$HOME/.bash_profile"; then
   printf '\n# navishai mise toolchain\nexport PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"\n' >> "$HOME/.bash_profile"
 fi
-sudo pg_ctlcluster 16 main start || pg_isready -q
-if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'user'" | grep -qx 1; then
-  sudo -u postgres createuser --createdb user
-fi
 "$root/.agents/resume"
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'user'" | grep -qx 1; then
+  sudo -u postgres createuser --superuser user
+fi
+# Rails fixtures disable foreign-key triggers, as they do under CI's local administrator.
+sudo -u postgres psql -v ON_ERROR_STOP=1 -c 'ALTER ROLE "user" SUPERUSER' >/dev/null
 BUNDLE_FROZEN=true run_timed "Ruby gems" mise exec -- bundle install
+BUNDLE_FROZEN=true run_timed "system test browser" mise exec -- bundle exec ruby -rselenium-webdriver -e \
+  'Selenium::WebDriver::SeleniumManager.binary_paths("--browser", "chrome").each { |name, path| puts "#{name}: #{path}" }'
 BUNDLE_FROZEN=true run_timed "application preparation" mise exec -- bin/setup --skip-server

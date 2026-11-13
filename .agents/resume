@@ -13,14 +13,24 @@ ensure_postgres() {
     return 0
   fi
 
-  local ver name port status
+  local ver name port status found=false
   while read -r ver name port status _; do
-    [[ -n "${ver:-}" ]] || continue
+    [[ "$ver" == 18 && "$name" == main ]] || continue
+    found=true
+    if [[ "$port" != 5432 ]]; then
+      log "PostgreSQL 18/main must use port 5432; existing clusters were not changed"
+      return 1
+    fi
     if [[ "$status" != "online" ]]; then
       log "starting PostgreSQL ${ver}/${name}"
       sudo pg_ctlcluster "$ver" "$name" start
     fi
   done < <(pg_lsclusters --no-header)
+
+  if [[ "$found" != true ]]; then
+    log "PostgreSQL 18/main missing; run .agents/setup"
+    return 1
+  fi
 
   if ! command -v pg_isready >/dev/null 2>&1; then
     return 0

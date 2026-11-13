@@ -2393,6 +2393,35 @@ which could not start Chrome as root; rerun separately with `--no-sandbox` and a
 matching driver, 72 browser tests passed. `bin/prove-compose-runtime` (orb-only)
 was updated to use `prepare` but did not run here. No merge or deployment ran.
 
+## Debian-compatible orb setup (13 November)
+
+Fresh startup failed with exit 100 because setup added `bookworm-pgdg` on Debian
+13, whose libraries cannot satisfy that PostgreSQL 16 build. Setup now derives
+the apt suite from `/etc/os-release`, repairs the stale source and installs
+PostgreSQL 18 to match CI/production. It caches Selenium Chrome and ChromeDriver
+alongside the pinned Ruby and frozen gems. The local orb role has the superuser
+rights Rails fixtures require, matching CI; production roles remain unchanged.
+Resume starts only `18/main` and refuses a missing cluster or conflicting port
+without migrating, deleting or repurposing existing clusters.
+
+On this initially missing-runtime Debian 13 orb, the first setup completed in
+90.82 seconds. A final warm run after the fixture-role correction took 2.71 seconds;
+warm runs downloaded no packages or gems and reused both browser binaries. A typed
+JSONB probe survived repeated application preparation unchanged and was removed.
+Stopped-cluster resume took 2.35 seconds; already-running resume took 0.07 seconds.
+The clean login shell and supervised web process both resolved the pinned Ruby
+4.0.7; Bundler 4.0.23, PostgreSQL/pg_dump 18.7 and bundled dependencies were ready.
+`amp orb services ensure` started web and its portal health check returned HTTP 200.
+
+Focused native checks passed 11 Rails tests / 38 assertions and four existing
+Selenium landing tests / 211 assertions. The new resume safety regression passed
+one test / eight assertions and fails against the original script. Bash syntax,
+all 395 Ruby files under RuboCop and eager loading passed; eager loading keeps its
+existing optional mailer-preview warning. Isolated apt resolution from an empty
+package status also passed for Debian 12's full setup package set. This was not a
+Debian 12 boot. No full CI, published snapshot, deployment or live-provider proof
+is claimed. Future orbs need these lifecycle changes on the default branch.
+
 ## Pending owner decisions
 
 1. Approve rights, redaction and retention for a previously unseen technical-Support
