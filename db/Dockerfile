@@ -5,7 +5,7 @@
 
 # Upstream gosu 1.20 ships built with Go 1.24.6 and golang.org/x/sys v0.1.0.
 # Rebuild the same tagged source with a current toolchain and tagged modules.
-FROM golang:1.27.3-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS gosu
+FROM golang:1.27.4-trixie@sha256:b54b2639de8c1bfe538ec5ffc45f29b1932235ac5f6d63c059853646677112d9 AS gosu
 ARG GOSU_VERSION=1.20
 ARG GOSU_COMMIT=29b939aa5bd4dc588af765b8248f6e39150d2565
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
